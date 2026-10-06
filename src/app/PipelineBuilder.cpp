@@ -14,8 +14,12 @@ Pipeline buildPipeline(const PipelineSettings& s, Tuile& a, Tuile& b) {
     PairContext ctx{s.direction, s.overlap};
     Pipeline p;
     p.add(std::make_unique<steps::ImportStep>(s.imageDir, std::regex(s.pattern)));
+    Json matcherParams = {
+        {"model_path", s.lightGlueModel.string()}
+    };
     p.add(std::make_unique<steps::StitchingStep>(a, b, ctx,
-            makeFeatureMatcher(s.matcher), makeOutlierRejector(s.rejector)));
+            makeFeatureMatcher(s.matcher, matcherParams),
+            makeOutlierRejector(s.rejector)));
     p.add(std::make_unique<steps::AbsolutePositioningStep>());
     p.add(std::make_unique<steps::IntensityCorrectionStep>());
     p.add(std::make_unique<steps::SeamlineStep>(a, b, ctx, makeSeamFinder(s.seamFinder)));

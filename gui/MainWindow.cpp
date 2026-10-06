@@ -32,6 +32,12 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     dirRow->addWidget(dirEdit);
     dirRow->addWidget(browseButton);
 
+    modelEdit = new QLineEdit(QString::fromStdString(defaults.lightGlueModel.string()));
+    auto* modelBrowseButton = new QPushButton("…");
+    auto* modelRow = new QHBoxLayout;
+    modelRow->addWidget(modelEdit);
+    modelRow->addWidget(modelBrowseButton);
+
     patternEdit = new QLineEdit(QString::fromStdString(defaults.pattern));
     matcherBox  = comboFrom(featureMatcherNames());
     rejectorBox = comboFrom(outlierRejectorNames());
@@ -51,6 +57,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
 
     auto* form = new QFormLayout;
     form->addRow("Image folder", dirRow);
+    form->addRow("LightGlue model", modelRow);
     form->addRow("File pattern", patternEdit);
     form->addRow("Feature matcher", matcherBox);
     form->addRow("Outlier rejection", rejectorBox);
@@ -69,6 +76,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     resize(520, 480);
 
     connect(browseButton, &QPushButton::clicked, this, [this] { browse(); });
+    connect(modelBrowseButton, &QPushButton::clicked, this, [this] { browseModel(); });
     connect(runButton, &QPushButton::clicked, this, [this] { run(); });
     connect(&watcher, &QFutureWatcher<bool>::finished, this, [this] {
         appendLog(watcher.result() ? "Pipeline OK" : "Pipeline KO");
@@ -81,6 +89,12 @@ void MainWindow::browse() {
     if (!dir.isEmpty()) dirEdit->setText(dir);
 }
 
+void MainWindow::browseModel() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, "LightGlue ONNX model", modelEdit->text(), "ONNX models (*.onnx)");
+    if (!path.isEmpty()) modelEdit->setText(path);
+}
+
 void MainWindow::appendLog(const QString& line) {
     log->appendPlainText(line);
 }
@@ -88,6 +102,7 @@ void MainWindow::appendLog(const QString& line) {
 void MainWindow::run() {
     PipelineSettings s;
     s.imageDir   = dirEdit->text().toStdString();
+    s.lightGlueModel = modelEdit->text().toStdString();
     s.pattern    = patternEdit->text().toStdString();
     s.matcher    = matcherBox->currentText().toStdString();
     s.rejector   = rejectorBox->currentText().toStdString();

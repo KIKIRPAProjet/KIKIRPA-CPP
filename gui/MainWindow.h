@@ -15,10 +15,12 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
 private:
     void browse();
+    void browseModel();
     void run();
     void appendLog(const QString& line);
 
     QLineEdit* dirEdit;
+    QLineEdit* modelEdit;
     QLineEdit* patternEdit;
     QComboBox* matcherBox;
     QComboBox* rejectorBox;

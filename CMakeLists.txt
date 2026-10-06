@@ -4,6 +4,11 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(OpenCV REQUIRED)
+
+# ONNX Runtime -> ajout pour LightGlue
+find_path(ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_cxx_api.h PATH_SUFFIXES onnxruntime)
+find_library(ONNXRUNTIME_LIB NAMES onnxruntime)
+
 find_package(nlohmann_json 3 QUIET)
 if(NOT nlohmann_json_FOUND)
   include(FetchContent)
@@ -17,7 +22,10 @@ file(GLOB_RECURSE LIB_SRC CONFIGURE_DEPENDS
      src/core/*.cpp src/steps/*.cpp src/algorithms/*.cpp src/app/*.cpp)
 add_library(stitching_lib STATIC ${LIB_SRC})
 target_include_directories(stitching_lib PUBLIC include)
-target_link_libraries(stitching_lib PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
+
+# Ajout pour LightGlue
+target_include_directories(stitching_lib PUBLIC include ${ONNXRUNTIME_INCLUDE_DIR})
+target_link_libraries(stitching_lib PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json ${ONNXRUNTIME_LIB})
 
 # Ligne de commande
 add_executable(stitching src/main.cpp)
