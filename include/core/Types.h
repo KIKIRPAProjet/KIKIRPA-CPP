@@ -15,9 +15,13 @@ struct PairContext {
     float overlap = 0.f;   // recouvrement estimé (fraction de la tuile)
 };
 
-// Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
+// Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i].
+// Les scores sont optionnels et correspondent aux paires de points par indice.
 struct Matches {
     std::vector<cv::Point2f> pointsA, pointsB;
+    std::vector<float> scores;
+    float dx = 0.f; // translation médiane estimée de B vers A
+    float dy = 0.f;
 };
 
 // Sortie d'un OutlierRejector
