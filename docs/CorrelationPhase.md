@@ -242,6 +242,7 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 - **Translation uniquement.** Le modèle global est une translation. Une légère rotation ou une déformation du support apparaît dans les points locaux, que RANSAC traitera ensuite.
 - **Tuiles de même taille** obligatoires, comme dans le Python.
 - **`Direction`** : la syntaxe `{ Top, Bottom, Left, Right }` est encore à confirmer avec l'équipe.
+- **`distorsion optique`** : La distorsion est une aberration géométrique qui se produit lorsque le grossissement d'un objectif varie en s'éloignant de l'axe optique. Comme les bords du capteur photo (plat) sont plus éloignés du centre de la lentille que le milieu du capteur, l'image subit une réduction de grossissement à sa périphérie.--> à coriger avec pré traitement ou autre ?
 
 > **Remarque — correction possible, non implémentée**
 >
