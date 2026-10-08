@@ -23,6 +23,18 @@ target_link_libraries(stitching_lib PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohman
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_lib)
 
+# Tests
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(sift_matcher_test tests/SiftMatcherTest.cpp)
+  target_link_libraries(sift_matcher_test PRIVATE stitching_lib)
+  add_test(
+    NAME sift_matcher_test
+    COMMAND sift_matcher_test
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/sift/image_a.png"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/sift/image_b.png")
+endif()
+
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)
