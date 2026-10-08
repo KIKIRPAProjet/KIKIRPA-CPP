@@ -7,7 +7,7 @@ using namespace cv;
 
 namespace Seamline {
 
-int imagePretreatment::processImages(float overlap, 
+int ImagePretreatment::processImages(float overlap, 
                                      int argc, 
                                      char* argv[], 
                                      vector<Mat>& original_images, 
