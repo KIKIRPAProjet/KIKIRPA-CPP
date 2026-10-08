@@ -11,24 +11,31 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(json)
 endif()
 
-# Tout sauf les main → bibliothèque, réutilisable pour tester un algo seul.
 # Les nouveaux .cpp sont pris en compte automatiquement.
-file(GLOB_RECURSE LIB_SRC CONFIGURE_DEPENDS
-     src/core/*.cpp src/steps/*.cpp src/algorithms/*.cpp src/app/*.cpp)
-add_library(stitching_lib STATIC ${LIB_SRC})
-target_include_directories(stitching_lib PUBLIC include)
-target_link_libraries(stitching_lib PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
+file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.cpp")
+add_library(stitching_backend STATIC ${BACKEND_SRC})
+target_include_directories(stitching_backend PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/Backend")
+target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
 
 # Ligne de commande
 add_executable(stitching src/main.cpp)
-target_link_libraries(stitching PRIVATE stitching_lib)
+target_link_libraries(stitching PRIVATE stitching_backend)
 
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)
-  file(GLOB GUI_SRC CONFIGURE_DEPENDS gui/*.cpp)
-  add_executable(stitching_gui ${GUI_SRC})
-  target_link_libraries(stitching_gui PRIVATE stitching_lib Qt6::Widgets Qt6::Concurrent)
+  file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
+  list(FILTER FRONTEND_SRC EXCLUDE REGEX "/ToDelete\\.cpp$")
+  if(FRONTEND_SRC)
+    add_executable(stitching_frontend ${FRONTEND_SRC})
+    target_link_libraries(stitching_frontend PRIVATE stitching_backend Qt6::Widgets Qt6::Concurrent)
+  else()
+    message(STATUS "No frontend sources found: stitching_frontend will not be built")
+  endif()
 else()
-  message(STATUS "Qt6 not found: stitching_gui will not be built")
+  message(STATUS "Qt6 not found: stitching_frontend will not be built")
 endif()
