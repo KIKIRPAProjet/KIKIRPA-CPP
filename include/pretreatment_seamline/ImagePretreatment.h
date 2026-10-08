@@ -8,7 +8,6 @@ namespace Seamline {
 
     class ImagePretreatment {
     public:
-        // Déplace l'ancienne méthode de GraphCut ici
         static int processImages(float overlap, 
                                  int argc, 
                                  char* argv[], 
