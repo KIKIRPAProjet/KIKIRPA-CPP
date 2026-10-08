@@ -13,7 +13,7 @@ namespace stitching {
 Pipeline buildPipeline(const PipelineSettings& s, Tuile& a, Tuile& b) {
     PairContext ctx{s.direction, s.overlap};
     Pipeline p;
-    p.add(std::make_unique<steps::ImportStep>(s.imageDir, std::regex(s.pattern)));
+    p.add(std::make_unique<steps::ImportStep>(s.imageDir, std::regex(s.pattern), a, b));
     Json matcherParams = {
         {"model_path", s.lightGlueModel.string()}
     };
