@@ -13,7 +13,7 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
         throw std::invalid_argument("LightGlue model_path is missing");
     }
 
-    // First try the path as provided by the caller.
+    // En premier essayer le chemin tel que fourni par l'appelant.
     std::filesystem::path modelPath = configuredPath;
     if (!modelPath.is_absolute() &&
         !std::filesystem::is_regular_file(modelPath)) {
@@ -25,7 +25,7 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
         }
     }
 
-    // Fail early with a clear error when the model file cannot be found.
+    // Erreur explicite si le modèle n'est pas trouvé, pour éviter des erreurs plus tard.
     if (!std::filesystem::is_regular_file(modelPath)) {
         throw std::invalid_argument(
             "LightGlue model not found: " + configuredPath +
@@ -33,28 +33,26 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
             std::filesystem::current_path().string() + ")");
     }
 
-    // Keep the resolved path for the future ONNX Runtime session.
+    // Conserver le chemin résolu pour la future session ONNX Runtime.
     this->params["model_path"] = modelPath.string();
     std::cout << "LightGlue model: " << modelPath.string() << '\n';
 
-    // --- ÉTAPE 2 : INITIALISATION DU MODÈLE ONNX ---
+    // Initialisation du modèle ONNX Runtime
     Ort::SessionOptions session_options;
     session_options.SetIntraOpNumThreads(1);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
     
     this->session = std::make_unique<Ort::Session>(this->env, modelPath.c_str(), session_options);
-    // -----------------------------------------------
 }
-
+  
 bool LightGlueMatcher::match(const cv::Mat&, const cv::Mat&, const PairContext&, Matches&) {
-    // --- ÉTAPE 3 : TEST DE LA SESSION LORS DE L'EXÉCUTION ---
+    // Test de la session lors de l'exécution
     if (!this->session) {
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
 
     size_t num_input_nodes = this->session->GetInputCount();
     std::cout << "[Test ONNX] Modèle actif. Nombre de tenseurs d'entrée attendus : " << num_input_nodes << "\n";
-    // --------------------------------------------------------
 
     return true;
 }
