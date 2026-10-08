@@ -14,6 +14,8 @@ bool StitchingStep::execute() {
     Alignment alignment;
     if (!rejector->estimate(matches, alignment)) return false;
 
+    outputData["x"] = matches.x;
+    outputData["y"] = matches.y;
     outputData["matches"] = matches.pointsA.size();
     if (!alignment.transform.empty() && alignment.transform.type() == CV_64F) {
         std::vector<double> t;

@@ -9,7 +9,7 @@ namespace stitching {
 struct PipelineSettings {
     std::filesystem::path imageDir = "images/";
     std::string pattern = ".*\\.png";
-    Direction direction = Direction::LeftRight;
+    Direction direction = Direction::Right;
     float overlap = 0.2f;
     std::string matcher = "sift";
     std::string rejector = "ransac";

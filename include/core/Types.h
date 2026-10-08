@@ -7,17 +7,20 @@ namespace stitching {
 
 using Json = nlohmann::json;
 
-enum class Direction { BottomRight, LeftRight };
+// Position de la tuile B par rapport à la tuile A
+enum class Direction { Top, Bottom, Left, Right };
 
 // Contexte d'une paire de tuiles voisines, transmis aux algorithmes
 struct PairContext {
-    Direction dir = Direction::LeftRight;
+    Direction dir = Direction::Right;
     float overlap = 0.f;   // recouvrement estimé (fraction de la tuile)
 };
 
 // Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
 struct Matches {
-    std::vector<cv::Point2f> pointsA, pointsB;
+    float x = 0.f, y = 0.f;                     // coin haut-gauche de B dans le repère de A (px)
+    std::vector<cv::Point2f> pointsA, pointsB;  // coordonnées dans la tuile A / la tuile B entière
+    std::vector<float> confidence;              // confiance de chaque paire, entre 0 et 1
 };
 
 // Sortie d'un OutlierRejector

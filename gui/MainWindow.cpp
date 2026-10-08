@@ -41,8 +41,10 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     seamBox->setCurrentText(QString::fromStdString(defaults.seamFinder));
 
     directionBox = new QComboBox;
-    directionBox->addItem("Left → Right", static_cast<int>(Direction::LeftRight));
-    directionBox->addItem("Bottom → Right", static_cast<int>(Direction::BottomRight));
+    directionBox->addItem("B right of A",  static_cast<int>(Direction::Right));
+    directionBox->addItem("B below A",     static_cast<int>(Direction::Bottom));
+    directionBox->addItem("B left of A",   static_cast<int>(Direction::Left));
+    directionBox->addItem("B above A",     static_cast<int>(Direction::Top));
 
     overlapSpin = new QDoubleSpinBox;
     overlapSpin->setRange(0.0, 1.0);

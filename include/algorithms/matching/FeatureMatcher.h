@@ -3,7 +3,6 @@
 
 namespace stitching::matching {
 
-// À implémenter par chaque méthode d'appariement (SIFT, Harris-NCC, LightGlue...)
 class FeatureMatcher {
 public:
     virtual ~FeatureMatcher() = default;

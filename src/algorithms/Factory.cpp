@@ -1,5 +1,5 @@
 #include "algorithms/Factory.h"
-#include "algorithms/matching/HarrisNccMatcher.h"
+#include "algorithms/matching/CorrelationPhase.h"
 #include "algorithms/matching/LightGlueMatcher.h"
 #include "algorithms/matching/SiftMatcher.h"
 #include "algorithms/rejection/MagsacRejector.h"
@@ -43,9 +43,9 @@ std::vector<std::string> namesOf(const Registry<Base>& registry) {
 const Registry<matching::FeatureMatcher>& matchers() {
     using namespace matching;
     static const Registry<FeatureMatcher> registry = {
-        {"sift",       make<FeatureMatcher, SiftMatcher>},
-        {"harris-ncc", make<FeatureMatcher, HarrisNccMatcher>},
-        {"lightglue",  make<FeatureMatcher, LightGlueMatcher>},
+        {"sift",              make<FeatureMatcher, SiftMatcher>},
+        {"phase-correlation", make<FeatureMatcher, CorrelationPhase>},
+        {"lightglue",         make<FeatureMatcher, LightGlueMatcher>},
     };
     return registry;
 }
