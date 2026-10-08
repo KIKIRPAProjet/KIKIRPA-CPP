@@ -6,7 +6,7 @@
 
 namespace Seamline {
 
-    class imagePretreatment {
+    class ImagePretreatment {
     public:
         static int processImages(float overlap, 
                                  int argc, 
