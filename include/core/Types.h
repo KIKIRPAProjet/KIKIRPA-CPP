@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
+#include <filesystem>
 #include <vector>
 
 namespace stitching {
@@ -14,6 +15,14 @@ struct PairContext {
     Direction dir = Direction::LeftRight;
     float overlap = 0.f;   // recouvrement estimé (fraction de la tuile)
 };
+
+// PipelineOption "Tiles" : les images chargées par le step import
+struct TileImage {
+    std::filesystem::path path;
+    int col = 0, row = 0;   // position dans la grille, lue dans le nom du fichier
+    cv::Mat image;
+};
+using Tiles = std::vector<TileImage>;
 
 // Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
 struct Matches {

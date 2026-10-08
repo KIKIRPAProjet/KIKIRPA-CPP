@@ -13,7 +13,7 @@ namespace stitching {
 Pipeline buildPipeline(const PipelineSettings& s, Tuile& a, Tuile& b) {
     PairContext ctx{s.direction, s.overlap};
     Pipeline p;
-    p.add(std::make_unique<steps::ImportStep>(s.imageDir, std::regex(s.pattern)));
+    p.add(std::make_unique<steps::ImportStep>(steps::ImportInput{s.imageDir.string(), s.format}));
     p.add(std::make_unique<steps::StitchingStep>(a, b, ctx,
             makeFeatureMatcher(s.matcher), makeOutlierRejector(s.rejector)));
     p.add(std::make_unique<steps::AbsolutePositioningStep>());

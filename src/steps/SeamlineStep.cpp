@@ -8,7 +8,7 @@ SeamlineStep::SeamlineStep(Tuile& a, Tuile& b, PairContext ctx,
 
 bool SeamlineStep::execute() {
     if (!finder->find(a.image(), b.image(), ctx, seamMask)) return false;
-    outputData["seamFound"] = !seamMask.empty();
+    outputData["seams"] = !seamMask.empty();
     return true;
 }
 

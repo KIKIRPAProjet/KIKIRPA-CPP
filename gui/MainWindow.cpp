@@ -32,7 +32,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     dirRow->addWidget(dirEdit);
     dirRow->addWidget(browseButton);
 
-    patternEdit = new QLineEdit(QString::fromStdString(defaults.pattern));
+    formatEdit  = new QLineEdit(QString::fromStdString(defaults.format));
     matcherBox  = comboFrom(featureMatcherNames());
     rejectorBox = comboFrom(outlierRejectorNames());
     seamBox     = comboFrom(seamFinderNames());
@@ -51,7 +51,7 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
 
     auto* form = new QFormLayout;
     form->addRow("Image folder", dirRow);
-    form->addRow("File pattern", patternEdit);
+    form->addRow("File format", formatEdit);
     form->addRow("Feature matcher", matcherBox);
     form->addRow("Outlier rejection", rejectorBox);
     form->addRow("Seamline", seamBox);
@@ -88,7 +88,7 @@ void MainWindow::appendLog(const QString& line) {
 void MainWindow::run() {
     PipelineSettings s;
     s.imageDir   = dirEdit->text().toStdString();
-    s.pattern    = patternEdit->text().toStdString();
+    s.format     = formatEdit->text().toStdString();
     s.matcher    = matcherBox->currentText().toStdString();
     s.rejector   = rejectorBox->currentText().toStdString();
     s.seamFinder = seamBox->currentText().toStdString();

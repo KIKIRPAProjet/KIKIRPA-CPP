@@ -19,7 +19,7 @@ private:
     void appendLog(const QString& line);
 
     QLineEdit* dirEdit;
-    QLineEdit* patternEdit;
+    QLineEdit* formatEdit;
     QComboBox* matcherBox;
     QComboBox* rejectorBox;
     QComboBox* seamBox;

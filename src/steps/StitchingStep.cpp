@@ -18,7 +18,7 @@ bool StitchingStep::execute() {
     if (!alignment.transform.empty() && alignment.transform.type() == CV_64F) {
         std::vector<double> t;
         alignment.transform.reshape(1, 1).copyTo(t);
-        outputData["transform"] = t;
+        outputData["transforms"] = t;
     }
     return true;
 }
