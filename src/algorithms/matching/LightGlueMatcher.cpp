@@ -68,32 +68,32 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
 }
   
 
-bool LightGlueMatcher::match(const cv::Mat& img1, const cv::Mat& img2, const PairContext&, Matches&) {
+bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
     // Test de la session lors de l'exécution -> si la session n'est pas initialisée, on génère une erreur, sinon on continue.
     if (!this->session) {
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
 
     // Vérification que les images ne sont pas vides avant le prétraitement
-    if (img1.empty() || img2.empty()) {
-        throw std::runtime_error("LightGlueMatcher: img1 ou img2 est vide avant le prétraitement.");
+    if (a.empty() || b.empty()) {
+        throw std::runtime_error("LightGlueMatcher: a ou b est vide avant le prétraitement.");
     }
 
-    cv::Mat colorImg1 = img1;
-    cv::Mat colorImg2 = img2;
+    cv::Mat colorImg1 = a;
+    cv::Mat colorImg2 = b;
 
-    // Nettoyage des canaux pour img1
-    if (img1.channels() == 1) {
-        cv::cvtColor(img1, colorImg1, cv::COLOR_GRAY2BGR);
-    } else if (img1.channels() == 4) {
-        cv::cvtColor(img1, colorImg1, cv::COLOR_BGRA2BGR);
+    // Nettoyage des canaux pour a
+    if (a.channels() == 1) {
+        cv::cvtColor(a, colorImg1, cv::COLOR_GRAY2BGR);
+    } else if (a.channels() == 4) {
+        cv::cvtColor(a, colorImg1, cv::COLOR_BGRA2BGR);
     }
 
-    // Nettoyage des canaux pour img2
-    if (img2.channels() == 1) {
-        cv::cvtColor(img2, colorImg2, cv::COLOR_GRAY2BGR);
-    } else if (img2.channels() == 4) {
-        cv::cvtColor(img2, colorImg2, cv::COLOR_BGRA2BGR);
+    // Nettoyage des canaux pour b
+    if (b.channels() == 1) {
+        cv::cvtColor(b, colorImg2, cv::COLOR_GRAY2BGR);
+    } else if (b.channels() == 4) {
+        cv::cvtColor(b, colorImg2, cv::COLOR_BGRA2BGR);
     }
 
     // Prétraitement des images
