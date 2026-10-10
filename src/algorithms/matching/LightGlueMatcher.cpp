@@ -142,7 +142,16 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         output_names, 6 // Nombre d'outputs attendus
     );
 
-    // PRINT DES RÉSULTATS
+    // Traitement des résultats obtenus
+
+    // Notes sur les sorties :
+    //  - output_tensors contient 6 tenseurs qui correspondent à : matches0, matches1, mscores0, mscores1, kpts0, kpts1 ;
+    //  - output_tensors[0] (matches0) contient un tableau d'entiers (int64_t) représentant les indices des correspondances pour l'image 0 (matches0), à l'index i de ce tableau, on trouve l'index du point correspondant dans l'image 1 -> [-1, 12, 6, -1, 87] ;
+    //  - output_tensors[1] (matches1) -> [-1, -1, 75, -1, 26] ;
+    //  - output_tensors[2] (mscores0) contient les scores de confiance calculés par le réseau pour chaque paire de points -> [6.2772e-17, 0.999883, 0.999937, 0, 0.999909] ;
+    //  - output_tensors[3] (mscores1) -> [0, 0, 0.997286, 0, 0.996805] ;
+    //  - output_tensors[4] (kpts0) contient les coordonnées (x, y) de tous les points détectés dans l'image 0 -> [224, 229, 154, 32, 155] ;
+    // - output_tensors[5] (kpts1) contient les coordonnées (x, y) de tous les points détectés dans l'image 1 -> [198, 229, 170, 228, 49].
 
     // Extraction des informations pour output_tensors[0] (matches0)
     auto matches0_info = output_tensors[0].GetTensorTypeAndShapeInfo();
@@ -152,31 +161,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     // LightGlue renvoie des indices sous forme d'entiers 64 bits (int64_t)
     int64_t* matches0_data = output_tensors[0].GetTensorMutableData<int64_t>();
 
-    // Affichage de la dimension (Shape)
-    std::cout << "Shape matches0 : [";
-    for (size_t i = 0; i < matches0_shape.size(); ++i) {
-        std::cout << matches0_shape[i] << (i == matches0_shape.size() - 1 ? "" : ", ");
-    }
-    std::cout << "]\n";
-
-    // Affichage d'un échantillon (limité à 10 pour ne pas saturer la console)
-    std::cout << "Aperçu des 10 premières valeurs de matches0 : ";
-    size_t limit = std::min<size_t>(10, num_elements);
-    for (size_t i = 0; i < limit; ++i) {
-        std::cout << matches0_data[i] << " ";
-    }
-    std::cout << "\n";
-
-    // Pour mscores0 (index 2), le type est généralement float
     auto scores0_info = output_tensors[2].GetTensorTypeAndShapeInfo();
     float* scores0_data = output_tensors[2].GetTensorMutableData<float>();
-    
-    std::cout << "Aperçu des 5 premiers scores : ";
-    size_t limit_scores = std::min<size_t>(5, scores0_info.GetElementCount());
-    for (size_t i = 0; i < limit_scores; ++i) {
-        std::cout << scores0_data[i] << " ";
-    }
-    std::cout << "\n";
+
+    // Pourquoi on extrait que les données de scores0 et non également de scores1 ? 
+    // IA : Quand LightGlue trouve une correspondance valide entre un Point A (dans img1) et un Point B (dans img2), il s'agit d'une seule et même paire. scores0[i] contient le score de confiance pour le Point A (qui a matché avec le Point B). scores1[match_idx] contient le score de confiance pour le Point B (qui a matché avec le Point A). Pour une paire validée, ces deux scores sont identiques (ou représentent exactement la même information de confiance pour cette liaison).
 
     // Extraction des coordonnées des points-clés (float)
     auto kpts0_type = output_tensors[4].GetTensorTypeAndShapeInfo().GetElementType();
@@ -194,9 +183,10 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         throw std::runtime_error("Le type des tenseurs kpts0/kpts1 n'est ni float ni int64.");
     }
 
-    std::cout << "--- Liste des correspondances valides ---\n";
-    
-    int valid_matches_count = 0;
+    // On associe maintenant toutes les coordonnées :
+    //  - match_idx > -1 : Confirme que le point i de img1 a bien été matché.
+    //  - Extraction $(x, y)$  : Les données des points sont stockées à plat en mémoire (ex: x0, y0, x1, y1...). Pour obtenir le point i, on lit les indices i * 2 (pour X) et i * 2 + 1 (pour Y). On fait la même chose pour img2 en utilisant match_idx.
+    //  - Stockage : Les coordonnées sont converties en objets cv::Point2f et poussées dans out.pointsA et out.pointsB. À ce stade, pointsA[k] et pointsB[k] représentent les coordonnées exactes du k-ème match valide.
     
     for (size_t i = 0; i < num_elements; ++i) {
         int64_t match_idx = matches0_data[i];
@@ -217,19 +207,35 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
                 y1 = static_cast<float>(kpts1_i[match_idx * 2 + 1]);
             }
             
-            float score = scores0_data[i];
-            
-            std::cout << "Match " << valid_matches_count << " : "
-                      << "Img1(" << x0 << ", " << y0 << ") -> "
-                      << "Img2(" << x1 << ", " << y1 << ") "
-                      << "[Score: " << score << "]\n";
-                      
-            valid_matches_count++;
+            // On enregistre les points correspondants dans les vecteurs de la structure de sortie
+            out.pointsA.push_back(cv::Point2f(x0, y0));
+            out.pointsB.push_back(cv::Point2f(x1, y1));
+
+            // On enregistre le score correspondant
+            out.scores.push_back(scores0_data[i]);
         }
     }
-    
-    // size_t num_input_nodes = this->session->GetInputCount();
-    // std::cout << "[Test ONNX] Modèle actif. Nombre de tenseurs d'entrée attendus : " << num_input_nodes << "\n";
+
+    // Calcul du décalage (dx, dy) et enregistrement dans la stucture de sortie 
+    if (!out.pointsA.empty()) {
+        std::vector<float> dx_list;
+        std::vector<float> dy_list;
+        
+        // Calculer la différence pour chaque paire de points
+        for (size_t i = 0; i < out.pointsA.size(); ++i) {
+            dx_list.push_back(out.pointsB[i].x - out.pointsA[i].x);
+            dy_list.push_back(out.pointsB[i].y - out.pointsA[i].y);
+        }
+
+        // Trouver la médiane
+        size_t mid_idx = dx_list.size() / 2;
+        std::nth_element(dx_list.begin(), dx_list.begin() + mid_idx, dx_list.end());
+        std::nth_element(dy_list.begin(), dy_list.begin() + mid_idx, dy_list.end());
+        
+        // Sauvegarder dans la structure 'out'
+        out.dx = dx_list[mid_idx];
+        out.dy = dy_list[mid_idx];
+    }
 
     return true;
 }
