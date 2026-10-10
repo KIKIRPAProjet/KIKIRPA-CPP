@@ -20,7 +20,7 @@ struct Matches {
     std::vector<cv::Point2f> pointsA, pointsB;
 
     std::vector<float> scores;
-    
+
     float dx = 0.0f;
     float dy = 0.0f;
 };

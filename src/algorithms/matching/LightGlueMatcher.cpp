@@ -1,5 +1,6 @@
 #include "algorithms/matching/LightGlueMatcher.h"
 #include <onnxruntime_cxx_api.h>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <iostream>
@@ -68,40 +69,60 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
 }
   
 
+cv::Mat LightGlueMatcher::preprocessImage(
+    const cv::Mat& image,
+    const std::string& imageName) const {
+    // Vérifier que l'image contient bien des données.
+    if (image.empty()) {
+        throw std::runtime_error(
+            "LightGlueMatcher: " + imageName + " est vide.");
+    }
+
+    cv::Mat colorImage;
+
+    // Le modèle attend une image avec trois canaux BGR.
+    if (image.channels() == 1) {
+        cv::cvtColor(image, colorImage, cv::COLOR_GRAY2BGR);
+    } else if (image.channels() == 4) {
+        cv::cvtColor(image, colorImage, cv::COLOR_BGRA2BGR);
+    } else if (image.channels() == 3) {
+        colorImage = image;
+    } else {
+        throw std::runtime_error(
+            "LightGlueMatcher: " + imageName +
+            " contient un nombre de canaux non supporté.");
+    }
+
+    // Convertir l'image en float, normaliser les valeurs et passer au format NCHW.
+    return cv::dnn::blobFromImage(
+        colorImage,
+        1.0 / 255.0,
+        cv::Size(),
+        cv::Scalar(),
+        true,
+        false
+    );
+}
+
 bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
+    // Le contexte n'est pas utilisé par le modèle LightGlue.
+    (void)ctx;
+
+    // On supprime les anciens résultats si la sortie est réutilisée.
+    out.pointsA.clear();
+    out.pointsB.clear();
+    out.scores.clear();
+    out.dx = 0.0f;
+    out.dy = 0.0f;
+
     // Test de la session lors de l'exécution -> si la session n'est pas initialisée, on génère une erreur, sinon on continue.
     if (!this->session) {
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
 
-    // Vérification que les images ne sont pas vides avant le prétraitement
-    if (a.empty() || b.empty()) {
-        throw std::runtime_error("LightGlueMatcher: a ou b est vide avant le prétraitement.");
-    }
-
-    cv::Mat colorImg1 = a;
-    cv::Mat colorImg2 = b;
-
-    // Nettoyage des canaux pour a
-    if (a.channels() == 1) {
-        cv::cvtColor(a, colorImg1, cv::COLOR_GRAY2BGR);
-    } else if (a.channels() == 4) {
-        cv::cvtColor(a, colorImg1, cv::COLOR_BGRA2BGR);
-    }
-
-    // Nettoyage des canaux pour b
-    if (b.channels() == 1) {
-        cv::cvtColor(b, colorImg2, cv::COLOR_GRAY2BGR);
-    } else if (b.channels() == 4) {
-        cv::cvtColor(b, colorImg2, cv::COLOR_BGRA2BGR);
-    }
-
-    // Prétraitement des images
-    // On ne peut pas donner les cv::Mat directement au modèle. On doit les convertir en tenseurs, généralement au format flottant float32 et réorganisés
-
-    // Conversion de HWC (hauteur, largeur, canaux) en BGR à NCHW (batch, canaux, hauteur, largeur) en RGB avec des valeurs normalisées entre 0 et 1
-    cv::Mat blob1 = cv::dnn::blobFromImage(colorImg1, 1.0 / 255.0, cv::Size(), cv::Scalar(), true, false);
-    cv::Mat blob2 = cv::dnn::blobFromImage(colorImg2, 1.0 / 255.0, cv::Size(), cv::Scalar(), true, false);
+    // Préparer les deux images dans le même format pour le modèle.
+    cv::Mat blob1 = preprocessImage(a, "image A");
+    cv::Mat blob2 = preprocessImage(b, "image B");
 
     // Lier la mémoire de ce blob à des tenseurs ONNX Runtime
     // Définir la forme (Shape) : [1, Canaux, Hauteur, Largeur]
@@ -142,6 +163,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         output_names, 6 // Nombre d'outputs attendus
     );
 
+    // On vérifie que le modèle a renvoyé toutes les sorties attendues.
+    if (output_tensors.size() != 6) {
+        throw std::runtime_error("LightGlueMatcher: le modèle doit renvoyer exactement 6 tenseurs.");
+    }
+
     // Traitement des résultats obtenus
 
     // Notes sur les sorties :
@@ -155,20 +181,58 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
     // Extraction des informations pour output_tensors[0] (matches0)
     auto matches0_info = output_tensors[0].GetTensorTypeAndShapeInfo();
-    auto matches0_shape = matches0_info.GetShape();
+    // Les indices de correspondance doivent être des entiers sur 64 bits.
+    if (matches0_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
+        throw std::runtime_error("LightGlueMatcher: matches0 doit être un tenseur INT64.");
+    }
     size_t num_elements = matches0_info.GetElementCount();
+    const auto matches1_info = output_tensors[1].GetTensorTypeAndShapeInfo();
+    // On vérifie aussi le type de la deuxième liste d'indices.
+    if (matches1_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64) {
+        throw std::runtime_error("LightGlueMatcher: matches1 doit être un tenseur INT64.");
+    }
 
     // LightGlue renvoie des indices sous forme d'entiers 64 bits (int64_t)
     int64_t* matches0_data = output_tensors[0].GetTensorMutableData<int64_t>();
 
     auto scores0_info = output_tensors[2].GetTensorTypeAndShapeInfo();
+    // Il faut un score FLOAT pour chaque élément de matches0.
+    if (scores0_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+        scores0_info.GetElementCount() != num_elements) {
+        throw std::runtime_error(
+            "LightGlueMatcher: mscores0 doit être un tenseur FLOAT contenant un score par point de matches0.");
+    }
     float* scores0_data = output_tensors[2].GetTensorMutableData<float>();
+    const auto scores1_info = output_tensors[3].GetTensorTypeAndShapeInfo();
+    // Cette sortie n'est pas utilisée, mais son type doit rester compatible.
+    if (scores1_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+        throw std::runtime_error("LightGlueMatcher: mscores1 doit être un tenseur FLOAT.");
+    }
 
     // Pourquoi on extrait que les données de scores0 et non également de scores1 ? 
     // IA : Quand LightGlue trouve une correspondance valide entre un Point A (dans img1) et un Point B (dans img2), il s'agit d'une seule et même paire. scores0[i] contient le score de confiance pour le Point A (qui a matché avec le Point B). scores1[match_idx] contient le score de confiance pour le Point B (qui a matché avec le Point A). Pour une paire validée, ces deux scores sont identiques (ou représentent exactement la même information de confiance pour cette liaison).
 
     // Extraction des coordonnées des points-clés (float)
-    auto kpts0_type = output_tensors[4].GetTensorTypeAndShapeInfo().GetElementType();
+    auto kpts0_info = output_tensors[4].GetTensorTypeAndShapeInfo();
+    auto kpts1_info = output_tensors[5].GetTensorTypeAndShapeInfo();
+    auto kpts0_type = kpts0_info.GetElementType();
+    // Les deux listes de points doivent avoir le même type.
+    if (kpts0_type != kpts1_info.GetElementType() ||
+        (kpts0_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT &&
+         kpts0_type != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64)) {
+        throw std::runtime_error(
+            "LightGlueMatcher: kpts0 et kpts1 doivent avoir le même type FLOAT ou INT64.");
+    }
+
+    const size_t kpts0_elements = kpts0_info.GetElementCount();
+    const size_t kpts1_elements = kpts1_info.GetElementCount();
+    // Chaque point contient deux valeurs : x et y.
+    if (kpts0_elements % 2 != 0 || kpts1_elements % 2 != 0 ||
+        kpts0_elements / 2 < num_elements) {
+        throw std::runtime_error(
+            "LightGlueMatcher: les dimensions des tenseurs kpts0/kpts1 sont incompatibles avec matches0.");
+    }
+    const size_t kpts1_count = kpts1_elements / 2;
     
     float* kpts0_f = nullptr; float* kpts1_f = nullptr;
     int64_t* kpts0_i = nullptr; int64_t* kpts1_i = nullptr;
@@ -191,10 +255,10 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     for (size_t i = 0; i < num_elements; ++i) {
         int64_t match_idx = matches0_data[i];
         
-        if (match_idx > -1) {
+        if (match_idx >= 0 && static_cast<uint64_t>(match_idx) < kpts1_count) {
             float x0, y0, x1, y1;
             
-            // Extraction sécurisée
+            // On lit les coordonnées seulement après avoir vérifié l'indice.
             if (kpts0_f) {
                 x0 = kpts0_f[i * 2];
                 y0 = kpts0_f[i * 2 + 1];
@@ -213,10 +277,19 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
             // On enregistre le score correspondant
             out.scores.push_back(scores0_data[i]);
+        } else if (match_idx >= 0) {
+            throw std::runtime_error(
+                "LightGlueMatcher: matches0 contient un indice hors limites dans kpts1.");
         }
     }
 
-    // Calcul du décalage (dx, dy) et enregistrement dans la stucture de sortie 
+    // Les trois vecteurs doivent toujours contenir le même nombre de résultats.
+    if (out.pointsA.size() != out.pointsB.size() ||
+        out.pointsA.size() != out.scores.size()) {
+        throw std::runtime_error("LightGlueMatcher: les vecteurs de sortie ont des tailles incohérentes.");
+    }
+
+    // Calcul du décalage (dx, dy) et enregistrement dans la structure de sortie.
     if (!out.pointsA.empty()) {
         std::vector<float> dx_list;
         std::vector<float> dy_list;
@@ -227,14 +300,20 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             dy_list.push_back(out.pointsB[i].y - out.pointsA[i].y);
         }
 
-        // Trouver la médiane
-        size_t mid_idx = dx_list.size() / 2;
-        std::nth_element(dx_list.begin(), dx_list.begin() + mid_idx, dx_list.end());
-        std::nth_element(dy_list.begin(), dy_list.begin() + mid_idx, dy_list.end());
-        
-        // Sauvegarder dans la structure 'out'
-        out.dx = dx_list[mid_idx];
-        out.dy = dy_list[mid_idx];
+        // La médiane limite l'effet des mauvaises correspondances.
+        const auto median = [](std::vector<float>& values) {
+            const size_t mid_idx = values.size() / 2;
+            std::nth_element(values.begin(), values.begin() + mid_idx, values.end());
+            if (values.size() % 2 == 0) {
+                const float upper = values[mid_idx];
+                std::nth_element(values.begin(), values.begin() + mid_idx - 1, values.end());
+                return (values[mid_idx - 1] + upper) / 2.0f;
+            }
+            return values[mid_idx];
+        };
+
+        out.dx = median(dx_list);
+        out.dy = median(dy_list);
     }
 
     return true;
