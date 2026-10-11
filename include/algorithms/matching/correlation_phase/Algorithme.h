@@ -1,5 +1,6 @@
 #pragma once
 #include "algorithms/matching/correlation_phase/Types.h"
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -22,11 +23,15 @@ private:
     static constexpr double QUALITE_COINS       = 0.01;   // goodFeaturesToTrack : fraction du meilleur coin
     static constexpr int    CANDIDATS_PAR_POINT = 3;      // candidats testés pour chaque point demandé
     static constexpr double PART_MIN_VALIDES    = 0.5;    // part minimale de pixels non vides dans un patch
+    static constexpr double ETENDUE_DFT         = 1.5;    // px : côté de la grille suréchantillonnée autour du pic entier
+    static constexpr double SANS_MARGE          = std::numeric_limits<double>::infinity();  // pic cherché partout
 
     // ---- Corrélation de phase ----
 
-    // Translation (dy, dx) telle que a(y, x) ≈ b(y - dy, x - dx), pour deux images de même taille
-    static Correlation correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage);
+    // Translation (dy, dx) telle que a(y, x) ≈ b(y - dy, x - dx), pour deux images de même taille.
+    // Le pic est cherché parmi les décalages |dx|, |dy| ≤ marge (SANS_MARGE : partout), précision 1/facteurDft px.
+    static Correlation correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage, double marge,
+                                          int facteurDft);
 
     // Spectre d'une image : vides remplis, moyenne retirée, fenêtre de Hann, DFT complexe
     static cv::Mat spectre(const cv::Mat& image, const cv::Mat& fenetre);
@@ -41,18 +46,29 @@ private:
     // DFT inverse normalisée, partie réelle
     static cv::Mat partieReelleInverse(const cv::Mat& spectre);
 
-    // Décalage (dx, dy) du maximum de la surface, au sous-pixel, ramené dans ]-taille/2, taille/2].
-    // `pixel` reçoit la position entière du maximum.
-    static cv::Point2d localiserPic(const cv::Mat& surface, cv::Point& pixel);
+    // Masque 8 bits (taille de la surface) des décalages |dx|, |dy| ≤ marge ; vide si marge = SANS_MARGE
+    static cv::Mat zoneAutorisee(cv::Size taille, double marge);
 
-    // Sommet de la parabole passant par trois valeurs voisines (entre -0.5 et +0.5)
-    static double sousPixel(double avant, double centre, double apres);
+    // Indices (x, y) du maximum de la surface parmi les décalages autorisés (masque vide = partout)
+    static cv::Point localiserPic(const cv::Mat& surface, const cv::Mat& autorise);
+
+    // Décalage (dx, dy) sous-pixel du maximum de la surface brute, cherché à ±ETENDUE_DFT/2 px autour du pic
+    // entier par DFT suréchantillonnée du spectre croisé (Guizar-Sicairos 2008), au pas de 1/facteur px
+    static cv::Point2d raffinerPic(const cv::Mat& croise, cv::Point2d picEntier, int facteur);
+
+    // Noyau complexe (taille × n) : exp(2iπ · k · s_j / n), k fréquence signée, s_j = debut + j · pas.
+    // Multiplier un spectre par ce noyau évalue sa transformée inverse aux décalages s_j le long d'un axe.
+    static cv::Mat noyauDft(int n, double debut, double pas, int taille);
+
+    // Indice k ramené dans ]-n/2, n/2] (décalage signé, comme np.fft.fftfreq(n) · n)
+    static int decalageSigne(int k, int n);
 
     // Fréquence de l'indice k pour n échantillons (np.fft.fftfreq)
     static double frequence(int k, int n);
 
-    // Hauteur du meilleur pic / celle du second (hors d'un carré de ±rayon px autour du premier)
-    static double rapportPics(const cv::Mat& surface, int rayon);
+    // Hauteur du meilleur pic / celle du second (hors d'un carré de ±rayon px autour du premier),
+    // tous deux cherchés dans la zone autorisée de la corrélation
+    static double rapportPics(const Correlation& c, int rayon);
 
     // ---- Raffinement local ----
 

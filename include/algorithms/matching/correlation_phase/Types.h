@@ -12,8 +12,12 @@ struct Parametres {
     double lissageLocal  = 1.5;   // sigma (px) du flou gaussien des surfaces locales
     double ecartMax      = 3.0;   // écart maximal (px) entre la translation locale et la globale
     double espacementMin = 16.0;  // distance minimale (px) entre deux points
+    double marge         = 0.0;   // écart maximal (px) entre la translation globale et le recouvrement nominal
+                                  // (incertitude du rail) ; 0 = automatique (voir Preparation::margeRail)
+    double fractionValideMin = 0.25;  // part minimale de pixels exploitables, communs aux deux bandes
     int    nbPoints      = 500;   // nombre maximal de points renvoyés (0 = translation seule)
     int    fenetre       = 64;    // côté (px) des patchs de corrélation locale
+    int    facteurDft    = 100;   // précision du sous-pixel : 1/facteurDft px
 };
 
 // Paire de tuiles ramenée au cas « B en bas ou à droite de A »
@@ -28,6 +32,7 @@ struct PaireOrientee {
 struct Bandes {
     cv::Mat a, b;                 // gris float64, NaN = vide, même taille, découpées sur la zone avec contenu
     cv::Point2d origine;          // (tx0, ty0) : position de B dans A si le décalage résiduel est nul
+    double marge;                 // décalage résiduel maximal (px) permis par le rail, sur chaque axe
 };
 
 // Résultat d'une corrélation de phase : a(y, x) ≈ b(y - dy, x - dx)
@@ -35,6 +40,7 @@ struct Correlation {
     double dy, dx;
     double pic;                   // hauteur du pic sur la surface brute
     cv::Mat surface;              // surface lissée (non centrée : décalage nul en (0, 0))
+    cv::Mat autorise;             // masque 8 bits des décalages où le pic est cherché (vide = toute la surface)
 };
 
 // Translation globale entre les deux tuiles

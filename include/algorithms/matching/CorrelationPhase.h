@@ -17,6 +17,9 @@ namespace stitching::matching {
 //   lissage_local  1.5  sigma (px) du flou gaussien des surfaces locales
 //   ecart_max      3.0  écart maximal (px) entre la translation locale et la globale
 //   espacement_min 16   distance minimale (px) entre deux points
+//   marge          0    écart maximal (px) au recouvrement nominal (0 = 5 % de la tuile, au moins 48 px)
+//   fraction_valide_min 0.25  part minimale de pixels exploitables communs aux deux bandes
+//   facteur_dft    100  précision du sous-pixel : 1/facteur_dft px
 class CorrelationPhase : public FeatureMatcher {
 public:
     explicit CorrelationPhase(const Json& params = {});

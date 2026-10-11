@@ -1,3 +1,4 @@
+//Algorithme.cpp
 #include "algorithms/matching/correlation_phase/Algorithme.h"
 #include "algorithms/matching/correlation_phase/Preparation.h"
 #include <opencv2/imgproc.hpp>
@@ -10,8 +11,8 @@ namespace stitching::matching::correlation_phase {
 // ======================================== Public ========================================
 
 std::optional<Mesure> Algorithme::mesurerGlobal(const Bandes& bandes, const Parametres& p) {
-    const Correlation c = correlationDePhase(bandes.a, bandes.b, p.lissage);
-    const double rapport = rapportPics(c.surface, RAYON_PIC);
+    const Correlation c = correlationDePhase(bandes.a, bandes.b, p.lissage, bandes.marge, p.facteurDft);
+    const double rapport = rapportPics(c, RAYON_PIC);
     if (rapport < p.seuilRapport) return std::nullopt;   // deux positions se valent : mesure ambiguë
     return Mesure{bandes.origine.x + c.dx, bandes.origine.y + c.dy, rapport};
 }
@@ -26,7 +27,8 @@ std::vector<Correspondance> Algorithme::raffiner(const Recouvrement& rec, const 
 
 // ======================================== Private : corrélation de phase ========================================
 
-Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage) {
+Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage, double marge,
+                                           int facteurDft) {
     // Fenêtre de Hann : sans elle, les bords de l'image créent un faux pic en (0, 0)
     cv::Mat fenetre;
     cv::createHanningWindow(fenetre, a.size(), CV_64F);
@@ -39,12 +41,19 @@ Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, d
     const cv::Mat brute = partieReelleInverse(croise);
     const cv::Mat lisse = partieReelleInverse(croise.mul(filtreGaussien(a.size(), lissage)));
 
-    // Le pic est cherché sur la surface lissée : il est plus large mais reste symétrique autour du vrai
+    // Le pic entier est cherché sur la surface lissée : il est plus large mais reste symétrique autour du vrai
     // décalage. Sur la surface brute, quand le pic est faible, le pixel le plus haut est parfois un grain
     // de bruit voisin (erreur de 1 à 2 px).
-    cv::Point pixel;
-    const cv::Point2d decalage = localiserPic(lisse, pixel);
-    return Correlation{decalage.y, decalage.x, brute.at<double>(pixel), lisse};
+    // Seulement dans la marge du rail : un pic plus haut au-delà ne peut pas être le bon (motif répétitif,
+    // fond uni), le rail ne peut pas s'être trompé d'autant.
+    const cv::Mat autorise = zoneAutorisee(a.size(), marge);
+    const cv::Point pixel = localiserPic(lisse, autorise);
+    const cv::Point2d entier(decalageSigne(pixel.x, a.cols), decalageSigne(pixel.y, a.rows));
+
+    // La fraction de pixel est calculée sur le spectre brut : le lissage déplace légèrement le sommet du pic,
+    // et une parabole sur trois valeurs entières est tirée vers l'entier le plus proche.
+    const cv::Point2d decalage = raffinerPic(croise, entier, facteurDft);
+    return Correlation{decalage.y, decalage.x, brute.at<double>(pixel), lisse, autorise};
 }
 
 cv::Mat Algorithme::spectre(const cv::Mat& image, const cv::Mat& fenetre) {
@@ -87,43 +96,85 @@ cv::Mat Algorithme::partieReelleInverse(const cv::Mat& spectre) {
     return reel;
 }
 
-cv::Point2d Algorithme::localiserPic(const cv::Mat& surface, cv::Point& pixel) {
-    const int h = surface.rows, w = surface.cols;
-    cv::minMaxLoc(surface, nullptr, nullptr, nullptr, &pixel);
-    const int py = pixel.y, px = pixel.x;
-
-    // Pixel le plus haut, puis sommet de la parabole pour la fraction.
-    // La surface est périodique : les voisins d'un pic collé au bord sont de l'autre côté.
-    const double centre = surface.at<double>(py, px);
-    double dy = py + sousPixel(surface.at<double>((py - 1 + h) % h, px), centre, surface.at<double>((py + 1) % h, px));
-    double dx = px + sousPixel(surface.at<double>(py, (px - 1 + w) % w), centre, surface.at<double>(py, (px + 1) % w));
-
-    // La transformée de Fourier est périodique : un pic au-delà de la moitié est un décalage négatif
-    if (dy > h / 2.0) dy -= h;
-    if (dx > w / 2.0) dx -= w;
-    return {dx, dy};
+cv::Mat Algorithme::zoneAutorisee(cv::Size taille, double marge) {
+    if (!std::isfinite(marge)) return {};
+    // La surface n'est pas centrée : l'indice k correspond au décalage signé decalageSigne(k, n)
+    cv::Mat autorise(taille, CV_8U);
+    for (int y = 0; y < taille.height; ++y) {
+        auto* ligne = autorise.ptr<uchar>(y);
+        const bool ligneDansMarge = std::abs(decalageSigne(y, taille.height)) <= marge;
+        for (int x = 0; x < taille.width; ++x)
+            ligne[x] = ligneDansMarge && std::abs(decalageSigne(x, taille.width)) <= marge ? 255 : 0;
+    }
+    return autorise;
 }
 
-double Algorithme::sousPixel(double avant, double centre, double apres) {
-    const double courbure = avant - 2 * centre + apres;
-    return courbure == 0 ? 0.0 : 0.5 * (avant - apres) / courbure;
+cv::Point Algorithme::localiserPic(const cv::Mat& surface, const cv::Mat& autorise) {
+    cv::Point pixel;
+    cv::minMaxLoc(surface, nullptr, nullptr, nullptr, &pixel, autorise);
+    return pixel;
+}
+
+cv::Point2d Algorithme::raffinerPic(const cv::Mat& croise, cv::Point2d picEntier, int facteur) {
+    // Suréchantillonner toute la surface (zéro-padding ×facteur) serait hors de portée sur des bandes de plusieurs
+    // milliers de px. On évalue exactement la transformée inverse sur une petite grille autour du pic entier, par
+    // deux produits matriciels : grille = Ky · croise · Kxᵀ, coût proportionnel à (taille de la grille) × pixels.
+    const int taille = static_cast<int>(std::ceil(ETENDUE_DFT * facteur));
+    const double pas = 1.0 / facteur;
+    const double debutX = picEntier.x - (taille / 2) * pas;
+    const double debutY = picEntier.y - (taille / 2) * pas;
+
+    cv::Mat lignes, grille;
+    cv::gemm(noyauDft(croise.rows, debutY, pas, taille), croise, 1.0, cv::noArray(), 0.0, lignes);
+    cv::gemm(lignes, noyauDft(croise.cols, debutX, pas, taille).t(), 1.0, cv::noArray(), 0.0, grille);
+
+    // Le facteur 1/N de la transformée inverse ne change pas la position du maximum
+    cv::Mat reel;
+    cv::extractChannel(grille, reel, 0);
+    cv::Point meilleur;
+    cv::minMaxLoc(reel, nullptr, nullptr, nullptr, &meilleur);
+    return {debutX + meilleur.x * pas, debutY + meilleur.y * pas};
+}
+
+cv::Mat Algorithme::noyauDft(int n, double debut, double pas, int taille) {
+    // Fréquences signées : pour un décalage non entier, c'est l'interpolation de Fourier (la même que np.fft)
+    cv::Mat noyau(taille, n, CV_64FC2);
+    for (int j = 0; j < taille; ++j) {
+        auto* ligne = noyau.ptr<cv::Vec2d>(j);
+        const double s = debut + j * pas;
+        for (int k = 0; k < n; ++k) {
+            const double angle = 2 * PI * decalageSigne(k, n) * s / n;
+            ligne[k] = cv::Vec2d(std::cos(angle), std::sin(angle));
+        }
+    }
+    return noyau;
+}
+
+int Algorithme::decalageSigne(int k, int n) {
+    // La transformée de Fourier est périodique : un indice au-delà de la moitié est un décalage négatif
+    return k <= (n - 1) / 2 ? k : k - n;
 }
 
 double Algorithme::frequence(int k, int n) {
-    return (k <= (n - 1) / 2 ? k : k - n) / static_cast<double>(n);
+    return decalageSigne(k, n) / static_cast<double>(n);
 }
 
-double Algorithme::rapportPics(const cv::Mat& surface, int rayon) {
+double Algorithme::rapportPics(const Correlation& c, int rayon) {
     // Proche de 1 : deux positions se valent, la mesure est ambiguë. Nettement au-dessus de 1 : pic franc.
+    const cv::Mat& surface = c.surface;
     const int h = surface.rows, w = surface.cols;
     double pic;
     cv::Point p;
-    cv::minMaxLoc(surface, nullptr, &pic, nullptr, &p);
+    cv::minMaxLoc(surface, nullptr, &pic, nullptr, &p, c.autorise);
+
+    // Le second pic est cherché lui aussi dans la marge : un pic hors marge ne rend pas la mesure ambiguë,
+    // puisqu'il ne peut pas être le bon.
+    cv::Mat masquee = surface.clone();
+    if (!c.autorise.empty()) masquee.setTo(-std::numeric_limits<double>::infinity(), ~c.autorise);
 
     // La surface est périodique : un pic collé à un bord déborde de l'autre côté.
     // Même voisinage que le Python (pic ramené au centre, carré tronqué aux bords), en indices modulo.
     const int cy = h / 2, cx = w / 2;
-    cv::Mat masquee = surface.clone();
     for (int oy = std::max(-rayon, -cy); oy <= std::min(rayon, h - 1 - cy); ++oy)
         for (int ox = std::max(-rayon, -cx); ox <= std::min(rayon, w - 1 - cx); ++ox)
             masquee.at<double>((p.y + oy + h) % h, (p.x + ox + w) % w) = -std::numeric_limits<double>::infinity();
@@ -160,12 +211,14 @@ std::optional<Correspondance> Algorithme::mesurerPoint(const Recouvrement& rec, 
     if (cv::countNonZero(Preparation::valides(pa)) < minValides ||
         cv::countNonZero(Preparation::valides(pb)) < minValides) return std::nullopt;
 
-    // Résidu local par rapport à la translation arrondie : pa(y, x) ≈ pb(y - dy, x - dx)
-    const Correlation local = correlationDePhase(pa, pb, p.lissageLocal);
+    // Résidu local par rapport à la translation arrondie : pa(y, x) ≈ pb(y - dy, x - dx).
+    // Pic cherché partout, sans marge : limiter la recherche à ±ecartMax viderait le test du second pic
+    // (tout le voisinage serait masqué) ; un pic local qui s'écarte de la globale est rejeté juste après.
+    const Correlation local = correlationDePhase(pa, pb, p.lissageLocal, SANS_MARGE, p.facteurDft);
     const cv::Point2d translation(rec.decalage.x + local.dx, rec.decalage.y + local.dy);
     if (std::abs(translation.x - globale.tx) > p.ecartMax || std::abs(translation.y - globale.ty) > p.ecartMax)
         return std::nullopt;
-    if (rapportPics(local.surface, RAYON_PIC) < p.seuilRapport) return std::nullopt;
+    if (rapportPics(local, RAYON_PIC) < p.seuilRapport) return std::nullopt;
 
     // Confiance mesurée sur le patch de B recalé au pixel près
     const cv::Rect patchB = patch - cv::Point(static_cast<int>(std::lround(local.dx)),

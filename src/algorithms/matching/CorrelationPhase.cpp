@@ -1,3 +1,4 @@
+// CorrelationPhase.cpp
 #include "algorithms/matching/CorrelationPhase.h"
 #include "algorithms/matching/correlation_phase/Algorithme.h"
 #include "algorithms/matching/correlation_phase/Preparation.h"
@@ -19,7 +20,7 @@ bool CorrelationPhase::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     // 1. Translation globale sur les bandes de recouvrement
     const auto paire = Preparation::orienter(a, b, ctx);
     if (!paire) return false;
-    const auto bandes = Preparation::bandes(*paire, ctx.overlap);
+    const auto bandes = Preparation::bandes(*paire, ctx.overlap, parametres);
     if (!bandes) return false;
     const auto mesure = Algorithme::mesurerGlobal(*bandes, parametres);
     if (!mesure) return false;

@@ -101,8 +101,8 @@ Le compilateur interdit d'appeler une fonction `private` depuis un autre module.
 
 | Module | Rôle | Public | Private |
 |---|---|---|---|
-| **`Preparation`** | Des tuiles brutes aux images de travail (gris float64, NaN = vide) | `lireParametres`, `orienter`, `bandes`, `recouvrement`, `valides`, `remplirVides` | `oppose`, `bande`, `zoneExterieure`, `enGris`, `zoneAvecContenu` |
-| **`Algorithme`** | Uniquement du calcul sur des images préparées | `mesurerGlobal`, `raffiner` | corrélation : `correlationDePhase`, `spectre`, `spectreCroiseNormalise`, `filtreGaussien`, `partieReelleInverse`, `localiserPic`, `sousPixel`, `frequence`, `rapportPics` — local : `candidats`, `mesurerPoint`, `ncc` |
+| **`Preparation`** | Des tuiles brutes aux images de travail (gris float64, NaN = vide) | `lireParametres`, `orienter`, `bandes`, `recouvrement`, `valides`, `remplirVides` | `oppose`, `bande`, `margeRail`, `zoneExterieure`, `enGris`, `valeurMax`, `zoneAvecContenu` |
+| **`Algorithme`** | Uniquement du calcul sur des images préparées | `mesurerGlobal`, `raffiner` | corrélation : `correlationDePhase`, `spectre`, `spectreCroiseNormalise`, `filtreGaussien`, `partieReelleInverse`, `zoneAutorisee`, `localiserPic`, `raffinerPic`, `noyauDft`, `decalageSigne`, `frequence`, `rapportPics` — local : `candidats`, `mesurerPoint`, `ncc` |
 | **`Sortie`** | Mise en forme au format commun `Matches` | `construire` | `trierEtLimiter`, `versTuiles`, `annulerOrientation` |
 
 `Algorithme` utilise deux outils publics de `Preparation` (`valides`, `remplirVides`) pour traiter les pixels vides de ses patchs.
@@ -113,8 +113,8 @@ Le compilateur interdit d'appeler une fonction `private` depuis un autre module.
 |---|---|---|
 | `Parametres` | `Preparation::lireParametres` | Réglages (§5) |
 | `PaireOrientee` | `Preparation::orienter` | A et B ramenées au cas « B en bas / à droite », masques extérieurs, indicateur `inversee` |
-| `Bandes` | `Preparation::bandes` | Bandes de recouvrement en gris + position nominale `(tx0, ty0)` |
-| `Correlation` | `Algorithme` (interne) | Décalage `(dy, dx)`, hauteur du pic, surface lissée |
+| `Bandes` | `Preparation::bandes` | Bandes de recouvrement en gris + position nominale `(tx0, ty0)` + marge du rail |
+| `Correlation` | `Algorithme` (interne) | Décalage `(dy, dx)`, hauteur du pic, surface lissée, zone où le pic est cherché |
 | `Mesure` | `Algorithme::mesurerGlobal` | Translation globale `(tx, ty)` + rapport des pics |
 | `Recouvrement` | `Preparation::recouvrement` | Zone commune réelle vue dans A et dans B, son origine dans A, la translation arrondie, la marge |
 | `Correspondance` | `Algorithme::raffiner` | Point dans la zone commune + translation locale + confiance |
@@ -128,12 +128,14 @@ match(a, b, ctx)
  │      └─ zoneExterieure ×2       pixels noirs reliés au bord de la tuile → « vides »
  │
  ├─ Preparation::bandes ──────── bande du bas/de droite de A, du haut/de gauche de B
- │      ├─ bande, enGris           découpe, gris float64, zone extérieure → NaN
- │      └─ zoneAvecContenu         retire les bords vides communs           (sinon → false)
+ │      ├─ bande, enGris           découpe, gris float64, extérieur et saturés → NaN, érosion 4 px
+ │      ├─ fraction valide         ≥ 25 % de pixels exploitables communs    (sinon → false)
+ │      ├─ zoneAvecContenu         retire les bords vides communs           (sinon → false)
+ │      └─ margeRail               décalage résiduel maximal permis par le rail
  │
  ├─ Algorithme::mesurerGlobal ── translation globale (x, y)
- │      ├─ correlationDePhase      FFT → spectre croisé → pic sous-pixel
- │      └─ rapportPics             le pic est-il franc ?                    (sinon → false)
+ │      ├─ correlationDePhase      FFT → spectre croisé → pic dans la marge → sous-pixel DFT
+ │      └─ rapportPics             le pic est-il franc (dans la marge) ?    (sinon → false)
  │
  ├─ Preparation::recouvrement ── zone commune réelle avec (x, y) arrondi   (trop étroite → pas de points)
  │
@@ -166,6 +168,13 @@ Il faut savoir quels pixels noirs sont « hors de l'œuvre » (sans valeur) et l
 
 Le calcul se fait sur **la tuile entière** et non sur la seule bande. Une zone extérieure peut en effet entrer dans la bande par l'intérieur de la tuile, sans toucher le bord de la bande. On n'en extrait ensuite que les sous-zones utiles. Le coût est faible : un masque de 1 octet par pixel et un remplissage proportionnel à la surface noire.
 
+Dans `enGris`, deux autres sortes de pixels sont retirées (NaN) :
+
+- **les pixels saturés** : gris ≥ 99,8 % du maximum du type (65 535 en 16 bits, 255 en 8 bits, 1 pour une tuile flottante). Un reflet écrêté n'a plus de texture, et la tache claire n'est pas au même endroit dans les deux tuiles : elle attirerait le pic vers un faux décalage ;
+- **une bordure de 4 px** autour de toute zone retirée (extérieur ou saturation), par érosion du masque des pixels valides. La transition entre le fond et la peinture (quelques pixels sombres mais non nuls) est au même endroit dans les deux tuiles : sans érosion, elle formerait un faux détail commun, de décalage nul. Le bord de l'image n'est pas érodé.
+
+Enfin, `bandes` refuse la mesure si moins de 25 % des pixels sont exploitables dans les deux bandes à la fois (`fraction_valide_min`).
+
 ### Étape 1 : la translation globale
 
 **Pourquoi on ne corrèle que les bandes.** Hors du recouvrement, le contenu de A et de B est différent et brouillerait le pic. Pour B en bas de A, on corrèle donc la bande du bas de A avec la bande du haut de B. Le décalage mesuré est un **résidu** autour de la position nominale `ty0 = hauteur − hauteur_bande`.
@@ -177,18 +186,28 @@ Le calcul se fait sur **la tuile entière** et non sur la seule bande. Une zone 
 3. On calcule les FFT `Fa` et `Fb`, puis le **spectre croisé** `Fa · conj(Fb)`.
 4. On le **normalise** (division par son module) : seule la phase est conservée, c'est-à-dire seulement l'information de position. C'est ce qui rend la méthode insensible aux différences d'éclairage.
 5. On multiplie par une **gaussienne** dans le domaine fréquentiel, ce qui revient à flouter la surface de corrélation (σ = `lissage`). Cela atténue les faux pics fins dus au grain du capteur.
-6. La FFT inverse donne une **surface de corrélation** : son maximum est situé au décalage cherché.
-7. On affine au **sous-pixel** avec une parabole passant par le pic et ses deux voisins (`sousPixel`).
-8. La FFT est périodique : un pic situé au-delà de la moitié de l'image correspond à un décalage négatif.
+6. La FFT inverse donne une **surface de corrélation** : son maximum est situé au décalage cherché. La FFT est périodique : un indice au-delà de la moitié de l'image correspond à un décalage négatif (`decalageSigne`).
+7. Le pic entier est cherché sur la surface lissée, **seulement dans la marge du rail** (`zoneAutorisee`, `localiserPic`) : les décalages résiduels `|dx|, |dy| ≤ marge`. Les bandes étant prises au recouvrement nominal, le décalage résiduel attendu est nul. Un pic plus haut au-delà de la marge ne peut pas être le bon : il vient d'un motif répétitif ou d'un fond uni, et le rail ne peut pas s'être trompé d'autant. Marge par défaut : 5 % de la tuile dans le sens du déplacement, au moins 48 px (même règle que la chaîne Python de référence).
+8. La fraction de pixel est calculée par **DFT suréchantillonnée** (Guizar-Sicairos, 2008 ; `raffinerPic`) : la surface **brute** est évaluée exactement sur une grille de 150 × 150 points au pas de 1/100 px, sur ±0,75 px autour du pic entier. Il suffit de deux produits matriciels `Ky · croise · Kxᵀ` (`noyauDft`), sans suréchantillonner toute l'image. On raffine sur la surface brute, et non sur la surface lissée, parce que le lissage déplace légèrement le sommet du pic. L'ancienne parabole sur trois valeurs entières était, elle, tirée vers l'entier le plus proche.
 
-**Contrôle de fiabilité** (`rapportPics`) : on divise la hauteur du meilleur pic par celle du second, cherché hors d'un carré de ±10 px autour du premier. Un rapport proche de 1 signifie que deux positions se valent : la mesure est rejetée (seuil 1.5).
+```
+  surface lissée               spectre brut, autour du pic entier
+  ┌───────────────────┐        ┌─────────────┐
+  │      ┌─────┐      │        │ · · · · · · │  grille 1/100 px
+  │      │  ●  │ marge│  ───►  │ · · ✚ · · · │  sur ±0,75 px
+  │      └─────┘      │        │ · · · · · · │
+  │ ●  pic hors marge │        └─────────────┘
+  └───────────────────┘
+```
+
+**Contrôle de fiabilité** (`rapportPics`) : on divise la hauteur du meilleur pic par celle du second, cherché hors d'un carré de ±10 px autour du premier. Les deux sont cherchés **dans la marge** : un pic hors marge ne rend pas la mesure ambiguë, puisqu'il ne peut pas être le bon. Un rapport proche de 1 signifie que deux positions se valent : la mesure est rejetée (seuil 1.5).
 
 ### Étapes 2 à 5 : les points de correspondance
 
 La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que RANSAC puisse détecter une rotation ou une déformation et écarter les mauvais points.
 
 - **Candidats** : `cv::goodFeaturesToTrack` (Shi-Tomasi) choisit des coins bien texturés dans la zone commune. On en demande 3 × `nb_points`, espacés d'au moins `espacement_min` px, et assez loin des bords pour que les patchs restent dans l'image.
-- **Mesure locale** : pour chaque candidat, on prend un patch de `fenetre`×`fenetre` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlationDePhase` sur ces deux patchs, ce qui donne un petit résidu local.
+- **Mesure locale** : pour chaque candidat, on prend un patch de `fenetre`×`fenetre` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlationDePhase` sur ces deux patchs, ce qui donne un petit résidu local, au 1/100 px lui aussi. Ici le pic est cherché **sans marge** : limiter la recherche à ±`ecart_max` masquerait tout le voisinage du pic et viderait le test du second pic. L'écart à la translation globale est contrôlé juste après.
 - **Filtres** : le point est rejeté si le patch contient plus de 50 % de pixels vides, si la translation locale s'écarte de plus de `ecart_max` px de la globale, ou si le pic local est ambigu.
 - **Confiance** : NCC (corrélation normalisée, `cv::matchTemplate` en mode `TM_CCOEFF_NORMED`) entre les deux patchs une fois recalés. 1 signifie des patchs identiques ; la valeur est ramenée à 0 si elle est négative.
 - **Sélection** : tri par confiance décroissante, puis on garde au plus `nb_points` points.
@@ -204,15 +223,23 @@ Coordonnées : `pointsA[i]` est entier (centre du patch dans A) ; `pointsB[i]` e
 | `charger` | `Preparation::zoneExterieure` + `enGris` | Lecture de fichier retirée (rôle d'`ImportStep`). Pas de normalisation par percentiles (voir §6). **Amélioration** : en Python, tous les pixels à 0 deviennent NaN ; en C++, seulement ceux qui sont reliés au bord de la tuile. |
 | `bande` | `Preparation::bande` | Renvoie un `cv::Rect` : la bande n'est pas copiée. |
 | `_zone_avec_contenu` | `Preparation::zoneAvecContenu` | `PasDeContenu` devient `std::nullopt`. Mêmes seuils (0.1 / 0.5 / 32 px), nommés en constantes. |
-| `_sous_pixel` | `Algorithme::sousPixel` | Identique. |
-| `correlation_de_phase` | `Algorithme::correlationDePhase` | Même calcul, en double précision comme numpy, découpé en `spectre`, `spectreCroiseNormalise`, `filtreGaussien`, `partieReelleInverse` et `localiserPic`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
-| `rapport_pics` | `Algorithme::rapportPics` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même. |
+| `_sous_pixel` | remplacé par `Algorithme::raffinerPic` | Parabole remplacée par la DFT suréchantillonnée (voir ci-dessous). |
+| `correlation_de_phase` | `Algorithme::correlationDePhase` | Même calcul, en double précision comme numpy, découpé en `spectre`, `spectreCroiseNormalise`, `filtreGaussien`, `partieReelleInverse`, `localiserPic` et `raffinerPic`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
+| `rapport_pics` | `Algorithme::rapportPics` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même ; les pics sont cherchés dans la marge. |
 | `mesurer_decalage` + `decalage_entre_bandes` | `Preparation::orienter` + `Preparation::bandes` + `Algorithme::mesurerGlobal` | L'échange A↔B pour haut/gauche se fait une seule fois (`orienter`) et s'annule dans `Sortie::annulerOrientation`. |
 | `zone_commune` (partie calcul) | `Preparation::recouvrement` | Sert de zone de recherche des points. |
 | — | `Algorithme::raffiner` + `Sortie` | **Nouveau** : génération et mise en forme des points de correspondance. |
 | `profil_couture`, `variation_profil` | non porté | Diagnostics de déformation ; les points locaux + RANSAC jouent ce rôle. |
 | `assembler`, `coller` | non porté | Rôle de `FusionStep`. |
 | `metadonnees_tiff` | non porté | Rôle d'`ExportStep`. |
+
+Trois éléments viennent de la version révisée du chef de projet (notebook `Stitching_Python/01_correlation_de_phase.ipynb`, classe `CorrelationDePhase`) et non du prototype :
+
+| Notebook | C++ | Remarque |
+|---|---|---|
+| marge du rail (`autorise`, `paire.marge`) | `Preparation::margeRail`, `Algorithme::zoneAutorisee` | Même marge par défaut. Ici le décalage attendu est nul (bandes au recouvrement nominal). |
+| `raffiner_pic`, `dft_surechantillonnee` (`sous_pixel="dft"`, `raffiner_sur="brut"`, `facteur_dft=100`) | `Algorithme::raffinerPic`, `noyauDft` | Formulation vérifiée identique en numpy (mêmes valeurs à 0,01 px). Les options `parabole`/`aucun` et `raffiner_sur="lisse"` de l'étude ne sont pas portées. |
+| `masque_zone` (saturation 0,998, érosion 4 px), `fraction_valide_min` | `Preparation::enGris`, `Preparation::bandes` | Le fond reste détecté par le remplissage depuis le bord (étape 0), et non par le seuil sur une moyenne 7 × 7 du notebook : un noir isolé dans la peinture reste une donnée. |
 
 ---
 
@@ -229,6 +256,9 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 | `lissage_local` | 1.5 | σ (px) du flou des surfaces locales. |
 | `ecart_max` | 3.0 | Écart maximal (px) toléré entre la translation locale et la translation globale. |
 | `espacement_min` | 16 | Distance minimale (px) entre deux points candidats. |
+| `marge` | 0 | Écart maximal (px), sur chaque axe, entre la translation globale et le recouvrement nominal (incertitude du rail). 0 = automatique : 5 % de la tuile dans le sens du déplacement, au moins 48 px. |
+| `fraction_valide_min` | 0.25 | Part minimale de pixels exploitables (ni extérieurs, ni saturés) communs aux deux bandes. |
+| `facteur_dft` | 100 | Précision du sous-pixel : 1/`facteur_dft` px. Le coût du raffinement est proportionnel à ce facteur. |
 
 ---
 
@@ -236,7 +266,9 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 
 - **Pleine dynamique, aucune perte.** Les tuiles 16 bits ne passent jamais en 8 bits. `enGris` fait un `convertTo(CV_64F)` sans mise à l'échelle, donc une valeur 0–65535 reste 0–65535. Les patchs passent ensuite en float32 pour `goodFeaturesToTrack` et `matchTemplate`, ce qui est sans perte pour du 16 bits (24 bits de mantisse). Les seules matrices 8 bits sont des masques (pixel valide ou non). Les tuiles d'origine ne sont jamais modifiées.
 - **Pixels à 0 = vide seulement s'ils sont reliés au bord** (voir l'étape 0). Il reste une limite : on ne sait pas quels bords de la tuile sont l'extrémité du tableau. Une ombre à 0 coupée par un bord **intérieur** de la tuile (un bord partagé avec une tuile voisine) est donc encore considérée comme vide. Voir la remarque ci-dessous.
-- **Exactement 0.** Seul un 0 exact est considéré comme vide. Un fond extérieur légèrement bruité (1, 2…) sera traité comme une donnée.
+- **Exactement 0.** Seul un 0 exact est considéré comme vide. Un fond extérieur légèrement bruité (1, 2…) sera traité comme une donnée. L'érosion de 4 px en atténue l'effet au bord du fond, sans le supprimer.
+- **Marge du rail fixe.** Elle suppose que la translation réelle est à moins de `marge` px du recouvrement nominal donné par `ctx.overlap`. Si le rail ou le recouvrement annoncé est plus faux que cela, la mesure trouve un pic faux dans la marge, ou échoue. Augmenter `marge` dans ce cas.
+- **Coût du sous-pixel.** Le raffinement DFT coûte environ 150 × (nombre de pixels de la bande) multiplications complexes, soit de l'ordre de 10⁹ pour une bande de 1035 × 5176 px. **Le temps n'a pas été mesuré** (code non compilé). S'il est trop long : baisser `facteur_dft` (le coût est proportionnel), ou raffiner en deux passes (1/10 px sur ±0,75 px, puis 1/100 px sur ±0,1 px), environ 5 fois moins cher.
 - **Pas de normalisation par percentiles.** La corrélation de phase ne garde que la phase et la NCC est normalisée : ni l'une ni l'autre ne change si l'on applique une transformation affine à l'intensité (`a·I + b`). L'étape n'apportait donc rien.
 - **Test « zone uniforme » fait sur la bande** et non sur la tuile entière. C'est sans conséquence pratique : une bande uniforme ne peut de toute façon pas être mesurée.
 - **Translation uniquement.** Le modèle global est une translation. Une légère rotation ou une déformation du support apparaît dans les points locaux, que RANSAC traitera ensuite.
@@ -276,4 +308,7 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 2. **Test synthétique** : construire B = A décalée d'une valeur connue non entière (`cv::warpAffine`), puis vérifier `(x, y)` et que `pointsA[i] − pointsB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points.
 3. **Cas limites** :
    - bande noire → `match` renvoie `false`, sans exception ;
-   - `Top`/`Left` → résultat de signe opposé à celui de `Bottom`/`Right` sur la paire inversée.
+   - bande surtout saturée (plus de 75 % de pixels au maximum) → `false` ;
+   - `Top`/`Left` → résultat de signe opposé à celui de `Bottom`/`Right` sur la paire inversée ;
+   - motif périodique de période supérieure à la marge : le pic retenu doit être celui de la marge, même si une copie du motif donne un pic plus haut au-delà.
+4. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`.

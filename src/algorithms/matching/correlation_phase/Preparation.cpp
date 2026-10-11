@@ -1,7 +1,9 @@
+//Preparation.cpp
 #include "algorithms/matching/correlation_phase/Preparation.h"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -19,11 +21,16 @@ Parametres Preparation::lireParametres(const Json& params) {
     p.lissageLocal  = params.value("lissage_local", p.lissageLocal);
     p.ecartMax      = params.value("ecart_max", p.ecartMax);
     p.espacementMin = params.value("espacement_min", p.espacementMin);
+    p.marge         = params.value("marge", p.marge);
+    p.fractionValideMin = params.value("fraction_valide_min", p.fractionValideMin);
     p.nbPoints      = params.value("nb_points", p.nbPoints);
     p.fenetre       = params.value("fenetre", p.fenetre);
-    if (p.nbPoints < 0 || p.fenetre < 8 || p.lissage < 0 || p.lissageLocal < 0 || p.ecartMax < 0 || p.espacementMin < 0)
+    p.facteurDft    = params.value("facteur_dft", p.facteurDft);
+    if (p.nbPoints < 0 || p.fenetre < 8 || p.lissage < 0 || p.lissageLocal < 0 || p.ecartMax < 0 || p.espacementMin < 0
+        || p.marge < 0 || p.fractionValideMin < 0 || p.fractionValideMin > 1 || p.facteurDft < 1)
         throw std::invalid_argument("phase-correlation : paramètre invalide (nb_points >= 0, fenetre >= 8, "
-                                    "lissage, lissage_local, ecart_max, espacement_min >= 0)");
+                                    "facteur_dft >= 1, fraction_valide_min dans [0, 1], "
+                                    "lissage, lissage_local, ecart_max, espacement_min, marge >= 0)");
     return p;
 }
 
@@ -43,7 +50,7 @@ std::optional<PaireOrientee> Preparation::orienter(const cv::Mat& a, const cv::M
     return paire;
 }
 
-std::optional<Bandes> Preparation::bandes(const PaireOrientee& paire, double recouvrement) {
+std::optional<Bandes> Preparation::bandes(const PaireOrientee& paire, double recouvrement, const Parametres& p) {
     // On corrèle seulement les deux bandes censées se recouvrir (recouvrement nominal du rail),
     // pas les tuiles entières : ailleurs, le contenu est différent et brouillerait le pic.
     const cv::Rect ra = bande(paire.A.size(), paire.position, recouvrement);
@@ -51,6 +58,10 @@ std::optional<Bandes> Preparation::bandes(const PaireOrientee& paire, double rec
     if (ra.width < 2 || ra.height < 2) return std::nullopt;
     const cv::Mat a = enGris(paire.A(ra), paire.extA(ra));
     const cv::Mat b = enGris(paire.B(rb), paire.extB(rb));
+
+    // Bandes surtout faites de fond ou de reflets : le peu qui reste ne suffit pas à une mesure fiable
+    const double fractionValide = cv::countNonZero(cv::Mat(valides(a) & valides(b))) / static_cast<double>(a.total());
+    if (fractionValide < p.fractionValideMin) return std::nullopt;
 
     // Même découpe dans les deux bandes : le décalage résiduel mesuré n'en est pas modifié
     const auto zone = zoneAvecContenu(a, b);
@@ -61,6 +72,9 @@ std::optional<Bandes> Preparation::bandes(const PaireOrientee& paire, double rec
     resultat.b = b(*zone);
     resultat.origine = paire.position == Direction::Bottom ? cv::Point2d(0, paire.A.rows - ra.height)
                                                            : cv::Point2d(paire.A.cols - ra.width, 0);
+    // Les bandes sont prises au recouvrement nominal : le décalage résiduel attendu est nul,
+    // et la marge du rail le borne directement
+    resultat.marge = margeRail(paire, p);
     return resultat;
 }
 
@@ -121,6 +135,14 @@ cv::Rect Preparation::bande(cv::Size forme, Direction cote, double recouvrement)
     return {};
 }
 
+double Preparation::margeRail(const PaireOrientee& paire, const Parametres& p) {
+    if (p.marge > 0) return p.marge;
+    // L'imprécision du rail grandit avec le pas, donc avec la taille de la tuile dans le sens du déplacement.
+    // Même valeur par défaut que la chaîne Python de référence (Stitching_Python).
+    const int cote = paire.position == Direction::Bottom ? paire.A.rows : paire.A.cols;
+    return std::max(MARGE_PART_TUILE * cote, MARGE_MIN);
+}
+
 cv::Mat Preparation::zoneExterieure(const cv::Mat& tuile) {
     // Un pixel noir à l'intérieur de la peinture (ombre bouchée à 0) qui ne touche pas le bord reste une donnée.
     // Calculé sur la tuile entière : une zone extérieure peut entrer dans une bande par l'intérieur de la tuile.
@@ -153,12 +175,38 @@ cv::Mat Preparation::enGris(const cv::Mat& tuile, const cv::Mat& exterieur) {
     }
     lum.setTo(std::numeric_limits<double>::quiet_NaN(), exterieur);
 
+    // Pixels saturés (reflets) : l'écrêtage efface la texture, et la tache claire n'est pas au même endroit
+    // dans les deux tuiles ; elle attirerait le pic vers un faux décalage.
+    lum.setTo(std::numeric_limits<double>::quiet_NaN(), lum >= PART_SATURATION * valeurMax(tuile.depth()));
+
+    // La transition entre une zone retirée et la peinture (quelques px sombres ou très clairs, non retirés)
+    // est au même endroit dans les deux tuiles : elle formerait un faux détail commun, de décalage nul.
+    // On la rogne. Le bord de l'image n'est pas érodé (valeur de bord par défaut de cv::erode).
+    cv::Mat masque = valides(lum);
+    if (cv::countNonZero(masque) < static_cast<int>(masque.total())) {
+        cv::Mat rogne;
+        cv::erode(masque, rogne, cv::getStructuringElement(cv::MORPH_RECT, cv::Size(2 * EROSION + 1, 2 * EROSION + 1)));
+        lum.setTo(std::numeric_limits<double>::quiet_NaN(), ~rogne);
+        masque = rogne;
+    }
+
     // Zone vide ou uniforme : aucune information de position
     double bas = 0, haut = 0;
-    const cv::Mat masque = valides(lum);
     if (cv::countNonZero(masque) > 0) cv::minMaxLoc(lum, &bas, &haut, nullptr, nullptr, masque);
     if (haut == bas) lum.setTo(std::numeric_limits<double>::quiet_NaN());
     return lum;
+}
+
+double Preparation::valeurMax(int profondeur) {
+    // Les tuiles flottantes sont supposées normalisées entre 0 et 1
+    switch (profondeur) {
+        case CV_8U:  return std::numeric_limits<uint8_t>::max();
+        case CV_8S:  return std::numeric_limits<int8_t>::max();
+        case CV_16U: return std::numeric_limits<uint16_t>::max();
+        case CV_16S: return std::numeric_limits<int16_t>::max();
+        case CV_32S: return std::numeric_limits<int32_t>::max();
+        default:     return 1.0;
+    }
 }
 
 std::optional<cv::Rect> Preparation::zoneAvecContenu(const cv::Mat& a, const cv::Mat& b) {
