@@ -7,7 +7,10 @@
 #include <stdexcept>
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
+
+#ifdef __APPLE__ // Permet de ne pas planter si le code tourne sur une machine non Apple
 #include <coreml_provider_factory.h>
+#endif
 
 #ifndef STITCHING_PROJECT_ROOT
 #define STITCHING_PROJECT_ROOT "."
@@ -59,9 +62,11 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
     session_options.SetIntraOpNumThreads(0); // Laisser ONNX Runtime décider du nombre de threads intra-opérationnels
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Activer toutes les optimisations du graphe pour de meilleures performances
 
-    // Activation de l'accélération matérielle Apple Silicon
+    // Activation de l'accélération matérielle Apple Silicon -> seulement si le code tourne sur une machine Apple
+    #ifdef __APPLE__
     uint32_t coreml_flags = 0;
-    Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags));
+    OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags);
+    #endif
     
     // Instancie un objet Ort::Session (le moteur d'inférence d'ONNX) et l'enveloppe dans un pointeur 'intelligent' (unique_ptr). Assure que la mémoire allouée pour la session est libérée automatiquement et sans fuite de mémoire quand l'objet LightGlueMatcher sera détruit.
     // this->session permet de stocker la session ONNX finalisée dans l'attribut session de la classe. Permet d'y accéder dans la méthode match().
@@ -296,8 +301,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         
         // Calculer la différence pour chaque paire de points
         for (size_t i = 0; i < out.pointsA.size(); ++i) {
-            dx_list.push_back(out.pointsB[i].x - out.pointsA[i].x);
-            dy_list.push_back(out.pointsB[i].y - out.pointsA[i].y);
+            dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
+            dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
         }
 
         // La médiane limite l'effet des mauvaises correspondances.
@@ -314,6 +319,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
         out.dx = median(dx_list);
         out.dy = median(dy_list);
+
+        std::cout << "Dx : " << out.dx << ", Dy : " << out.dy << '\n';
     }
 
     return true;
