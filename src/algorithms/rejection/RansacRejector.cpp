@@ -1,139 +1,209 @@
 #include "algorithms/rejection/RansacRejector.h"
 
-#include <opencv2/calib3d.hpp>
+#include "algorithms/rejection/RansacAlgorithm.h"
+#include "algorithms/rejection/RansacPreprocessor.h"
+#include "algorithms/rejection/RansacTypes.h"
+
+#include <algorithm>
+#include <utility>
 
 namespace stitching::rejection {
 
-RansacRejector::RansacRejector(const Json& p)
+namespace {
+
+ransac::RansacParameters makeParameters(
+    const Json& params
+)
+{
+    ransac::RansacParameters result;
+
+    // --------------------------------------------------------
+    // Nombre minimum de matches
+    // --------------------------------------------------------
+
+    result.minMatches =
+        std::max(
+            2,
+            params.value(
+                "minMatches",
+                4
+            )
+        );
+
+    // --------------------------------------------------------
+    // Seuil de reprojection RANSAC
+    // --------------------------------------------------------
+
+    result.reprojectionThreshold =
+        std::max(
+            0.000001,
+            params.value(
+                "ransacReprojThreshold",
+                3.0
+            )
+        );
+
+    // --------------------------------------------------------
+    // Nombre maximum d'itérations
+    // --------------------------------------------------------
+
+    const int maxIters =
+        params.value(
+            "maxIters",
+            2000
+        );
+
+    result.maxIters =
+        static_cast<std::size_t>(
+            std::max(
+                1,
+                maxIters
+            )
+        );
+
+    // --------------------------------------------------------
+    // Niveau de confiance
+    // --------------------------------------------------------
+
+    result.confidence =
+        std::clamp(
+            params.value(
+                "confidence",
+                0.99
+            ),
+            0.000001,
+            0.999999
+        );
+
+    // --------------------------------------------------------
+    // Raffinement final
+    // --------------------------------------------------------
+
+    const int refineIters =
+        params.value(
+            "refineIters",
+            10
+        );
+
+    result.refineIters =
+        static_cast<std::size_t>(
+            std::max(
+                0,
+                refineIters
+            )
+        );
+
+    // --------------------------------------------------------
+    // Nombre minimum d'inliers
+    // --------------------------------------------------------
+
+    result.minInliers =
+        std::max(
+            2,
+            params.value(
+                "minInliers",
+                6
+            )
+        );
+
+    return result;
+}
+
+} // namespace
+
+
+RansacRejector::RansacRejector(
+    const Json& p
+)
     : params(p)
 {
 }
+
 
 bool RansacRejector::estimate(
     const Matches& matches,
     Alignment& out
 )
 {
-    // Nettoyage de la sortie
+    // --------------------------------------------------------
+    // 1. Nettoyage de la sortie du pipeline
+    // --------------------------------------------------------
+
     out.transform.release();
     out.inliers.clear();
 
-    // Les deux listes doivent avoir la meme taille
-    if (matches.pointsA.size() != matches.pointsB.size()) {
-        return false;
-    }
+    // --------------------------------------------------------
+    // 2. Conversion des paramètres JSON vers une structure
+    // propre à RANSAC.
+    // --------------------------------------------------------
 
-    // Parametres configurables
-    const int minMatches =
-        params.value("minMatches", 4);
-
-    const double ransacThreshold =
-        params.value("ransacReprojThreshold", 3.0);
-
-    const std::size_t maxIters =
-        params.value("maxIters", static_cast<std::size_t>(2000));
-
-    const double confidence =
-        params.value("confidence", 0.99);
-
-    const std::size_t refineIters =
-        params.value("refineIters", static_cast<std::size_t>(10));
-
-    const int minInliers =
-        params.value("minInliers", 6);
-
-    // Pas assez de correspondances
-    if (static_cast<int>(matches.pointsA.size()) < minMatches) {
-        return false;
-    }
+    const ransac::RansacParameters settings =
+        makeParameters(params);
 
     // --------------------------------------------------------
-    // RANSAC
+    // 3. STRUCTURE D'ENTREE
     //
-    // On cherche une transformation B -> A
+    // On cherche une transformation :
+    //
+    // B -> A
     //
     // source      = pointsB
     // destination = pointsA
     // --------------------------------------------------------
 
-    cv::Mat masqueInliers;
-
-    cv::Mat affine = cv::estimateAffinePartial2D(
+    const ransac::RansacInput input{
         matches.pointsB,
-        matches.pointsA,
-        masqueInliers,
-        cv::RANSAC,
-        ransacThreshold,
-        maxIters,
-        confidence,
-        refineIters
-    );
-
-    // Echec de l'estimation
-    if (affine.empty() || masqueInliers.empty()) {
-        return false;
-    }
+        matches.pointsA
+    };
 
     // --------------------------------------------------------
-    // Recuperation des inliers
+    // 4. PRETRAITEMENT
     // --------------------------------------------------------
 
-    out.inliers.resize(
-        matches.pointsA.size(),
-        0
-    );
+    ransac::RansacPreprocessor preprocessor;
 
-    int nombreInliers = 0;
+    ransac::RansacPreparedInput preparedInput;
 
-    for (int i = 0; i < masqueInliers.rows; ++i) {
-        const uchar valeur =
-            masqueInliers.at<uchar>(i, 0);
-
-        out.inliers[
-            static_cast<std::size_t>(i)
-        ] = valeur;
-
-        if (valeur != 0) {
-            ++nombreInliers;
-        }
-    }
-
-    // Pas assez d'inliers fiables
-    if (nombreInliers < minInliers) {
-        out.inliers.clear();
-        return false;
-    }
-
-    // --------------------------------------------------------
-    // Conversion de la matrice 2x3 vers 3x3 CV_64F
-    //
-    // Types.h exige :
-    // transform = transformation B -> A
-    // en 3x3, CV_64F
-    // --------------------------------------------------------
-
-    cv::Mat affine64;
-    affine.convertTo(
-        affine64,
-        CV_64F
-    );
-
-    out.transform = cv::Mat::eye(
-        3,
-        3,
-        CV_64F
-    );
-
-    affine64.copyTo(
-        out.transform(
-            cv::Rect(
-                0,
-                0,
-                3,
-                2
-            )
+    if (
+        !preprocessor.prepare(
+            input,
+            settings,
+            preparedInput
         )
-    );
+    ) {
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 5. ALGORITHME RANSAC
+    // --------------------------------------------------------
+
+    ransac::RansacAlgorithm algorithm;
+
+    ransac::RansacOutput result;
+
+    if (
+        !algorithm.estimate(
+            preparedInput,
+            settings,
+            result
+        )
+    ) {
+        return false;
+    }
+
+    // --------------------------------------------------------
+    // 6. Conversion de la sortie interne RANSAC
+    // vers la sortie générique du projet.
+    // --------------------------------------------------------
+
+    out.transform =
+        result.transform.clone();
+
+    out.inliers =
+        std::move(
+            result.inliers
+        );
 
     return true;
 }
