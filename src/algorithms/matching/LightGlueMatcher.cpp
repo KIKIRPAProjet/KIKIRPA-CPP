@@ -16,6 +16,13 @@
 #define STITCHING_PROJECT_ROOT "."
 #endif
 
+namespace {
+
+// Seules les correspondances dont le score atteint ce seuil sont conservées.
+constexpr float kMinConfidenceScore = 0.9f;
+
+} // namespace
+
 namespace stitching::matching {
 
 // Initialisation du matcher LightGlue
@@ -261,6 +268,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         int64_t match_idx = matches0_data[i];
         
         if (match_idx >= 0 && static_cast<uint64_t>(match_idx) < kpts1_count) {
+            const float confidence_score = scores0_data[i];
+            if (confidence_score < kMinConfidenceScore) {
+                continue;
+            }
+
             float x0, y0, x1, y1;
             
             // On lit les coordonnées seulement après avoir vérifié l'indice.
@@ -281,7 +293,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             out.pointsB.push_back(cv::Point2f(x1, y1));
 
             // On enregistre le score correspondant
-            out.scores.push_back(scores0_data[i]);
+            out.scores.push_back(confidence_score);
         } else if (match_idx >= 0) {
             throw std::runtime_error(
                 "LightGlueMatcher: matches0 contient un indice hors limites dans kpts1.");
