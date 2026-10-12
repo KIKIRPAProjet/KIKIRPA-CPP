@@ -10,8 +10,6 @@
 
 namespace stitching::matching::correlation_phase {
 
-// ======================================== Public ========================================
-
 Parametres Preparation::lireParametres(const Json& params) {
     Parametres p;
     if (params.is_null()) return p;
@@ -41,6 +39,7 @@ std::optional<PaireOrientee> Preparation::orienter(const cv::Mat& a, const cv::M
     // B en haut ou à gauche : on se ramène au cas bas / droite en échangeant A et B
     const bool inversee = ctx.dir == Direction::Top || ctx.dir == Direction::Left;
     PaireOrientee paire;
+    // condition ? valeur si vrai : valeur si faux
     paire.A        = inversee ? b : a;
     paire.B        = inversee ? a : b;
     paire.extA     = zoneExterieure(paire.A);
@@ -111,7 +110,6 @@ cv::Mat Preparation::remplirVides(const cv::Mat& image) {
     return resultat;
 }
 
-// ======================================== Private ========================================
 
 Direction Preparation::oppose(Direction d) {
     switch (d) {

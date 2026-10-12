@@ -268,7 +268,7 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 - **Pixels à 0 = vide seulement s'ils sont reliés au bord** (voir l'étape 0). Il reste une limite : on ne sait pas quels bords de la tuile sont l'extrémité du tableau. Une ombre à 0 coupée par un bord **intérieur** de la tuile (un bord partagé avec une tuile voisine) est donc encore considérée comme vide. Voir la remarque ci-dessous.
 - **Exactement 0.** Seul un 0 exact est considéré comme vide. Un fond extérieur légèrement bruité (1, 2…) sera traité comme une donnée. L'érosion de 4 px en atténue l'effet au bord du fond, sans le supprimer.
 - **Marge du rail fixe.** Elle suppose que la translation réelle est à moins de `marge` px du recouvrement nominal donné par `ctx.overlap`. Si le rail ou le recouvrement annoncé est plus faux que cela, la mesure trouve un pic faux dans la marge, ou échoue. Augmenter `marge` dans ce cas.
-- **Coût du sous-pixel.** Le raffinement DFT coûte environ 150 × (nombre de pixels de la bande) multiplications complexes, soit de l'ordre de 10⁹ pour une bande de 1035 × 5176 px. **Le temps n'a pas été mesuré** (code non compilé). S'il est trop long : baisser `facteur_dft` (le coût est proportionnel), ou raffiner en deux passes (1/10 px sur ±0,75 px, puis 1/100 px sur ±0,1 px), environ 5 fois moins cher.
+- **Coût du sous-pixel.** Le raffinement DFT coûte environ 150 × (nombre de pixels de la bande) multiplications complexes, soit de l'ordre de 10⁹ pour une bande de 1035 × 5176 px. Mesuré (§7) : environ 2,5 s pour la translation globale et 5,5 s pour 500 points sur des tuiles 5176 × 5176. S'il est trop long : baisser `facteur_dft` (le coût est proportionnel), ou raffiner en deux passes (1/10 px sur ±0,75 px, puis 1/100 px sur ±0,1 px), environ 5 fois moins cher.
 - **Pas de normalisation par percentiles.** La corrélation de phase ne garde que la phase et la NCC est normalisée : ni l'une ni l'autre ne change si l'on applique une transformation affine à l'intensité (`a·I + b`). L'étape n'apportait donc rien.
 - **Test « zone uniforme » fait sur la bande** et non sur la tuile entière. C'est sans conséquence pratique : une bande uniforme ne peut de toute façon pas être mesurée.
 - **Translation uniquement.** Le modèle global est une translation. Une légère rotation ou une déformation du support apparaît dans les points locaux, que RANSAC traitera ensuite.
@@ -303,13 +303,34 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 
 ## 7. Comment vérifier
 
-> ⚠ Le code **n'a pas encore été compilé** : OpenCV n'était pas installé sur la machine de développement (`OpenCV_DIR-NOTFOUND` dans CLion). Installer OpenCV (par ex. `vcpkg install opencv4`) puis configurer `OpenCV_DIR`.
+Les points 2 et 3 sont automatisés dans `tests/test_correlation_phase.cpp` (cible `test_correlation_phase`, lancée par `ctest`) ; le point 1 par `tests/comparer_python.py`. Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
 
-1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(out.y, out.x)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Écart attendu : moins de 0,05 px.
-2. **Test synthétique** : construire B = A décalée d'une valeur connue non entière (`cv::warpAffine`), puis vérifier `(x, y)` et que `pointsA[i] − pointsB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points.
+1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(out.y, out.x)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Les deux versions ne font pas le même sous-pixel (parabole sur la surface lissée en Python, DFT sur la surface brute ici) : des écarts de quelques dixièmes de pixel sont normaux, pas des écarts de plusieurs pixels.
+2. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsA[i] − pointsB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.
 3. **Cas limites** :
    - bande noire → `match` renvoie `false`, sans exception ;
    - bande surtout saturée (plus de 75 % de pixels au maximum) → `false` ;
    - `Top`/`Left` → résultat de signe opposé à celui de `Bottom`/`Right` sur la paire inversée ;
    - motif périodique de période supérieure à la marge : le pic retenu doit être celui de la marge, même si une copie du motif donne un pic plus haut au-delà.
-4. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`.
+4. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`. **Non fait** : ces jeux ne sont pas dans `KIKIRPA-Research/data/`.
+
+### Résultats
+
+**Vérité exacte** (`test_correlation_phase`, tuiles de 1000 px, recouvrement 20 %, décalages résiduels non entiers de 3 à 31 px, 4 directions), sur trois sources : texture générée, `synthetic_v1.0/NOM_0001_full.tif`, tuile réelle Savery 03.
+
+| | |
+|---|---|
+| Erreur de translation | ≤ 0,005 px sur les 12 paires (limite de la grille de 1/100 px) |
+| Points | 67 à 362 par paire ; écart médian 0,004 à 0,014 px, max 0,027 px |
+| Cas limites | tous conformes (bandes noires, saturées, uniformes, tailles différentes, tache noire isolée, Top = −Bottom, motif périodique, paramètres invalides) |
+
+**Paires réelles** (`comparer_python.py`, 7 paires Savery et 4 VanDerVeken du README de la piste Python, tuiles 5176 × 5176) :
+
+| | |
+|---|---|
+| Même pic que le Python | 11 / 11 |
+| Écart C++ / Python | médiane 0,43 px, max 1,32 px (Savery 05 → 06, rapport 5,1) |
+| Points | 136 à 500 par paire, à 1 à 2,7 px (médiane) de la translation globale. Sur le synthétique, cet écart est de 0,01 px : il mesure la déformation réelle le long de la couture, qu'une translation ne décrit pas (voir le README Python, « arche » de 12 px) |
+| Temps de `match()` | 2 à 8 s par paire, contre 0,8 à 2,5 s pour `mesurer_decalage` (Python, translation seule) |
+
+Détail du temps sur Savery 01 → 02 : 8,1 s avec les réglages par défaut, 2,5 s en translation seule (`nb_points = 0`, autant que le Python), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `facteur_dft = 10`, la paire entière prend 2,5 s.

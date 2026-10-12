@@ -3,6 +3,9 @@ project(Stitching CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Sources en UTF-8 (commentaires et messages en français) : MSVC suppose sinon la page de code du système
+add_compile_options($<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+
 find_package(OpenCV REQUIRED)
 find_package(nlohmann_json 3 QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -22,6 +25,12 @@ target_link_libraries(stitching_lib PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohman
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_lib)
+
+# Tests (ctest) : vérité exacte sur paires découpées + cas limites. Voir tests/test_correlation_phase.cpp
+enable_testing()
+add_executable(test_correlation_phase tests/test_correlation_phase.cpp)
+target_link_libraries(test_correlation_phase PRIVATE stitching_lib)
+add_test(NAME correlation_phase COMMAND test_correlation_phase)
 
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)

@@ -4,8 +4,6 @@
 
 namespace stitching::matching::correlation_phase {
 
-// ======================================== Public ========================================
-
 Matches Sortie::construire(const PaireOrientee& paire, const Mesure& mesure, cv::Point origineA,
                            std::vector<Correspondance> points, int nbPoints) {
     Matches m;
@@ -26,8 +24,6 @@ Matches Sortie::construire(const PaireOrientee& paire, const Mesure& mesure, cv:
     if (paire.inversee) annulerOrientation(m);
     return m;
 }
-
-// ======================================== Private ========================================
 
 void Sortie::trierEtLimiter(std::vector<Correspondance>& points, int nbPoints) {
     std::sort(points.begin(), points.end(),

@@ -27,6 +27,7 @@ public:
     // false si la translation ne peut pas être mesurée (tuiles vides ou de tailles différentes,
     // pas de contenu commun, pic ambigu). true : out.x, out.y valides, points éventuellement vides.
     bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
+//override car remplce une fonction virtuelle de la classe mere
 
 private:
     correlation_phase::Parametres parametres;   // lus une seule fois, dans le constructeur
