@@ -303,7 +303,10 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 
 ## 7. Comment vérifier
 
-> ⚠ Le code **n'a pas encore été compilé** : OpenCV n'était pas installé sur la machine de développement (`OpenCV_DIR-NOTFOUND` dans CLion). Installer OpenCV (par ex. `vcpkg install opencv4`) puis configurer `OpenCV_DIR`.
+> ✅ Les 22 fichiers `.cpp` du projet passent une vérification de compilation
+> syntaxique en C++17 avec GCC 16.2 (`files=22`, `failed=0`). L'édition finale
+> de l'exécutable reste à valider avec une installation complète d'OpenCV et
+> des bibliothèques Windows compatibles.
 
 1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(out.y, out.x)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Écart attendu : moins de 0,05 px.
 2. **Test synthétique** : construire B = A décalée d'une valeur connue non entière (`cv::warpAffine`), puis vérifier `(x, y)` et que `pointsA[i] − pointsB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points.
