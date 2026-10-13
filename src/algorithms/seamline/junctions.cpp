@@ -163,10 +163,13 @@ namespace seamlib {
         const auto t0 = std::chrono::steady_clock::now();
         JunctionSet js;
         js.method = method;
-        Cache cache;
+        // Une carte (arête, côté) n'est utilisée que par un seul bloc (H_k sert en "top" au bloc k et en
+        // "bottom" au bloc k−1) : le cache est donc vidé à chaque bloc, sinon toutes les cartes restent en mémoire.
         for (int r = 0; r < grid.n_rows - 1; ++r)
-            for (int c = 0; c < grid.n_cols - 1; ++c)
+            for (int c = 0; c < grid.n_cols - 1; ++c) {
+                Cache cache;
                 js.points[{ r, c }] = choose_junction_cached(grid, r, c, method, grid_res, cache);
+            }
         js.total_time_s = seconds_since(t0);
         return js;
     }

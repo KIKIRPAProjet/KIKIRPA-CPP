@@ -93,8 +93,8 @@ namespace seamlib {
     // Lève std::invalid_argument si une des 4 adjacences du bloc manque.
     KIRK_API Junction choose_junction_point(const SeamGrid& grid, int r, int c, Method method, int grid_res = 41);
 
-    // Choisit les (n_rows−1) × (n_cols−1) jonctions. Chaque carte de distances est calculée une
-    // seule fois (une adjacence est partagée par deux blocs).
+    // Choisit les (n_rows−1) × (n_cols−1) jonctions. Les cartes de distances sont libérées après
+    // chaque bloc (une adjacence sert aux deux blocs voisins, mais depuis des côtés différents).
     KIRK_API JunctionSet choose_all_junctions(const SeamGrid& grid, Method method, int grid_res = 41);
 
     // Extrémités imposées d'une adjacence, dans le repère de SA carte de coût.
