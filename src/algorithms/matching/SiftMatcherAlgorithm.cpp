@@ -1,4 +1,4 @@
-#include "SiftMatcherAlgorithm.h"
+#include "algorithms/matching/SiftMatcherAlgorithm.h"
 #include <opencv2/features2d.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>

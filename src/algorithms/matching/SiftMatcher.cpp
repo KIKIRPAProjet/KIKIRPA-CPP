@@ -1,5 +1,5 @@
 #include "algorithms/matching/SiftMatcher.h"
-#include "SiftMatcherAlgorithm.h"
+#include "algorithms/matching/SiftMatcherAlgorithm.h"
 
 namespace stitching::matching {
 
