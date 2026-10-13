@@ -1,0 +1,19 @@
+{
+  "errors": [
+    {
+      "code": "MISSING_DEPENDENCY",
+      "details": {
+        "acceptedTypes": [
+          "import"
+        ],
+        "requiresDirectLink": true
+      },
+      "message": "Required explicit dependency is missing.",
+      "stepId": "stitching"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

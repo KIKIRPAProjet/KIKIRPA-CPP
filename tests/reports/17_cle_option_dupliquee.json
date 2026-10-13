@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "path"
+      },
+      "message": "Clé d’option répétée.",
+      "stepId": "import"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

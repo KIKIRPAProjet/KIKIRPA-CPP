@@ -1,0 +1,17 @@
+{
+  "errors": [],
+  "executionOrder": [
+    "import",
+    "stitching",
+    "absolutePositioning",
+    "export"
+  ],
+  "valid": true,
+  "validatedSteps": [
+    "absolutePositioning",
+    "export",
+    "import",
+    "stitching"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,15 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_JSON",
+      "details": {
+        "byte": 23
+      },
+      "message": "[json.exception.parse_error.101] parse error at line 1, column 23: syntax error while parsing value - unexpected '}'; expected '[', '{', or a literal"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

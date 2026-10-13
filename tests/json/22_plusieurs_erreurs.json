@@ -1,0 +1,14 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "inconnue",
+        "options": []
+      },
+      {
+        "name": "stitching",
+        "options": []
+      }
+    ]
+  }
+}

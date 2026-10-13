@@ -1,0 +1,21 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "date",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      }
+    ]
+  }
+}

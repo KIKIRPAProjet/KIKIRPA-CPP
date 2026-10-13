@@ -1,0 +1,51 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      },
+      {
+        "name": "stitching",
+        "options": [
+          {
+            "type": "string",
+            "key": "matcher",
+            "value": "inconnu"
+          },
+          {
+            "type": "string",
+            "key": "rejector",
+            "value": "ransac"
+          },
+          {
+            "type": "int",
+            "key": "level",
+            "value": -1
+          },
+          {
+            "type": "float",
+            "key": "ratio",
+            "value": 2.0
+          },
+          {
+            "type": "float",
+            "key": "threshold",
+            "value": -3.0
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "inconnue",
+        "options": []
+      }
+    ]
+  }
+}

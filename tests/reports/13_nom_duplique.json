@@ -1,0 +1,14 @@
+{
+  "errors": [
+    {
+      "code": "DUPLICATE_STEP_ID",
+      "details": {},
+      "message": "Le nom d’étape doit être unique dans ce format.",
+      "stepId": "import"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

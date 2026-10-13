@@ -1,0 +1,46 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "level",
+        "value": -1
+      },
+      "message": "Configuration field has an invalid type, range or value.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "matcher",
+        "value": "inconnu"
+      },
+      "message": "Configuration field has an invalid type, range or value.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "ratio",
+        "value": 2.0
+      },
+      "message": "Configuration field has an invalid type, range or value.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "threshold",
+        "value": -3.0
+      },
+      "message": "Configuration field has an invalid type, range or value.",
+      "stepId": "stitching"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [
+    "import"
+  ],
+  "warnings": []
+}

@@ -1,0 +1,67 @@
+{
+  "errors": [
+    {
+      "code": "UNKNOWN_STEP_TYPE",
+      "details": {
+        "type": "inconnue"
+      },
+      "message": "Step type is not registered.",
+      "stepId": "inconnue"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "level"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "matcher"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "ratio"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "rejector"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "threshold"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "MISSING_DEPENDENCY",
+      "details": {
+        "acceptedTypes": [
+          "import"
+        ],
+        "requiresDirectLink": true
+      },
+      "message": "Required explicit dependency is missing.",
+      "stepId": "stitching"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

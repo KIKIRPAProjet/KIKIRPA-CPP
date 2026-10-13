@@ -1,0 +1,36 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      },
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      }
+    ]
+  }
+}

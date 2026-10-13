@@ -1,0 +1,15 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path"
+          }
+        ]
+      }
+    ]
+  }
+}

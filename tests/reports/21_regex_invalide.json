@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "format"
+      },
+      "message": "Expression régulière invalide.",
+      "stepId": "import"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

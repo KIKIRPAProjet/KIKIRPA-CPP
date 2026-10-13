@@ -1,0 +1,29 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "declaredType": "int",
+        "field": "level",
+        "value": "deux"
+      },
+      "message": "La valeur ne correspond pas au type déclaré, ou le type est inconnu.",
+      "stepId": "stitching"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "level",
+        "value": "deux"
+      },
+      "message": "Configuration field has an invalid type, range or value.",
+      "stepId": "stitching"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [
+    "import"
+  ],
+  "warnings": []
+}

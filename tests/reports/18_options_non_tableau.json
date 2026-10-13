@@ -1,0 +1,30 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_SCHEMA",
+      "details": {},
+      "message": "options doit être un tableau.",
+      "stepId": "import"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "format"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "import"
+    },
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "field": "path"
+      },
+      "message": "Required configuration field is missing.",
+      "stepId": "import"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

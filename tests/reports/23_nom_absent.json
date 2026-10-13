@@ -1,0 +1,20 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_SCHEMA",
+      "details": {
+        "index": 0
+      },
+      "message": "Étape attendue : name et options, sans mélange des formats."
+    },
+    {
+      "code": "INVALID_SCHEMA",
+      "details": {},
+      "message": "Empty pipelines are disabled."
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

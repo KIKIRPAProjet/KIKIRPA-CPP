@@ -1,0 +1,76 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      },
+      {
+        "name": "stitching",
+        "options": [
+          {
+            "type": "string",
+            "key": "matcher",
+            "value": "sift"
+          },
+          {
+            "type": "string",
+            "key": "rejector",
+            "value": "ransac"
+          },
+          {
+            "type": "int",
+            "key": "level",
+            "value": 2
+          },
+          {
+            "type": "float",
+            "key": "ratio",
+            "value": 0.75
+          },
+          {
+            "type": "float",
+            "key": "threshold",
+            "value": 3.0
+          }
+        ]
+      },
+      {
+        "name": "absolutePositioning",
+        "options": [
+          {
+            "type": "int",
+            "key": "referenceTile",
+            "value": 0
+          }
+        ]
+      },
+      {
+        "name": "fusion",
+        "options": [
+          {
+            "type": "string",
+            "key": "blending",
+            "value": "multiband"
+          },
+          {
+            "type": "int",
+            "key": "bands",
+            "value": 5
+          }
+        ]
+      }
+    ]
+  }
+}

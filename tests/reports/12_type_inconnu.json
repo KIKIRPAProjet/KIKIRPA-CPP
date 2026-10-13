@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "code": "UNKNOWN_STEP_TYPE",
+      "details": {
+        "type": "inconnue"
+      },
+      "message": "Step type is not registered.",
+      "stepId": "inconnue"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

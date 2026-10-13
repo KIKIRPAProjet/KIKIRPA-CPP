@@ -1,0 +1,22 @@
+{
+  "errors": [
+    {
+      "code": "MISSING_DEPENDENCY",
+      "details": {
+        "acceptedTypes": [
+          "absolutePositioning"
+        ],
+        "requiresDirectLink": true
+      },
+      "message": "Required explicit dependency is missing.",
+      "stepId": "intensityCorrection"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [
+    "import",
+    "stitching"
+  ],
+  "warnings": []
+}

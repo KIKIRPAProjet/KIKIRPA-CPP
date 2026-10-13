@@ -1,0 +1,31 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "type": "string",
+            "key": "path",
+            "value": "images/"
+          },
+          {
+            "type": "string",
+            "key": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      },
+      {
+        "name": "absolutePositioning",
+        "options": [
+          {
+            "type": "int",
+            "key": "referenceTile",
+            "value": 0
+          }
+        ]
+      }
+    ]
+  }
+}

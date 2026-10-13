@@ -1,0 +1,230 @@
+[
+  {
+    "file": "01_import_seul.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import"
+    ]
+  },
+  {
+    "file": "02_pipeline_complet.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "intensityCorrection",
+      "seamline",
+      "fusion",
+      "export"
+    ]
+  },
+  {
+    "file": "03_pipeline_minimal.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "export"
+    ]
+  },
+  {
+    "file": "04_optionnelle_absente.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "fusion"
+    ]
+  },
+  {
+    "file": "05_alternative_correction.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "intensityCorrection",
+      "fusion"
+    ]
+  },
+  {
+    "file": "06_export_apres_fusion.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "fusion",
+      "export"
+    ]
+  },
+  {
+    "file": "07_seamline_sans_correction.json",
+    "valid": true,
+    "errorCodes": [],
+    "warningCodes": [],
+    "executionOrder": [
+      "import",
+      "stitching",
+      "absolutePositioning",
+      "seamline",
+      "fusion",
+      "export"
+    ]
+  },
+  {
+    "file": "08_import_absent.json",
+    "valid": false,
+    "errorCodes": [
+      "MISSING_DEPENDENCY"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "09_import_apres_stitching.json",
+    "valid": false,
+    "errorCodes": [
+      "MISSING_DEPENDENCY"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "10_stitching_absent.json",
+    "valid": false,
+    "errorCodes": [
+      "MISSING_DEPENDENCY"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "11_positioning_absent.json",
+    "valid": false,
+    "errorCodes": [
+      "MISSING_DEPENDENCY"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "12_type_inconnu.json",
+    "valid": false,
+    "errorCodes": [
+      "UNKNOWN_STEP_TYPE"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "13_nom_duplique.json",
+    "valid": false,
+    "errorCodes": [
+      "DUPLICATE_STEP_ID"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "14_configuration_invalide.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "15_type_option_incorrect.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "16_type_option_inconnu.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "17_cle_option_dupliquee.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "18_options_non_tableau.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION",
+      "INVALID_SCHEMA"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "19_option_incomplete.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION",
+      "INVALID_SCHEMA"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "20_vide.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_SCHEMA"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "21_regex_invalide.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "22_plusieurs_erreurs.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_CONFIGURATION",
+      "MISSING_DEPENDENCY",
+      "UNKNOWN_STEP_TYPE"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "23_nom_absent.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_SCHEMA"
+    ],
+    "warningCodes": []
+  },
+  {
+    "file": "24_json_malforme.json",
+    "valid": false,
+    "errorCodes": [
+      "INVALID_JSON"
+    ],
+    "warningCodes": []
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_SCHEMA",
+      "details": {},
+      "message": "Empty pipelines are disabled."
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

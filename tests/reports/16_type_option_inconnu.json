@@ -1,0 +1,18 @@
+{
+  "errors": [
+    {
+      "code": "INVALID_CONFIGURATION",
+      "details": {
+        "declaredType": "date",
+        "field": "path",
+        "value": "images/"
+      },
+      "message": "La valeur ne correspond pas au type déclaré, ou le type est inconnu.",
+      "stepId": "import"
+    }
+  ],
+  "executionOrder": null,
+  "valid": false,
+  "validatedSteps": [],
+  "warnings": []
+}

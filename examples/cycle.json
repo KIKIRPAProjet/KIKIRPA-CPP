@@ -1,0 +1,1 @@
+{"pipeline":{"name":"Cycle","version":"1.0","steps":[{"id":"a","type":"ImportStep","depends_on":["b"],"config":{"path":"images"}},{"id":"b","type":"ImportStep","depends_on":["a"],"config":{"path":"images"}}]}}
