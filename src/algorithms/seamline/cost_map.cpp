@@ -86,9 +86,11 @@ namespace seamlib {
     }
 
     cv::Mat gray_raw(const cv::Mat& img) {
-        CV_Assert(img.channels() == 3);
-        cv::Mat f, g;
-        img.convertTo(f, CV_32FC3);
+        CV_Assert(img.channels() == 1 || img.channels() == 3);
+        cv::Mat f;
+        img.convertTo(f, CV_32F);   // convertTo garde le nombre de canaux
+        if (img.channels() == 1) return f;   // déjà en gris (ex. IRR) : rien à mélanger
+        cv::Mat g;
         cv::cvtColor(f, g, cv::COLOR_RGB2GRAY);
         return g;
     }
@@ -100,20 +102,23 @@ namespace seamlib {
             throw std::invalid_argument("color_norm doit valoir 'manhattan' ou 'euclidian'.");
         if (!is_one_of(p.treatment, { "sigmoid", "linear", "squared", "caped" }))
             throw std::invalid_argument("treatment doit valoir sigmoid, linear, squared ou caped");
-        CV_Assert(crop_a.channels() == 3 && crop_b.channels() == 3 && crop_a.size() == crop_b.size());
+        // 1 canal (gris, ex. IRR) ou 3 canaux (RGB). En gris, l'écart de couleur se réduit à |A − B|.
+        CV_Assert((crop_a.channels() == 1 || crop_a.channels() == 3) && crop_a.channels() == crop_b.channels()
+            && crop_a.size() == crop_b.size());
 
         cv::Mat fa, fb;
-        crop_a.convertTo(fa, CV_32FC3);
-        crop_b.convertTo(fb, CV_32FC3);
+        crop_a.convertTo(fa, CV_32F);   // convertTo garde le nombre de canaux
+        crop_b.convertTo(fb, CV_32F);
         const cv::Mat d_col = fa - fb;
 
         std::vector<cv::Mat> ch;
         cv::split(d_col, ch);
+        const double n_ch = double(ch.size());
 
         cv::Mat e_color = cv::Mat::zeros(d_col.size(), CV_32F);
         if (p.color_norm == "manhattan") {
             for (const cv::Mat& c : ch) e_color += cv::abs(c);
-            e_color /= 3.0;
+            e_color /= n_ch;
         }
         else {
             for (const cv::Mat& c : ch) e_color += c.mul(c);
@@ -122,7 +127,9 @@ namespace seamlib {
 
         // Normalisation
         if (p.normalization == "noise") {
-            const double mad = (mad_calculator(ch[0]) + mad_calculator(ch[1]) + mad_calculator(ch[2])) / 3.0;
+            double mad = 0.0;   // moyenne des MAD par canal
+            for (const cv::Mat& c : ch) mad += mad_calculator(c);
+            mad /= n_ch;
             const double bruit_col = std::max(mad * 1.4826, 1.0);   // plancher pour ne pas diviser par quelque chose < 1
             e_color = e_color / bruit_col;
         }

@@ -32,6 +32,11 @@ add_executable(test_correlation_phase tests/test_correlation_phase.cpp)
 target_link_libraries(test_correlation_phase PRIVATE stitching_lib)
 add_test(NAME correlation_phase COMMAND test_correlation_phase)
 
+# Seamline : images en gris, repli de la DP contrainte. Voir tests/test_seamline.cpp
+add_executable(test_seamline tests/test_seamline.cpp)
+target_link_libraries(test_seamline PRIVATE stitching_lib)
+add_test(NAME seamline COMMAND test_seamline)
+
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)

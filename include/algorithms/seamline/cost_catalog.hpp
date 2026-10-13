@@ -3,7 +3,7 @@
 // Conversion C++ de la cellule « def _baseline(...) ... COST_FUNCTIONS = {...} » du notebook
 // Projet_KIK_IRPA_Montauban_final_CostMapComputed.ipynb.
 //
-// Chaque fonction reçoit deux overlaps RGB de même taille et renvoie les trois cartes
+// Chaque fonction reçoit deux overlaps de même taille (RGB à 3 canaux ou gris à 1 canal) et renvoie les trois cartes
 // (terme couleur, terme gradient, coût traité). Seul `treated` est utilisé par les solveurs ;
 // les deux premiers termes servent à l'illustration.
 //

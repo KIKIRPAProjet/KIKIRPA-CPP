@@ -22,7 +22,7 @@ namespace seamlib
 
         Pipeline de compute() :
 
-            left, right  (overlaps RGB)
+            left, right  (overlaps RGB ou gris)
                  |
                  v
             compute_cost()     section 5 / 5.0 : carte de coût selon le mode choisi
@@ -59,8 +59,9 @@ namespace seamlib
             Calcule la seamline verticale entre deux overlaps.
 
             `left`, `right` : zone de recouvrement vue dans chaque image,
-                              même taille, 3 canaux, ordre RGB
-                              (cv::imread donne du BGR : convertir avant).
+                              même taille, 3 canaux en ordre RGB
+                              (cv::imread donne du BGR : convertir avant),
+                              ou 1 canal pour une image en gris (ex. IRR).
 
             Retour : chemin du haut vers le bas, en (x, y) dans le repère de
                      l'overlap. Vide si une entrée est vide.

@@ -41,7 +41,8 @@ namespace seamlib {
     KIRK_API cv::Mat percentile(const cv::Mat& img, double n_eme);
 
     // Niveaux de gris en float32, sans division par dtype_max pour garder l'intégrité des unités.
-    // Garde le signe si l'entrée est une différence. `img` : image RGB à 3 canaux.
+    // Garde le signe si l'entrée est une différence. `img` : image RGB à 3 canaux, ou déjà en gris
+    // (1 canal, renvoyée telle quelle en float32).
     KIRK_API cv::Mat gray_raw(const cv::Mat& img);
 
     // Paramètres de compute_cost_maps (mêmes noms et mêmes valeurs par défaut qu'en Python).
@@ -65,7 +66,8 @@ namespace seamlib {
     };
 
     // Construit les cartes de coût d'une zone d'overlap.
-    // `crop_a`, `crop_b` : overlaps RGB à 3 canaux, de même taille et de même type (uint8, uint16 ou float).
+    // `crop_a`, `crop_b` : overlaps RGB à 3 canaux ou en gris à 1 canal (ex. IRR), de même taille, même
+    // nombre de canaux et même type (uint8, uint16 ou float). En gris, le terme couleur vaut |A − B|.
     // Lève std::invalid_argument si un paramètre n'est pas une valeur autorisée.
     KIRK_API CostMaps compute_cost_maps(const cv::Mat& crop_a, const cv::Mat& crop_b, const CostMapParams& params = CostMapParams());
 
