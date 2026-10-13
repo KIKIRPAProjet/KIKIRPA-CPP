@@ -19,7 +19,9 @@ public:
     virtual ~Step() = default;
 
     virtual bool execute() = 0;                         // virtuelle pure
-    virtual void importConfig(const Json& cfg) { config = cfg; }
+    // Fusionne cfg dans la config par défaut : seules les valeurs des options sont reprises,
+    // les options absentes gardent leur valeur. Lève std::invalid_argument si option inconnue.
+    virtual void importConfig(const Json& cfg);
     virtual Json exportData() const { return outputData; }
     const Json& getConfig() const { return config; }
     void setDataStore(DataStore& d) { data = &d; }

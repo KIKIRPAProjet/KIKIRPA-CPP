@@ -22,6 +22,8 @@ public:
     void add(std::unique_ptr<Step> s) { steps.push_back(std::move(s)); }
     bool run(const Logger& log = {});
     const DataStore& getData() const { return data; }
+    // Liste des steps, dans l'ordre d'exécution
+    const std::vector<std::unique_ptr<Step>>& getSteps() const { return steps; }
 };
 
 } // namespace stitching
