@@ -15,7 +15,7 @@ private:
     std::unique_ptr<Ort::Session> session;
 
     // Prépare une image au format attendu par le modèle ONNX.
-    cv::Mat preprocessImage(const cv::Mat& image, const std::string& imageName) const;
+    cv::Mat preprocessImage(const cv::Mat& image, const std::string& imageName, float& scale, bool grayscale = false) const;
 
 public:
     explicit LightGlueMatcher(const Json& params = {});

@@ -8,6 +8,10 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <chrono> // Pour chronométrer certaines étapes (surtout l'inférence du modèle)
+
+// #include <thread> // Pour la gestion dynamique du nombre de coeurs disponibles
+
 #ifdef __APPLE__ // Permet de ne pas planter si le code tourne sur une machine non Apple
 #include <coreml_provider_factory.h>
 #endif
@@ -28,6 +32,8 @@ namespace stitching::matching {
 // Initialisation du matcher LightGlue
 // Cherche le fichier du modèle ONNX sélectionné et initialise la session ONNX
 LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
+    std::cout << "[DEBUG] Initialisation du LightGlueMatcher : début\n";
+
     // Lire le chemin du modèle passé par la configuration du pipeline
     const auto configuredPath = this->params.value("model_path", std::string{});
     if (configuredPath.empty()) {
@@ -78,45 +84,77 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
     // Instancie un objet Ort::Session (le moteur d'inférence d'ONNX) et l'enveloppe dans un pointeur 'intelligent' (unique_ptr). Assure que la mémoire allouée pour la session est libérée automatiquement et sans fuite de mémoire quand l'objet LightGlueMatcher sera détruit.
     // this->session permet de stocker la session ONNX finalisée dans l'attribut session de la classe. Permet d'y accéder dans la méthode match().
     this->session = std::make_unique<Ort::Session>(this->env, modelPath.c_str(), session_options);
+
+    std::cout << "[DEBUG] Initialisation du LightGlueMatcher : fin\n";
 }
   
 
-cv::Mat LightGlueMatcher::preprocessImage(
-    const cv::Mat& image,
-    const std::string& imageName) const {
+cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::string& imageName, float& scale, bool grayscale) const {
+    std::cout << "[DEBUG] preprocessing de l'image " << imageName << " : début\n";
+
     // Vérifier que l'image contient bien des données.
     if (image.empty()) {
-        throw std::runtime_error(
-            "LightGlueMatcher: " + imageName + " est vide.");
+        throw std::runtime_error("LightGlueMatcher: " + imageName + " est vide.");
     }
 
-    cv::Mat colorImage;
+    // Ajout d'un redimensionnement (13/10/26)
+    int max_edge = 1200; // Je teste 1200
+    scale = 1.0f;
+    int max_dim = std::max(image.cols, image.rows);
+    cv::Mat resizedImage = image;
+    
+    if (max_dim > max_edge) {
+        scale = static_cast<float>(max_edge) / max_dim;
+        cv::resize(image, resizedImage, cv::Size(), scale, scale, cv::INTER_AREA);
+    }
 
-    // Le modèle attend une image avec trois canaux BGR.
-    if (image.channels() == 1) {
-        cv::cvtColor(image, colorImage, cv::COLOR_GRAY2BGR);
-    } else if (image.channels() == 4) {
-        cv::cvtColor(image, colorImage, cv::COLOR_BGRA2BGR);
-    } else if (image.channels() == 3) {
-        colorImage = image;
+    // Comment fonctionne le redimensionnement :
+    // max_dim prend la valeur 5176 (le plus grand côté de l'image).
+    // Comme 5176 est strictement supérieur à 1200 (max_edge), le programme entre dans la condition if.
+    // Il calcule le nouveau ratio : scale = 1200.0 / 5176.0, ce qui donne environ 0.2318.
+    // L'image est redimensionnée à 23% de sa taille d'origine (elle passe de 5176x5176 à 1200x1200) avant de rentrer dans le réseau de neurones.
+
+    std::cout << "[DEBUG] " << imageName 
+            << " | Taille originale : " << image.cols << "x" << image.rows 
+            << " | Scale : " << scale 
+            << " | Nouvelle taille : " << resizedImage.cols << "x" << resizedImage.rows << std::endl;
+
+
+    // Gestion intelligente des canaux de couleur (le modèle attend une image avec trois canaux BGR.)
+    // Pourquoi on applique un grayscale ou non ? Car si on utilise le modèle Superpoint, on a besoin d'une image en niveaux de gris (1 canal), alors que pour les modèles DISK ou ALIKED, on a besoin d'une image en couleur (3 canaux).
+    cv::Mat finalImage;
+    if (grayscale) {
+        // Le modèle exige du Niveaux de Gris (ex: SuperPoint)
+        if (resizedImage.channels() == 3) {
+            cv::cvtColor(resizedImage, finalImage, cv::COLOR_BGR2GRAY);
+        } else if (resizedImage.channels() == 4) {
+            cv::cvtColor(resizedImage, finalImage, cv::COLOR_BGRA2GRAY);
+        } else {
+            finalImage = resizedImage; // Déjà 1 canal
+        }
     } else {
-        throw std::runtime_error(
-            "LightGlueMatcher: " + imageName +
-            " contient un nombre de canaux non supporté.");
+        // Le modèle exige de la Couleur RGB (ex: DISK, ALIKED)
+        if (resizedImage.channels() == 1) {
+            cv::cvtColor(resizedImage, finalImage, cv::COLOR_GRAY2BGR);
+        } else if (resizedImage.channels() == 4) {
+            cv::cvtColor(resizedImage, finalImage, cv::COLOR_BGRA2BGR);
+        } else if (resizedImage.channels() == 3) {
+            finalImage = resizedImage;
+        }
     }
+
+    std::cout << "[DEBUG] preprocessing de l'image " << imageName << " : fin\n";
 
     // Convertir l'image en float, normaliser les valeurs et passer au format NCHW.
-    return cv::dnn::blobFromImage(
-        colorImage,
-        1.0 / 255.0,
-        cv::Size(),
-        cv::Scalar(),
-        true,
-        false
-    );
+    return cv::dnn::blobFromImage(finalImage, 1.0 / 255.0, cv::Size(), cv::Scalar(), !grayscale, false);
 }
 
 bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
+    std::cout << "[DEBUG] match LightGlue : début\n";
+
+    // Ajout d'un chronomètre pour mesurer le temps d'exécution de la méthode match() (13/10/26)
+    auto start_time = std::chrono::steady_clock::now();
+
     // Le contexte n'est pas utilisé par le modèle LightGlue.
     (void)ctx;
 
@@ -132,9 +170,22 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
 
+    // Ajout de la détection automatique si le modèle attend du niveaux de gris (1 canal) ou du RGB (3 canaux) (13/10/26)
+    bool use_grayscale = false;
+    Ort::TypeInfo type_info = this->session->GetInputTypeInfo(0);
+    auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
+    std::vector<int64_t> input_dims = tensor_info.GetShape();
+
+    // Si la dimension des canaux (index 1) est 1, alors c'est SuperPoint (grayscale)
+    if (input_dims.size() >= 2 && input_dims[1] == 1) {
+        use_grayscale = true;
+        std::cout << "[DEBUG] Modèle " << (use_grayscale ? "Grayscale" : "RGB") << " détecté.\n";
+    }
+
     // Préparer les deux images dans le même format pour le modèle.
-    cv::Mat blob1 = preprocessImage(a, "image A");
-    cv::Mat blob2 = preprocessImage(b, "image B");
+    float scale1 = 1.0f, scale2 = 1.0f; // Ajout des ratios de redimensionnement pour chaque image (13/10/26)
+    cv::Mat blob1 = preprocessImage(a, "image A", scale1, use_grayscale);
+    cv::Mat blob2 = preprocessImage(b, "image B", scale2, use_grayscale);
 
     // Lier la mémoire de ce blob à des tenseurs ONNX Runtime
     // Définir la forme (Shape) : [1, Canaux, Hauteur, Largeur]
@@ -168,6 +219,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     inputs.push_back(std::move(tensor1));
     inputs.push_back(std::move(tensor2));
 
+    std::cout << "[DEBUG] match LightGlue : exécution du modèle\n";
+
     // Exécution du modèle
     auto output_tensors = this->session->Run(
         Ort::RunOptions{nullptr},
@@ -179,6 +232,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     if (output_tensors.size() != 6) {
         throw std::runtime_error("LightGlueMatcher: le modèle doit renvoyer exactement 6 tenseurs.");
     }
+    std::cout << "[DEBUG] match LightGlue : traitement des résultats\n";
 
     // Traitement des résultats obtenus
 
@@ -263,6 +317,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     //  - match_idx > -1 : Confirme que le point i de img1 a bien été matché.
     //  - Extraction $(x, y)$  : Les données des points sont stockées à plat en mémoire (ex: x0, y0, x1, y1...). Pour obtenir le point i, on lit les indices i * 2 (pour X) et i * 2 + 1 (pour Y). On fait la même chose pour img2 en utilisant match_idx.
     //  - Stockage : Les coordonnées sont converties en objets cv::Point2f et poussées dans out.pointsA et out.pointsB. À ce stade, pointsA[k] et pointsB[k] représentent les coordonnées exactes du k-ème match valide.
+
+    std::cout << "[DEBUG] match LightGlue : association des coordonnées\n";
     
     for (size_t i = 0; i < num_elements; ++i) {
         int64_t match_idx = matches0_data[i];
@@ -289,8 +345,9 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             }
             
             // On enregistre les points correspondants dans les vecteurs de la structure de sortie
-            out.pointsA.push_back(cv::Point2f(x0, y0));
-            out.pointsB.push_back(cv::Point2f(x1, y1));
+            // Ajout de la division par le scale pour replacer les points sur les images 5176x5176 (13/10/26)
+            out.pointsA.push_back(cv::Point2f(x0 / scale1, y0 / scale1));
+            out.pointsB.push_back(cv::Point2f(x1 / scale2, y1 / scale2));
 
             // On enregistre le score correspondant
             out.scores.push_back(confidence_score);
@@ -305,6 +362,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         out.pointsA.size() != out.scores.size()) {
         throw std::runtime_error("LightGlueMatcher: les vecteurs de sortie ont des tailles incohérentes.");
     }
+
+    std::cout << "[DEBUG] match LightGlue : calcul de dx et dy\n";
 
     // Calcul du décalage (dx, dy) et enregistrement dans la structure de sortie.
     if (!out.pointsA.empty()) {
@@ -334,6 +393,12 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
         std::cout << "Dx : " << out.dx << ", Dy : " << out.dy << '\n';
     }
+
+    // std::cout << "[DEBUG] match LightGlue : fin\n";
+
+    auto end_time = std::chrono::steady_clock::now();
+    std::chrono::duration<double> elapsed = end_time - start_time;
+    std::cout << "[DEBUG] Temps total exécution match() : " << elapsed.count() << " secondes\n";
 
     return true;
 }
