@@ -24,6 +24,12 @@ target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlo
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
 
+# Test du backend : charge un script pipeline JSON et l'exécute
+add_executable(stitching_test src/main_test.cpp)
+target_link_libraries(stitching_test PRIVATE stitching_backend)
+# Racine du projet : pipeline.json et images/ sont trouvés quel que soit le dossier de lancement
+target_compile_definitions(stitching_test PRIVATE PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)
