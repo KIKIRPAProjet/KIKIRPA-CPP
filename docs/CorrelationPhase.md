@@ -49,16 +49,17 @@ Deux tuiles voisines A et B se recouvrent sur une bande (environ 20 % de leur ta
 ```cpp
 class CorrelationPhase : public FeatureMatcher {
 public:
-    explicit CorrelationPhase(const Json& params = {});
+    using Parametres = correlation_phase::Parametres;
+    explicit CorrelationPhase(const Parametres& p = {});
     bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
 private:
-    correlation_phase::Parametres parametres;   // lus une seule fois, dans le constructeur
+    Parametres parametres;   // vérifiés une seule fois, dans le constructeur
 };
 ```
 
 - La classe hérite de `FeatureMatcher`, comme `SiftMatcher` et `LightGlueMatcher`. Le pipeline (`StitchingStep`) peut donc l'utiliser sans savoir de quelle méthode il s'agit.
-- Elle est enregistrée dans `Factory.cpp` sous le nom **`"phase-correlation"`**, et c'est ce nom qui apparaît dans la liste de la GUI.
-- `params` : un objet JSON facultatif pour régler l'algorithme (voir §5). Il est lu une seule fois, dans le constructeur ; sans lui, les valeurs par défaut s'appliquent. **Un paramètre invalide lève `std::invalid_argument` à la construction**, comme un nom d'algorithme inconnu dans la Factory.
+- Elle est enregistrée dans `Factory.cpp` sous le nom **`"phase-correlation"`**, et c'est ce nom qui apparaît dans la liste de la GUI. La Factory la crée avec les valeurs par défaut : le JSON qu'elle reçoit est ignoré.
+- `p` : les réglages (voir §5), sous forme de structure typée **déjà remplie par l'appelant**. Il n'y a pas d'entrée JSON. Sans argument, toutes les valeurs par défaut s'appliquent. **Un paramètre invalide lève `std::invalid_argument` à la construction**, comme un nom d'algorithme inconnu dans la Factory.
 
 ### Entrées de `match()`
 
@@ -101,7 +102,7 @@ Le compilateur interdit d'appeler une fonction `private` depuis un autre module.
 
 | Module | Rôle | Public | Private |
 |---|---|---|---|
-| **`Preparation`** | Des tuiles brutes aux images de travail (gris float64, NaN = vide) | `lireParametres`, `orienter`, `bandes`, `recouvrement`, `valides`, `remplirVides` | `oppose`, `bande`, `margeRail`, `zoneExterieure`, `enGris`, `valeurMax`, `zoneAvecContenu` |
+| **`Preparation`** | Des tuiles brutes aux images de travail (gris float64, NaN = vide) | `verifierParametres`, `orienter`, `bandes`, `recouvrement`, `valides`, `remplirVides` | `oppose`, `bande`, `margeRail`, `zoneExterieure`, `enGris`, `valeurMax`, `zoneAvecContenu` |
 | **`Algorithme`** | Uniquement du calcul sur des images préparées | `mesurerGlobal`, `raffiner` | corrélation : `correlationDePhase`, `spectre`, `spectreCroiseNormalise`, `filtreGaussien`, `partieReelleInverse`, `zoneAutorisee`, `localiserPic`, `raffinerPic`, `noyauDft`, `decalageSigne`, `frequence`, `rapportPics` — local : `candidats`, `mesurerPoint`, `ncc` |
 | **`Sortie`** | Mise en forme au format commun `Matches` | `construire` | `trierEtLimiter`, `versTuiles`, `annulerOrientation` |
 
@@ -111,7 +112,7 @@ Le compilateur interdit d'appeler une fonction `private` depuis un autre module.
 
 | Structure | Produite par | Contenu |
 |---|---|---|
-| `Parametres` | `Preparation::lireParametres` | Réglages (§5) |
+| `Parametres` | l'appelant (vérifiés par `Preparation::verifierParametres`) | Réglages (§5) |
 | `PaireOrientee` | `Preparation::orienter` | A et B ramenées au cas « B en bas / à droite », masques extérieurs, indicateur `inversee` |
 | `Bandes` | `Preparation::bandes` | Bandes de recouvrement en gris + position nominale `(tx0, ty0)` + marge du rail |
 | `Correlation` | `Algorithme` (interne) | Décalage `(dy, dx)`, hauteur du pic, surface lissée, zone où le pic est cherché |
@@ -144,7 +145,7 @@ match(a, b, ctx)
  │      └─ mesurerPoint ×N         patch 64×64 : correlationDePhase locale, filtres, ncc
  │
  └─ Sortie::construire
-        ├─ trierEtLimiter          confiance décroissante, nb_points meilleurs
+        ├─ trierEtLimiter          confiance décroissante, nbPoints meilleurs
         ├─ versTuiles              coordonnées dans les tuiles entières
         └─ annulerOrientation      si A et B avaient été échangées : −(x, y), pointsA ↔ pointsB
 ```
@@ -173,7 +174,7 @@ Dans `enGris`, deux autres sortes de pixels sont retirées (NaN) :
 - **les pixels saturés** : gris ≥ 99,8 % du maximum du type (65 535 en 16 bits, 255 en 8 bits, 1 pour une tuile flottante). Un reflet écrêté n'a plus de texture, et la tache claire n'est pas au même endroit dans les deux tuiles : elle attirerait le pic vers un faux décalage ;
 - **une bordure de 4 px** autour de toute zone retirée (extérieur ou saturation), par érosion du masque des pixels valides. La transition entre le fond et la peinture (quelques pixels sombres mais non nuls) est au même endroit dans les deux tuiles : sans érosion, elle formerait un faux détail commun, de décalage nul. Le bord de l'image n'est pas érodé.
 
-Enfin, `bandes` refuse la mesure si moins de 25 % des pixels sont exploitables dans les deux bandes à la fois (`fraction_valide_min`).
+Enfin, `bandes` refuse la mesure si moins de 25 % des pixels sont exploitables dans les deux bandes à la fois (`fractionValideMin`).
 
 ### Étape 1 : la translation globale
 
@@ -206,11 +207,11 @@ Enfin, `bandes` refuse la mesure si moins de 25 % des pixels sont exploitables d
 
 La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que RANSAC puisse détecter une rotation ou une déformation et écarter les mauvais points.
 
-- **Candidats** : `cv::goodFeaturesToTrack` (Shi-Tomasi) choisit des coins bien texturés dans la zone commune. On en demande 3 × `nb_points`, espacés d'au moins `espacement_min` px, et assez loin des bords pour que les patchs restent dans l'image.
-- **Mesure locale** : pour chaque candidat, on prend un patch de `fenetre`×`fenetre` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlationDePhase` sur ces deux patchs, ce qui donne un petit résidu local, au 1/100 px lui aussi. Ici le pic est cherché **sans marge** : limiter la recherche à ±`ecart_max` masquerait tout le voisinage du pic et viderait le test du second pic. L'écart à la translation globale est contrôlé juste après.
-- **Filtres** : le point est rejeté si le patch contient plus de 50 % de pixels vides, si la translation locale s'écarte de plus de `ecart_max` px de la globale, ou si le pic local est ambigu.
+- **Candidats** : `cv::goodFeaturesToTrack` (Shi-Tomasi) choisit des coins bien texturés dans la zone commune. On en demande 3 × `nbPoints`, espacés d'au moins `espacementMin` px, et assez loin des bords pour que les patchs restent dans l'image.
+- **Mesure locale** : pour chaque candidat, on prend un patch de `fenetre`×`fenetre` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlationDePhase` sur ces deux patchs, ce qui donne un petit résidu local, au 1/100 px lui aussi. Ici le pic est cherché **sans marge** : limiter la recherche à ±`ecartMax` masquerait tout le voisinage du pic et viderait le test du second pic. L'écart à la translation globale est contrôlé juste après.
+- **Filtres** : le point est rejeté si le patch contient plus de 50 % de pixels vides, si la translation locale s'écarte de plus de `ecartMax` px de la globale, ou si le pic local est ambigu.
 - **Confiance** : NCC (corrélation normalisée, `cv::matchTemplate` en mode `TM_CCOEFF_NORMED`) entre les deux patchs une fois recalés. 1 signifie des patchs identiques ; la valeur est ramenée à 0 si elle est négative.
-- **Sélection** : tri par confiance décroissante, puis on garde au plus `nb_points` points.
+- **Sélection** : tri par confiance décroissante, puis on garde au plus `nbPoints` points.
 
 Coordonnées : `pointsA[i]` est entier (centre du patch dans A) ; `pointsB[i]` est sous-pixel (`pointsA[i] − translation locale`).
 
@@ -245,20 +246,26 @@ Trois éléments viennent de la version révisée du chef de projet (notebook `S
 
 ## 5. Paramètres
 
-On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher("phase-correlation", {{"nb_points", 1000}})`.
+Ce sont les champs de la structure `CorrelationPhase::Parametres` (`correlation_phase/Types.h`). L'appelant la remplit et la passe au constructeur ; chaque champ non modifié garde sa valeur par défaut :
 
-| Clé | Défaut | Effet |
+```cpp
+CorrelationPhase::Parametres p;   // valeurs par défaut
+p.nbPoints = 1000;
+CorrelationPhase algo(p);
+```
+
+| Champ | Défaut | Effet |
 |---|---|---|
 | `lissage` | 3.0 | σ (px) du flou de la surface globale. Plus il est grand, moins le bruit haute fréquence pèse, mais le pic est plus large. |
-| `seuil_rapport` | 1.5 | Rapport minimal entre le meilleur pic et le second, pour la mesure globale comme pour les mesures locales. |
-| `nb_points` | 500 | Nombre maximal de points renvoyés (0 = translation seule, sans points). |
+| `seuilRapport` | 1.5 | Rapport minimal entre le meilleur pic et le second, pour la mesure globale comme pour les mesures locales. |
+| `nbPoints` | 10 | Nombre maximal de points renvoyés (0 = translation seule, sans points). |
 | `fenetre` | 64 | Côté (px) des patchs locaux. Plus grand : mesure plus stable mais plus lente et moins locale. |
-| `lissage_local` | 1.5 | σ (px) du flou des surfaces locales. |
-| `ecart_max` | 3.0 | Écart maximal (px) toléré entre la translation locale et la translation globale. |
-| `espacement_min` | 16 | Distance minimale (px) entre deux points candidats. |
+| `lissageLocal` | 1.5 | σ (px) du flou des surfaces locales. |
+| `ecartMax` | 3.0 | Écart maximal (px) toléré entre la translation locale et la translation globale. |
+| `espacementMin` | 16 | Distance minimale (px) entre deux points candidats. |
 | `marge` | 0 | Écart maximal (px), sur chaque axe, entre la translation globale et le recouvrement nominal (incertitude du rail). 0 = automatique : 5 % de la tuile dans le sens du déplacement, au moins 48 px. |
-| `fraction_valide_min` | 0.25 | Part minimale de pixels exploitables (ni extérieurs, ni saturés) communs aux deux bandes. |
-| `facteur_dft` | 100 | Précision du sous-pixel : 1/`facteur_dft` px. Le coût du raffinement est proportionnel à ce facteur. |
+| `fractionValideMin` | 0.25 | Part minimale de pixels exploitables (ni extérieurs, ni saturés) communs aux deux bandes. |
+| `facteurDft` | 100 | Précision du sous-pixel : 1/`facteurDft` px. Le coût du raffinement est proportionnel à ce facteur. |
 
 ---
 
@@ -268,7 +275,7 @@ On les passe en JSON au moment de la création, par exemple `makeFeatureMatcher(
 - **Pixels à 0 = vide seulement s'ils sont reliés au bord** (voir l'étape 0). Il reste une limite : on ne sait pas quels bords de la tuile sont l'extrémité du tableau. Une ombre à 0 coupée par un bord **intérieur** de la tuile (un bord partagé avec une tuile voisine) est donc encore considérée comme vide. Voir la remarque ci-dessous.
 - **Exactement 0.** Seul un 0 exact est considéré comme vide. Un fond extérieur légèrement bruité (1, 2…) sera traité comme une donnée. L'érosion de 4 px en atténue l'effet au bord du fond, sans le supprimer.
 - **Marge du rail fixe.** Elle suppose que la translation réelle est à moins de `marge` px du recouvrement nominal donné par `ctx.overlap`. Si le rail ou le recouvrement annoncé est plus faux que cela, la mesure trouve un pic faux dans la marge, ou échoue. Augmenter `marge` dans ce cas.
-- **Coût du sous-pixel.** Le raffinement DFT coûte environ 150 × (nombre de pixels de la bande) multiplications complexes, soit de l'ordre de 10⁹ pour une bande de 1035 × 5176 px. **Le temps n'a pas été mesuré** (code non compilé). S'il est trop long : baisser `facteur_dft` (le coût est proportionnel), ou raffiner en deux passes (1/10 px sur ±0,75 px, puis 1/100 px sur ±0,1 px), environ 5 fois moins cher.
+- **Coût du sous-pixel.** Le raffinement DFT coûte environ 150 × (nombre de pixels de la bande) multiplications complexes, soit de l'ordre de 10⁹ pour une bande de 1035 × 5176 px. **Le temps n'a pas été mesuré** (code non compilé). S'il est trop long : baisser `facteurDft` (le coût est proportionnel), ou raffiner en deux passes (1/10 px sur ±0,75 px, puis 1/100 px sur ±0,1 px), environ 5 fois moins cher.
 - **Pas de normalisation par percentiles.** La corrélation de phase ne garde que la phase et la NCC est normalisée : ni l'une ni l'autre ne change si l'on applique une transformation affine à l'intensité (`a·I + b`). L'étape n'apportait donc rien.
 - **Test « zone uniforme » fait sur la bande** et non sur la tuile entière. C'est sans conséquence pratique : une bande uniforme ne peut de toute façon pas être mesurée.
 - **Translation uniquement.** Le modèle global est une translation. Une légère rotation ou une déformation du support apparaît dans les points locaux, que RANSAC traitera ensuite.
@@ -316,6 +323,8 @@ Les points 2 et 3 sont automatisés dans `tests/test_correlation_phase.cpp` (cib
 
 ### Résultats
 
+Les mesures ci-dessous ont été faites avec `nbPoints = 500` (défaut de l'époque ; il est maintenant de 10).
+
 **Vérité exacte** (`test_correlation_phase`, tuiles de 1000 px, recouvrement 20 %, décalages résiduels non entiers de 3 à 31 px, 4 directions), sur trois sources : texture générée, `synthetic_v1.0/NOM_0001_full.tif`, tuile réelle Savery 03.
 
 | | |
@@ -333,4 +342,4 @@ Les points 2 et 3 sont automatisés dans `tests/test_correlation_phase.cpp` (cib
 | Points | 136 à 500 par paire, à 1 à 2,7 px (médiane) de la translation globale. Sur le synthétique, cet écart est de 0,01 px : il mesure la déformation réelle le long de la couture, qu'une translation ne décrit pas (voir le README Python, « arche » de 12 px) |
 | Temps de `match()` | 2 à 8 s par paire, contre 0,8 à 2,5 s pour `mesurer_decalage` (Python, translation seule) |
 
-Détail du temps sur Savery 01 → 02 : 8,1 s avec les réglages par défaut, 2,5 s en translation seule (`nb_points = 0`, autant que le Python), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `facteur_dft = 10`, la paire entière prend 2,5 s.
+Détail du temps sur Savery 01 → 02 : 8,1 s avec `nbPoints = 500`, 2,5 s en translation seule (`nbPoints = 0`, autant que le Python), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `facteurDft = 10`, la paire entière prend 2,5 s.

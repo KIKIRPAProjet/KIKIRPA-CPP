@@ -10,26 +10,14 @@
 
 namespace stitching::matching::correlation_phase {
 
-Parametres Preparation::lireParametres(const Json& params) {
-    Parametres p;
-    if (params.is_null()) return p;
-    if (!params.is_object()) throw std::invalid_argument("phase-correlation : les paramètres doivent être un objet JSON");
-    p.lissage       = params.value("lissage", p.lissage);
-    p.seuilRapport  = params.value("seuil_rapport", p.seuilRapport);
-    p.lissageLocal  = params.value("lissage_local", p.lissageLocal);
-    p.ecartMax      = params.value("ecart_max", p.ecartMax);
-    p.espacementMin = params.value("espacement_min", p.espacementMin);
-    p.marge         = params.value("marge", p.marge);
-    p.fractionValideMin = params.value("fraction_valide_min", p.fractionValideMin);
-    p.nbPoints      = params.value("nb_points", p.nbPoints);
-    p.fenetre       = params.value("fenetre", p.fenetre);
-    p.facteurDft    = params.value("facteur_dft", p.facteurDft);
+void Preparation::verifierParametres(const Parametres& p) {
+    // Vérifié une fois à la construction : une valeur hors domaine est une erreur de configuration,
+    // pas un échec de mesure, d'où l'exception plutôt qu'un false dans match()
     if (p.nbPoints < 0 || p.fenetre < 8 || p.lissage < 0 || p.lissageLocal < 0 || p.ecartMax < 0 || p.espacementMin < 0
         || p.marge < 0 || p.fractionValideMin < 0 || p.fractionValideMin > 1 || p.facteurDft < 1)
-        throw std::invalid_argument("phase-correlation : paramètre invalide (nb_points >= 0, fenetre >= 8, "
-                                    "facteur_dft >= 1, fraction_valide_min dans [0, 1], "
-                                    "lissage, lissage_local, ecart_max, espacement_min, marge >= 0)");
-    return p;
+        throw std::invalid_argument("phase-correlation : paramètre invalide (nbPoints >= 0, fenetre >= 8, "
+                                    "facteurDft >= 1, fractionValideMin dans [0, 1], "
+                                    "lissage, lissageLocal, ecartMax, espacementMin, marge >= 0)");
 }
 
 std::optional<PaireOrientee> Preparation::orienter(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx) {

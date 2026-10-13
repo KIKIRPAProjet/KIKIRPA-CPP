@@ -8,8 +8,8 @@ namespace stitching::matching::correlation_phase {
 // (gris float64, NaN = pixel vide). Aucune conversion en 8 bits, les tuiles ne sont jamais modifiées.
 class Preparation {
 public:
-    // Paramètres JSON → Parametres (valeurs par défaut si absents). Lève std::invalid_argument si invalides.
-    static Parametres lireParametres(const Json& params);
+    // Lève std::invalid_argument si un paramètre est hors de son domaine (fenetre < 8, valeur négative…)
+    static void verifierParametres(const Parametres& p);
 
     // Vérifie la paire, la ramène au cas « B en bas / à droite » (échange A et B si besoin)
     // et calcule les zones extérieures. Vide si les tuiles sont vides, de tailles différentes,

@@ -11,8 +11,9 @@ using correlation_phase::Correspondance;
 using correlation_phase::Preparation;
 using correlation_phase::Sortie;
 
-CorrelationPhase::CorrelationPhase(const Json& params)
-    : parametres(Preparation::lireParametres(params)) {}
+CorrelationPhase::CorrelationPhase(const Parametres& p) : parametres(p) {
+    Preparation::verifierParametres(parametres);
+}
 
 bool CorrelationPhase::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
     out = {};

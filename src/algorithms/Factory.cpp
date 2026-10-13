@@ -19,6 +19,10 @@ using Registry = std::map<std::string, std::function<std::unique_ptr<Base>(const
 template <class Base, class Impl>
 std::unique_ptr<Base> make(const Json& params) { return std::make_unique<Impl>(params); }
 
+// Algorithme sans entrée JSON (ses paramètres sont une structure typée) : créé avec ses valeurs par défaut
+template <class Base, class Impl>
+std::unique_ptr<Base> makeParDefaut(const Json&) { return std::make_unique<Impl>(); }
+
 template <class Base>
 std::unique_ptr<Base> create(const Registry<Base>& registry, const std::string& kind,
                              const std::string& name, const Json& params) {
@@ -44,7 +48,7 @@ const Registry<matching::FeatureMatcher>& matchers() {
     using namespace matching;
     static const Registry<FeatureMatcher> registry = {
         {"sift",              make<FeatureMatcher, SiftMatcher>},
-        {"phase-correlation", make<FeatureMatcher, CorrelationPhase>},
+        {"phase-correlation", makeParDefaut<FeatureMatcher, CorrelationPhase>},
         {"lightglue",         make<FeatureMatcher, LightGlueMatcher>},
     };
     return registry;

@@ -7,9 +7,9 @@
 //       générée ; sinon, chaque image donnée sert de source (ex. NOM_0001_full.tif, une tuile réelle).
 //       Code de retour 0 si tous les tests passent.
 //
-//   test_correlation_phase --paire A.tif B.tif position [recouvrement] [paramètres JSON]
-//       Mesure une paire réelle et écrit le résultat en JSON sur une ligne (comparaison avec le Python).
-//       Ex. de paramètres : {"nb_points": 0} pour la translation seule.
+//   test_correlation_phase --paire A.tif B.tif position [recouvrement]
+//       Mesure une paire réelle (paramètres par défaut) et écrit le résultat en JSON sur une ligne
+//       (comparaison avec le Python).
 //       position : bas, haut, droite, gauche (où est B par rapport à A, comme mesurer_decalage).
 
 #include "algorithms/matching/CorrelationPhase.h"
@@ -232,18 +232,24 @@ void testerCasLimites(const cv::Mat& source) {
     verifier(!cp.match(A, B, {Direction::Bottom, 0.f}, m), "recouvrement 0 -> false");
     verifier(!cp.match(A, B, {Direction::Bottom, 1.5f}, m), "recouvrement 1.5 -> false");
 
-    // nb_points = 0 : translation seule
-    CorrelationPhase sansPoints({{"nb_points", 0}});
+    // nbPoints = 0 : translation seule
+    CorrelationPhase::Parametres translationSeule;
+    translationSeule.nbPoints = 0;
+    CorrelationPhase sansPoints(translationSeule);
     verifier(sansPoints.match(A, B, bas, m) && m.pointsA.empty() && std::abs(m.y - vrai.y) < TOLERANCE_TRANSLATION,
-             "nb_points = 0 -> translation seule, aucun point");
+             "nbPoints = 0 -> translation seule, aucun point");
 
     // Paramètres invalides : erreur de configuration, à la construction
+    CorrelationPhase::Parametres fenetreTropPetite;
+    fenetreTropPetite.fenetre = 4;
     bool leve = false;
-    try { CorrelationPhase invalide({{"fenetre", 4}}); } catch (const std::invalid_argument&) { leve = true; }
+    try { CorrelationPhase invalide(fenetreTropPetite); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "fenetre = 4 -> std::invalid_argument");
+    CorrelationPhase::Parametres fractionHorsDomaine;
+    fractionHorsDomaine.fractionValideMin = 1.5;
     leve = false;
-    try { CorrelationPhase invalide(Json::array({1, 2})); } catch (const std::invalid_argument&) { leve = true; }
-    verifier(leve, "paramètres non objet -> std::invalid_argument");
+    try { CorrelationPhase invalide(fractionHorsDomaine); } catch (const std::invalid_argument&) { leve = true; }
+    verifier(leve, "fractionValideMin = 1.5 -> std::invalid_argument");
 
     // Motif périodique : ses copies (tous les 75 px) sont hors de la marge du rail (50 px),
     // seul le pic dans la marge est retenu
@@ -256,8 +262,7 @@ void testerCasLimites(const cv::Mat& source) {
 }
 
 // Mode --paire : mesure une paire réelle, résultat en JSON sur une ligne
-int mesurerPaire(const std::string& cheminA, const std::string& cheminB, const std::string& position, double recouvrement,
-                 const Json& params) {
+int mesurerPaire(const std::string& cheminA, const std::string& cheminB, const std::string& position, double recouvrement) {
     const std::map<std::string, Direction> directions = {
         {"bas", Direction::Bottom}, {"haut", Direction::Top}, {"droite", Direction::Right}, {"gauche", Direction::Left}};
     if (!directions.count(position)) {
@@ -269,7 +274,7 @@ int mesurerPaire(const std::string& cheminA, const std::string& cheminB, const s
         std::cerr << "lecture impossible : " << (A.empty() ? cheminA : cheminB) << '\n';
         return 2;
     }
-    CorrelationPhase cp(params);
+    CorrelationPhase cp;
     Matches m;
     const auto debut = std::chrono::steady_clock::now();
     const bool ok = cp.match(A, B, {directions.at(position), static_cast<float>(recouvrement)}, m);
@@ -291,11 +296,10 @@ int main(int argc, char** argv) {
     const std::vector<std::string> args(argv + 1, argv + argc);
     if (!args.empty() && args[0] == "--paire") {
         if (args.size() < 4) {
-            std::cerr << "usage : test_correlation_phase --paire A.tif B.tif position [recouvrement] [paramètres JSON]\n";
+            std::cerr << "usage : test_correlation_phase --paire A.tif B.tif position [recouvrement]\n";
             return 2;
         }
-        return mesurerPaire(args[1], args[2], args[3], args.size() > 4 ? std::stod(args[4]) : RECOUVREMENT,
-                            args.size() > 5 ? stitching::Json::parse(args[5]) : stitching::Json());
+        return mesurerPaire(args[1], args[2], args[3], args.size() > 4 ? std::stod(args[4]) : RECOUVREMENT);
     }
 
     std::vector<std::pair<std::string, cv::Mat>> sources;

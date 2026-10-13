@@ -5,7 +5,7 @@
 // Preparation → Algorithme → Sortie (voir CorrelationPhase.cpp pour l'enchaînement).
 namespace stitching::matching::correlation_phase {
 
-// Réglages de l'algorithme (lus depuis le JSON par Preparation::lireParametres)
+// Réglages de l'algorithme, remplis par l'appelant (vérifiés par Preparation::verifierParametres)
 struct Parametres {
     double lissage       = 3.0;   // sigma (px) du flou gaussien de la surface de corrélation globale
     double seuilRapport  = 1.5;   // rapport minimal pic / second pic pour accepter une mesure
@@ -15,7 +15,7 @@ struct Parametres {
     double marge         = 0.0;   // écart maximal (px) entre la translation globale et le recouvrement nominal
                                   // (incertitude du rail) ; 0 = automatique (voir Preparation::margeRail)
     double fractionValideMin = 0.25;  // part minimale de pixels exploitables, communs aux deux bandes
-    int    nbPoints      = 500;   // nombre maximal de points renvoyés (0 = translation seule)
+    int    nbPoints      = 10;    // nombre maximal de points renvoyés (0 = translation seule)
     int    fenetre       = 64;    // côté (px) des patchs de corrélation locale
     int    facteurDft    = 100;   // précision du sous-pixel : 1/facteurDft px
 };
