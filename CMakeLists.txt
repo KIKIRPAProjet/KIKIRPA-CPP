@@ -31,8 +31,8 @@ if(BUILD_TESTING)
   add_test(
     NAME sift_matcher_test
     COMMAND sift_matcher_test
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/sift/image_a.png"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/sift/image_b.png")
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/data/sift"
+            "0.3")
 endif()
 
 # Interface graphique (Qt 6), construite seulement si Qt est installé

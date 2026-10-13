@@ -1,23 +1,28 @@
-# SIFT test images
+# Automatic SIFT tile positions
 
-Place two PNG images named `image_a.png` and `image_b.png` in this folder.
-They should show the same scene or have enough shared visual detail for SIFT
-to find at least four reliable correspondences in a 30% overlap region. The
-test expects the common area at the right edge of `image_a.png` and the left
-edge of `image_b.png`.
+Automatic mode reads image filenames containing coordinates in the form
+`_r00_c00` (row and column). It compares only direct neighbors: the tile to the
+right and the tile below. Diagonal pairs are skipped. Images without grid
+coordinates, such as `image_a.png` and `image_b.png`, are ignored.
 
-Run the test with CTest from the repository root:
+Run from the repository root in PowerShell:
 
 ```powershell
-ctest --test-dir build -C Debug --output-on-failure
+.\build\Debug\sift_matcher_test.exe .\tests\data\sift 0.3
 ```
 
-The test prints the SIFT keypoint count for each image and the number of
-reliable correspondences between them.
+The program prints a C++ `std::vector<stitching::TilePositionData>` initializer.
+The struct is declared in `include/core/Types.h` and contains `tile_id` and the
+top-left `cv::Point2d position`. The first tile in the connected grid is the
+reference at `(0, 0)`. Positions are estimated by least squares from all
+successful neighbor offsets; disconnected tiles are not included.
 
+The offset constraint for each matched pair is `positionB - positionA =
+median(pointA - pointB)`. The optional overlap argument is a fraction from 0 to
+1 and defaults to 0.3.
 
+Manual pair mode remains available:
 
-
-
-pour test :
-.\sift_matcher_test.exe ..\..\tests\data\sift\image_a.png ..\..\tests\data\sift\image_b.png
+```powershell
+.\build\Debug\sift_matcher_test.exe .\tests\data\sift\NOM_r00_c01.png .\tests\data\sift\NOM_r01_c01.png vertical
+```

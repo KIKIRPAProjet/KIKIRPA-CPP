@@ -1,6 +1,7 @@
 #pragma once
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
+#include <string>
 #include <vector>
 
 namespace stitching {
@@ -28,6 +29,11 @@ struct Matches {
 struct Alignment {
     cv::Mat transform;            // transformation b -> a (3x3, CV_64F)
     std::vector<uchar> inliers;   // 1 = inlier, même taille que Matches
+};
+
+struct TilePositionData {
+    std::string tile_id;
+    cv::Point2d position;
 };
 
 } // namespace stitching
