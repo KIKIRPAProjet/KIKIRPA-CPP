@@ -1,4 +1,4 @@
-#include "seamlib/cost_catalog.hpp"
+#include "algorithms/seamline/cost_catalog.hpp"
 
 #include <opencv2/imgproc.hpp>
 

@@ -3,9 +3,9 @@
 #include <opencv2/core.hpp>
 #include <vector>
 
-#include "export.hpp"
-#include "seamlib/cost_catalog.hpp"
-#include "seamlib/solver.hpp"
+#include "algorithms/seamline/export.hpp"
+#include "algorithms/seamline/cost_catalog.hpp"
+#include "algorithms/seamline/solver.hpp"
 
 
 namespace seamlib

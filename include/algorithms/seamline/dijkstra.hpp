@@ -24,8 +24,8 @@
 
 #include <vector>
 
-#include "seamlib/dynamic_programming.hpp"
-#include "seamlib/export.hpp"
+#include "algorithms/seamline/dynamic_programming.hpp"
+#include "algorithms/seamline/export.hpp"
 
 namespace seamlib {
 

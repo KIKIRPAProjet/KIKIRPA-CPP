@@ -1,7 +1,7 @@
-#include "seamlib/solver.hpp"
+#include "algorithms/seamline/solver.hpp"
 
-#include "seamlib/dijkstra.hpp"
-#include "seamlib/dynamic_programming.hpp"
+#include "algorithms/seamline/dijkstra.hpp"
+#include "algorithms/seamline/dynamic_programming.hpp"
 
 #include <algorithm>
 #include <chrono>

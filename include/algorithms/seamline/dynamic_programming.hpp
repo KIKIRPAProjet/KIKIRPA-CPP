@@ -15,7 +15,7 @@
 
 #include <vector>
 
-#include "seamlib/export.hpp"
+#include "algorithms/seamline/export.hpp"
 
 namespace seamlib {
 

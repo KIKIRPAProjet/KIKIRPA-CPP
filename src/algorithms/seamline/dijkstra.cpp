@@ -1,4 +1,4 @@
-#include "seamlib/dijkstra.hpp"
+#include "algorithms/seamline/dijkstra.hpp"
 
 #include <opencv2/imgproc.hpp>
 

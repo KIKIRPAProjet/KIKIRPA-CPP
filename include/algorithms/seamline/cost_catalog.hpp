@@ -22,8 +22,8 @@
 // =====================================================================================
 #pragma once
 
-#include "seamlib/cost_map.hpp"
-#include "seamlib/export.hpp"
+#include "algorithms/seamline/cost_map.hpp"
+#include "algorithms/seamline/export.hpp"
 
 #include <string>
 #include <vector>

@@ -1,7 +1,7 @@
-#include "seamlib/seam_finder.hpp"
+#include "algorithms/seamline/seam_finder.hpp"
 
-#include "seamlib/cost_catalog.hpp"
-#include "seamlib/solver.hpp"
+#include "algorithms/seamline/cost_catalog.hpp"
+#include "algorithms/seamline/solver.hpp"
 
 // Ici on code la méthode concrètement
 namespace seamlib

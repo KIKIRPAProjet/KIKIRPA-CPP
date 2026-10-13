@@ -1,4 +1,4 @@
-#include "seamlib/cost_map.hpp"
+#include "algorithms/seamline/cost_map.hpp"
 
 #include <opencv2/imgproc.hpp>
 

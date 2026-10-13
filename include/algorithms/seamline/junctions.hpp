@@ -43,8 +43,8 @@
 #include <string>
 #include <utility>
 
-#include "seamlib/export.hpp"
-#include "seamlib/solver.hpp"
+#include "algorithms/seamline/export.hpp"
+#include "algorithms/seamline/solver.hpp"
 
 namespace seamlib {
 

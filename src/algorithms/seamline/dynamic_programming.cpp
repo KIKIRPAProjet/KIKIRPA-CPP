@@ -1,4 +1,4 @@
-#include "seamlib/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming.hpp"
 
 #include <algorithm>
 #include <cmath>
