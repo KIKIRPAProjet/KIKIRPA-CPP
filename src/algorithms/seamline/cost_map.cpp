@@ -1,4 +1,4 @@
-#include "algorithms/seamline/cost_map.hpp"
+#include "algorithms/seamline/cost_map.hpp
 
 #include <opencv2/imgproc.hpp>
 
@@ -13,14 +13,17 @@ namespace seamlib {
     namespace {
 
         // Copie toutes les valeurs (tous canaux) dans un vecteur de doubles.
+        // La conversion écrit directement dans le vecteur : pas de cv::Mat intermédiaire.
         std::vector<double> to_vector(const cv::Mat& m) {
-            cv::Mat d;
-            m.reshape(1, 1).convertTo(d, CV_64F);
-            return std::vector<double>(d.begin<double>(), d.end<double>());
+            const cv::Mat flat = m.reshape(1, 1);
+            std::vector<double> v(flat.total());
+            cv::Mat view(1, static_cast<int>(v.size()), CV_64F, v.data());
+            flat.convertTo(view, CV_64F);   // même taille et même type : OpenCV écrit dans `view` sans réallouer
+            return v;
         }
 
-        // Équivalent de np.median.
-        double median(std::vector<double> v) {
+        // Équivalent de np.median. Réordonne `v` sur place au lieu d'en faire une copie.
+        double median_inplace(std::vector<double>& v) {
             if (v.empty()) throw std::invalid_argument("median : tableau vide");
             const size_t mid = v.size() / 2;
             std::nth_element(v.begin(), v.begin() + mid, v.end());
@@ -48,6 +51,14 @@ namespace seamlib {
             return false;
         }
 
+        // |Gx| du gris d'une image RGB. Seul Gx sert au facteur de texture : on ne calcule ni Gy ni la norme.
+        cv::Mat abs_sobel_x(const cv::Mat& rgb) {
+            cv::Mat gx;
+            cv::Sobel(gray_raw(rgb), gx, CV_64F, 1, 0, 3);   // mêmes réglages que gradient()
+            cv::absdiff(gx, cv::Scalar::all(0), gx);         // = cv::abs(gx), sur place
+            return gx;
+        }
+
     }  // namespace
 
     Gradients gradient(const cv::Mat& gray) {
@@ -71,10 +82,11 @@ namespace seamlib {
     }
 
     double mad_calculator(const cv::Mat& img) {
+        // Un seul vecteur : la médiane le réordonne, ce qui ne change ni la médiane ni les écarts.
         std::vector<double> v = to_vector(img);
-        const double med = median(v);
+        const double med = median_inplace(v);
         for (double& x : v) x = std::abs(x - med);
-        return median(v);
+        return median_inplace(v);
     }
 
     cv::Mat percentile(const cv::Mat& img, double n_eme) {
@@ -86,15 +98,20 @@ namespace seamlib {
     }
 
     cv::Mat gray_raw(const cv::Mat& img) {
-        CV_Assert(img.channels() == 1 || img.channels() == 3);
-        cv::Mat f;
-        img.convertTo(f, CV_32F);   // convertTo garde le nombre de canaux
-        if (img.channels() == 1) return f;   // déjà en gris (ex. IRR) : rien à mélanger
+        CV_Assert(img.channels() == 3);
         cv::Mat g;
+        if (img.depth() == CV_32F) {             // déjà en float : pas de copie intermédiaire
+            cv::cvtColor(img, g, cv::COLOR_RGB2GRAY);
+            return g;
+        }
+        cv::Mat f;
+        img.convertTo(f, CV_32FC3);
         cv::cvtColor(f, g, cv::COLOR_RGB2GRAY);
         return g;
     }
 
+    // Mémoire : chaque matrice intermédiaire vit dans un bloc { } ou est libérée par release()
+    // dès sa dernière utilisation. Les calculs et leur ordre sont ceux de la version d'origine.
     CostMaps compute_cost_maps(const cv::Mat& crop_a, const cv::Mat& crop_b, const CostMapParams& p) {
         if (!is_one_of(p.normalization, { "noise", "percentile" }))
             throw std::invalid_argument("normalization doit valoir 'noise' ou 'percentile'.");
@@ -102,34 +119,42 @@ namespace seamlib {
             throw std::invalid_argument("color_norm doit valoir 'manhattan' ou 'euclidian'.");
         if (!is_one_of(p.treatment, { "sigmoid", "linear", "squared", "caped" }))
             throw std::invalid_argument("treatment doit valoir sigmoid, linear, squared ou caped");
-        // 1 canal (gris, ex. IRR) ou 3 canaux (RGB). En gris, l'écart de couleur se réduit à |A − B|.
-        CV_Assert((crop_a.channels() == 1 || crop_a.channels() == 3) && crop_a.channels() == crop_b.channels()
-            && crop_a.size() == crop_b.size());
+        CV_Assert(crop_a.channels() == 3 && crop_b.channels() == 3 && crop_a.size() == crop_b.size());
 
-        cv::Mat fa, fb;
-        crop_a.convertTo(fa, CV_32F);   // convertTo garde le nombre de canaux
-        crop_b.convertTo(fb, CV_32F);
-        const cv::Mat d_col = fa - fb;
+        const bool noise = (p.normalization == "noise");
 
-        std::vector<cv::Mat> ch;
-        cv::split(d_col, ch);
-        const double n_ch = double(ch.size());
+        // --- 1a. Écart de couleur --------------------------------------------------------------
+        // d_col = A − B, calculé dans le buffer de A : deux images float au lieu de trois.
+        cv::Mat d_col;
+        crop_a.convertTo(d_col, CV_32FC3);
+        {
+            cv::Mat fb;
+            crop_b.convertTo(fb, CV_32FC3);
+            d_col -= fb;
+        }   // fb libéré
 
+        // Un canal à la fois (au lieu de split, qui garde les 3 en mémoire) : norme et MAD.
         cv::Mat e_color = cv::Mat::zeros(d_col.size(), CV_32F);
-        if (p.color_norm == "manhattan") {
-            for (const cv::Mat& c : ch) e_color += cv::abs(c);
-            e_color /= n_ch;
-        }
-        else {
-            for (const cv::Mat& c : ch) e_color += c.mul(c);
+        double mad_sum = 0.0;
+        {
+            cv::Mat c;
+            for (int k = 0; k < 3; ++k) {
+                cv::extractChannel(d_col, c, k);
+                if (p.color_norm == "manhattan")
+                    e_color += cv::abs(c);
+                else
+                    e_color += c.mul(c);
+                if (noise) mad_sum += mad_calculator(c);
+            }
+        }   // canal libéré
+        if (p.color_norm == "manhattan")
+            e_color /= 3.0;
+        else
             cv::sqrt(e_color, e_color);
-        }
 
-        // Normalisation
-        if (p.normalization == "noise") {
-            double mad = 0.0;   // moyenne des MAD par canal
-            for (const cv::Mat& c : ch) mad += mad_calculator(c);
-            mad /= n_ch;
+        // --- 2. Normalisation de la couleur ---------------------------------------------------
+        if (noise) {
+            const double mad = mad_sum / 3.0;
             const double bruit_col = std::max(mad * 1.4826, 1.0);   // plancher pour ne pas diviser par quelque chose < 1
             e_color = e_color / bruit_col;
         }
@@ -137,35 +162,50 @@ namespace seamlib {
             e_color = percentile(e_color, 99);
         }
 
-        const cv::Mat d_gray = gray_raw(d_col);
-        const Gradients grad = gradient(d_gray);
-        const double bruit_grad = std::max((mad_calculator(grad.Gx) + mad_calculator(grad.Gy)) * 1.4826 / 2.0, 1.0);
+        // --- 1b. Écart de gradient + normalisation -------------------------------------------
+        double bruit_grad = 1.0;
         cv::Mat e_gradient;
-        if (p.normalization == "noise") {
-            e_gradient = grad.magnitude / bruit_grad;
-        }
-        else {
-            e_gradient = percentile(grad.magnitude, 99);
-            // il ne faudrait plus appliquer de sigmoïde !
-        }
+        {
+            Gradients grad;
+            {
+                const cv::Mat d_gray = gray_raw(d_col);
+                d_col.release();                                     // dernière utilisation de A − B
+                grad = gradient(d_gray);
+            }   // d_gray libéré
+            bruit_grad = std::max((mad_calculator(grad.Gx) + mad_calculator(grad.Gy)) * 1.4826 / 2.0, 1.0);
+            grad.Gx.release();                                       // Gx et Gy ne servaient qu'au bruit
+            grad.Gy.release();
+            if (noise)
+                e_gradient = grad.magnitude / bruit_grad;
+            else
+                e_gradient = percentile(grad.magnitude, 99);
+        }   // norme du gradient libérée
 
+        // --- 3. Combinaison ------------------------------------------------------------------
         // combined = w_color * e_color + (1 - w_color) * e_gradient   (en CV_64F, comme NumPy)
-        cv::Mat wc;
-        cv::Mat(e_color * p.w_color).convertTo(wc, CV_64F);
-        cv::Mat combined = wc + (1.0 - p.w_color) * e_gradient;
+        cv::Mat combined;
+        {
+            cv::Mat wc;
+            cv::Mat(e_color * p.w_color).convertTo(wc, CV_64F);
+            combined = wc + (1.0 - p.w_color) * e_gradient;
+        }   // wc libéré
 
-        // On favorise les hautes fréquences en divisant par Gx de A et Gx de B
-        const cv::Mat abs_gx_a = cv::abs(gradient(gray_raw(crop_a)).Gx);
-        const cv::Mat abs_gx_b = cv::abs(gradient(gray_raw(crop_b)).Gx);
-        cv::Mat texture, factor;
-        cv::min(abs_gx_a, abs_gx_b, texture);
-        cv::divide(bruit_grad, bruit_grad + texture, factor);   // = 1 si les gradients horizontaux sont nuls
-        combined = combined.mul(factor);
+        // --- 4. Texture : on favorise les hautes fréquences en divisant par Gx de A et Gx de B --
+        {
+            cv::Mat texture = abs_sobel_x(crop_a);
+            cv::min(texture, abs_sobel_x(crop_b), texture);
+            cv::Mat factor;
+            cv::divide(bruit_grad, bruit_grad + texture, factor);   // = 1 si les gradients horizontaux sont nuls
+            texture.release();
+            combined = combined.mul(factor);
+        }   // factor libéré
 
+        // --- 5. Traitement -------------------------------------------------------------------
         cv::Mat treated;
-        if (p.treatment == "sigmoid" && p.normalization == "noise") {
+        if (p.treatment == "sigmoid" && noise) {
             cv::Mat e;
             cv::exp(-4.0 * (combined - 3.0), e);
+            combined.release();
             cv::divide(1.0, 1.0 + e, treated);
         }
         else if (p.treatment == "squared") {
@@ -178,7 +218,9 @@ namespace seamlib {
         else {
             treated = combined;
         }
+        combined.release();
 
+        // --- 6. Rappel vers le centre --------------------------------------------------------
         if (p.recall) {
             // Rappel vers le centre : nul sur la moitié centrale, quadratique jusqu'au bord, lam par ligne
             const int w = treated.cols;
