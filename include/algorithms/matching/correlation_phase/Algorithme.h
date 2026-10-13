@@ -12,6 +12,10 @@ public:
     // Translation globale par corrélation de phase sur les bandes. Vide si le pic est ambigu.
     static std::optional<Mesure> mesurerGlobal(const Bandes& bandes, const Parametres& p);
 
+    // À appeler quand mesurerGlobal a échoué : meilleur pic cherché sur toute la surface (sans la marge du rail),
+    // pour savoir si la translation réelle est simplement hors de la marge. Précision au pixel.
+    static Diagnostic diagnostiquerGlobal(const Bandes& bandes, const Parametres& p);
+
     // Points texturés de la zone commune, re-mesurés chacun par une corrélation de phase locale.
     static std::vector<Correspondance> raffiner(const Recouvrement& rec, const Mesure& globale,
                                                 const Parametres& p);
@@ -32,6 +36,12 @@ private:
     // Le pic est cherché parmi les décalages |dx|, |dy| ≤ marge (SANS_MARGE : partout), précision 1/facteurDft px.
     static Correlation correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage, double marge,
                                           int facteurDft);
+
+    // Spectre croisé normalisé de deux images de même taille, fenêtre de Hann appliquée
+    static cv::Mat spectreCroise(const cv::Mat& a, const cv::Mat& b);
+
+    // Surface de corrélation lissée par un flou gaussien de `lissage` px (non centrée : décalage nul en (0, 0))
+    static cv::Mat surfaceLissee(const cv::Mat& croise, double lissage);
 
     // Spectre d'une image : vides remplis, moyenne retirée, fenêtre de Hann, DFT complexe
     static cv::Mat spectre(const cv::Mat& image, const cv::Mat& fenetre);

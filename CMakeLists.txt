@@ -37,6 +37,12 @@ add_executable(test_seamline tests/test_seamline.cpp)
 target_link_libraries(test_seamline PRIVATE stitching_lib)
 add_test(NAME seamline COMMAND test_seamline)
 
+# Chaîne complète sur une paire (corrélation de phase → positions → seamline → fusion), hors pipeline.
+# Sans argument : vérité exacte (ctest). Mode --paire : paire réelle. Voir tests/test_chaine_paire.cpp
+add_executable(test_chaine_paire tests/test_chaine_paire.cpp)
+target_link_libraries(test_chaine_paire PRIVATE stitching_lib)
+add_test(NAME chaine_paire COMMAND test_chaine_paire)
+
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)

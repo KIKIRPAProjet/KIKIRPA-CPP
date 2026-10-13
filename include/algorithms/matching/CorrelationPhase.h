@@ -1,6 +1,7 @@
 #pragma once //copié que une seule fois
 #include "algorithms/matching/FeatureMatcher.h"
 #include "algorithms/matching/correlation_phase/Types.h"
+#include <string>
 
 namespace stitching::matching {
 
@@ -29,12 +30,18 @@ public:
     explicit CorrelationPhase(const Parametres& p = {});
 
     // false si la translation ne peut pas être mesurée (tuiles vides ou de tailles différentes,
-    // pas de contenu commun, pic ambigu). true : out.x, out.y valides, points éventuellement vides.
+    // pas de contenu commun, pic hors de la marge du rail ou ambigu) : la raison est dans raisonEchec().
+    // true : out.x, out.y valides, points éventuellement vides.
     bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
 //override car remplce une fonction virtuelle de la classe mere
 
+    // Pourquoi le dernier match() a renvoyé false, avec la correction à apporter quand elle est connue
+    // (ex. « Augmenter la marge (Parametres::marge >= 520 px) »). Vide si le dernier match() a réussi.
+    const std::string& raisonEchec() const { return raison; }
+
 private:
     Parametres parametres;   // vérifiés une seule fois, dans le constructeur
+    std::string raison;      // message du dernier échec de match()
 };
 
 } // namespace stitching::matching

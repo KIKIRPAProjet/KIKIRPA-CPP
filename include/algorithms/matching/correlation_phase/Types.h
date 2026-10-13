@@ -43,6 +43,14 @@ struct Correlation {
     cv::Mat autorise;             // masque 8 bits des décalages où le pic est cherché (vide = toute la surface)
 };
 
+// Pourquoi la translation globale a été refusée : sert seulement à expliquer l'échec de match()
+struct Diagnostic {
+    double rapportMarge;          // rapport pic / second pic dans la marge du rail (celui qui a été refusé)
+    cv::Point2d picLibre;         // décalage résiduel entier (dx, dy) du meilleur pic, cherché sur toute la surface
+    double rapportLibre;          // rapport pic / second pic de ce meilleur pic, sur toute la surface
+    bool horsMarge;               // ce meilleur pic dépasse la marge du rail sur au moins un axe
+};
+
 // Translation globale entre les deux tuiles
 struct Mesure {
     double tx, ty;                // coin haut-gauche de B dans le repère de A (px)

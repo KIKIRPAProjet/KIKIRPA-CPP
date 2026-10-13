@@ -51,10 +51,10 @@ namespace seamlib {
             return false;
         }
 
-        // |Gx| du gris d'une image RGB. Seul Gx sert au facteur de texture : on ne calcule ni Gy ni la norme.
-        cv::Mat abs_sobel_x(const cv::Mat& rgb) {
+        // |Gx| du gris d'une image RGB ou déjà grise. Seul Gx sert au facteur de texture : on ne calcule ni Gy ni la norme.
+        cv::Mat abs_sobel_x(const cv::Mat& img) {
             cv::Mat gx;
-            cv::Sobel(gray_raw(rgb), gx, CV_64F, 1, 0, 3);   // mêmes réglages que gradient()
+            cv::Sobel(gray_raw(img), gx, CV_64F, 1, 0, 3);   // mêmes réglages que gradient()
             cv::absdiff(gx, cv::Scalar::all(0), gx);         // = cv::abs(gx), sur place
             return gx;
         }
@@ -98,8 +98,12 @@ namespace seamlib {
     }
 
     cv::Mat gray_raw(const cv::Mat& img) {
-        CV_Assert(img.channels() == 3);
+        CV_Assert(img.channels() == 1 || img.channels() == 3);
         cv::Mat g;
+        if (img.channels() == 1) {               // déjà en gris (ex. IRR) : rien à mélanger
+            img.convertTo(g, CV_32F);
+            return g;
+        }
         if (img.depth() == CV_32F) {             // déjà en float : pas de copie intermédiaire
             cv::cvtColor(img, g, cv::COLOR_RGB2GRAY);
             return g;
@@ -119,17 +123,20 @@ namespace seamlib {
             throw std::invalid_argument("color_norm doit valoir 'manhattan' ou 'euclidian'.");
         if (!is_one_of(p.treatment, { "sigmoid", "linear", "squared", "caped" }))
             throw std::invalid_argument("treatment doit valoir sigmoid, linear, squared ou caped");
-        CV_Assert(crop_a.channels() == 3 && crop_b.channels() == 3 && crop_a.size() == crop_b.size());
+        // 1 canal (gris, ex. IRR) ou 3 canaux (RGB). En gris, l'écart de couleur se réduit à |A − B|.
+        CV_Assert((crop_a.channels() == 1 || crop_a.channels() == 3) && crop_a.channels() == crop_b.channels()
+            && crop_a.size() == crop_b.size());
 
         const bool noise = (p.normalization == "noise");
+        const int n_ch = crop_a.channels();
 
         // --- 1a. Écart de couleur --------------------------------------------------------------
         // d_col = A − B, calculé dans le buffer de A : deux images float au lieu de trois.
         cv::Mat d_col;
-        crop_a.convertTo(d_col, CV_32FC3);
+        crop_a.convertTo(d_col, CV_MAKETYPE(CV_32F, n_ch));
         {
             cv::Mat fb;
-            crop_b.convertTo(fb, CV_32FC3);
+            crop_b.convertTo(fb, CV_MAKETYPE(CV_32F, n_ch));
             d_col -= fb;
         }   // fb libéré
 
@@ -138,7 +145,7 @@ namespace seamlib {
         double mad_sum = 0.0;
         {
             cv::Mat c;
-            for (int k = 0; k < 3; ++k) {
+            for (int k = 0; k < n_ch; ++k) {
                 cv::extractChannel(d_col, c, k);
                 if (p.color_norm == "manhattan")
                     e_color += cv::abs(c);
@@ -148,13 +155,13 @@ namespace seamlib {
             }
         }   // canal libéré
         if (p.color_norm == "manhattan")
-            e_color /= 3.0;
+            e_color /= double(n_ch);
         else
             cv::sqrt(e_color, e_color);
 
         // --- 2. Normalisation de la couleur ---------------------------------------------------
         if (noise) {
-            const double mad = mad_sum / 3.0;
+            const double mad = mad_sum / double(n_ch);   // moyenne des MAD par canal
             const double bruit_col = std::max(mad * 1.4826, 1.0);   // plancher pour ne pas diviser par quelque chose < 1
             e_color = e_color / bruit_col;
         }

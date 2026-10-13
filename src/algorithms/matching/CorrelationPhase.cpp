@@ -17,14 +17,25 @@ CorrelationPhase::CorrelationPhase(const Parametres& p) : parametres(p) {
 
 bool CorrelationPhase::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
     out = {};
+    raison.clear();
 
-    // 1. Translation globale sur les bandes de recouvrement
+    // 1. Translation globale sur les bandes de recouvrement (en cas d'échec : message explicite dans `raison`)
     const auto paire = Preparation::orienter(a, b, ctx);
-    if (!paire) return false;
+    if (!paire) {
+        raison = Sortie::echecPaire(a, b, ctx);
+        return false;
+    }
     const auto bandes = Preparation::bandes(*paire, ctx.overlap, parametres);
-    if (!bandes) return false;
+    if (!bandes) {
+        raison = Sortie::echecBandes(ctx, parametres);
+        return false;
+    }
     const auto mesure = Algorithme::mesurerGlobal(*bandes, parametres);
-    if (!mesure) return false;
+    if (!mesure) {
+        raison = Sortie::echecGlobal(Algorithme::diagnostiquerGlobal(*bandes, parametres), *paire, *bandes, ctx,
+                                     parametres);
+        return false;
+    }
 
     // 2. Points raffinés localement dans la zone commune réelle (absents si elle est trop étroite)
     const auto recouvrement = Preparation::recouvrement(*paire, *mesure, parametres);

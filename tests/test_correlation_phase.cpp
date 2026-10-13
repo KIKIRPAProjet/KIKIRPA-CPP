@@ -36,6 +36,8 @@ constexpr int    COTE_TUILE            = 1000;  // px : tuiles carrées découp�
 constexpr double RECOUVREMENT          = 0.2;
 constexpr int    PERIODE_MOTIF         = 75;    // px : motif répété, période > marge du rail (50 px ici)
 constexpr int    MARGE_FOURIER         = 200;   // px : bord ajouté autour de B pour le décalage par FFT
+constexpr double RECOUVREMENT_HORS_MARGE = 0.27; // recouvrement réel d'une paire annoncée à 20 % : 70 px hors marge
+constexpr double MARGE_ELARGIE         = 100;   // px : marge du rail qui couvre ces 70 px
 
 int nbEchecs = 0;
 
@@ -231,6 +233,24 @@ void testerCasLimites(const cv::Mat& source) {
     verifier(!cp.match(cv::Mat(), B, bas, m), "tuile vide -> false");
     verifier(!cp.match(A, B, {Direction::Bottom, 0.f}, m), "recouvrement 0 -> false");
     verifier(!cp.match(A, B, {Direction::Bottom, 1.5f}, m), "recouvrement 1.5 -> false");
+    verifier(cp.raisonEchec().find("recouvrement nominal") != std::string::npos,
+             "raisonEchec : " + cp.raisonEchec());
+
+    // Recouvrement réel de 27 % pour 20 % annoncés : 70 px d'écart, au-delà de la marge du rail (50 px).
+    // false, avec un message qui dit d'augmenter la marge ; avec une marge suffisante, la mesure est juste.
+    const cv::Point2d vraiHorsMarge(4.2163, COTE_TUILE * (1 - RECOUVREMENT_HORS_MARGE) + 0.3721);
+    const auto [Ah, Bh] = decouperPaire(source, coinA, vraiHorsMarge);
+    const bool okHorsMarge = cp.match(Ah, Bh, bas, m);
+    verifier(!okHorsMarge && cp.raisonEchec().find("Augmenter la marge") != std::string::npos,
+             "recouvrement réel 27 % hors marge -> false : " + cp.raisonEchec());
+    CorrelationPhase::Parametres margeLarge;
+    margeLarge.marge = MARGE_ELARGIE;
+    CorrelationPhase cpMargeLarge(margeLarge);
+    const bool okMargeLarge = cpMargeLarge.match(Ah, Bh, bas, m);
+    verifier(okMargeLarge && cpMargeLarge.raisonEchec().empty() && std::abs(m.x - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
+                 std::abs(m.y - vraiHorsMarge.y) < TOLERANCE_TRANSLATION,
+             format("même paire, marge = 100 px : x = %.3f, y = %.3f (vérité %.3f, %.3f)", m.x, m.y,
+                    vraiHorsMarge.x, vraiHorsMarge.y));
 
     // nbPoints = 0 : translation seule
     CorrelationPhase::Parametres translationSeule;
@@ -282,7 +302,7 @@ int mesurerPaire(const std::string& cheminA, const std::string& cheminB, const s
 
     // Cohérence des points avec la translation globale (déformation locale, mauvais points)
     const auto ecarts = ecartsPoints(m, {m.x, m.y});
-    Json sortie = {{"ok", ok}, {"x", m.x}, {"y", m.y}, {"nb_points", m.pointsA.size()}, {"ms", ms},
+    Json sortie = {{"ok", ok}, {"erreur", cp.raisonEchec()}, {"x", m.x}, {"y", m.y}, {"nb_points", m.pointsA.size()}, {"ms", ms},
                    {"ecart_points_median", ecarts.empty() ? Json() : Json(mediane(ecarts))},
                    {"ecart_points_max", ecarts.empty() ? Json() : Json(*std::max_element(ecarts.begin(), ecarts.end()))}};
     std::cout << sortie.dump() << '\n';

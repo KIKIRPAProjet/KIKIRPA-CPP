@@ -17,6 +17,22 @@ std::optional<Mesure> Algorithme::mesurerGlobal(const Bandes& bandes, const Para
     return Mesure{bandes.origine.x + c.dx, bandes.origine.y + c.dy, rapport};
 }
 
+Diagnostic Algorithme::diagnostiquerGlobal(const Bandes& bandes, const Parametres& p) {
+    // Même surface que mesurerGlobal, sans sous-pixel : seul l'endroit du pic compte pour expliquer l'échec.
+    // Le surcoût (une corrélation de plus) n'est payé que lorsque la mesure a déjà échoué.
+    const cv::Mat lisse = surfaceLissee(spectreCroise(bandes.a, bandes.b), p.lissage);
+    const cv::Mat dansMarge = zoneAutorisee(lisse.size(), bandes.marge);
+    const cv::Point pixel = localiserPic(lisse, cv::Mat());
+    const cv::Point2d libre(decalageSigne(pixel.x, lisse.cols), decalageSigne(pixel.y, lisse.rows));
+
+    Diagnostic d;
+    d.rapportMarge = rapportPics(Correlation{0, 0, 0, lisse, dansMarge}, RAYON_PIC);
+    d.picLibre     = libre;
+    d.rapportLibre = rapportPics(Correlation{libre.y, libre.x, 0, lisse, cv::Mat()}, RAYON_PIC);
+    d.horsMarge    = std::max(std::abs(libre.x), std::abs(libre.y)) > bandes.marge;
+    return d;
+}
+
 std::vector<Correspondance> Algorithme::raffiner(const Recouvrement& rec, const Mesure& globale,
                                                  const Parametres& p) {
     std::vector<Correspondance> points;
@@ -29,17 +45,9 @@ std::vector<Correspondance> Algorithme::raffiner(const Recouvrement& rec, const 
 
 Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage, double marge,
                                            int facteurDft) {
-    // Fenêtre de Hann : sans elle, les bords de l'image créent un faux pic en (0, 0)
-    cv::Mat fenetre;
-    cv::createHanningWindow(fenetre, a.size(), CV_64F);
-    const cv::Mat croise = spectreCroiseNormalise(spectre(a, fenetre), spectre(b, fenetre));
-
-    // La surface brute donne le même poids à toutes les fréquences. Le grain du capteur et les motifs
-    // fixes de l'acquisition (hautes fréquences) y créent de faux pics fins, parfois plus hauts que le vrai.
-    // Lisser la surface revient à réduire le poids des hautes fréquences : le vrai pic, porté aussi
-    // par les basses fréquences, ressort.
+    const cv::Mat croise = spectreCroise(a, b);
     const cv::Mat brute = partieReelleInverse(croise);
-    const cv::Mat lisse = partieReelleInverse(croise.mul(filtreGaussien(a.size(), lissage)));
+    const cv::Mat lisse = surfaceLissee(croise, lissage);
 
     // Le pic entier est cherché sur la surface lissée : il est plus large mais reste symétrique autour du vrai
     // décalage. Sur la surface brute, quand le pic est faible, le pixel le plus haut est parfois un grain
@@ -54,6 +62,21 @@ Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, d
     // et une parabole sur trois valeurs entières est tirée vers l'entier le plus proche.
     const cv::Point2d decalage = raffinerPic(croise, entier, facteurDft);
     return Correlation{decalage.y, decalage.x, brute.at<double>(pixel), lisse, autorise};
+}
+
+cv::Mat Algorithme::spectreCroise(const cv::Mat& a, const cv::Mat& b) {
+    // Fenêtre de Hann : sans elle, les bords de l'image créent un faux pic en (0, 0)
+    cv::Mat fenetre;
+    cv::createHanningWindow(fenetre, a.size(), CV_64F);
+    return spectreCroiseNormalise(spectre(a, fenetre), spectre(b, fenetre));
+}
+
+cv::Mat Algorithme::surfaceLissee(const cv::Mat& croise, double lissage) {
+    // La surface brute donne le même poids à toutes les fréquences. Le grain du capteur et les motifs
+    // fixes de l'acquisition (hautes fréquences) y créent de faux pics fins, parfois plus hauts que le vrai.
+    // Lisser la surface revient à réduire le poids des hautes fréquences : le vrai pic, porté aussi
+    // par les basses fréquences, ressort.
+    return partieReelleInverse(croise.mul(filtreGaussien(croise.size(), lissage)));
 }
 
 cv::Mat Algorithme::spectre(const cv::Mat& image, const cv::Mat& fenetre) {
