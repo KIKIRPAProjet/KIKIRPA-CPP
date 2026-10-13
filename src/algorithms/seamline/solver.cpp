@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <stdexcept>
 
 namespace seamlib {
@@ -64,15 +65,26 @@ namespace seamlib {
         out.method = method;
         PathResult res;
 
+        // La DP descend d'une ligne par pas avec ±1 colonne : si les deux extrémités sont imposées et que
+        // l'écart latéral dépasse la hauteur disponible, aucun chemin DP n'existe → repli sur Dijkstra-8.
+        const bool dp_infeasible = start && goal && std::abs(goal->x - start->x) > goal->y - start->y;
+
         const auto t0 = std::chrono::steady_clock::now();
         switch (method) {
         case Method::DP:
-            res = dp_constrained(cost, start, goal);
+            res = dp_infeasible ? dijkstra_path(cost, start, goal) : dp_constrained(cost, start, goal);
             break;
         case Method::Dijkstra8:
             res = dijkstra_path(cost, start, goal);
             break;
         case Method::DPDijkstraLocal: {
+            if (dp_infeasible) {                        // pas de graine DP : Dijkstra-8 sur toute la zone
+                const auto t_refine = std::chrono::steady_clock::now();
+                res = dijkstra_path(cost, start, goal);
+                out.refine_s = seconds_since(t_refine);
+                out.corridor_ratio = 1.0;
+                break;
+            }
             // Même enchaînement que dp_dijkstra_local, chronométré étape par étape.
             const auto t_seed = std::chrono::steady_clock::now();
             const PathResult seed = dp_constrained(cost, start, goal);
