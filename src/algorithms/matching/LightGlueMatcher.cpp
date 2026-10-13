@@ -2,6 +2,7 @@
 #include <onnxruntime_cxx_api.h>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -10,7 +11,7 @@
 
 #include <chrono> // Pour chronométrer certaines étapes (surtout l'inférence du modèle)
 
-// #include <thread> // Pour la gestion dynamique du nombre de coeurs disponibles
+#include <thread> // Pour la gestion dynamique du nombre de coeurs disponibles
 
 #ifdef __APPLE__ // Permet de ne pas planter si le code tourne sur une machine non Apple
 #include <coreml_provider_factory.h>
@@ -72,13 +73,42 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
 
     // Initialisation du modèle ONNX Runtime
     Ort::SessionOptions session_options;
-    session_options.SetIntraOpNumThreads(0); // Laisser ONNX Runtime décider du nombre de threads intra-opérationnels
-    session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL); // Activer toutes les optimisations du graphe pour de meilleures performances
+
+    // session_options.SetIntraOpNumThreads(0); // Laisser ONNX Runtime décider du nombre de threads intra-opérationnels -> ne fonctionne pas correctement (du moins sur Mac), il utilise moins de 2 coeurs alors que d'autres son dispo.
+
+    // Détection dynamique du matériel dispo.
+    unsigned int hardware_cores = std::thread::hardware_concurrency();
+
+    // Si la détection échoue (renvoie 0), on sécurise à 1.
+    // Bonne pratique : on garde 1 cœur libre pour le système (OS) afin d'éviter que l'ordi freeze.
+    unsigned int num_threads = (hardware_cores > 1) ? (hardware_cores - 1) : 1;
+
+    // Plafonner à 16 : au-delà, les threads passent plus de temps à se synchroniser qu'à calculer (overhead)
+    num_threads = std::min(num_threads, 16u);
+
+    session_options.SetIntraOpNumThreads(num_threads);
+
+    // Empêcher les threads de se marcher sur les pieds
+    session_options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+
+    // Activer l'Arena Allocator (limite l'utilisation du kernel_task)
+    session_options.EnableCpuMemArena();
+
+    // Optimisation maximale du graphe
+    session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
     // Activation de l'accélération matérielle Apple Silicon -> seulement si le code tourne sur une machine Apple
     #ifdef __APPLE__
-    uint32_t coreml_flags = 0;
-    OrtSessionOptionsAppendExecutionProvider_CoreML(session_options, coreml_flags);
+    // Les exports RACO/ALIKED sont optimisés pour TensorRT; l'Execution
+    // Provider CoreML ne supporte pas correctement certains opérateurs
+    // dynamiques de ce graphe. SuperPoint/DISK conservent l'accélération CoreML.
+    const bool isRacoAlikedModel =
+        configuredPath.find("raco_aliked") != std::string::npos;
+    if (!isRacoAlikedModel) {
+        uint32_t coreml_flags = 0;
+        (void)OrtSessionOptionsAppendExecutionProvider_CoreML(
+            session_options, coreml_flags);
+    }
     #endif
     
     // Instancie un objet Ort::Session (le moteur d'inférence d'ONNX) et l'enveloppe dans un pointeur 'intelligent' (unique_ptr). Assure que la mémoire allouée pour la session est libérée automatiquement et sans fuite de mémoire quand l'objet LightGlueMatcher sera détruit.
@@ -98,14 +128,23 @@ cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::strin
     }
 
     // Ajout d'un redimensionnement (13/10/26)
-    int max_edge = 1200; // Je teste 1200
+    // RACO/ALIKED+LightGlue nécessite des dimensions multiples de 32.
+    // Cette contrainte reste également valide pour les modèles SuperPoint/DISK.
+    int max_edge = 3200;
     scale = 1.0f;
     int max_dim = std::max(image.cols, image.rows);
     cv::Mat resizedImage = image;
     
     if (max_dim > max_edge) {
         scale = static_cast<float>(max_edge) / max_dim;
-        cv::resize(image, resizedImage, cv::Size(), scale, scale, cv::INTER_AREA);
+        const int resized_width =
+            std::max(32, static_cast<int>(std::round(image.cols * scale / 32.0f)) * 32);
+        const int resized_height =
+            std::max(32, static_cast<int>(std::round(image.rows * scale / 32.0f)) * 32);
+        scale = static_cast<float>(resized_width) / image.cols;
+        cv::resize(image, resizedImage,
+                   cv::Size(resized_width, resized_height), 0.0, 0.0,
+                   cv::INTER_AREA);
     }
 
     // Comment fonctionne le redimensionnement :
@@ -186,6 +225,137 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     float scale1 = 1.0f, scale2 = 1.0f; // Ajout des ratios de redimensionnement pour chaque image (13/10/26)
     cv::Mat blob1 = preprocessImage(a, "image A", scale1, use_grayscale);
     cv::Mat blob2 = preprocessImage(b, "image B", scale2, use_grayscale);
+
+    // Les modèles RACO/ALIKED+LightGlue exportés récemment utilisent une
+    // entrée batch unique et trois sorties: keypoints, matches, mscores.
+    // Les modèles SuperPoint/DISK historiques restent traités plus bas avec
+    // leurs deux entrées image0/image1 et leurs six sorties.
+    if (this->session->GetInputCount() == 1) {
+        const auto input_name = this->session->GetInputNameAllocated(
+            0, Ort::AllocatorWithDefaultOptions{});
+        const std::array<const char*, 3> output_names = {
+            "keypoints", "matches", "mscores"
+        };
+
+        if (this->session->GetOutputCount() != output_names.size()) {
+            throw std::runtime_error(
+                "LightGlueMatcher: un modèle batch doit renvoyer keypoints, matches et mscores.");
+        }
+
+        std::vector<float> batch_data;
+        batch_data.reserve(blob1.total() + blob2.total());
+        batch_data.insert(batch_data.end(), blob1.ptr<float>(),
+                          blob1.ptr<float>() + blob1.total());
+        batch_data.insert(batch_data.end(), blob2.ptr<float>(),
+                          blob2.ptr<float>() + blob2.total());
+
+        const std::vector<int64_t> batch_shape = {
+            2, blob1.size[1], blob1.size[2], blob1.size[3]
+        };
+        auto memory_info = Ort::MemoryInfo::CreateCpu(
+            OrtArenaAllocator, OrtMemTypeDefault);
+        auto input_tensor = Ort::Value::CreateTensor<float>(
+            memory_info, batch_data.data(), batch_data.size(),
+            batch_shape.data(), batch_shape.size());
+
+        const std::array<const char*, 1> input_names = {input_name.get()};
+        auto output_tensors = this->session->Run(
+            Ort::RunOptions{nullptr},
+            input_names.data(), &input_tensor, 1,
+            output_names.data(), output_names.size());
+
+        const auto keypoints_info =
+            output_tensors[0].GetTensorTypeAndShapeInfo();
+        const auto matches_info =
+            output_tensors[1].GetTensorTypeAndShapeInfo();
+        const auto scores_info =
+            output_tensors[2].GetTensorTypeAndShapeInfo();
+
+        if (keypoints_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
+            matches_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64 ||
+            scores_info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT) {
+            throw std::runtime_error(
+                "LightGlueMatcher: types de sorties RACO/ALIKED inattendus.");
+        }
+
+        const auto keypoints_shape = keypoints_info.GetShape();
+        const auto matches_shape = matches_info.GetShape();
+        const auto scores_shape = scores_info.GetShape();
+        if (keypoints_shape.size() != 3 || keypoints_shape[0] != 2 ||
+            keypoints_shape[2] != 2 || matches_shape.size() != 2 ||
+            matches_shape[1] != 3 || scores_shape.size() != 1 ||
+            matches_shape[0] != scores_shape[0]) {
+            throw std::runtime_error(
+                "LightGlueMatcher: formes de sorties RACO/ALIKED inattendues.");
+        }
+
+        const size_t keypoint_count = static_cast<size_t>(keypoints_shape[1]);
+        const float* keypoints = output_tensors[0].GetTensorData<float>();
+        const int64_t* matches = output_tensors[1].GetTensorData<int64_t>();
+        const float* scores = output_tensors[2].GetTensorData<float>();
+
+        for (size_t i = 0; i < static_cast<size_t>(matches_shape[0]); ++i) {
+            const int64_t batch_index = matches[i * 3];
+            const int64_t index_a = matches[i * 3 + 1];
+            const int64_t index_b = matches[i * 3 + 2];
+
+            // Pour une paire, le batch entrelacé est [image A, image B].
+            if (batch_index != 0) {
+                throw std::runtime_error(
+                    "LightGlueMatcher: index de batch RACO/ALIKED inattendu.");
+            }
+            if (index_a < 0 || index_b < 0 ||
+                static_cast<size_t>(index_a) >= keypoint_count ||
+                static_cast<size_t>(index_b) >= keypoint_count) {
+                throw std::runtime_error(
+                    "LightGlueMatcher: indice de keypoint RACO/ALIKED hors limites.");
+            }
+            if (scores[i] < kMinConfidenceScore) {
+                continue;
+            }
+
+            const size_t point_a = static_cast<size_t>(index_a) * 2;
+            const size_t point_b = (keypoint_count +
+                                    static_cast<size_t>(index_b)) * 2;
+            out.pointsA.emplace_back(
+                keypoints[point_a] / scale1, keypoints[point_a + 1] / scale1);
+            out.pointsB.emplace_back(
+                keypoints[point_b] / scale2, keypoints[point_b + 1] / scale2);
+            out.scores.push_back(scores[i]);
+        }
+
+        if (!out.pointsA.empty()) {
+            std::vector<float> dx_list, dy_list;
+            for (size_t i = 0; i < out.pointsA.size(); ++i) {
+                dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
+                dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
+            }
+            const auto median = [](std::vector<float>& values) {
+                const size_t mid = values.size() / 2;
+                std::nth_element(values.begin(), values.begin() + mid, values.end());
+                if (values.size() % 2 == 0) {
+                    const float upper = values[mid];
+                    std::nth_element(values.begin(), values.begin() + mid - 1, values.end());
+                    return (values[mid - 1] + upper) / 2.0f;
+                }
+                return values[mid];
+            };
+            out.dx = median(dx_list);
+            out.dy = median(dy_list);
+        }
+
+        std::cout << "[DEBUG] Modèle RACO/ALIKED+LightGlue exécuté\n";
+        const auto end_time = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed = end_time - start_time;
+        std::cout << "[DEBUG] Temps total exécution match() : "
+                  << elapsed.count() << " secondes\n";
+        return true;
+    }
+
+    if (this->session->GetInputCount() != 2) {
+        throw std::runtime_error(
+            "LightGlueMatcher: nombre d'entrées ONNX non supporté.");
+    }
 
     // Lier la mémoire de ce blob à des tenseurs ONNX Runtime
     // Définir la forme (Shape) : [1, Canaux, Hauteur, Largeur]

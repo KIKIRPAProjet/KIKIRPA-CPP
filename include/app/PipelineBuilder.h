@@ -12,8 +12,9 @@ struct PipelineSettings {
     Direction direction = Direction::LeftRight;
     float overlap = 0.2f;
     std::string matcher = "lightglue";
-    // std::filesystem::path lightGlueModel = "models/superpoint_2048_lightglue_end2end.onnx";
-    std::filesystem::path lightGlueModel = "models/disk_2048_lightglue_end2end.onnx";
+    // std::filesystem::path lightGlueModel = "models/disk_2048_lightglue_end2end.onnx";
+    std::filesystem::path lightGlueModel = "models/superpoint_2048_lightglue_end2end.onnx";
+    // std::filesystem::path lightGlueModel = "models/raco_aliked_lightglue_pipeline_k2048.onnx";
     std::string rejector = "ransac";
     std::string seamFinder = "dynprog";
 };
