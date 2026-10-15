@@ -6,11 +6,14 @@
 # Sources en UTF-8 (commentaires et messages en français) : MSVC suppose sinon la page de code du système
 target_compile_options(stitching_backend PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 
-# LightGlue a besoin d'ONNX Runtime (et du module dnn d'OpenCV). Sans ONNX Runtime, LightGlue n'est pas
+# LightGlue a besoin d'ONNX Runtime et du module dnn d'OpenCV. S'il en manque un, LightGlue n'est pas
 # compilé ; les autres algorithmes le sont normalement.
-find_path(ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_cxx_api.h PATH_SUFFIXES onnxruntime include)
-find_library(ONNXRUNTIME_LIB NAMES onnxruntime)
-if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB)
+# ONNX Runtime installé ailleurs que dans les chemins standard : cmake -DONNXRUNTIME_ROOT=<dossier d'ONNX Runtime>
+set(ONNXRUNTIME_ROOT "" CACHE PATH "Dossier d'installation d'ONNX Runtime (contient include/ et lib/)")
+find_path(ONNXRUNTIME_INCLUDE_DIR NAMES onnxruntime_cxx_api.h
+          HINTS "${ONNXRUNTIME_ROOT}/include" PATH_SUFFIXES onnxruntime include)
+find_library(ONNXRUNTIME_LIB NAMES onnxruntime HINTS "${ONNXRUNTIME_ROOT}/lib")
+if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB AND TARGET opencv_dnn)
   target_include_directories(stitching_backend PUBLIC ${ONNXRUNTIME_INCLUDE_DIR})
   target_link_libraries(stitching_backend PUBLIC ${ONNXRUNTIME_LIB})
   # Utilisé par LightGlueMatcher.cpp pour retrouver le modèle ONNX à partir de la racine du projet
@@ -20,7 +23,11 @@ else()
   get_target_property(_sources_backend stitching_backend SOURCES)
   list(FILTER _sources_backend INCLUDE REGEX "/algorithms/stitching/lightglue/")
   set_source_files_properties(${_sources_backend} PROPERTIES HEADER_FILE_ONLY ON)
-  message(STATUS "ONNX Runtime introuvable : LightGlue ne sera pas compilé")
+  if(NOT TARGET opencv_dnn)
+    message(STATUS "Module dnn d'OpenCV absent : LightGlue ne sera pas compilé")
+  else()
+    message(STATUS "ONNX Runtime introuvable (option ONNXRUNTIME_ROOT) : LightGlue ne sera pas compilé")
+  endif()
 endif()
 
 # Tests des algorithmes : ctest après la compilation
