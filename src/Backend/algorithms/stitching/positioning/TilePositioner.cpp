@@ -1,9 +1,11 @@
-#include "positioning/TilePositioner.h"
-#include "algorithms/Factory.h"
-#include "pretreatment_seamline/ImagePretreatment.h"
+#include "algorithms/stitching/positioning/TilePositioner.h"
+#include "algorithms/rejection/ransac/RansacRejector.h"
+#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/stitching/sift/SiftMatcher.h"
 #include <algorithm>
 #include <iomanip>
 #include <map>
+#include <memory>
 #include <opencv2/core.hpp>
 #include <ostream>
 
@@ -114,8 +116,13 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
     }
 
     // ---- paires de voisins directs : SIFT -> RANSAC -> translation sur les inliers
-    auto matcher = makeFeatureMatcher(settings.matcher, settings.matcherParams);
-    auto rejector = makeOutlierRejector(settings.rejector, settings.rejectorParams);
+    // (l'ancienne Factory n'existe plus : seuls SIFT et RANSAC sont disponibles ici)
+    if (settings.matcher != "sift" || settings.rejector != "ransac") {
+        log << "Seuls matcher = \"sift\" et rejector = \"ransac\" sont disponibles\n";
+        return false;
+    }
+    auto matcher = std::make_unique<matching::SiftMatcher>(settings.matcherParams);
+    auto rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
 
     std::vector<TileOffset> offsets;
     std::size_t attempted = 0;
