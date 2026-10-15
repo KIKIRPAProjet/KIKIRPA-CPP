@@ -69,6 +69,7 @@ bool ImportStep::execute() {
     output.tiles = std::move(tiles);
     outputData["tiles"] = output.tiles.size();
     if (data) data->set("tiles", output.tiles);   // pour les steps suivants (copie légère : cv::Mat partagé)
+    // Tiles est la sortie d'import : on écrit la sortie dans le DataStore
     return true;
 }
 

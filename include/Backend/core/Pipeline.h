@@ -12,7 +12,7 @@ class Pipeline {
     std::vector<std::unique_ptr<Step>> steps;   // Pipeline --> Steps
     DataStore data;                             // sorties des steps déjà exécutés
 public:
-    using Logger = std::function<void(const std::string&)>;
+    using Logger = std::function<void(const std::string&)>; // Logger pour afficher les messages d'exécution
 
     Pipeline() = default;
     // Lit { "pipeline": { "steps": [...] } } : steps[i] du JSON → i-ème step
@@ -20,7 +20,7 @@ public:
     // Écrit le même format (script de reprise)
     Json exportConfig() const;
     void add(std::unique_ptr<Step> s) { steps.push_back(std::move(s)); }
-    bool run(const Logger& log = {});
+    bool run(const Logger& log = {}); // Exécute tous les steps dans l'ordre, retourne false si un step échoue
     const DataStore& getData() const { return data; }
     // Liste des steps, dans l'ordre d'exécution
     const std::vector<std::unique_ptr<Step>>& getSteps() const { return steps; }

@@ -6,7 +6,7 @@
 using namespace stitching;
 
 int main(int argc, char** argv) {
-    // Sans argument : on se place à la racine du projet (pipeline.json, images/)
+    // Sans argument : on se place à la racine du projet (pipeline.json, images/) -> le chemin par défaut est la racine du projet
     if (argc <= 1) std::filesystem::current_path(PROJECT_DIR);
 
     const std::string script = argc > 1 ? argv[1] : "pipeline.json";
@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     }
 
     try {
-        Pipeline p = buildPipeline(Json::parse(file));
+        Pipeline p = buildPipeline(Json::parse(file)); // On lui donne le JSON du pipeline ("pipeline.json") (JSON::parse(file) transformation en objet JSON)
         const auto& steps = p.getSteps();   // liste des steps lus dans le JSON
 
         for (size_t i = 0; i < steps.size(); ++i) {

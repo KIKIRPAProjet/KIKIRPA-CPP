@@ -8,6 +8,8 @@ namespace stitching {
 
 // Données qui circulent entre les steps, rangées par clé de PipelineOption ("tiles", "matches"...).
 // Un step lit ses pipelineOptions ici et y écrit les clés de sa signature.
+// Un step peut écrire : data->set("tiles", output.tiles) ;
+// Un autre peut lire : data->get<Tiles>("tiles").
 class DataStore {
     std::map<std::string, std::any> values;
 public:
