@@ -1,5 +1,5 @@
 // Sortie.cpp
-#include "algorithms/matching/correlation_phase/Sortie.h"
+#include "algorithms/stitching/correlation_phase/Sortie.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

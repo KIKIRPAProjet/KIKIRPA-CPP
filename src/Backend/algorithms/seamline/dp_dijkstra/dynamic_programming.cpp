@@ -1,4 +1,4 @@
-#include "algorithms/seamline/dynamic_programming.hpp"
+#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
 
 #include <algorithm>
 #include <cmath>

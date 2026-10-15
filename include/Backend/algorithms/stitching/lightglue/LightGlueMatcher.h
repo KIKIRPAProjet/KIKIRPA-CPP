@@ -1,5 +1,5 @@
 #pragma once
-#include "algorithms/matching/FeatureMatcher.h"
+#include "algorithms/stitching/FeatureMatcher.h"
 
 #include <onnxruntime_cxx_api.h>
 #include <memory>

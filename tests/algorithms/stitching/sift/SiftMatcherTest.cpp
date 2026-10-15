@@ -1,4 +1,4 @@
-#include "algorithms/matching/SiftMatcher.h"
+#include "algorithms/stitching/sift/SiftMatcher.h"
 #include <algorithm>
 #include <cctype>
 #include <exception>

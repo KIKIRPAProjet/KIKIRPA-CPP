@@ -4,9 +4,9 @@
 //   test_seamline
 //       Code de retour 0 si tous les tests passent.
 
-#include "algorithms/seamline/cost_catalog.hpp"
-#include "algorithms/seamline/seam_finder.hpp"
-#include "algorithms/seamline/solver.hpp"
+#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dp_dijkstra/seam_finder.hpp"
+#include "algorithms/seamline/dp_dijkstra/solver.hpp"
 #include <opencv2/imgproc.hpp>
 #include <cmath>
 #include <iostream>

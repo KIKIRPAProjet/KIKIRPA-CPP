@@ -1,4 +1,4 @@
-#include "pretreatment_seamline/ImagePretreatment.h"
+#include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include <cmath>
 #include <iostream>
 #include <regex>

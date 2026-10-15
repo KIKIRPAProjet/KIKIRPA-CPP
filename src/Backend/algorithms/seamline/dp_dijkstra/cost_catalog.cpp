@@ -1,4 +1,4 @@
-#include "algorithms/seamline/cost_catalog.hpp"
+#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
 
 #include <opencv2/imgproc.hpp>
 

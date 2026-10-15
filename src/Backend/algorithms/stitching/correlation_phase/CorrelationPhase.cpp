@@ -1,8 +1,8 @@
 // CorrelationPhase.cpp
-#include "algorithms/matching/CorrelationPhase.h"
-#include "algorithms/matching/correlation_phase/Algorithme.h"
-#include "algorithms/matching/correlation_phase/Preparation.h"
-#include "algorithms/matching/correlation_phase/Sortie.h"
+#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/stitching/correlation_phase/Algorithme.h"
+#include "algorithms/stitching/correlation_phase/Preparation.h"
+#include "algorithms/stitching/correlation_phase/Sortie.h"
 
 namespace stitching::matching {
 

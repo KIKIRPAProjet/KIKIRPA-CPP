@@ -1,4 +1,4 @@
-#include "algorithms/seamline/overlay.hpp"
+#include "algorithms/seamline/dp_dijkstra/overlay.hpp"
 
 #include <opencv2/imgproc.hpp>
 

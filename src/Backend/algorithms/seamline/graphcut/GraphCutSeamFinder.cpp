@@ -1,10 +1,10 @@
-#include "algorithms/seamline/GraphCutSeamFinder.h"
+#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include <string>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <opencv2/stitching/detail/seam_finders.hpp>
 #include <opencv2/stitching/detail/util.hpp>
-#include "pretreatment_seamline/ImagePretreatment.h"
+#include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include <climits>
 #include <vector>
 using namespace std;

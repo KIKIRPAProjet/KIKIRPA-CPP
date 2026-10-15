@@ -1,7 +1,7 @@
-#include "algorithms/seamline/junctions.hpp"
+#include "algorithms/seamline/dp_dijkstra/junctions.hpp"
 
-#include "algorithms/seamline/dijkstra.hpp"
-#include "algorithms/seamline/dynamic_programming.hpp"
+#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
+#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
 
 #include <algorithm>
 #include <chrono>

@@ -1,7 +1,7 @@
-#include "algorithms/seamline/seam_finder.hpp"
+#include "algorithms/seamline/dp_dijkstra/seam_finder.hpp"
 
-#include "algorithms/seamline/cost_catalog.hpp"
-#include "algorithms/seamline/solver.hpp"
+#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dp_dijkstra/solver.hpp"
 
 // Ici on code la méthode concrètement
 namespace seamlib

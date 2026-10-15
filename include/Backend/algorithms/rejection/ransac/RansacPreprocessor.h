@@ -1,6 +1,6 @@
 #pragma once
 
-#include "algorithms/rejection/RansacTypes.h"
+#include "algorithms/rejection/ransac/RansacTypes.h"
 
 namespace stitching::rejection::ransac {
 

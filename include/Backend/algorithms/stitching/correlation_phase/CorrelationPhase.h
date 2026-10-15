@@ -1,6 +1,6 @@
 #pragma once //copié que une seule fois
-#include "algorithms/matching/FeatureMatcher.h"
-#include "algorithms/matching/correlation_phase/Types.h"
+#include "algorithms/stitching/FeatureMatcher.h"
+#include "algorithms/stitching/correlation_phase/Types.h"
 #include <string>
 
 namespace stitching::matching {

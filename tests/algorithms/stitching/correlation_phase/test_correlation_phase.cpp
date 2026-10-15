@@ -12,7 +12,7 @@
 //       (comparaison avec le Python).
 //       position : bas, haut, droite, gauche (où est B par rapport à A, comme mesurer_decalage).
 
-#include "algorithms/matching/CorrelationPhase.h"
+#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>

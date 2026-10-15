@@ -14,8 +14,8 @@
 #include <map>
 #include <string>
 
-#include "algorithms/seamline/export.hpp"
-#include "algorithms/seamline/junctions.hpp"
+#include "algorithms/seamline/dp_dijkstra/export.hpp"
+#include "algorithms/seamline/dp_dijkstra/junctions.hpp"
 
 namespace seamlib {
 

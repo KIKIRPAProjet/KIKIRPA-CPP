@@ -1,5 +1,5 @@
 //Preparation.cpp
-#include "algorithms/matching/correlation_phase/Preparation.h"
+#include "algorithms/stitching/correlation_phase/Preparation.h"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>

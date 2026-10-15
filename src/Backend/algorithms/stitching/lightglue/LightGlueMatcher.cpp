@@ -1,4 +1,4 @@
-#include "algorithms/matching/LightGlueMatcher.h"
+#include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #include <onnxruntime_cxx_api.h>
 #include <algorithm>
 #include <array>

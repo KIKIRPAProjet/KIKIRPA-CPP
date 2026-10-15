@@ -1,4 +1,4 @@
-#include "algorithms/rejection/RansacPreprocessor.h"
+#include "algorithms/rejection/ransac/RansacPreprocessor.h"
 
 #include <cmath>
 

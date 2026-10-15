@@ -43,8 +43,8 @@
 #include <string>
 #include <utility>
 
-#include "algorithms/seamline/export.hpp"
-#include "algorithms/seamline/solver.hpp"
+#include "algorithms/seamline/dp_dijkstra/export.hpp"
+#include "algorithms/seamline/dp_dijkstra/solver.hpp"
 
 namespace seamlib {
 

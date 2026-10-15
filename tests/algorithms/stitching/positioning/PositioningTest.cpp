@@ -1,6 +1,6 @@
 // Outil de test : calcule les positions des tuiles (SIFT 16 bits -> RANSAC -> moindres carrés) sans coupe de graphe.
 // Usage : positioning_test [--chevauchement=0.3] <tuile1_rLL_cCC.tif> [tuile2 ...]
-#include "positioning/TilePositioner.h"
+#include "algorithms/stitching/positioning/TilePositioner.h"
 #include <iomanip>
 #include <iostream>
 #include <string>

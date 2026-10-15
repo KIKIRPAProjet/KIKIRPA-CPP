@@ -24,9 +24,9 @@
 //       position : bas, haut, droite, gauche (où est B par rapport à A, comme test_correlation_phase).
 //       methode  : DP (défaut), Dijkstra-8, DP+Dijkstra-local.
 
-#include "algorithms/matching/CorrelationPhase.h"
-#include "algorithms/seamline/cost_catalog.hpp"
-#include "algorithms/seamline/solver.hpp"
+#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dp_dijkstra/solver.hpp"
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>

@@ -1,4 +1,4 @@
-#include "algorithms/seamline/cost_map.hpp"
+#include "algorithms/seamline/dp_dijkstra/cost_map.hpp"
 
 #include <opencv2/imgproc.hpp>
 

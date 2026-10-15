@@ -1,5 +1,5 @@
 #pragma once
-#include "algorithms/matching/correlation_phase/Types.h"
+#include "algorithms/stitching/correlation_phase/Types.h"
 #include <limits>
 #include <optional>
 #include <vector>

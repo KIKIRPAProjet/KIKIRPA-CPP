@@ -15,7 +15,7 @@
 
 #include <vector>
 
-#include "algorithms/seamline/export.hpp"
+#include "algorithms/seamline/dp_dijkstra/export.hpp"
 
 namespace seamlib {
 

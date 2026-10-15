@@ -1,8 +1,8 @@
-#include "algorithms/rejection/RansacRejector.h"
+#include "algorithms/rejection/ransac/RansacRejector.h"
 
-#include "algorithms/rejection/RansacAlgorithm.h"
-#include "algorithms/rejection/RansacPreprocessor.h"
-#include "algorithms/rejection/RansacTypes.h"
+#include "algorithms/rejection/ransac/RansacAlgorithm.h"
+#include "algorithms/rejection/ransac/RansacPreprocessor.h"
+#include "algorithms/rejection/ransac/RansacTypes.h"
 
 #include <algorithm>
 #include <utility>

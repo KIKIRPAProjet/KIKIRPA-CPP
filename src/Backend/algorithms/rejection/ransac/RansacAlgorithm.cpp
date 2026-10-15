@@ -1,4 +1,4 @@
-#include "algorithms/rejection/RansacAlgorithm.h"
+#include "algorithms/rejection/ransac/RansacAlgorithm.h"
 
 #include <opencv2/calib3d.hpp>
 
