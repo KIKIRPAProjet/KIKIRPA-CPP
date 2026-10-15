@@ -20,6 +20,9 @@ target_include_directories(stitching_backend PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include/Backend")
 target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
 
+# Algorithmes (LightGlue/ONNX Runtime, tests) : voir cmake/algorithms.cmake
+include(cmake/algorithms.cmake)
+
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
