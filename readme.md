@@ -437,184 +437,106 @@ En particulier, la majorité d’entre eux :
 
 ---
 
-## 9. La reprise après crash est-elle implémentée ?
+## 9. Générer `pipeline.json` : `generate_pipeline` (ébauche)
 
-### Non, pas actuellement
-
-Il existe des éléments préparatoires qui donnent cette impression, notamment dans `Pipeline.h` :
-
-```cpp
-Json exportConfig() const;
-```
-
-Et dans `Pipeline.cpp` :
-
-```cpp
-Json Pipeline::exportConfig() const
-```
-
-Mais cette fonction exporte uniquement la **configuration du pipeline**.
-
-Elle ne sauvegarde pas :
-
-- l’étape courante ;
-- les étapes terminées ;
-- les données du `DataStore` ;
-- les images intermédiaires ;
-- les alignements ;
-- les positions ;
-- les seamlines ;
-- la mosaïque ;
-- l’état `running`, `paused`, `failed` ou `completed`.
-
-Elle produit donc plutôt un JSON de configuration normalisé, pas un véritable fichier de checkpoint.
-
-De plus, `exportConfig()` n’est pas appelé dans `src/main_test.cpp`.
-
----
-
-## 10. Pause et reprise : état actuel
-
-Il n’y a actuellement aucun mécanisme pour :
+`pipeline.json` n'est pas écrit à la main : il est produit par un programme backend, à partir des arguments donnés en console.
+Les steps connaissent déjà leurs options et leurs valeurs par défaut (constructeurs) : le générateur les instancie
+(`createStep`), applique les arguments, **valide avec `buildPipeline`** (steps/options connus, enchaînement des données),
+et n'écrit le fichier que si tout est valide.
 
 ```text
-pause()
-resume()
-cancel()
-startFromStep(...)
+generate_pipeline --list                       # steps, options, types, valeurs par défaut
+generate_pipeline                              # tout par défaut -> pipeline.json
+generate_pipeline seamline.seamFinder=graphcut stitching.ratio=0.8 export.path=output/mosaic.tif
+generate_pipeline -i                           # saisie interactive (Entrée = garder la valeur proposée)
+generate_pipeline --steps import,stitching     # sous-ensemble de steps (l'enchaînement reste validé)
+generate_pipeline -o mon_script.json ...       # fichier de sortie (défaut : pipeline.json à la racine du projet)
 ```
 
-Il n’existe pas non plus de champ tel que :
+- Syntaxe `step.option=valeur` (le préfixe `step.` est obligatoire : `level` existe dans `stitching` et dans `seamline`).
+- La valeur est convertie selon le type déclaré de l'option (`int`, `float`, `bool`, `string`) ; une valeur invalide est refusée.
+- Le récapitulatif affiché marque d'une `*` ce qui diffère des valeurs par défaut.
+- Le script produit ne contient que `name` + `options` par step (le champ `run` de la section 10 est ajouté par l'exécution).
+- Pour exposer une nouvelle option, il suffit de la déclarer dans le step : le générateur la prend en compte automatiquement.
 
-```json
-{
-  "currentStep": 3,
-  "completedSteps": ["import", "stitching"],
-  "status": "paused"
-}
-```
-
-La méthode `Pipeline::run()` commence toujours à l’index zéro :
-
-```cpp
-for (size_t i = 0; i < steps.size(); ++i)
-```
-
-Donc même si le premier step a déjà réussi, un nouvel appel à `run()` recommencerait le pipeline depuis le début.
-
-Le commentaire :
-
-```cpp
-return false; // on peut reprendre plus tard grâce au JSON
-```
-
-exprime probablement l’intention future, mais ce comportement n’est pas encore réalisé par le code actuel.
+Limite actuelle : les valeurs autorisées d'une option (ex. `graphcut`, `voronoi`) ne sont pas déclarées dans le code ; le
+générateur ne peut donc pas les proposer ni les valider (le type seul est contrôlé).
 
 ---
 
-## 11. Différence entre configuration et état d’exécution
+## 10. Reprise après crash / pause / reprise à une étape intermédiaire (implémenté)
 
-C’est la distinction importante à retenir.
-
-### Configuration
-
-Le JSON actuel contient des paramètres comme :
+Le script JSON est **généré dynamiquement** : le frontend écrit `pipeline` (+ consignes dans `run`), puis le backend
+réécrit le fichier (de façon atomique) **après chaque step** via `Pipeline::setScriptPath(...)`.
 
 ```json
 {
-  "matcher": "sift",
-  "level": 2,
-  "threshold": 3.0
-}
-```
-
-Cela répond à la question :
-
-> Avec quels paramètres dois-je lancer le pipeline ?
-
-### État d’exécution
-
-Pour reprendre après un crash, il faudrait aussi stocker :
-
-```json
-{
-  "status": "failed",
-  "currentStep": 3,
-  "completedSteps": ["import", "stitching"],
-  "outputs": {
-    "tiles": "...",
-    "alignments": "..."
-  }
-}
-```
-
-Cela répond à la question :
-
-> Où en était le pipeline et quels résultats puis-je réutiliser ?
-
-Actuellement, seul le premier volet existe.
-
----
-
-## 12. Ce qu’il faudrait ajouter pour avoir une vraie reprise
-
-Il faudrait probablement séparer deux fichiers ou deux sections.
-
-Par exemple :
-
-```json
-{
-  "pipeline": {
-    "steps": [
-      {
-        "name": "import",
-        "options": []
-      }
-    ]
-  },
+  "pipeline": { "steps": [ ... ] },
   "run": {
-    "status": "paused",
-    "currentStep": 3,
+    "status": "failed",
     "completedSteps": ["import", "stitching"],
-    "checkpointDirectory": "output/checkpoints/"
+    "skip": true,
+    "from": "",
+    "checkpointDir": "output/checkpoints"
   }
 }
 ```
 
-Il faudrait ensuite ajouter :
+| Champ | Rôle | Qui l'écrit |
+|---|---|---|
+| `status` | `idle`, `running`, `paused`, `failed`, `completed` | backend |
+| `completedSteps` | noms des steps terminés (préfixe du pipeline) | backend |
+| `skip` | `true` : on saute les steps déjà faits ; `false` : on repart de zéro | frontend (consigne) |
+| `from` | nom d'un step où (re)démarrer | frontend (consigne) |
+| `checkpointDir` | dossier des résultats intermédiaires | frontend |
 
-1. un état dans `Pipeline` :
+`skip` et `from` sont des **consignes consommées au démarrage** : le backend les remet à leur défaut dans le script qu'il réécrit,
+pour que relancer ce script reprenne là où on en est (et pas depuis le début).
 
-   ```cpp
-   size_t currentStep;
-   PipelineStatus status;
-   ```
+### Choix de conception (réponse au `todo.md`)
 
-2. une méthode de démarrage à partir d’un index :
+- **Liste de noms** (`completedSteps`) plutôt qu'index : lisible, et vérifiée contre le pipeline (nom ET ordre). L'index se déduit.
+- **Un checkpoint par step** (`NN_nom/`, voir `core/Checkpoint.h`) et pas par clé : `intensityCorrection` consomme et produit
+  `tiles`; avec un dossier par step, reprendre *avant* lui redonne les tuiles d'origine.
+- Le fichier `manifest.json` d'un step est écrit **en dernier** : sa présence = checkpoint complet. L'ordre est toujours
+  « sauver les sorties, puis déclarer le step terminé ».
+- Un checkpoint n'est **valide que si les options du step n'ont pas changé**. Dès qu'un step est invalide, lui et tous les suivants
+  sont refaits (rembobinage automatique).
 
-   ```cpp
-   bool runFrom(size_t index);
-   ```
+### Algorithme de `Pipeline::run()`
 
-3. une sérialisation de l’état après chaque step ;
+1. `start` = nombre de steps de tête valides (nom concordant + checkpoint valide). `from` permet de revenir plus tôt,
+   jamais d'aller au-delà (sinon `std::invalid_argument`). `skip=false` => `start = 0`.
+2. Les checkpoints des steps >= `start` sont supprimés (périmés).
+3. Le `DataStore` est restauré : pour chaque clé, la dernière version écrite par un step < `start`.
+4. Exécution des steps restants ; un step qui échoue **ou lève une exception** => `status=failed`.
+5. `requestPause()` (thread-safe) : arrêt propre entre deux steps => `status=paused`.
 
-4. une persistance réelle des sorties intermédiaires ;
+Un crash brutal laisse `status=running` avec `completedSteps` à jour : la reprise fonctionne de la même manière.
 
-5. une manière de recharger le `DataStore` après redémarrage ;
+### Lancer / reprendre (`stitching_test`)
 
-6. une gestion explicite de la pause et de l’annulation ;
-
-7. une validation des checkpoints pour éviter de reprendre avec des fichiers incomplets ou incompatibles.
-
-Pour les objets lourds comme `Tiles`, `Alignments` ou `Mosaic`, il ne serait généralement pas suffisant de les mettre directement dans le JSON. Le JSON devrait plutôt référencer des fichiers intermédiaires :
-
-```json
-{
-  "key": "tiles",
-  "path": "checkpoints/tiles.bin",
-  "step": "import"
-}
+```text
+stitching_test                       # pipeline.json, état écrit dans output/run.json
+stitching_test output/run.json       # reprise après arrêt/crash
+stitching_test output/run.json --from seamline   # refaire à partir d'un step
+stitching_test output/run.json --restart         # tout refaire
 ```
+
+### Limites actuelles
+
+- Seul le type `Tiles` a un sérialiseur (registre dans `Checkpoint.cpp`). Quand on implémentera `Alignments`, `Positions`,
+  `Seams`, `Mosaic`, **il faut ajouter leur entrée au registre** : sinon le checkpoint du step est déclaré incomplet
+  (avertissement dans le log) et ce step est refait à la reprise.
+- Les tuiles sont recopiées en TIFF dans le checkpoint (même pour `import`). Optimisation possible : référencer les fichiers sources.
+- Un step en cours n'est pas interruptible : la pause et la reprise se font à la granularité du step.
+
+---
+
+## 11. Anciennes limites (avant ce chantier)
+
+`Pipeline::run()` repartait toujours de l'index 0 et `exportConfig()` n'exportait que la configuration. Ce n'est plus le cas :
+voir section 10. `exportConfig()` reste disponible (configuration seule) ; `exportScript()` exporte `pipeline` + `run`.
 
 ---
 

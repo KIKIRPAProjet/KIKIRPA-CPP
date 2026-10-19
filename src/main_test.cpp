@@ -5,11 +5,27 @@
 
 using namespace stitching;
 
+// Usage : stitching_test [script.json] [--from <step>] [--restart]
+//   sans argument  : lance pipeline.json depuis la racine du projet
+//   --from <step>  : (re)démarre à ce step (les steps d'avant doivent avoir un checkpoint valide)
+//   --restart      : ignore les checkpoints et repart de zéro
+// L'état du run est réécrit après chaque step dans output/run.json : pour reprendre après un arrêt ou un crash,
+// relancer avec  stitching_test output/run.json
 int main(int argc, char** argv) {
-    // Sans argument : on se place à la racine du projet (pipeline.json, images/) -> le chemin par défaut est la racine du projet
-    if (argc <= 1) std::filesystem::current_path(PROJECT_DIR);
+    std::string script, from;
+    bool restart = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--restart") restart = true;
+        else if (a == "--from" && i + 1 < argc) from = argv[++i];
+        else script = a;
+    }
 
-    const std::string script = argc > 1 ? argv[1] : "pipeline.json";
+    // Sans script : on se place à la racine du projet (pipeline.json, images/) -> le chemin par défaut est la racine du projet
+    if (script.empty()) {
+        std::filesystem::current_path(PROJECT_DIR);
+        script = "pipeline.json";
+    }
     std::ifstream file(script);
     if (!file) {
         std::cerr << "cannot open " << script << '\n';
@@ -17,7 +33,7 @@ int main(int argc, char** argv) {
     }
 
     try {
-        Pipeline p = buildPipeline(Json::parse(file)); // On lui donne le JSON du pipeline ("pipeline.json") (JSON::parse(file) transformation en objet JSON)
+        Pipeline p = buildPipeline(Json::parse(file)); // On lui donne le JSON du pipeline (JSON::parse(file) transformation en objet JSON)
         const auto& steps = p.getSteps();   // liste des steps lus dans le JSON
 
         for (size_t i = 0; i < steps.size(); ++i) {
@@ -28,7 +44,14 @@ int main(int argc, char** argv) {
             std::cout << '\n';
         }
 
-        const bool ok = p.run();   // un step en échec est déjà signalé sur stderr
+        // Consignes de la ligne de commande (le frontend les écrira directement dans "run")
+        RunState run = p.getRunState();
+        if (restart) run.skip = false;
+        if (!from.empty()) run.from = from;
+        p.setRunState(run);
+        p.setScriptPath("output/run.json");   // état écrit après chaque step -> reprise possible
+
+        const bool ok = p.run([](const std::string& m) { std::cout << "  " << m << '\n'; }); // un step en échec est déjà signalé sur stderr
         std::cout << (ok ? "Pipeline OK" : "Pipeline KO") << '\n';
 
         return ok ? 0 : 1;

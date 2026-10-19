@@ -36,6 +36,18 @@ const std::map<std::string, StepCreator>& registry() {
 
 } // namespace
 
+const std::vector<std::string>& defaultStepOrder() {
+    static const std::vector<std::string> order = {"import", "stitching", "absolutePositioning", "intensityCorrection",
+                                                   "seamline", "fusion", "export"};
+    return order;
+}
+
+std::unique_ptr<Step> createStep(const std::string& name) {
+    const auto it = registry().find(name);
+    if (it == registry().end()) throw std::invalid_argument("unknown step '" + name + "'");
+    return it->second();
+}
+
 Pipeline buildPipeline(const Json& script) {
     Pipeline p;
     std::map<std::string, std::string> produced;   // clé → type des données déjà produites
@@ -45,8 +57,7 @@ Pipeline buildPipeline(const Json& script) {
         // Pour chaque élément step, on lit le champ name, on cherche le step dans le registre interne (registry) et on associe les noms JSON aux classes C++. Ce registre est juste au dessus.
 
         const std::string name = stepJson.at("name").get<std::string>();
-        const auto it = registry().find(name); // On cherche le nom du step (ex. "import", "stitching", etc.)
-        if (it == registry().end()) throw std::invalid_argument("unknown step '" + name + "'"); // Si on ne trouve pas le step dans le registre, on lève une exception
+        // On cherche le nom du step (ex. "import", "stitching", etc.) dans le registre ; s'il n'y est pas, createStep lève une exception
 
         // Chaque step possède une config. par défaut dans son constructeur. importConfig() permet donc de mettre à jour cette config. par défaut avec ce qu'on a dans le JSON. La logique est :
         //  - le constructeur crée la configuration par défaut ;
@@ -55,7 +66,7 @@ Pipeline buildPipeline(const Json& script) {
         //  - une option inconnue provoque une erreur.
         // Toutes les options qui ne sont pas dans le JSON gardent leur valeur par défaut.
 
-        auto step = it->second();
+        auto step = createStep(name);
         step->importConfig(stepJson);
 
         // Enchaînement : chaque entrée doit être la sortie d'un step précédent
@@ -74,6 +85,7 @@ Pipeline buildPipeline(const Json& script) {
 
         p.add(std::move(step));
     }
+    if (script.contains("run")) p.setRunState(script.at("run").get<RunState>());   // optionnel : état d'un run précédent
     return p;
 }
 
