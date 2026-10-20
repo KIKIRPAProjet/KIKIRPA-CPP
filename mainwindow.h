@@ -2,15 +2,18 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QPaintEvent>
+#include <QObject>
 #include <QStringList>
-#include <QVector>
 
-QT_BEGIN_NAMESPACE
-namespace Ui {
-class MainWindow;
-}
-QT_END_NAMESPACE
+class QComboBox;
+class QLabel;
+class QProgressBar;
+class QPushButton;
+class QStackedWidget;
+class QTabWidget;
+class QTableWidget;
+class QWidget;
+class QKeyEvent;
 
 class MainWindow : public QMainWindow
 {
@@ -18,28 +21,42 @@ class MainWindow : public QMainWindow
 
 public:
     explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow() override;
+    ~MainWindow() override = default;
 
 private:
-    struct PipelineSnapshot
-    {
-        int stepNumber = 1;
-        int methodIndex = 0;
-        QString description;
-        QStringList parameterValues;
-    };
+    void keyPressEvent(QKeyEvent *event) override;
+    void createHomePage();
+    void createWorkspace();
+    void setMode(int mode);
+    void refreshProjectInfo();
+    void importTiles();
+    void saveProject();
+    void openProject();
+    void startRun(int firstStep);
+    void showComparison();
+    void showExportDialog();
+    void updateStatus(const QString &message);
 
-    void paintEvent(QPaintEvent *event) override;
-    void saveCurrentStepParameters();
-    void displayStepParameters(int stepIndex);
-    PipelineSnapshot captureCurrentSnapshot(int stepNumber) const;
-    void displaySnapshot(const PipelineSnapshot &snapshot);
-    void restoreSnapshot(const PipelineSnapshot &snapshot);
-
-    Ui::MainWindow *ui;
-    QVector<PipelineSnapshot> executionSnapshots;
-    QVector<QStringList> stepParameterValues;
-    int currentParameterStepIndex = -1;
-    int lastRestoredStepNumber = 0;
+    QStackedWidget *pages = nullptr;
+    QWidget *workspace = nullptr;
+    QWidget *canvas = nullptr;
+    QTabWidget *rightTabs = nullptr;
+    QTabWidget *bottomTabs = nullptr;
+    QTableWidget *pairsTable = nullptr;
+    QLabel *projectNameLabel = nullptr;
+    QLabel *statusLabel = nullptr;
+    QLabel *zoomLabel = nullptr;
+    QLabel *tileCountLabel = nullptr;
+    QProgressBar *progressBar = nullptr;
+    QComboBox *arrangementCombo = nullptr;
+    QString projectName = QStringLiteral("VanDerVeken");
+    QString projectPath;
+    QStringList tilePaths;
+    int currentMode = 4;
+    int zoomPercent = 12;
+    bool panelsVisible = true;
+    bool maskVisible = true;
+    bool comparisonVisible = false;
 };
-#endif // MAINWINDOW_H
+
+#endif

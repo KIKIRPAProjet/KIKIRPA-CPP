@@ -67,4 +67,26 @@ install(TARGETS Frontend
 
 if(QT_VERSION_MAJOR EQUAL 6)
     qt_finalize_executable(Frontend)
+
+    if(WIN32)
+        get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
+        find_program(WINDEPLOYQT_EXECUTABLE
+            NAMES windeployqt
+            HINTS "${QT_INSTALL_PREFIX}/bin"
+        )
+        if(NOT WINDEPLOYQT_EXECUTABLE)
+            message(FATAL_ERROR "windeployqt is required to deploy the Windows application.")
+        endif()
+        get_filename_component(CXX_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        add_custom_command(TARGET Frontend POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E env
+                "PATH=${CXX_COMPILER_BIN_DIR};$ENV{PATH}"
+                "${WINDEPLOYQT_EXECUTABLE}"
+                --no-translations
+                --compiler-runtime
+                "$<TARGET_FILE:Frontend>"
+            COMMENT "Deploying Qt and compiler runtime beside Frontend"
+            VERBATIM
+        )
+    endif()
 endif()
