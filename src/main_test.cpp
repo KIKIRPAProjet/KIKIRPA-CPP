@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
 
 using namespace stitching;
 
@@ -55,6 +56,12 @@ int main(int argc, char** argv) {
         std::cout << (ok ? "Pipeline OK" : "Pipeline KO") << '\n';
 
         return ok ? 0 : 1;
+    } catch (const Json::parse_error& e) {
+        std::cerr << script << ": invalid JSON: " << e.what() << '\n';
+        return 1;
+    } catch (const std::invalid_argument& e) {
+        std::cerr << script << ": invalid pipeline configuration: " << e.what() << '\n';
+        return 1;
     } catch (const std::exception& e) {
         std::cerr << script << ": " << e.what() << '\n';
         return 1;
