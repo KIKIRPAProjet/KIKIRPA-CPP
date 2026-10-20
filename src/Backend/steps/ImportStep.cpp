@@ -3,7 +3,6 @@
 #include <opencv2/imgcodecs.hpp>
 #include <algorithm>
 #include <filesystem>
-#include <map>
 #include <regex>
 
 namespace fs = std::filesystem;
@@ -41,52 +40,35 @@ bool ImportStep::execute() {
     }
 
     // Fichiers dont le nom correspond au format ; groupe 1 = colonne, groupe 2 = ligne
-    struct Fichier { fs::path path; int col, row; };
-    std::vector<Fichier> fichiers;
+    Tiles tiles;
     for (const auto& entry : fs::directory_iterator(dir)) {
         const std::string name = entry.path().filename().string();
         std::smatch m;
         if (!entry.is_regular_file() || !std::regex_match(name, m, format)) continue;
-        fichiers.push_back({entry.path(), std::stoi(m[1].str()), std::stoi(m[2].str())});
+        tiles.push_back({entry.path(), std::stoi(m[1].str()), std::stoi(m[2].str()), {}});
     }
 
-    if (fichiers.empty()) {
+    if (tiles.empty()) {
         outputData["error"] = "no file matching '" + input.format + "' in " + dir.string();
         return false;
     }
 
     // Ligne par ligne, puis colonne par colonne
-    std::sort(fichiers.begin(), fichiers.end(), [](const Fichier& a, const Fichier& b) {
+    std::sort(tiles.begin(), tiles.end(), [](const TileImage& a, const TileImage& b) {
         return a.row != b.row ? a.row < b.row : a.col < b.col;
     });
 
-    // Une seule image en RAM à la fois : lue une fois, puis libérée. Seule la fiche est gardée.
-    Tiles tiles;
-    std::map<std::pair<int, int>, Tuile*> grille;   // (colonne, ligne) -> tuile
-    for (const auto& f : fichiers) {
-        const cv::Mat image = cv::imread(f.path.string(), cv::IMREAD_UNCHANGED);   // garde le 16 bits
-        if (image.empty()) {
-            outputData["error"] = "cannot read " + f.path.string();
+    for (auto& t : tiles) {
+        t.image = cv::imread(t.path.string(), cv::IMREAD_UNCHANGED);   // garde le 16 bits
+        if (t.image.empty()) {
+            outputData["error"] = "cannot read " + t.path.string();
             return false;
         }
-        // TODO : écrire ici le TIFF tuilé pyramidal (1/2, 1/4, 1/8, blocs 512x512) avec libtiffx
-        tiles.push_back(std::make_shared<Tuile>(static_cast<int>(tiles.size()), f.path, fs::path{},
-                                                image.cols, image.rows, image.type()));
-        grille[{f.col, f.row}] = tiles.back().get();
-    }
-
-    auto voisin = [&](int col, int row) -> Tuile* {
-        auto it = grille.find({col, row});
-        return it == grille.end() ? nullptr : it->second;
-    };
-    for (const auto& [pos, t] : grille) {
-        const auto [col, row] = pos;
-        t->setVoisins(voisin(col - 1, row), voisin(col + 1, row), voisin(col, row - 1), voisin(col, row + 1));
     }
 
     output.tiles = std::move(tiles);
     outputData["tiles"] = output.tiles.size();
-    if (data) data->set("tiles", output.tiles);   // pour les steps suivants (copie légère : shared_ptr)
+    if (data) data->set("tiles", output.tiles);   // pour les steps suivants (copie légère : cv::Mat partagé)
     return true;
 }
 
