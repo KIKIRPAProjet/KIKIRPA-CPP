@@ -1,0 +1,30 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          {
+            "key": "path",
+            "type": "string",
+            "value": "images/"
+          },
+          {
+            "key": "format",
+            "type": "string",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ],
+        "pipelineOptions": [],
+        "signature": {
+          "pipelineOptions": [
+            {
+              "key": "tiles",
+              "type": "Tiles"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
