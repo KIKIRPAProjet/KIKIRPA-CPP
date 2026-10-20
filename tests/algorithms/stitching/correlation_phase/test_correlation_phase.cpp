@@ -3,7 +3,8 @@
 //
 //   test_correlation_phase [image ...]
 //       Tests à vérité exacte : deux tuiles découpées dans une image source à des positions non entières
-//       connues, dans les 4 directions, puis les cas limites. Sans argument, la source est une texture
+//       connues, dans les 4 directions, puis les deux passes (recouvrement réel différent du nominal,
+//       première passe faite par le pipeline : EstimationRecouvrement) et les cas limites. Sans argument, la source est une texture
 //       générée ; sinon, chaque image donnée sert de source (ex. NOM_0001_full.tif, une tuile réelle).
 //       Code de retour 0 si tous les tests passent.
 //
@@ -13,6 +14,7 @@
 //       position : bas, haut, droite, gauche (où est B par rapport à A, comme mesurer_decalage).
 
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
@@ -29,6 +31,7 @@
 namespace stitching::tests {
 
 using matching::CorrelationPhase;
+using matching::EstimationRecouvrement;
 
 constexpr double TOLERANCE_TRANSLATION = 0.05;  // px : écart maximal à la vérité pour la translation globale
 constexpr double TOLERANCE_POINTS      = 0.5;   // px : écart maximal de pointsA − pointsB à la vérité
@@ -38,6 +41,11 @@ constexpr int    PERIODE_MOTIF         = 75;    // px : motif répété, périod
 constexpr int    MARGE_FOURIER         = 200;   // px : bord ajouté autour de B pour le décalage par FFT
 constexpr double RECOUVREMENT_HORS_MARGE = 0.27; // recouvrement réel d'une paire annoncée à 20 % : 70 px hors marge
 constexpr double MARGE_ELARGIE         = 100;   // px : marge du rail qui couvre ces 70 px
+constexpr double RECOUVREMENTS_REELS[] = {0.23, 0.17};  // annoncés à 20 % : 30 px de part et d'autre, dans la marge
+constexpr double ERREUR_PREMIERE_PASSE = 1.0;   // px : écart maximal de la première passe (au pixel) à la vérité
+const cv::Point2d ERREUR_PIPELINE(2, -2);       // px : translation du pipeline un peu fausse, dans la marge (4 px)
+const cv::Point2d ERREUR_HORS_MARGE(0, 10);     // px : translation du pipeline trop fausse pour la deuxième passe
+const cv::Point2d SANS_RECOUVREMENT(0, 2000);   // px : B placée hors de A
 
 int nbEchecs = 0;
 
@@ -191,6 +199,81 @@ void testerDirections(const std::string& nomSource, const cv::Mat& source) {
         testerPaire(nom, source, cv::Point(centre - vrai / 2), vrai, dir);
 }
 
+// Recouvrement réel différent du nominal (20 % annoncés) : la première passe (EstimationRecouvrement) retrouve
+// la position au pixel et le recouvrement réel ; la deuxième mesure la translation sur toute la zone commune
+// réelle, que la première passe soit faite par match() ou fournie par le pipeline (ctx.translation)
+void testerDeuxPasses(const cv::Mat& source) {
+    std::cout << "\n=== Première et deuxième passe ===\n";
+    const cv::Point coinA(300, 400);
+    const PairContext bas{Direction::Bottom, static_cast<float>(RECOUVREMENT)};
+    const PairContext haut{Direction::Top, static_cast<float>(RECOUVREMENT)};
+    EstimationRecouvrement estimation;
+    CorrelationPhase cp;
+
+    for (const double reel : RECOUVREMENTS_REELS) {
+        const cv::Point2d vrai(-6.4187, COTE_TUILE * (1 - reel) + 0.2913);
+        std::cout << format("Recouvrement réel %.0f %% (vérité x = %.4f, y = %.4f)\n", reel * 100, vrai.x, vrai.y);
+        const auto [A, B] = decouperPaire(source, coinA, vrai);
+
+        // Première passe : position au pixel près et recouvrement réel
+        const auto r = estimation.estimer(A, B, bas);
+        verifier(r.has_value(), "première passe : estimer renvoie un résultat " + estimation.raisonEchec());
+        if (!r) continue;
+        const double recouvrementAttendu = (COTE_TUILE - vrai.y) / COTE_TUILE;
+        verifier(std::abs(r->translation.x - vrai.x) <= ERREUR_PREMIERE_PASSE &&
+                     std::abs(r->translation.y - vrai.y) <= ERREUR_PREMIERE_PASSE &&
+                     r->translation.x == std::round(r->translation.x) && r->translation.y == std::round(r->translation.y),
+                 format("première passe : translation entière (%.0f, %.0f)", r->translation.x, r->translation.y));
+        verifier(std::abs(r->overlap - recouvrementAttendu) <= ERREUR_PREMIERE_PASSE / COTE_TUILE,
+                 format("première passe : recouvrement réel %.2f %% (vérité %.2f %%)", r->overlap * 100.0,
+                        recouvrementAttendu * 100));
+        const auto rInverse = estimation.estimer(B, A, haut);
+        verifier(rInverse && rInverse->translation == -r->translation && rInverse->overlap == r->overlap,
+                 "première passe : Top(B, A) = -Bottom(A, B), même recouvrement");
+
+        // Zone commune réelle : toute la hauteur du recouvrement réel, pas les 20 % nominaux
+        const auto [za, zb] = EstimationRecouvrement::zonesCommunes(A.size(), B.size(), r->translation);
+        verifier(za.size() == zb.size() && za.height == COTE_TUILE - static_cast<int>(r->translation.y) &&
+                     za.width == COTE_TUILE - static_cast<int>(std::abs(r->translation.x)),
+                 format("zone commune : %.0f x %.0f px (bande nominale : %.0f px de haut)", za.width, za.height,
+                        COTE_TUILE * RECOUVREMENT));
+
+        // Les deux passes dans match()
+        Matches m;
+        const bool ok = cp.match(A, B, bas, m);
+        verifier(ok && std::abs(m.dx - vrai.x) <= TOLERANCE_TRANSLATION && std::abs(m.dy - vrai.y) <= TOLERANCE_TRANSLATION,
+                 format("match : dx = %.4f, dy = %.4f (écart %+.4f, %+.4f px)", m.dx, m.dy, m.dx - vrai.x, m.dy - vrai.y));
+
+        // Première passe faite par le pipeline : même résultat, au bit près
+        PairContext pipeline{Direction::Bottom, r->overlap, r->translation};
+        Matches mp;
+        verifier(cp.match(A, B, pipeline, mp) && mp.dx == m.dx && mp.dy == m.dy && mp.pointsA == m.pointsA &&
+                     mp.pointsB == m.pointsB,
+                 "ctx.translation du pipeline : même translation et mêmes points que match() seul");
+
+        // Translation du pipeline un peu fausse : la deuxième passe la rattrape
+        pipeline.translation = r->translation + ERREUR_PIPELINE;
+        verifier(cp.match(A, B, pipeline, mp) && std::abs(mp.dx - vrai.x) <= TOLERANCE_TRANSLATION &&
+                     std::abs(mp.dy - vrai.y) <= TOLERANCE_TRANSLATION,
+                 format("ctx.translation fausse de (%+.0f, %+.0f) px : dx = %.4f, dy = %.4f", ERREUR_PIPELINE.x,
+                        ERREUR_PIPELINE.y, mp.dx, mp.dy));
+
+        // Trop fausse : false plutôt qu'une translation tronquée au bord de la marge
+        pipeline.translation = r->translation + ERREUR_HORS_MARGE;
+        const bool okHorsMarge = cp.match(A, B, pipeline, mp);
+        verifier(!okHorsMarge && cp.raisonEchec().find("deuxième passe") != std::string::npos,
+                 format("ctx.translation fausse de 10 px -> false (dx = %.4f, dy = %.4f) : ", mp.dx, mp.dy) +
+                     cp.raisonEchec());
+    }
+
+    // Translation du pipeline qui ne fait pas se superposer les tuiles
+    const auto [A, B] = decouperPaire(source, coinA, {0.3, COTE_TUILE * (1 - RECOUVREMENT) + 0.6});
+    Matches m;
+    const bool okSansRecouvrement = cp.match(A, B, {Direction::Bottom, static_cast<float>(RECOUVREMENT), SANS_RECOUVREMENT}, m);
+    verifier(!okSansRecouvrement && cp.raisonEchec().find("zone commune réelle") != std::string::npos,
+             "ctx.translation sans recouvrement -> false : " + cp.raisonEchec());
+}
+
 void testerCasLimites(const cv::Mat& source) {
     std::cout << "\n=== Cas limites ===\n";
     const double pas = COTE_TUILE * (1 - RECOUVREMENT);
@@ -334,6 +417,7 @@ int main(int argc, char** argv) {
     }
 
     for (const auto& [nom, source] : sources) testerDirections(nom, source);
+    testerDeuxPasses(textureGeneree({2400, 2400}, 3));
     testerCasLimites(textureGeneree({2400, 2400}, 2));
 
     std::cout << '\n' << (nbEchecs == 0 ? "Tous les tests passent." : std::to_string(nbEchecs) + " échec(s).") << '\n';

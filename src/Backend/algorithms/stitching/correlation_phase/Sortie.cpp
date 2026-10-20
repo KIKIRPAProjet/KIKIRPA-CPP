@@ -76,6 +76,19 @@ std::string Sortie::echecGlobal(const Diagnostic& d, const PaireOrientee& paire,
            " %). À vérifier : sur un motif répétitif, ce pic peut être faux";
 }
 
+std::string Sortie::echecZoneCommune(cv::Point2d translation, const Parametres& p) {
+    return "pas assez de contenu dans la zone commune réelle, B placée en (" + nombre(translation.x, 0) + ", " +
+           nombre(translation.y, 0) + ") dans A : les tuiles ne se superposent pas, ou moins de " +
+           nombre(p.fractionValideMin * 100, 0) + " % de pixels exploitables, ou zone commune trop petite. "
+           "Vérifier la translation de la première passe (PairContext::translation)";
+}
+
+std::string Sortie::echecAffinage(cv::Point2d translation, const Bandes& zone) {
+    return "deuxième passe : le pic touche le bord de sa marge (±" + nombre(zone.marge, 0) + " px autour de (" +
+           nombre(translation.x, 0) + ", " + nombre(translation.y, 0) + ")). La translation de la première passe "
+           "(PairContext::translation) est fausse de plus que cette marge";
+}
+
 // ======================================== Private ========================================
 
 std::string Sortie::nombre(double valeur, int decimales) {

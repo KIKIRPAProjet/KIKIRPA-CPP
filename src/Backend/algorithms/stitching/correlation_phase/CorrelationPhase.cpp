@@ -11,7 +11,7 @@ using correlation_phase::Correspondance;
 using correlation_phase::Preparation;
 using correlation_phase::Sortie;
 
-CorrelationPhase::CorrelationPhase(const Parametres& p) : parametres(p) {
+CorrelationPhase::CorrelationPhase(const Parametres& p) : parametres(p), premierePasse(p) {
     Preparation::verifierParametres(parametres);
 }
 
@@ -19,30 +19,40 @@ bool CorrelationPhase::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     out = {};
     raison.clear();
 
-    // 1. Translation globale sur les bandes de recouvrement (en cas d'échec : message explicite dans `raison`)
+    // 1. Première passe : position de B au pixel près sur les bandes nominales, sauf si le pipeline l'a faite
+    std::optional<cv::Point2d> translation = ctx.translation;
+    if (!translation) {
+        const auto reel = premierePasse.estimer(a, b, ctx);
+        if (!reel) {
+            raison = premierePasse.raisonEchec();
+            return false;
+        }
+        translation = reel->translation;
+    }
+
+    // 2. Deuxième passe : translation au sous-pixel sur la zone commune réelle (en cas d'échec : message dans `raison`)
     const auto paire = Preparation::orienter(a, b, ctx);
     if (!paire) {
         raison = Sortie::echecPaire(a, b, ctx);
         return false;
     }
-    const auto bandes = Preparation::bandes(*paire, ctx.overlap, parametres);
-    if (!bandes) {
-        raison = Sortie::echecBandes(ctx, parametres);
+    const auto zone = Preparation::zoneCommune(*paire, Preparation::orienterTranslation(*paire, *translation), parametres);
+    if (!zone) {
+        raison = Sortie::echecZoneCommune(*translation, parametres);
         return false;
     }
-    const auto mesure = Algorithme::mesurerGlobal(*bandes, parametres);
+    const auto mesure = Algorithme::affinerGlobal(*zone, parametres);
     if (!mesure) {
-        raison = Sortie::echecGlobal(Algorithme::diagnostiquerGlobal(*bandes, parametres), *paire, *bandes, ctx,
-                                     parametres);
+        raison = Sortie::echecAffinage(*translation, *zone);
         return false;
     }
 
-    // 2. Points raffinés localement dans la zone commune réelle (absents si elle est trop étroite)
+    // 3. Points raffinés localement dans la zone commune réelle (absents si elle est trop étroite)
     const auto recouvrement = Preparation::recouvrement(*paire, *mesure, parametres);
     std::vector<Correspondance> points;
     if (recouvrement && parametres.nbPoints > 0) points = Algorithme::raffiner(*recouvrement, *mesure, parametres);
 
-    // 3. Mise en forme dans le repère des tuiles d'origine
+    // 4. Mise en forme dans le repère des tuiles d'origine
     out = Sortie::construire(*paire, *mesure, recouvrement ? recouvrement->origineA : cv::Point(),
                              std::move(points), parametres.nbPoints);
     return true;

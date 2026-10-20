@@ -1,12 +1,16 @@
 #pragma once //copié que une seule fois
 #include "algorithms/stitching/FeatureMatcher.h"
 #include "algorithms/stitching/correlation_phase/Types.h"
+#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include <string>
 
 namespace stitching::matching {
 
-// Corrélation de phase : translation entre deux tuiles voisines, mesurée sur les bandes de recouvrement,
-// puis points de correspondance raffinés localement (port de correlation_phase.py).
+// Corrélation de phase : translation entre deux tuiles voisines, en deux passes, puis points de correspondance
+// raffinés localement (port de correlation_phase.py).
+//   1. première passe (EstimationRecouvrement) : position de B au pixel près sur les bandes de recouvrement
+//      nominal ; sautée si ctx.translation est déjà fournie par le pipeline ;
+//   2. deuxième passe : translation au 1/facteurDft px sur la zone commune réelle à cette position.
 // Seul header à inclure depuis le pipeline ; le détail est dans correlation_phase/ :
 //   Preparation (images de travail) → Algorithme (mesures) → Sortie (Matches).
 //
@@ -19,7 +23,7 @@ namespace stitching::matching {
 //   lissageLocal   1.5  sigma (px) du flou gaussien des surfaces locales
 //   ecartMax       3.0  écart maximal (px) entre la translation locale et la globale
 //   espacementMin  16   distance minimale (px) entre deux points
-//   marge          0    écart maximal (px) au recouvrement nominal (0 = 5 % de la tuile, au moins 48 px)
+//   marge          0    écart maximal (px) au recouvrement nominal, première passe (0 = 5 % de la tuile, au moins 48 px)
 //   fractionValideMin 0.25  part minimale de pixels exploitables communs aux deux bandes
 //   facteurDft     100  précision du sous-pixel : 1/facteurDft px
 class CorrelationPhase : public FeatureMatcher {
@@ -30,7 +34,8 @@ public:
     explicit CorrelationPhase(const Parametres& p = {});
 
     // false si la translation ne peut pas être mesurée (tuiles vides ou de tailles différentes,
-    // pas de contenu commun, pic hors de la marge du rail ou ambigu) : la raison est dans raisonEchec().
+    // pas de contenu commun, pic hors de la marge du rail ou ambigu, ctx.translation fausse de plus de
+    // quelques px) : la raison est dans raisonEchec().
     // true : out.dx, out.dy valides, points éventuellement vides.
     bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
 //override car remplce une fonction virtuelle de la classe mere
@@ -40,8 +45,9 @@ public:
     const std::string& raisonEchec() const { return raison; }
 
 private:
-    Parametres parametres;   // vérifiés une seule fois, dans le constructeur
-    std::string raison;      // message du dernier échec de match()
+    Parametres parametres;                 // vérifiés une seule fois, dans le constructeur
+    EstimationRecouvrement premierePasse;  // utilisée quand ctx.translation n'est pas fournie
+    std::string raison;                    // message du dernier échec de match()
 };
 
 } // namespace stitching::matching

@@ -26,6 +26,13 @@ public:
     static std::string echecGlobal(const Diagnostic& d, const PaireOrientee& paire, const Bandes& bandes,
                                    const PairContext& ctx, const Parametres& p);
 
+    // Échec de Preparation::zoneCommune : pas de zone commune exploitable à la translation de la première passe
+    // (coin de B dans A, repère des tuiles d'origine)
+    static std::string echecZoneCommune(cv::Point2d translation, const Parametres& p);
+
+    // Échec de Algorithme::affinerGlobal : le pic de la deuxième passe touche le bord de sa marge
+    static std::string echecAffinage(cv::Point2d translation, const Bandes& zone);
+
 private:
     static constexpr double MARGE_SECURITE = 10.0;  // px ajoutés à la marge conseillée (pic diagnostiqué au pixel près)
 

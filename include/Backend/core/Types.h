@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,7 +18,17 @@ enum class Direction { Top, Bottom, Left, Right, LeftRight = Right, BottomRight 
 // Contexte d'une paire de tuiles voisines, transmis aux algorithmes
 struct PairContext {
     Direction dir = Direction::LeftRight;
-    float overlap = 0.f;   // recouvrement estimé (fraction de la tuile)
+    float overlap = 0.f;   // recouvrement (fraction de la tuile) : nominal, ou réel une fois estimé
+    // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe
+    // (EstimationRecouvrement). Absent : l'algorithme part du recouvrement nominal `overlap`.
+    std::optional<cv::Point2d> translation;
+};
+
+// Sortie de la première passe (EstimationRecouvrement), commune à toutes les méthodes d'appariement
+struct RecouvrementReel {
+    cv::Point2d translation;   // coin haut-gauche de B dans le repère de A, au pixel près
+    float overlap = 0.f;       // recouvrement réel : fraction de la tuile dans le sens du déplacement
+    double rapport = 0.0;      // rapport pic / second pic de la mesure (confiance)
 };
 
 // PipelineOption "Tiles" : les images chargées par le step import

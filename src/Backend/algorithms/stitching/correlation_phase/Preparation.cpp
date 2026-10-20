@@ -1,5 +1,6 @@
 //Preparation.cpp
 #include "algorithms/stitching/correlation_phase/Preparation.h"
+#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
@@ -37,52 +38,48 @@ std::optional<PaireOrientee> Preparation::orienter(const cv::Mat& a, const cv::M
     return paire;
 }
 
+cv::Point2d Preparation::orienterTranslation(const PaireOrientee& paire, cv::Point2d translation) {
+    // Échanger A et B revient à placer A dans le repère de B : la translation change de signe
+    return paire.inversee ? -translation : translation;
+}
+
 std::optional<Bandes> Preparation::bandes(const PaireOrientee& paire, double recouvrement, const Parametres& p) {
     // On corrèle seulement les deux bandes censées se recouvrir (recouvrement nominal du rail),
     // pas les tuiles entières : ailleurs, le contenu est différent et brouillerait le pic.
     const cv::Rect ra = bande(paire.A.size(), paire.position, recouvrement);
     const cv::Rect rb = bande(paire.B.size(), oppose(paire.position), recouvrement);
-    if (ra.width < 2 || ra.height < 2) return std::nullopt;
-    const cv::Mat a = enGris(paire.A(ra), paire.extA(ra));
-    const cv::Mat b = enGris(paire.B(rb), paire.extB(rb));
-
-    // Bandes surtout faites de fond ou de reflets : le peu qui reste ne suffit pas à une mesure fiable
-    const double fractionValide = cv::countNonZero(cv::Mat(valides(a) & valides(b))) / static_cast<double>(a.total());
-    if (fractionValide < p.fractionValideMin) return std::nullopt;
-
-    // Même découpe dans les deux bandes : le décalage résiduel mesuré n'en est pas modifié
-    const auto zone = zoneAvecContenu(a, b);
-    if (!zone) return std::nullopt;
-
-    Bandes resultat;
-    resultat.a = a(*zone);
-    resultat.b = b(*zone);
-    resultat.origine = paire.position == Direction::Bottom ? cv::Point2d(0, paire.A.rows - ra.height)
-                                                           : cv::Point2d(paire.A.cols - ra.width, 0);
+    const cv::Point2d origine = paire.position == Direction::Bottom ? cv::Point2d(0, paire.A.rows - ra.height)
+                                                                    : cv::Point2d(paire.A.cols - ra.width, 0);
     // Les bandes sont prises au recouvrement nominal : le décalage résiduel attendu est nul,
     // et la marge du rail le borne directement
-    resultat.marge = margeRail(paire, p);
-    return resultat;
+    return preparerBandes(paire, ra, rb, origine, margeRail(paire, p), p);
+}
+
+std::optional<Bandes> Preparation::zoneCommune(const PaireOrientee& paire, cv::Point2d translation,
+                                               const Parametres& p) {
+    // Les deux images montrent la même partie de la peinture, à l'erreur de la première passe près : tout leur
+    // contenu se correspond. Rien n'est perdu quand le recouvrement réel dépasse le nominal, et aucun contenu
+    // sans correspondance n'affaiblit le pic quand il est plus petit.
+    const auto [ra, rb] = EstimationRecouvrement::zonesCommunes(paire.A.size(), paire.B.size(), translation);
+    // Le décalage résiduel est mesuré autour de la translation arrondie : il est de l'ordre du pixel
+    return preparerBandes(paire, ra, rb, cv::Point2d(ra.tl() - rb.tl()), MARGE_DEUXIEME_PASSE, p);
 }
 
 std::optional<Recouvrement> Preparation::recouvrement(const PaireOrientee& paire, const Mesure& mesure,
                                                       const Parametres& p) {
     // Parties de A et de B qui se superposent quand B est placée à la translation globale arrondie
-    const cv::Point decalage(static_cast<int>(std::lround(mesure.tx)), static_cast<int>(std::lround(mesure.ty)));
-    const int y0 = std::max(0, decalage.y), y1 = std::min(paire.A.rows, decalage.y + paire.B.rows);
-    const int x0 = std::max(0, decalage.x), x1 = std::min(paire.A.cols, decalage.x + paire.B.cols);
+    const auto [zoneA, zoneB] = EstimationRecouvrement::zonesCommunes(paire.A.size(), paire.B.size(),
+                                                                      {mesure.tx, mesure.ty});
 
     // Un patch centré sur un candidat, puis décalé de la correction locale, doit rester dans la zone
     const int marge = p.fenetre / 2 + static_cast<int>(std::ceil(p.ecartMax)) + 1;
-    if (y1 - y0 < p.fenetre + 2 * marge || x1 - x0 < p.fenetre + 2 * marge) return std::nullopt;
+    if (zoneA.height < p.fenetre + 2 * marge || zoneA.width < p.fenetre + 2 * marge) return std::nullopt;
 
-    const cv::Rect zoneA(x0, y0, x1 - x0, y1 - y0);
-    const cv::Rect zoneB = zoneA - decalage;
     Recouvrement resultat;
     resultat.a        = enGris(paire.A(zoneA), paire.extA(zoneA));
     resultat.b        = enGris(paire.B(zoneB), paire.extB(zoneB));
     resultat.origineA = zoneA.tl();
-    resultat.decalage = decalage;
+    resultat.decalage = zoneA.tl() - zoneB.tl();
     resultat.marge    = marge;
     return resultat;
 }
@@ -107,6 +104,28 @@ Direction Preparation::oppose(Direction d) {
         case Direction::Right:  return Direction::Left;
     }
     return d;
+}
+
+std::optional<Bandes> Preparation::preparerBandes(const PaireOrientee& paire, cv::Rect ra, cv::Rect rb,
+                                                  cv::Point2d origine, double marge, const Parametres& p) {
+    if (ra.width < 2 || ra.height < 2) return std::nullopt;
+    const cv::Mat a = enGris(paire.A(ra), paire.extA(ra));
+    const cv::Mat b = enGris(paire.B(rb), paire.extB(rb));
+
+    // Bandes surtout faites de fond ou de reflets : le peu qui reste ne suffit pas à une mesure fiable
+    const double fractionValide = cv::countNonZero(cv::Mat(valides(a) & valides(b))) / static_cast<double>(a.total());
+    if (fractionValide < p.fractionValideMin) return std::nullopt;
+
+    // Même découpe dans les deux bandes : le décalage résiduel mesuré n'en est pas modifié
+    const auto zone = zoneAvecContenu(a, b);
+    if (!zone) return std::nullopt;
+
+    Bandes resultat;
+    resultat.a       = a(*zone);
+    resultat.b       = b(*zone);
+    resultat.origine = origine;
+    resultat.marge   = marge;
+    return resultat;
 }
 
 cv::Rect Preparation::bande(cv::Size forme, Direction cote, double recouvrement) {
