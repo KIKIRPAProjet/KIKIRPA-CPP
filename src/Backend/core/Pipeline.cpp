@@ -15,12 +15,32 @@ std::string Pipeline::stepName(size_t i) const {
 }
 
 void Pipeline::configure(const Json& cfg) {
-    const auto config = cfg.at("pipeline").get<PipelineConfig>();
-    if (config.steps.size() != steps.size())
-        throw std::invalid_argument("pipeline JSON has " + std::to_string(config.steps.size()) +
+    if (!cfg.is_object())
+        throw std::invalid_argument("pipeline script must be a JSON object");
+    if (!cfg.contains("pipeline") || !cfg.at("pipeline").is_object())
+        throw std::invalid_argument("field 'pipeline' must be an object");
+    if (!cfg.at("pipeline").contains("steps") || !cfg.at("pipeline").at("steps").is_array())
+        throw std::invalid_argument("field 'pipeline.steps' must be an array");
+
+    const Json& stepConfigs = cfg.at("pipeline").at("steps");
+    if (stepConfigs.size() != steps.size())
+        throw std::invalid_argument("pipeline JSON has " + std::to_string(stepConfigs.size()) +
                                     " steps, expected " + std::to_string(steps.size()));
-    for (size_t i = 0; i < steps.size(); ++i) steps[i]->importConfig(config.steps[i]);
-    if (cfg.contains("run")) runState = cfg.at("run").get<RunState>();
+    for (size_t i = 0; i < steps.size(); ++i) {
+        try {
+            steps[i]->importConfig(stepConfigs.at(i));
+        } catch (const std::exception& e) {
+            throw std::invalid_argument("pipeline.steps[" + std::to_string(i) + "]: " + e.what());
+        }
+    }
+    if (cfg.contains("run")) {
+        validateRunStateJson(cfg.at("run"));
+        try {
+            runState = cfg.at("run").get<RunState>();
+        } catch (const std::exception& e) {
+            throw std::invalid_argument(std::string("field 'run': ") + e.what());
+        }
+    }
 }
 
 Json Pipeline::exportConfig() const {
