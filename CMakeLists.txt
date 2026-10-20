@@ -1,44 +1,70 @@
 cmake_minimum_required(VERSION 3.16)
-project(Stitching CXX)
+
+project(Frontend VERSION 0.1 LANGUAGES CXX)
+
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(OpenCV REQUIRED)
-find_package(nlohmann_json 3 QUIET)
-if(NOT nlohmann_json_FOUND)
-  include(FetchContent)
-  FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
-  FetchContent_MakeAvailable(json)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+
+set(PROJECT_SOURCES
+        main.cpp
+        mainwindow.cpp
+        mainwindow.h
+        mainwindow.ui
+)
+
+if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
+    qt_add_executable(Frontend
+        MANUAL_FINALIZATION
+        ${PROJECT_SOURCES}
+    )
+# Define target properties for Android with Qt 6 as:
+#    set_property(TARGET Frontend APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
+# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
+else()
+    if(ANDROID)
+        add_library(Frontend SHARED
+            ${PROJECT_SOURCES}
+        )
+# Define properties for Android with Qt 5 after find_package() calls as:
+#    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+    else()
+        add_executable(Frontend
+            ${PROJECT_SOURCES}
+        )
+    endif()
 endif()
 
-# Les nouveaux .cpp sont pris en compte automatiquement.
-file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS
-     "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.cpp")
-add_library(stitching_backend STATIC ${BACKEND_SRC})
-target_include_directories(stitching_backend PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/Backend")
-target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
+target_link_libraries(Frontend PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 
-# Algorithmes (LightGlue/ONNX Runtime, tests) : voir cmake/algorithms.cmake
-include(cmake/algorithms.cmake)
+# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
+# If you are developing for iOS or macOS you should consider setting an
+# explicit, fixed bundle identifier manually though.
+if(${QT_VERSION} VERSION_LESS 6.1.0)
+  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.Frontend)
+endif()
+set_target_properties(Frontend PROPERTIES
+    ${BUNDLE_ID_OPTION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+    MACOSX_BUNDLE TRUE
+    WIN32_EXECUTABLE TRUE
+)
 
-# Ligne de commande
-add_executable(stitching src/main.cpp)
-target_link_libraries(stitching PRIVATE stitching_backend)
+include(GNUInstallDirs)
+install(TARGETS Frontend
+    BUNDLE DESTINATION .
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
 
-# Interface graphique (Qt 6), construite seulement si Qt est installé
-find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
-if(Qt6_FOUND)
-  file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
-       "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
-  list(FILTER FRONTEND_SRC EXCLUDE REGEX "/ToDelete\\.cpp$")
-  if(FRONTEND_SRC)
-    add_executable(stitching_frontend ${FRONTEND_SRC})
-    target_link_libraries(stitching_frontend PRIVATE stitching_backend Qt6::Widgets Qt6::Concurrent)
-  else()
-    message(STATUS "No frontend sources found: stitching_frontend will not be built")
-  endif()
-else()
-  message(STATUS "Qt6 not found: stitching_frontend will not be built")
+if(QT_VERSION_MAJOR EQUAL 6)
+    qt_finalize_executable(Frontend)
 endif()
