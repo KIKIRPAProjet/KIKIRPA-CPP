@@ -33,6 +33,7 @@
 #include <QSaveFile>
 #include <QSlider>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableWidget>
@@ -283,6 +284,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         " border-bottom:1px solid #505050; padding:5px; }"
         "QProgressBar { background:#242424; border:0; text-align:center; height:8px; }"
         "QProgressBar::chunk { background:#43a56c; }"
+        "QSplitter::handle { background:#202020; }"
+        "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
         "QCheckBox { spacing:7px; }"));
 
@@ -536,10 +539,9 @@ void MainWindow::createWorkspace()
     });
     root->addWidget(modeOptions);
 
-    auto *body = new QWidget;
-    auto *bodyLayout = new QHBoxLayout(body);
-    bodyLayout->setContentsMargins(0, 0, 0, 0);
-    bodyLayout->setSpacing(0);
+    auto *body = new QSplitter(Qt::Horizontal);
+    body->setHandleWidth(5);
+    body->setChildrenCollapsible(false);
     auto *tools = new QWidget;
     tools->setFixedWidth(42);
     auto *toolLayout = new QVBoxLayout(tools);
@@ -563,7 +565,7 @@ void MainWindow::createWorkspace()
         });
     }
     toolLayout->addStretch();
-    bodyLayout->addWidget(tools);
+    body->addWidget(tools);
 
     auto *center = new QWidget;
     auto *centerLayout = new QVBoxLayout(center);
@@ -604,11 +606,10 @@ void MainWindow::createWorkspace()
         zoomLabel->setText(QStringLiteral("100 %"));
         static_cast<ArtworkCanvas *>(canvas)->setZoom(zoomPercent);
     });
-    bodyLayout->addWidget(center, 1);
+    body->addWidget(center);
 
     rightTabs = new QTabWidget;
     rightTabs->setMinimumWidth(218);
-    rightTabs->setMaximumWidth(300);
     auto *layersPage = new QWidget;
     auto *layersLayout = new QVBoxLayout(layersPage);
     layersLayout->addWidget(new QLabel(tr("Calques")));
@@ -706,11 +707,14 @@ void MainWindow::createWorkspace()
     });
     infoLayout->addStretch();
     rightTabs->addTab(infoPage, tr("Infos"));
-    bodyLayout->addWidget(rightTabs);
-    root->addWidget(body, 1);
+    body->addWidget(rightTabs);
+    body->setStretchFactor(0, 0);
+    body->setStretchFactor(1, 1);
+    body->setStretchFactor(2, 0);
+    body->setSizes({42, 760, 280});
 
     bottomTabs = new QTabWidget;
-    bottomTabs->setMaximumHeight(165);
+    bottomTabs->setMinimumHeight(80);
     pairsTable = new QTableWidget(4, 8, bottomTabs);
     pairsTable->setHorizontalHeaderLabels({tr("Paire"), tr("Sens"), tr("Statut"), tr("Confiance"),
         tr("Contrôle NCC"), tr("dx (px)"), tr("dy (px)"), tr("Erreur")});
@@ -742,7 +746,15 @@ void MainWindow::createWorkspace()
     }
     bottomTabs->addTab(positions, tr("Positions"));
     connect(pairsTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) { setMode(3); });
-    root->addWidget(bottomTabs);
+    auto *contentSplitter = new QSplitter(Qt::Vertical);
+    contentSplitter->setHandleWidth(5);
+    contentSplitter->setChildrenCollapsible(false);
+    contentSplitter->addWidget(body);
+    contentSplitter->addWidget(bottomTabs);
+    contentSplitter->setStretchFactor(0, 1);
+    contentSplitter->setStretchFactor(1, 0);
+    contentSplitter->setSizes({560, 165});
+    root->addWidget(contentSplitter, 1);
 
     auto *status = new QWidget;
     auto *statusLayout = new QHBoxLayout(status);
