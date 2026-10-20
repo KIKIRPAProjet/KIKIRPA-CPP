@@ -49,25 +49,34 @@ std::unique_ptr<Step> createStep(const std::string& name) {
 }
 
 Pipeline buildPipeline(const Json& script) {
+    if (!script.is_object())
+        throw std::invalid_argument("pipeline script must be a JSON object");
+    if (!script.contains("pipeline") || !script.at("pipeline").is_object())
+        throw std::invalid_argument("field 'pipeline' must be an object");
+    if (!script.at("pipeline").contains("steps") || !script.at("pipeline").at("steps").is_array())
+        throw std::invalid_argument("field 'pipeline.steps' must be an array");
+
     Pipeline p;
     std::map<std::string, std::string> produced;   // clé → type des données déjà produites
 
-    for (const Json& stepJson : script.at("pipeline").at("steps")) { // On récupère la liste des steps du fichier "pipeline.json" (dans le champ "steps") et on parcourt cette liste
-
-        // Pour chaque élément step, on lit le champ name, on cherche le step dans le registre interne (registry) et on associe les noms JSON aux classes C++. Ce registre est juste au dessus.
-
+    const Json& stepConfigs = script.at("pipeline").at("steps");
+    for (size_t i = 0; i < stepConfigs.size(); ++i) {
+        const Json& stepJson = stepConfigs.at(i);
+        const std::string path = "pipeline.steps[" + std::to_string(i) + "]";
+        if (!stepJson.is_object())
+            throw std::invalid_argument(path + " must be an object");
+        if (!stepJson.contains("name") || !stepJson.at("name").is_string() ||
+            stepJson.at("name").get<std::string>().empty())
+            throw std::invalid_argument(path + ".name must be a non-empty string");
         const std::string name = stepJson.at("name").get<std::string>();
         // On cherche le nom du step (ex. "import", "stitching", etc.) dans le registre ; s'il n'y est pas, createStep lève une exception
-
-        // Chaque step possède une config. par défaut dans son constructeur. importConfig() permet donc de mettre à jour cette config. par défaut avec ce qu'on a dans le JSON. La logique est :
-        //  - le constructeur crée la configuration par défaut ;
-        //  - le JSON fournit les valeurs personnalisées ;
-        //  - seules les options connues sont acceptées ;
-        //  - une option inconnue provoque une erreur.
-        // Toutes les options qui ne sont pas dans le JSON gardent leur valeur par défaut.
-
-        auto step = createStep(name);
-        step->importConfig(stepJson);
+        std::unique_ptr<Step> step;
+        try {
+            step = createStep(name);
+            step->importConfig(stepJson);
+        } catch (const std::exception& e) {
+            throw std::invalid_argument(path + ": " + e.what());
+        }
 
         // Enchaînement : chaque entrée doit être la sortie d'un step précédent
         // On vérifie donc qu'une étape n'est pas manquante ou qu'une a été déplacée avant une autre (on ne peut pas faire stitching avant import)
