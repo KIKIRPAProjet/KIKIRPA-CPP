@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Step.h"
+#include "core/Tuile.h"
 #include <string>
 
 namespace stitching::steps {
@@ -8,7 +9,6 @@ namespace stitching::steps {
 struct ImportInput {
     std::string path = "images/";
     // Regex sur le nom du fichier : groupe 1 = colonne, groupe 2 = ligne
-    // ex. images/img_C00_R00.tif, images/img_C01_R00.tif
     std::string format = R"(img_C(\d+)_R(\d+)\.tif)";
 };
 
