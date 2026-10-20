@@ -42,3 +42,8 @@ if(Qt6_FOUND)
 else()
   message(STATUS "Qt6 not found: stitching_frontend will not be built")
 endif()
+
+# Test Unitaire : ImportStep
+add_executable(test_import tests/test_import.cpp)
+target_link_libraries(test_import PRIVATE stitching_backend)
+target_include_directories(test_import PRIVATE include/Backend)

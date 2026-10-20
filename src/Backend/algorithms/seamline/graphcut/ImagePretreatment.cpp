@@ -42,15 +42,22 @@ Mat ImagePretreatment::readSmallFloat(const string& path, double scale) {
 // ------------------------------------------------------------------ nom de tuile
 
 bool ImagePretreatment::parseTileName(const string& path, int& row, int& col, string& id) {
-    static const regex pattern("_r(\\d+)_c(\\d+)\\.tiff?$", regex::icase);
+    static const regex pattern_rc("_r(\\d+)_c(\\d+)\\.tiff?$", regex::icase);
+    static const regex pattern_cr("_[cC](\\d+)_[rR](\\d+)\\.tiff?$", regex::icase);
     string file_name = path;
     size_t last_slash = file_name.find_last_of("/\\");
     if (last_slash != string::npos) file_name = file_name.substr(last_slash + 1);
 
     smatch matches;
-    if (!regex_search(file_name, matches, pattern) || matches.size() <= 2) return false;
-    row = stoi(matches[1].str());
-    col = stoi(matches[2].str());
+    if (regex_search(file_name, matches, pattern_rc) && matches.size() > 2) {
+        row = stoi(matches[1].str());
+        col = stoi(matches[2].str());
+    } else if (regex_search(file_name, matches, pattern_cr) && matches.size() > 2) {
+        col = stoi(matches[1].str());
+        row = stoi(matches[2].str());
+    } else {
+        return false;
+    }
 
     char buf[32];
     snprintf(buf, sizeof(buf), "r%02d_c%02d", row, col);
