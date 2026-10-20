@@ -53,6 +53,9 @@ les chemins des fichiers sélectionnés dans le projet.
 
 ### Les six modes
 
+Dans la barre d’étapes, le mode actuellement affiché est grisé pour vous aider à vous
+repérer. Les autres modes restent cliquables pour naviguer.
+
 | Mode | À quoi il est destiné | Comportement actuel |
 | --- | --- | --- |
 | **Projet** | Vue générale et résumé du projet. | Affiche l’illustration générale. |
