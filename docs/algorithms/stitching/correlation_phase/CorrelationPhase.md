@@ -26,8 +26,8 @@ Seule dépendance : **OpenCV** (déjà utilisée par le projet). Pas besoin d'Ei
 
 Deux tuiles voisines A et B se recouvrent sur une bande (environ 20 % de leur taille). L'algorithme mesure **où se trouve B par rapport à A**, avec une précision inférieure au pixel. Il renvoie :
 
-1. **une translation globale** `(x, y)` : la position du coin haut-gauche de B dans le repère de A ;
-2. **des paires de points** `pointsA[i] ↔ pointsB[i]` avec une **confiance** `confidence[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à RANSAC / MAGSAC++.
+1. **une translation globale** `(dx, dy)` : la position du coin haut-gauche de B dans le repère de A ;
+2. **des paires de points** `pointsA[i] ↔ pointsB[i]` avec un **score de confiance** `scores[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à RANSAC / MAGSAC++.
 
 ```
           A                              repère de A
@@ -36,7 +36,7 @@ Deux tuiles voisines A et B se recouvrent sur une bande (environ 20 % de leur ta
   │                   │                    ▼ y
   │          ┌────────┼──────────┐
   │          │ zone   │          │
-  └──────────┼commune─┘          │   ◄── B posée en (x, y)
+  └──────────┼commune─┘          │   ◄── B posée en (dx, dy)
              │                   │
              │         B         │
              └───────────────────┘
@@ -73,19 +73,19 @@ private:
 
 ```cpp
 struct Matches {
-    float x = 0.f, y = 0.f;                     // coin haut-gauche de B dans le repère de A (px)
     std::vector<cv::Point2f> pointsA, pointsB;  // coordonnées dans la tuile A / la tuile B entière
-    std::vector<float> confidence;              // confiance de chaque paire, entre 0 et 1
+    std::vector<float> scores;                  // confiance de chaque paire, entre 0 et 1
+    float dx = 0.f, dy = 0.f;                   // coin haut-gauche de B dans le repère de A (px)
 };
 ```
 
-C'est le struct proposé par l'équipe (`x`, `y`, `coord_A`, `coord_B`, `confiance`) : `pointsA` correspond à `coord_A` et `pointsB` à `coord_B`.
+C'est le struct unifié avec SIFT et LightGlue (`pointsA`, `pointsB`, `scores`, `dx`, `dy`).
 
-**Convention** : pour toute paire, `pointsA[i] − pointsB[i] ≈ (x, y)`. Un pixel `(X, Y)` de A correspond au pixel `(X − x, Y − y)` de B.
+**Convention** : pour toute paire, `pointsA[i] − pointsB[i] ≈ (dx, dy)`. Un pixel `(X, Y)` de A correspond au pixel `(X − dx, Y − dy)` de B.
 
 ### Valeur de retour
 
-- `true` : la translation `(x, y)` est valide. La liste de points peut être vide si la zone commune est trop étroite pour y placer des patchs.
+- `true` : la translation `(dx, dy)` est valide. La liste de points peut être vide si la zone commune est trop étroite pour y placer des patchs.
 - `false` : la mesure est impossible ou peu fiable. C'est le cas si les tuiles sont vides ou de tailles différentes, si les bandes n'ont pas de contenu commun (zone noire ou fond uni), si la translation réelle est hors de la marge du rail, ou si le pic de corrélation est ambigu. `match` ne lève **aucune exception**.
 - **`raisonEchec()`** : après un `false`, message qui explique pourquoi, avec les chiffres et la correction à apporter quand elle est connue. Exemple sur Philadelphia 35 → 36 (recouvrement réel 26 %, annoncé 20 %) : *« translation hors de la marge du rail : le meilleur pic est à 520 px du recouvrement nominal dans le sens du déplacement et 82 px en travers, au-delà de la marge du rail (±435 px) (rapport 14.46). Augmenter la marge (Parametres::marge >= 530 px) ou donner le recouvrement réel (environ 26 % au lieu de 20 %). »* Vide après un `true`.
 

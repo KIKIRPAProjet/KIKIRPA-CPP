@@ -31,7 +31,7 @@ public:
 
     // false si la translation ne peut pas être mesurée (tuiles vides ou de tailles différentes,
     // pas de contenu commun, pic hors de la marge du rail ou ambigu) : la raison est dans raisonEchec().
-    // true : out.x, out.y valides, points éventuellement vides.
+    // true : out.dx, out.dy valides, points éventuellement vides.
     bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
 //override car remplce une fonction virtuelle de la classe mere
 

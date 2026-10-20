@@ -29,13 +29,10 @@ struct TileImage {
 using Tiles = std::vector<TileImage>;
 
 // Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
-// Champs ajoutés par les algorithmes (versions des branches réunies, à unifier plus tard) :
-//   x, y, confidence : corrélation de phase (x, y = coin haut-gauche de B dans le repère de A, en px)
-//   dx, dy, scores   : SIFT et LightGlue (translation estimée et score de chaque paire de points)
+//   dx, dy : translation estimée (coin haut-gauche de B dans le repère de A, en px : pointsA - pointsB)
+//   scores : score de confiance de chaque paire de points (entre 0 et 1)
 struct Matches {
     std::vector<cv::Point2f> pointsA, pointsB;
-    float x = 0.f, y = 0.f;
-    std::vector<float> confidence;
     std::vector<float> scores;
     float dx = 0.f;
     float dy = 0.f;
