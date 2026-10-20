@@ -1,45 +1,61 @@
 #pragma once
-#include <opencv2/core.hpp>
+#include <array>
+#include <filesystem>
 #include <memory>
 #include <vector>
 
 namespace stitching {
 
-using Tile = cv::Mat;                       // Tile : Mat (OpenCV)
-using Grid = std::vector<std::vector<Tile>>; // [][]Tile
+constexpr int TAILLE_BLOC = 512;   // blocs de 512 x 512 pixels (taille à discuter)
+constexpr int NB_NIVEAUX  = 4;     // 1, 1/2, 1/4, 1/8
 
-class Pyramide;
-
-class Niveau {
-public:
-    Grid data;
-    Pyramide* parent = nullptr;
+// Un niveau de la pyramide. Les blocs restent sur disque (TIFF tuilé) : seules
+// les dimensions sont gardées en RAM, la grille de blocs s'en déduit.
+struct Niveau {
+    int largeur = 0, hauteur = 0;
+    int blocsX = 0, blocsY = 0;   // nombre de blocs en x et en y
+    bool gris = false;            // niveaux réduits stockés en niveaux de gris
 };
 
-class Tuile;
-
-class Pyramide {
-public:
-    Grid original;
-    Niveau half, quarter, eighth;
-    Tuile* parent = nullptr;   // pointeur, sinon inclusion circulaire
-    explicit Pyramide(Tuile* p = nullptr);
+// Identifiant d'un bloc : (tuile, niveau, bx, by), clé du cache
+struct BlocId {
+    int tuile = 0, niveau = 0, bx = 0, by = 0;
+    bool operator==(const BlocId& o) const {
+        return tuile == o.tuile && niveau == o.niveau && bx == o.bx && by == o.by;
+    }
 };
 
+// Fiche d'une tuile, gardée en RAM. Aucun pixel ici : les algorithmes passent
+// par readRegion(tuile, niveau, rectangle).
 class Tuile {
     Tuile *left = nullptr, *right = nullptr, *top = nullptr, *bottom = nullptr;
-    std::unique_ptr<Pyramide> pyramide;      // Tuile --> Pyramide (ownership)
+    int id = 0;
+    std::filesystem::path source;   // fichier d'origine, jamais modifié
+    std::filesystem::path tiff;     // TIFF tuilé pyramidal créé à l'import
+    int type = 0;                   // type OpenCV de la pleine résolution (ex. CV_16UC3)
+    std::array<Niveau, NB_NIVEAUX> pyramide;
 public:
-    Tuile() : pyramide(std::make_unique<Pyramide>(this)) {}
+    Tuile(int id, std::filesystem::path source, std::filesystem::path tiff,
+          int largeur, int hauteur, int type);
+
     Tuile* getLeft()   const { return left; }
     Tuile* getRight()  const { return right; }
     Tuile* getTop()    const { return top; }
     Tuile* getBottom() const { return bottom; }
-    Pyramide& getPyramide() { return *pyramide; }
+    void setVoisins(Tuile* l, Tuile* r, Tuile* t, Tuile* b) { left = l; right = r; top = t; bottom = b; }
 
-    // Image passée aux algorithmes (vide si rien n'est chargé)
-    // TODO : choisir le bon niveau de pyramide / la bonne sous-tuile
-    cv::Mat image() const;
+    int getId() const { return id; }
+    const std::filesystem::path& getSource() const { return source; }
+    const std::filesystem::path& getTiff()   const { return tiff; }
+    int getType() const { return type; }
+    const Niveau& getNiveau(int n) const { return pyramide.at(n); }
+
+    // Bloc contenant le pixel (x, y) du niveau n
+    BlocId blocDe(int n, int x, int y) const { return {id, n, x / TAILLE_BLOC, y / TAILLE_BLOC}; }
 };
+
+// PipelineOption "Tiles" : les fiches créées par le step import.
+// shared_ptr : les copies (DataStore) gardent les mêmes Tuile, donc les voisins restent valides.
+using Tiles = std::vector<std::shared_ptr<Tuile>>;
 
 } // namespace stitching
