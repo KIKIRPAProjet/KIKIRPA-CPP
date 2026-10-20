@@ -20,13 +20,14 @@ struct PairContext {
     float overlap = 0.f;   // recouvrement estimé (fraction de la tuile)
 };
 
-// PipelineOption "Tiles" : les images chargées par le step import
+// Images chargées en mémoire par un traitement ponctuel.
 struct TileImage {
     std::filesystem::path path;
     int col = 0, row = 0;   // position dans la grille, lue dans le nom du fichier
     cv::Mat image;
 };
-using Tiles = std::vector<TileImage>;
+// Il y avait une erreur de définition (using Tiles = ... dans Tuile.h et ici) -> pense que ces deux définitions sont différentes, je les ai séparées
+using TileImages = std::vector<TileImage>;
 
 // Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
 // Champs ajoutés par les algorithmes (versions des branches réunies, à unifier plus tard) :
