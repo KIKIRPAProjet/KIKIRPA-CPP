@@ -2,6 +2,8 @@
 #include <string>
 #include <iostream>
 #include <opencv2/opencv.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/geometry/2d.hpp>
 #include <opencv2/stitching/detail/seam_finders.hpp>
 #include <opencv2/stitching/detail/util.hpp>
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
