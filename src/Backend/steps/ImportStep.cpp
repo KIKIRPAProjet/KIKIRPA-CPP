@@ -1,4 +1,5 @@
 #include "steps/ImportStep.h"
+#include "Backend/core/PyramidalTiffWriter.h"
 #include "core/Config.h"
 #include <opencv2/imgcodecs.hpp>
 #include <algorithm>
@@ -60,6 +61,20 @@ bool ImportStep::execute() {
         return a.row != b.row ? a.row < b.row : a.col < b.col;
     });
 
+    // Dossier de sortie pour les TIFF tuilés pyramides
+    const fs::path outputDir = dir / ".cache" / "pyramids";
+    fs::create_directories(outputDir);
+
+    // Vérification de la création du dossier de sortie
+    std::error_code errorCode;
+    if (!fs::create_directories(outputDir, errorCode)
+        && errorCode) {
+        outputData["error"] =
+            "cannot create output directory " + outputDir.string()
+            + ": " + errorCode.message();
+        return false;
+    }
+
     // Une seule image en RAM à la fois : lue une fois, puis libérée. Seule la fiche est gardée.
     Tiles tiles;
     std::map<std::pair<int, int>, Tuile*> grille;   // (colonne, ligne) -> tuile
@@ -69,9 +84,26 @@ bool ImportStep::execute() {
             outputData["error"] = "cannot read " + f.path.string();
             return false;
         }
-        // TODO : écrire ici le TIFF tuilé pyramidal (1/2, 1/4, 1/8, blocs 512x512) avec libtiffx
-        tiles.push_back(std::make_shared<Tuile>(static_cast<int>(tiles.size()), f.path, fs::path{},
-                                                image.cols, image.rows, image.type()));
+
+        // Chemin du TIFF tuilé pyramidal à créer dans le dossier de sortie
+        const fs::path pyramidPath = outputDir / (f.path.stem().string() + "_pyramid.tif");
+
+        // Appel à la fonction de création du TIFF tuilé pyramidal (qui crée le tiff et l'enregistre)
+        std::string error;
+        if (!createPyramidalTiledTiff(image, pyramidPath, error)) {
+            outputData["error"] =
+                "cannot create " + pyramidPath.string() + ": " + error;
+            return false;
+        }
+
+        tiles.push_back(std::make_shared<Tuile>(
+            static_cast<int>(tiles.size()),
+            f.path,
+            pyramidPath,
+            image.cols,
+            image.rows,
+            image.type()
+        ));
         grille[{f.col, f.row}] = tiles.back().get();
     }
 
