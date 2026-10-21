@@ -9,7 +9,9 @@ namespace stitching::positioning {
 struct PositioningSettings {
     float overlap = 0.3f;                    // fraction maximale de la tuile examinée par SIFT (bande de recouvrement)
     std::string matcher = "sift";            // noms de la Factory
-    std::string rejector = "ransac";
+    // [AD 21/10/2026 20:41] Rejet des aberrants par défaut : "vote" (Hough 2D déterministe O(N), sans fausse rotation sur bande étroite).
+    // Reste 100% compatible avec "ransac" (estimateAffinePartial2D) si spécifié dans settings.
+    std::string rejector = "vote";
     Json matcherParams = Json::object();
     Json rejectorParams = Json::object();
 };

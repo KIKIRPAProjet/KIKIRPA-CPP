@@ -59,6 +59,9 @@ struct Alignment {
 struct TilePositionData {
     std::string tile_id;
     cv::Point2d position;
+    // [AD 21/10/2026 20:41] Angle de rotation absolu de la tuile (en radians) résolu globalement par TilePositioner.
+    // La valeur par défaut 0.0 garantit une rétrocompatibilité totale avec les appels existants {id, position}.
+    double rotation = 0.0;
 };
 
 } // namespace stitching
