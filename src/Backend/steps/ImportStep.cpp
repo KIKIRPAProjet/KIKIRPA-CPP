@@ -18,6 +18,8 @@ ImportStep::ImportStep(const ImportInput& input) {
 }
 
 bool ImportStep::execute() {
+    output.tiles.clear();
+    outputData = Json::object();
     // Relu depuis config : un JSON chargé par Pipeline::configure() remplace les valeurs du constructeur
     const ImportInput input{option("path").get<std::string>(), option("format").get<std::string>()};
     const fs::path dir = input.path;

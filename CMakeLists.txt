@@ -16,6 +16,7 @@ file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.cpp")
 add_library(stitching_backend STATIC ${BACKEND_SRC})
 target_include_directories(stitching_backend PUBLIC
+        ${OpenCV_INCLUDE_DIRS}
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/Backend")
 target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
@@ -26,6 +27,9 @@ include(cmake/algorithms.cmake)
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
+
+add_executable(stitching_lightglue src/main_lightglue.cpp)
+target_link_libraries(stitching_lightglue PRIVATE stitching_backend)
 
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)

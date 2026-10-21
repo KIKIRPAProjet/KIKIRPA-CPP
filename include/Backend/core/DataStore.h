@@ -3,6 +3,7 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 namespace stitching {
 
@@ -23,6 +24,7 @@ public:
     }
 
     bool has(const std::string& key) const { return values.count(key) > 0; }
+    void erase(const std::string& key) { values.erase(key); }
 };
 
 } // namespace stitching

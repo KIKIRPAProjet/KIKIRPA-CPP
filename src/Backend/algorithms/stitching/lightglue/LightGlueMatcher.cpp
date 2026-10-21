@@ -127,31 +127,19 @@ cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::strin
         throw std::runtime_error("LightGlueMatcher: " + imageName + " est vide.");
     }
 
-    // Ajout d'un redimensionnement (13/10/26)
-    // RACO/ALIKED+LightGlue nécessite des dimensions multiples de 32.
-    // Cette contrainte reste également valide pour les modèles SuperPoint/DISK.
-    int max_edge = 3200;
-    scale = 1.0f;
-    int max_dim = std::max(image.cols, image.rows);
-    cv::Mat resizedImage = image;
-    
-    if (max_dim > max_edge) {
-        scale = static_cast<float>(max_edge) / max_dim;
-        const int resized_width =
-            std::max(32, static_cast<int>(std::round(image.cols * scale / 32.0f)) * 32);
-        const int resized_height =
-            std::max(32, static_cast<int>(std::round(image.rows * scale / 32.0f)) * 32);
-        scale = static_cast<float>(resized_width) / image.cols;
-        cv::resize(image, resizedImage,
-                   cv::Size(resized_width, resized_height), 0.0, 0.0,
-                   cv::INTER_AREA);
+    if ((image.depth() != CV_8U && image.depth() != CV_16U) ||
+        (image.channels() != 1 && image.channels() != 3 && image.channels() != 4)) {
+        throw std::invalid_argument("LightGlueMatcher: expected an 8/16-bit image with 1, 3 or 4 channels");
     }
-
-    // Comment fonctionne le redimensionnement :
-    // max_dim prend la valeur 5176 (le plus grand côté de l'image).
-    // Comme 5176 est strictement supérieur à 1200 (max_edge), le programme entre dans la condition if.
-    // Il calcule le nouveau ratio : scale = 1200.0 / 5176.0, ce qui donne environ 0.2318.
-    // L'image est redimensionnée à 23% de sa taille d'origine (elle passe de 5176x5176 à 1200x1200) avant de rentrer dans le réseau de neurones.
+    // Limiter le coût de l'inférence et respecter les dimensions multiples de 32.
+    constexpr int max_edge = 3200;
+    const float reduction = std::min(1.0f, static_cast<float>(max_edge) / std::max(image.cols, image.rows));
+    const int width = std::max(32, static_cast<int>(std::round(image.cols * reduction / 32.0f)) * 32);
+    const int height = std::max(32, static_cast<int>(std::round(image.rows * reduction / 32.0f)) * 32);
+    scale = static_cast<float>(width) / image.cols;
+    cv::Mat resizedImage;
+    if (width == image.cols && height == image.rows) resizedImage = image;
+    else cv::resize(image, resizedImage, cv::Size(width, height), 0.0, 0.0, cv::INTER_AREA);
 
     std::cout << "[DEBUG] " << imageName 
             << " | Taille originale : " << image.cols << "x" << image.rows 
@@ -185,7 +173,9 @@ cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::strin
     std::cout << "[DEBUG] preprocessing de l'image " << imageName << " : fin\n";
 
     // Convertir l'image en float, normaliser les valeurs et passer au format NCHW.
-    return cv::dnn::blobFromImage(finalImage, 1.0 / 255.0, cv::Size(), cv::Scalar(), !grayscale, false);
+    const double normalization = image.depth() == CV_16U ? 1.0 / 65535.0 : 1.0 / 255.0;
+    finalImage.convertTo(finalImage, CV_32F, normalization);
+    return cv::dnn::blobFromImage(finalImage, 1.0, cv::Size(), cv::Scalar(), !grayscale, false);
 }
 
 bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
@@ -203,6 +193,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     out.scores.clear();
     out.dx = 0.0f;
     out.dy = 0.0f;
+    if (a.empty() || b.empty()) return false;
 
     // Test de la session lors de l'exécution -> si la session n'est pas initialisée, on génère une erreur, sinon on continue.
     if (!this->session) {
@@ -225,6 +216,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     float scale1 = 1.0f, scale2 = 1.0f; // Ajout des ratios de redimensionnement pour chaque image (13/10/26)
     cv::Mat blob1 = preprocessImage(a, "image A", scale1, use_grayscale);
     cv::Mat blob2 = preprocessImage(b, "image B", scale2, use_grayscale);
+    const float scaleY1 = static_cast<float>(blob1.size[2]) / a.rows;
+    const float scaleY2 = static_cast<float>(blob2.size[2]) / b.rows;
 
     // Les modèles RACO/ALIKED+LightGlue exportés récemment utilisent une
     // entrée batch unique et trois sorties: keypoints, matches, mscores.
@@ -242,6 +235,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
                 "LightGlueMatcher: un modèle batch doit renvoyer keypoints, matches et mscores.");
         }
 
+        if (blob1.size[1] != blob2.size[1] || blob1.size[2] != blob2.size[2] || blob1.size[3] != blob2.size[3])
+            throw std::invalid_argument("LightGlueMatcher: batch model requires equal preprocessed image dimensions");
         std::vector<float> batch_data;
         batch_data.reserve(blob1.total() + blob2.total());
         batch_data.insert(batch_data.end(), blob1.ptr<float>(),
@@ -264,6 +259,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             input_names.data(), &input_tensor, 1,
             output_names.data(), output_names.size());
 
+        if (output_tensors.size() != 3)
+            throw std::runtime_error("LightGlueMatcher: expected three batch outputs");
         const auto keypoints_info =
             output_tensors[0].GetTensorTypeAndShapeInfo();
         const auto matches_info =
@@ -318,9 +315,9 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             const size_t point_b = (keypoint_count +
                                     static_cast<size_t>(index_b)) * 2;
             out.pointsA.emplace_back(
-                keypoints[point_a] / scale1, keypoints[point_a + 1] / scale1);
+                keypoints[point_a] / scale1, keypoints[point_a + 1] / scaleY1);
             out.pointsB.emplace_back(
-                keypoints[point_b] / scale2, keypoints[point_b + 1] / scale2);
+                keypoints[point_b] / scale2, keypoints[point_b + 1] / scaleY2);
             out.scores.push_back(scores[i]);
         }
 
@@ -349,7 +346,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         std::chrono::duration<double> elapsed = end_time - start_time;
         std::cout << "[DEBUG] Temps total exécution match() : "
                   << elapsed.count() << " secondes\n";
-        return true;
+        return !out.pointsA.empty();
     }
 
     if (this->session->GetInputCount() != 2) {
@@ -445,8 +442,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         throw std::runtime_error("LightGlueMatcher: mscores1 doit être un tenseur FLOAT.");
     }
 
-    // Pourquoi on extrait que les données de scores0 et non également de scores1 ? 
-    // IA : Quand LightGlue trouve une correspondance valide entre un Point A (dans img1) et un Point B (dans img2), il s'agit d'une seule et même paire. scores0[i] contient le score de confiance pour le Point A (qui a matché avec le Point B). scores1[match_idx] contient le score de confiance pour le Point B (qui a matché avec le Point A). Pour une paire validée, ces deux scores sont identiques (ou représentent exactement la même information de confiance pour cette liaison).
+    // Les correspondances sont parcourues depuis matches0 ; mscores0 fournit le score de chaque entrée.
 
     // Extraction des coordonnées des points-clés (float)
     auto kpts0_info = output_tensors[4].GetTensorTypeAndShapeInfo();
@@ -516,8 +512,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             
             // On enregistre les points correspondants dans les vecteurs de la structure de sortie
             // Ajout de la division par le scale pour replacer les points sur les images 5176x5176 (13/10/26)
-            out.pointsA.push_back(cv::Point2f(x0 / scale1, y0 / scale1));
-            out.pointsB.push_back(cv::Point2f(x1 / scale2, y1 / scale2));
+            out.pointsA.push_back(cv::Point2f(x0 / scale1, y0 / scaleY1));
+            out.pointsB.push_back(cv::Point2f(x1 / scale2, y1 / scaleY2));
 
             // On enregistre le score correspondant
             out.scores.push_back(confidence_score);
@@ -570,7 +566,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     std::chrono::duration<double> elapsed = end_time - start_time;
     std::cout << "[DEBUG] Temps total exécution match() : " << elapsed.count() << " secondes\n";
 
-    return true;
+    return !out.pointsA.empty();
 }
 
 } // namespace stitching::matching

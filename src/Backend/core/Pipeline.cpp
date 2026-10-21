@@ -21,12 +21,20 @@ Json Pipeline::exportConfig() const {
 }
 
 bool Pipeline::run(const Logger& log) {
+    data = DataStore();
     for (size_t i = 0; i < steps.size(); ++i) {
         const auto& s = steps[i];
         const std::string prefix = "Step " + std::to_string(i + 1) + "/" + std::to_string(steps.size());
         s->setDataStore(data);
-        if (!s->execute()) {
-            const std::string msg = prefix + " failed: " + s->exportData().dump();
+        bool ok = false;
+        std::string error;
+        try {
+            ok = s->execute();
+        } catch (const std::exception& e) {
+            error = e.what();
+        }
+        if (!ok) {
+            const std::string msg = prefix + " failed: " + (error.empty() ? s->exportData().dump() : error);
             std::cerr << msg << '\n';
             if (log) log(msg);
             return false;   // on peut reprendre plus tard grâce au JSON
