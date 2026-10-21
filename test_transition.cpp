@@ -12,10 +12,12 @@ int main() {
     std::cout << "========================================" << std::endl;
 
     std::vector<std::string> paths = {
-        "images/img_C00_R00.tif",
-        "images/img_C01_R00.tif",
-        "images/img_C00_R01.tif",
-        "images/img_C01_R01.tif"
+        "images/image32/img_C00_R00.tif",
+        "images/image32/img_C01_R00.tif",
+        "images/image32/img_C02_R00.tif",
+        "images/image32/img_C00_R01.tif",
+        "images/image32/img_C01_R01.tif",
+        "images/image32/img_C02_R01.tif"
     };
 
     stitching::positioning::PositioningSettings settings;
