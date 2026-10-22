@@ -9,6 +9,7 @@
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include <climits>
 #include <vector>
+#include <opencv2/geometry/2d.hpp>
 using namespace std;
 using namespace cv;
 using namespace cv::detail;

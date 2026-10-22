@@ -1,0 +1,66 @@
+name: Build and test
+
+on:
+  workflow_call:
+    inputs:
+      build-type:
+        description: CMake build configuration
+        required: false
+        type: string
+        default: Release
+      test-labels:
+        description: CTest label expression
+        required: false
+        type: string
+        default: "unit|integration"
+      package-release:
+        description: Package CLI and available Qt frontend binaries
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            cmake \
+            libopencv-dev \
+            ninja-build \
+            nlohmann-json3-dev \
+            qt6-base-dev
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE="${{ inputs.build-type }}"
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run CTest
+        run: ctest --test-dir build --output-on-failure -L "${{ inputs.test-labels }}"
+
+      - name: Package release binaries
+        if: inputs.package-release
+        run: |
+          mkdir -p release
+          cp build/stitching release/
+          if [ -x build/stitching_frontend ]; then
+            cp build/stitching_frontend release/
+          fi
+          tar -C release -czf "stitching-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" .
+
+      - name: Upload release archive
+        if: inputs.package-release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: stitching-${{ github.ref_name }}-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 7

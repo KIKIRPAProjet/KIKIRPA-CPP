@@ -28,8 +28,8 @@ include(cmake/algorithms.cmake)
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
 
-# Interface graphique (Qt 6), construite seulement si Qt est installé
-find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
+# Interface graphique (Qt 6)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)
   file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
        "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
