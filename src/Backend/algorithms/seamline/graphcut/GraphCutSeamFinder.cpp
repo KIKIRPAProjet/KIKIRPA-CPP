@@ -3,13 +3,14 @@
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
+#if __has_include(<opencv2/geometry/2d.hpp>)
 #include <opencv2/geometry/2d.hpp>
+#endif
 #include <opencv2/stitching/detail/seam_finders.hpp>
 #include <opencv2/stitching/detail/util.hpp>
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include <climits>
 #include <vector>
-#include <opencv2/geometry/2d.hpp>
 using namespace std;
 using namespace cv;
 using namespace cv::detail;
