@@ -16,10 +16,20 @@ public:
     // ou si le recouvrement n'est pas dans ]0, 1].
     static std::optional<PaireOrientee> orienter(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx);
 
-    // Bandes censées se recouvrir (recouvrement nominal), en gris, découpées sur la zone où
+    // Translation (coin de B dans A) passée du repère des tuiles d'origine à celui de la paire orientée, ou
+    // l'inverse : opposée si A et B ont été échangées, inchangée sinon
+    static cv::Point2d orienterTranslation(const PaireOrientee& paire, cv::Point2d translation);
+
+    // Première passe : bandes censées se recouvrir (recouvrement nominal), en gris, découpées sur la zone où
     // les deux ont du contenu, avec la marge du rail. Vide si pas assez de contenu commun
     // (moins de p.fractionValideMin pixels exploitables dans les deux bandes, ou zone trop petite).
     static std::optional<Bandes> bandes(const PaireOrientee& paire, double recouvrement, const Parametres& p);
+
+    // Deuxième passe : zone commune réelle, B placée à `translation` (première passe, repère de la paire
+    // orientée), en gris, découpée sur la zone avec contenu, avec une marge de MARGE_DEUXIEME_PASSE px.
+    // Vide dans les mêmes cas que bandes(), ou si les tuiles ne se superposent pas à cette translation.
+    static std::optional<Bandes> zoneCommune(const PaireOrientee& paire, cv::Point2d translation,
+                                             const Parametres& p);
 
     // Zone commune réelle une fois B placée à la translation globale. Vide si elle est trop étroite
     // pour y placer des patchs de p.fenetre px (avec la marge de correction p.ecartMax).
@@ -41,9 +51,15 @@ private:
     static constexpr double MARGE_MIN        = 48.0;  // px : marge du rail par défaut minimale
     static constexpr double PART_SATURATION  = 0.998; // gris ≥ cette part du maximum du type : pixel saturé (reflet)
     static constexpr int    EROSION          = 4;     // px rognés autour des pixels vides ou saturés
+    static constexpr double MARGE_DEUXIEME_PASSE = 4.0;  // px : écart maximal permis à la translation de la première passe
 
     // Côté opposé (Top ↔ Bottom, Left ↔ Right)
     static Direction oppose(Direction d);
+
+    // Zones `ra` de A et `rb` de B (même taille) en gris ; Bandes découpées sur leur zone avec contenu.
+    // Vide si moins de p.fractionValideMin pixels exploitables communs ou zone avec contenu trop petite.
+    static std::optional<Bandes> preparerBandes(const PaireOrientee& paire, cv::Rect ra, cv::Rect rb,
+                                                cv::Point2d origine, double marge, const Parametres& p);
 
     // Rectangle de la bande de recouvrement d'une tuile de taille `forme` sur le côté `cote`
     static cv::Rect bande(cv::Size forme, Direction cote, double recouvrement);

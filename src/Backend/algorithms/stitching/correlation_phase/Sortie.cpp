@@ -11,18 +11,18 @@ namespace stitching::matching::correlation_phase {
 Matches Sortie::construire(const PaireOrientee& paire, const Mesure& mesure, cv::Point origineA,
                            std::vector<Correspondance> points, int nbPoints) {
     Matches m;
-    m.x = static_cast<float>(mesure.tx);
-    m.y = static_cast<float>(mesure.ty);
+    m.dx = static_cast<float>(mesure.tx);
+    m.dy = static_cast<float>(mesure.ty);
 
     trierEtLimiter(points, nbPoints);
     m.pointsA.reserve(points.size());
     m.pointsB.reserve(points.size());
-    m.confidence.reserve(points.size());
+    m.scores.reserve(points.size());
     for (const Correspondance& c : points) {
         const auto [pointA, pointB] = versTuiles(c, origineA);
         m.pointsA.push_back(pointA);
         m.pointsB.push_back(pointB);
-        m.confidence.push_back(c.confiance);
+        m.scores.push_back(c.confiance);
     }
 
     if (paire.inversee) annulerOrientation(m);
@@ -76,6 +76,19 @@ std::string Sortie::echecGlobal(const Diagnostic& d, const PaireOrientee& paire,
            " %). À vérifier : sur un motif répétitif, ce pic peut être faux";
 }
 
+std::string Sortie::echecZoneCommune(cv::Point2d translation, const Parametres& p) {
+    return "pas assez de contenu dans la zone commune réelle, B placée en (" + nombre(translation.x, 0) + ", " +
+           nombre(translation.y, 0) + ") dans A : les tuiles ne se superposent pas, ou moins de " +
+           nombre(p.fractionValideMin * 100, 0) + " % de pixels exploitables, ou zone commune trop petite. "
+           "Vérifier la translation de la première passe (PairContext::translation)";
+}
+
+std::string Sortie::echecAffinage(cv::Point2d translation, const Bandes& zone) {
+    return "deuxième passe : le pic touche le bord de sa marge (±" + nombre(zone.marge, 0) + " px autour de (" +
+           nombre(translation.x, 0) + ", " + nombre(translation.y, 0) + ")). La translation de la première passe "
+           "(PairContext::translation) est fausse de plus que cette marge";
+}
+
 // ======================================== Private ========================================
 
 std::string Sortie::nombre(double valeur, int decimales) {
@@ -99,8 +112,8 @@ std::pair<cv::Point2f, cv::Point2f> Sortie::versTuiles(const Correspondance& c, 
 }
 
 void Sortie::annulerOrientation(Matches& m) {
-    m.x = -m.x;
-    m.y = -m.y;
+    m.dx = -m.dx;
+    m.dy = -m.dy;
     std::swap(m.pointsA, m.pointsB);
 }
 

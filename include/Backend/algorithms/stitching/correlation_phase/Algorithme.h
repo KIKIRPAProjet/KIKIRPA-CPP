@@ -9,8 +9,13 @@ namespace stitching::matching::correlation_phase {
 // Étape 2 : calculs sur des images déjà préparées (gris float64, NaN = vide).
 class Algorithme {
 public:
-    // Translation globale par corrélation de phase sur les bandes. Vide si le pic est ambigu.
+    // Première passe : translation globale par corrélation de phase sur les bandes. Vide si le pic est ambigu.
     static std::optional<Mesure> mesurerGlobal(const Bandes& bandes, const Parametres& p);
+
+    // Deuxième passe : translation globale au 1/p.facteurDft px sur la zone commune réelle (Preparation::zoneCommune).
+    // Pas de contrôle du second pic (fait par la première passe). Vide si le pic entier est sur le bord de la
+    // marge : la translation de la première passe était fausse de plus que la marge.
+    static std::optional<Mesure> affinerGlobal(const Bandes& zone, const Parametres& p);
 
     // À appeler quand mesurerGlobal a échoué : meilleur pic cherché sur toute la surface (sans la marge du rail),
     // pour savoir si la translation réelle est simplement hors de la marge. Précision au pixel.
@@ -33,7 +38,8 @@ private:
     // ---- Corrélation de phase ----
 
     // Translation (dy, dx) telle que a(y, x) ≈ b(y - dy, x - dx), pour deux images de même taille.
-    // Le pic est cherché parmi les décalages |dx|, |dy| ≤ marge (SANS_MARGE : partout), précision 1/facteurDft px.
+    // Le pic est cherché parmi les décalages |dx|, |dy| ≤ marge (SANS_MARGE : partout), précision 1/facteurDft px
+    // (facteurDft = 1 : pic entier de la surface lissée, sans raffinement).
     static Correlation correlationDePhase(const cv::Mat& a, const cv::Mat& b, double lissage, double marge,
                                           int facteurDft);
 

@@ -18,6 +18,20 @@ std::optional<Mesure> Algorithme::mesurerGlobal(const Bandes& bandes, const Para
     return Mesure{bandes.origine.x + c.dx, bandes.origine.y + c.dy, rapport};
 }
 
+std::optional<Mesure> Algorithme::affinerGlobal(const Bandes& zone, const Parametres& p) {
+    const Correlation c = correlationDePhase(zone.a, zone.b, p.lissage, zone.marge, p.facteurDft);
+    // Pic entier sur le bord de la marge : le vrai maximum est sans doute au-delà, la première passe s'est trompée
+    // de plus que la marge. Mieux vaut échouer que renvoyer une translation tronquée au bord. Le test porte sur
+    // le pic entier : le raffinement peut ramener un pic de bord jusqu'à 0,75 px vers l'intérieur.
+    const cv::Point pixel = localiserPic(c.surface, c.autorise);
+    const int bord = static_cast<int>(std::floor(zone.marge));
+    if (std::abs(decalageSigne(pixel.x, c.surface.cols)) >= bord || std::abs(decalageSigne(pixel.y, c.surface.rows)) >= bord)
+        return std::nullopt;
+    // Le second pic n'est pas contrôlé : la marge (quelques px) est plus petite que le voisinage exclu autour
+    // du pic, le test passerait toujours. L'ambiguïté a été contrôlée par la première passe.
+    return Mesure{zone.origine.x + c.dx, zone.origine.y + c.dy, std::numeric_limits<double>::quiet_NaN()};
+}
+
 Diagnostic Algorithme::diagnostiquerGlobal(const Bandes& bandes, const Parametres& p) {
     // Même surface que mesurerGlobal, sans sous-pixel : seul l'endroit du pic compte pour expliquer l'échec.
     // Le surcoût (une corrélation de plus) n'est payé que lorsque la mesure a déjà échoué.
@@ -61,7 +75,9 @@ Correlation Algorithme::correlationDePhase(const cv::Mat& a, const cv::Mat& b, d
 
     // La fraction de pixel est calculée sur le spectre brut : le lissage déplace légèrement le sommet du pic,
     // et une parabole sur trois valeurs entières est tirée vers l'entier le plus proche.
-    const cv::Point2d decalage = raffinerPic(croise, entier, facteurDft);
+    // Au pixel près (première passe), on garde le pic de la surface lissée : celui de la surface brute est
+    // parfois un grain de bruit voisin.
+    const cv::Point2d decalage = facteurDft > 1 ? raffinerPic(croise, entier, facteurDft) : entier;
     return Correlation{decalage.y, decalage.x, brute.at<double>(pixel), lisse, autorise};
 }
 
