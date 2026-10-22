@@ -848,6 +848,12 @@ void MainWindow::refreshRecentProjects()
         settings.setValue(QStringLiteral("recentProjects"), recentPaths);
     }
 
+    const auto formatModifiedDate = [](const QDateTime &dateTime) {
+        return dateTime.isValid()
+            ? dateTime.toString(QStringLiteral("dd/MM/yyyy HH:mm"))
+            : QObject::tr("Date inconnue");
+    };
+
     int cardCount = 0;
     if (projectCreated && projectPath.isEmpty()) {
         auto *card = makeButton(QString(), recentCardsLayout->parentWidget());
@@ -858,8 +864,9 @@ void MainWindow::refreshRecentProjects()
         auto *cardLayout = new QVBoxLayout(card);
         auto *name = new QLabel(projectName, card);
         name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
-        auto *details = new QLabel(tr("Projet non enregistré · %1 tuile(s)")
-                                       .arg(tilePaths.size()), card);
+        auto *details = new QLabel(tr("%1 tuile(s)\nModifié le : %2")
+                                       .arg(tilePaths.size())
+                                       .arg(tr("Non enregistré")), card);
         details->setProperty("muted", true);
         details->setWordWrap(true);
         cardLayout->addWidget(name);
@@ -883,7 +890,8 @@ void MainWindow::refreshRecentProjects()
                 const QJsonObject project = document.object();
                 recentName = project.value(QStringLiteral("project_name"))
                                  .toString(recentName);
-                recentTileCount = project.value(QStringLiteral("tiles")).toArray().size();
+                const QJsonArray paths = project.value(QStringLiteral("tiles")).toArray();
+                recentTileCount = paths.size();
             }
         }
 
@@ -896,9 +904,9 @@ void MainWindow::refreshRecentProjects()
         auto *name = new QLabel(recentName, card);
         name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
         name->setWordWrap(true);
-        auto *details = new QLabel(tr("%1 tuile(s)\n%2")
+        auto *details = new QLabel(tr("%1 tuile(s)\nModifié le %2")
                                        .arg(recentTileCount)
-                                       .arg(QFileInfo(path).fileName()), card);
+                                       .arg(formatModifiedDate(QFileInfo(path).lastModified())), card);
         details->setProperty("muted", true);
         details->setWordWrap(true);
         cardLayout->addWidget(name);
