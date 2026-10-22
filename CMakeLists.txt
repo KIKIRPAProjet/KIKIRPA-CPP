@@ -3,6 +3,7 @@ project(Stitching CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# --- Backend ---
 find_package(OpenCV REQUIRED)
 find_package(nlohmann_json 3 QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -11,7 +12,6 @@ if(NOT nlohmann_json_FOUND)
   FetchContent_MakeAvailable(json)
 endif()
 
-# Les nouveaux .cpp sont pris en compte automatiquement.
 file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/src/Backend/*.cpp")
 add_library(stitching_backend STATIC ${BACKEND_SRC})
@@ -24,22 +24,17 @@ target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlo
 # Algorithmes (LightGlue/ONNX Runtime, tests) : voir cmake/algorithms.cmake
 include(cmake/algorithms.cmake)
 
+
+# --- Frontend ---
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
+add_library(stitching_frontend STATIC ${FRONTEND_SRC})
+target_include_directories(stitching_frontend PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend")
+target_link_libraries(stitching_frontend PUBLIC stitching_backend Qt6::Widgets Qt6::Concurrent)
+
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
-
-# Interface graphique (Qt 6)
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
-if(Qt6_FOUND)
-  file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
-       "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
-  list(FILTER FRONTEND_SRC EXCLUDE REGEX "/ToDelete\\.cpp$")
-  if(FRONTEND_SRC)
-    add_executable(stitching_frontend ${FRONTEND_SRC})
-    target_link_libraries(stitching_frontend PRIVATE stitching_backend Qt6::Widgets Qt6::Concurrent)
-  else()
-    message(STATUS "No frontend sources found: stitching_frontend will not be built")
-  endif()
-else()
-  message(STATUS "Qt6 not found: stitching_frontend will not be built")
-endif()
