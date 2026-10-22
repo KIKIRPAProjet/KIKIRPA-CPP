@@ -10,12 +10,12 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
-#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsDropShadowEffect>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QKeyEvent>
@@ -27,6 +27,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMouseEvent>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -34,8 +35,11 @@
 #include <QPainterPath>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSaveFile>
+#include <QSet>
 #include <QSlider>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -46,7 +50,13 @@
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QAbstractItemView>
+#include <QFontMetrics>
+#include <QFrame>
+#include <QTransform>
+#include <QPixmap>
 #include <QtMath>
+#include <functional>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #include <wincodec.h>
@@ -66,12 +76,63 @@ QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = fal
     button->setCursor(Qt::PointingHandCursor);
     return button;
 }
-
 QLabel *mutedLabel(const QString &text, QWidget *parent)
 {
     auto *label = new QLabel(text, parent);
     label->setProperty("muted", true);
     return label;
+}
+
+QVector<int> captureOrderCells(int rows, int columns, int order)
+{
+    QVector<int> cells;
+    cells.reserve(rows * columns);
+    switch (order) {
+    case 1:
+        for (int column = 0; column < columns; ++column) {
+            const bool bottomUp = (column % 2 == 0);
+            for (int offset = 0; offset < rows; ++offset) {
+                const int row = bottomUp ? rows - 1 - offset : offset;
+                cells.append(row * columns + column);
+            }
+        }
+        break;
+    case 2:
+        for (int offset = 0; offset < columns; ++offset) {
+            const int column = columns - 1 - offset;
+            const bool topDown = (offset % 2 == 0);
+            for (int rowOffset = 0; rowOffset < rows; ++rowOffset) {
+                const int row = topDown ? rowOffset : rows - 1 - rowOffset;
+                cells.append(row * columns + column);
+            }
+        }
+        break;
+    case 3:
+        for (int row = 0; row < rows; ++row) {
+            for (int offset = 0; offset < columns; ++offset) {
+                const int column = row % 2 == 0 ? offset : columns - 1 - offset;
+                cells.append(row * columns + column);
+            }
+        }
+        break;
+    case 4:
+        for (int row = 0; row < rows; ++row)
+            for (int column = 0; column < columns; ++column)
+                cells.append(row * columns + column);
+        break;
+    case 5:
+        for (int column = 0; column < columns; ++column)
+            for (int row = 0; row < rows; ++row)
+                cells.append(row * columns + column);
+        break;
+    default:
+        for (int row = 0; row < rows; ++row) {
+            for (int column = 0; column < columns; ++column)
+                cells.append(row * columns + column);
+        }
+        break;
+    }
+    return cells;
 }
 
 #ifdef Q_OS_WIN
@@ -159,6 +220,28 @@ QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
 }
 #endif
 
+QImage readPreviewImage(const QString &path, const QSize &maximumSize)
+{
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const QSize sourceSize = reader.size();
+    if (sourceSize.isValid()) {
+        const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceSize.width(),
+                                  static_cast<double>(maximumSize.height()) / sourceSize.height());
+        if (scale > 0.0 && scale < 1.0)
+            reader.setScaledSize(QSize(qMax(1, qRound(sourceSize.width() * scale)),
+                                       qMax(1, qRound(sourceSize.height() * scale))));
+    }
+    QImage image = reader.read();
+#ifdef Q_OS_WIN
+    if (image.isNull())
+        image = readWindowsTiff(path, maximumSize);
+#endif
+    if (!image.isNull())
+        image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return image;
+}
+
 class ArtworkCanvas final : public QWidget
 {
 public:
@@ -171,11 +254,58 @@ public:
     void setMode(int mode) { m_mode = mode; update(); }
     void setZoom(int zoom) { m_zoom = zoom; update(); }
     void setImagePaths(const QStringList &paths) { m_imagePaths = paths; update(); }
+    void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
+                      int selectedCell)
+    {
+        m_gridRows = rows;
+        m_gridColumns = columns;
+        m_captureOrder = order;
+        m_gridTiles = tiles;
+        m_selectedGridCell = selectedCell;
+        update();
+    }
+    void setGridCallbacks(std::function<void(int)> selectionChanged,
+                          std::function<void(int, int)> cellsSwapped)
+    {
+        m_selectionChanged = std::move(selectionChanged);
+        m_cellsSwapped = std::move(cellsSwapped);
+    }
     void toggleComparison() { m_comparison = !m_comparison; update(); }
     void toggleMask() { m_mask = !m_mask; update(); }
     void setMaskVisible(bool visible) { m_mask = visible; update(); }
 
 protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (m_mode == 1 && event->button() == Qt::LeftButton) {
+            m_dragStartCell = gridCellAt(event->pos());
+            if (m_dragStartCell >= 0) {
+                m_selectedGridCell = m_dragStartCell;
+                if (m_selectionChanged)
+                    m_selectionChanged(m_selectedGridCell);
+                update();
+                event->accept();
+                return;
+            }
+        }
+        QWidget::mousePressEvent(event);
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (m_mode == 1 && event->button() == Qt::LeftButton) {
+            const int targetCell = gridCellAt(event->pos());
+            if (m_dragStartCell >= 0 && targetCell >= 0 && targetCell != m_dragStartCell) {
+                if (m_cellsSwapped)
+                    m_cellsSwapped(m_dragStartCell, targetCell);
+            }
+            m_dragStartCell = -1;
+            event->accept();
+            return;
+        }
+        QWidget::mouseReleaseEvent(event);
+    }
+
     void paintEvent(QPaintEvent *) override
     {
         QPainter p(this);
@@ -275,33 +405,101 @@ protected:
 private:
     void drawGrid(QPainter &p)
     {
-        const int cols = 2;
-        const int imageCount = m_imagePaths.size();
-        const int rows = qMax(1, (imageCount + cols - 1) / cols);
-        const int cellW = qMin(190, (width() - 120) / cols);
-        const int cellH = qMin(125, (height() - 100) / rows);
-        const int left = (width() - cols * (cellW + 18)) / 2;
-        const int top = (height() - rows * (cellH + 20)) / 2;
-        for (int i = 0; i < imageCount; ++i) {
-            const int row = i / cols;
-            const int col = i % cols;
-            QRect r(left + col * (cellW + 18), top + row * (cellH + 20), cellW, cellH);
-            drawPhoto(p, r, m_imagePaths.at(i));
-            p.fillRect(QRect(r.left(), r.bottom() - 20, r.width(), 20), QColor(0, 0, 0, 125));
+        const int rows = qMax(1, m_gridRows);
+        const int columns = qMax(1, m_gridColumns);
+        const int cellCount = rows * columns;
+        const int gapX = 18;
+        const int gapY = 20;
+        const QRect area = rect().adjusted(24, 48, -24, -24);
+        const int cellW = qMax(1, (area.width() - (columns - 1) * gapX) / columns);
+        const int cellH = qMax(1, (area.height() - (rows - 1) * gapY) / rows);
+        const int gridW = columns * cellW + (columns - 1) * gapX;
+        const int gridH = rows * cellH + (rows - 1) * gapY;
+        const int left = area.left() + (area.width() - gridW) / 2;
+        const int top = area.top() + (area.height() - gridH) / 2;
+        m_gridCellRects.clear();
+        m_gridCellRects.reserve(cellCount);
+
+        QVector<int> orderCells = captureOrderCells(rows, columns, m_captureOrder);
+        QVector<int> captureNumbers(cellCount, 0);
+        for (int sequence = 0; sequence < orderCells.size(); ++sequence)
+            captureNumbers[orderCells.at(sequence)] = sequence + 1;
+
+        int activeTileCount = 0;
+        for (int index = 0; index < qMin(cellCount, static_cast<int>(m_gridTiles.size())); ++index) {
+            const GridTile &tile = m_gridTiles.at(index);
+            if (!tile.path.isEmpty() && !tile.empty)
+                ++activeTileCount;
+        }
+
+        for (int index = 0; index < cellCount; ++index) {
+            const int row = index / columns;
+            const int column = index % columns;
+            const QRect cell(left + column * (cellW + gapX),
+                             top + row * (cellH + gapY), cellW, cellH);
+            m_gridCellRects.append(cell);
+            const GridTile tile = index < m_gridTiles.size() ? m_gridTiles.at(index) : GridTile{};
+
+            if (tile.path.isEmpty() && !tile.empty) {
+                if (index == m_selectedGridCell) {
+                    p.setPen(QPen(QColor("#4b9bea"), 2, Qt::DashLine));
+                    p.setBrush(Qt::NoBrush);
+                    p.drawRect(cell.adjusted(1, 1, -2, -2));
+                }
+                continue;
+            }
+
+            if (!tile.path.isEmpty()) {
+                drawPhoto(p, cell, tile.path, tile.rotation, tile.flipped);
+                if (tile.empty)
+                    p.fillRect(cell, QColor(20, 20, 20, 170));
+            } else {
+                p.fillRect(cell, QColor("#282828"));
+            }
+
+            p.fillRect(QRect(cell.left(), cell.bottom() - 21, cell.width(), 21),
+                       QColor(0, 0, 0, 170));
+            p.setPen(QColor("#ffffff"));
+            const QString cellLabel = QStringLiteral("r%1_c%2")
+                .arg(row, 2, 10, QLatin1Char('0')).arg(column, 2, 10, QLatin1Char('0'));
+            p.drawText(QRect(cell.left() + 6, cell.bottom() - 20, cell.width() - 12, 19),
+                       Qt::AlignLeft | Qt::AlignVCenter, cellLabel);
+            if (!tile.path.isEmpty() && !tile.empty && cell.width() > 145) {
+                const QString fileName = QFontMetrics(p.font()).elidedText(
+                    QFileInfo(tile.path).fileName(), Qt::ElideRight, cell.width() / 2);
+                p.drawText(QRect(cell.left() + cell.width() / 2, cell.bottom() - 20,
+                                 cell.width() / 2 - 5, 19),
+                           Qt::AlignRight | Qt::AlignVCenter, fileName);
+            } else if (tile.path.isEmpty() || tile.empty) {
+                p.setPen(tile.empty ? QColor("#e8c638") : QColor("#aaaaaa"));
+                p.drawText(cell.adjusted(5, 4, -5, -24), Qt::AlignCenter,
+                           tile.empty ? tr("CASE VIDE") : tr("Déposer une tuile ici"));
+            }
+
+            p.setPen(QPen(index == m_selectedGridCell ? QColor("#4b9bea") : QColor("#e8c638"),
+                          index == m_selectedGridCell ? 3 : 1, Qt::DashLine));
+            p.setBrush(Qt::NoBrush);
+            p.drawRect(cell.adjusted(1, 1, -2, -2));
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor("#4b8bd6"));
+            p.drawEllipse(QRect(cell.left() + 7, cell.top() + 7, 24, 24));
             p.setPen(Qt::white);
-            p.drawText(r.adjusted(7, 4, -4, -4), Qt::AlignBottom | Qt::AlignLeft,
-                       QFileInfo(m_imagePaths.at(i)).fileName());
-            p.setPen(QPen(QColor("#e8c638"), 1, Qt::DashLine));
-            p.drawRect(r.adjusted(0, 0, -1, -1));
-            p.fillRect(QRect(r.left(), r.bottom() - 32, r.width(), 12), QColor(39, 175, 112, 80));
+            p.drawText(QRect(cell.left() + 7, cell.top() + 7, 24, 24),
+                       Qt::AlignCenter, QString::number(captureNumbers.at(index)));
         }
-        if (imageCount == 0) {
-            p.setPen(QColor("#eeeeee"));
-            p.drawText(rect(), Qt::AlignCenter, tr("Aucune image TIFF chargée"));
-        }
+
         p.setPen(QColor("#eeeeee"));
         p.drawText(QRect(18, 12, width() - 36, 24), Qt::AlignLeft,
-                   tr("Vue Grille — glisser une vignette pour échanger les tuiles"));
+                   tr("Grille %1 × %2 — %3 tuile(s) — glisser pour permuter")
+                       .arg(rows).arg(columns).arg(activeTileCount));
+    }
+
+    int gridCellAt(const QPoint &point) const
+    {
+        for (int index = 0; index < m_gridCellRects.size(); ++index)
+            if (m_gridCellRects.at(index).contains(point))
+                return index;
+        return -1;
     }
 
     void drawPainting(QPainter &p, const QRect &r)
@@ -361,30 +559,31 @@ private:
         p.drawRect(r);
     }
 
-    void drawPhoto(QPainter &p, const QRect &r, const QString &path)
+    void drawPhoto(QPainter &p, const QRect &r, const QString &path,
+                   int rotation = 0, bool flipped = false)
     {
-        QImageReader reader(path);
-        reader.setAutoTransform(true);
-        reader.setScaledSize(r.size());
-        QImage image = reader.read();
-#ifdef Q_OS_WIN
-        if (image.isNull())
-            image = readWindowsTiff(path, r.size());
-#endif
+        QSize previewSize = r.size();
+        if (rotation % 180 != 0)
+            previewSize.transpose();
+        QImage image = readPreviewImage(path, previewSize);
         if (image.isNull()) {
             p.fillRect(r, QColor("#262626"));
             p.setPen(QColor("#d35b55"));
-            p.drawText(r, Qt::AlignCenter, tr("TIFF illisible : %1").arg(reader.errorString()));
+            p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
             return;
         }
+        if (flipped)
+            image = image.mirrored(true, false);
+        if (rotation != 0)
+            image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
+        if (image.width() > r.width() || image.height() > r.height())
+            image = image.scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
         p.save();
         p.setClipRect(r);
-        const QImage scaled = image.scaled(r.size(), Qt::KeepAspectRatioByExpanding,
-                                           Qt::SmoothTransformation);
-        const int x = r.left() + (r.width() - scaled.width()) / 2;
-        const int y = r.top() + (r.height() - scaled.height()) / 2;
-        p.drawImage(x, y, scaled);
+        const int x = r.left() + (r.width() - image.width()) / 2;
+        const int y = r.top() + (r.height() - image.height()) / 2;
+        p.drawImage(x, y, image);
         p.restore();
         p.setPen(QPen(QColor("#101010"), 5));
         p.setBrush(Qt::NoBrush);
@@ -394,6 +593,15 @@ private:
     int m_mode = 4;
     int m_zoom = 12;
     QStringList m_imagePaths;
+    QVector<GridTile> m_gridTiles;
+    QVector<QRect> m_gridCellRects;
+    std::function<void(int)> m_selectionChanged;
+    std::function<void(int, int)> m_cellsSwapped;
+    int m_gridRows = 3;
+    int m_gridColumns = 2;
+    int m_captureOrder = 0;
+    int m_selectedGridCell = 0;
+    int m_dragStartCell = -1;
     bool m_mask = true;
     bool m_comparison = false;
 };
@@ -575,6 +783,12 @@ void MainWindow::createHomePage()
             outputDirectory.clear();
             tilePaths = {QStringLiteral("r00_c00.tif"), QStringLiteral("r00_c01.tif"),
                          QStringLiteral("r01_c00.tif"), QStringLiteral("r01_c01.tif")};
+            gridRows = 2;
+            gridColumns = 2;
+            captureOrder = 0;
+            referenceImagePath.clear();
+            initializeGridFromPaths();
+            gridValidated = false;
             pages->setCurrentWidget(workspace);
             setMode(4);
             refreshProjectInfo();
@@ -633,6 +847,23 @@ void MainWindow::createProject()
     for (const QFileInfo &tileFile : tileFiles)
         tilePaths.append(tileFile.absoluteFilePath());
 
+    gridRows = 3;
+    gridColumns = 2;
+    gridRows = qMax(1, qMin(20, (static_cast<int>(tilePaths.size()) + gridColumns - 1)
+                                     / gridColumns));
+    captureOrder = 0;
+    horizontalOverlap = 20;
+    verticalOverlap = 20;
+    overlapsLinked = true;
+    modality = QStringLiteral("Infrarouge");
+    scaleMmPerPixel = 0.0;
+    uncertaintyMargin = 0.0;
+    automaticUncertainty = true;
+    referenceImagePath.clear();
+    selectedGridCell = 0;
+    gridValidated = false;
+    initializeGridFromPaths();
+
     pages->setCurrentWidget(workspace);
     setMode(1);
     refreshProjectInfo();
@@ -654,6 +885,7 @@ void MainWindow::createWorkspace()
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 5, 8, 5);
     auto *title = new QLabel(tr("VanDerVeken — Infrarouge — KIK-IRPA Assemblage"));
+    title->setObjectName(QStringLiteral("workspaceTitle"));
     toolbarLayout->addWidget(title);
     toolbarLayout->addStretch();
     auto *save = makeButton(tr("Enregistrer"), toolbar);
@@ -691,12 +923,17 @@ void MainWindow::createWorkspace()
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
     arrangementCombo = new QComboBox;
-    arrangementCombo->addItems({tr("Serpentin vertical, bas gauche"), tr("Automatique"),
+    arrangementCombo->addItems({tr("Automatique (par lignes)"),
+                                tr("Serpentin vertical, bas gauche"),
+                                tr("Serpentin vertical, haut droite"),
                                 tr("Serpentin horizontal"), tr("Par lignes"), tr("Par colonnes")});
     arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
     optionsLayout->addWidget(arrangementCombo);
-    connect(arrangementCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
-        updateStatus(tr("Ordre de prise de vue : %1").arg(value));
+    connect(arrangementCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int value) {
+        captureOrder = value;
+        gridValidated = false;
+        refreshGrid();
+        updateStatus(tr("Ordre de prise de vue : %1").arg(arrangementCombo->currentText()));
     });
     root->addWidget(modeOptions);
 
@@ -771,6 +1008,210 @@ void MainWindow::createWorkspace()
 
     rightTabs = new QTabWidget;
     rightTabs->setMinimumWidth(218);
+
+    auto *gridScroll = new QScrollArea;
+    gridScroll->setWidgetResizable(true);
+    gridScroll->setFrameShape(QFrame::NoFrame);
+    auto *gridPage = new QWidget;
+    auto *gridLayout = new QVBoxLayout(gridPage);
+    gridLayout->setContentsMargins(7, 8, 7, 8);
+    gridSummaryLabel = new QLabel;
+    gridLayout->addWidget(gridSummaryLabel);
+
+    auto *dimensions = new QFormLayout;
+    gridRowsSpin = new QSpinBox(gridPage);
+    gridRowsSpin->setRange(1, 20);
+    gridRowsSpin->setValue(gridRows);
+    gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
+    gridColumnsSpin = new QSpinBox(gridPage);
+    gridColumnsSpin->setRange(1, 20);
+    gridColumnsSpin->setValue(gridColumns);
+    gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
+    dimensions->addRow(tr("Lignes"), gridRowsSpin);
+    dimensions->addRow(tr("Colonnes"), gridColumnsSpin);
+    gridLayout->addLayout(dimensions);
+
+    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), gridPage);
+    auto *orderLayout = new QVBoxLayout(orderGroup);
+    captureOrderCombo = new QComboBox(orderGroup);
+    captureOrderCombo->addItems({
+        tr("Automatique (par lignes)"),
+        tr("Serpentin vertical, bas gauche"),
+        tr("Serpentin vertical, haut droite"),
+        tr("Serpentin horizontal"),
+        tr("Par lignes"),
+        tr("Par colonnes")
+    });
+    orderLayout->addWidget(captureOrderCombo);
+    gridLayout->addWidget(orderGroup);
+
+    selectedGridTileLabel = mutedLabel(QString(), gridPage);
+    selectedGridTileLabel->setWordWrap(true);
+    gridLayout->addWidget(selectedGridTileLabel);
+    auto *tileActions = new QHBoxLayout;
+    auto *rotateTile = makeButton(tr("Pivoter 90°"), gridPage);
+    auto *flipTile = makeButton(tr("Retourner"), gridPage);
+    tileActions->addWidget(rotateTile);
+    tileActions->addWidget(flipTile);
+    gridLayout->addLayout(tileActions);
+    emptyCellButton = makeButton(tr("Marquer une case vide"), gridPage);
+    gridLayout->addWidget(emptyCellButton);
+
+    auto *captureGroup = new QGroupBox(tr("Prise de vue"), gridPage);
+    auto *captureForm = new QFormLayout(captureGroup);
+    horizontalOverlapSpin = new QSpinBox(captureGroup);
+    horizontalOverlapSpin->setRange(0, 90);
+    horizontalOverlapSpin->setSuffix(QStringLiteral(" %"));
+    verticalOverlapSpin = new QSpinBox(captureGroup);
+    verticalOverlapSpin->setRange(0, 90);
+    verticalOverlapSpin->setSuffix(QStringLiteral(" %"));
+    horizontalOverlapSpin->setValue(horizontalOverlap);
+    verticalOverlapSpin->setValue(verticalOverlap);
+    linkedOverlapCheck = new QCheckBox(tr("Lier les deux valeurs"), captureGroup);
+    linkedOverlapCheck->setChecked(overlapsLinked);
+    captureForm->addRow(tr("Recouvrement horizontal"), horizontalOverlapSpin);
+    captureForm->addRow(tr("Recouvrement vertical"), verticalOverlapSpin);
+    captureForm->addRow(QString(), linkedOverlapCheck);
+    modalityCombo = new QComboBox(captureGroup);
+    modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
+                             tr("Radiographie"), tr("Autre")});
+    captureForm->addRow(tr("Modalité"), modalityCombo);
+    scaleSpin = new QDoubleSpinBox(captureGroup);
+    scaleSpin->setRange(0.0, 1000000.0);
+    scaleSpin->setDecimals(6);
+    scaleSpin->setSingleStep(0.01);
+    scaleSpin->setSpecialValueText(tr("À renseigner"));
+    scaleSpin->setSuffix(tr(" mm / pixel"));
+    captureForm->addRow(tr("Échelle"), scaleSpin);
+    automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
+    automaticUncertaintyCheck->setChecked(automaticUncertainty);
+    uncertaintySpin = new QDoubleSpinBox(captureGroup);
+    uncertaintySpin->setRange(0.0, 1000000.0);
+    uncertaintySpin->setDecimals(3);
+    uncertaintySpin->setSuffix(tr(" px"));
+    uncertaintySpin->setEnabled(!automaticUncertainty);
+    captureForm->addRow(tr("Marge d'incertitude"), uncertaintySpin);
+    captureForm->addRow(QString(), automaticUncertaintyCheck);
+    gridLayout->addWidget(captureGroup);
+
+    referencePathLabel = mutedLabel(tr("Aucune image de référence"), gridPage);
+    referencePathLabel->setWordWrap(true);
+    gridLayout->addWidget(referencePathLabel);
+    auto *importReference = makeButton(tr("Importer une image de référence…"), gridPage);
+    auto *compareReference = makeButton(tr("Comparer à l'image de référence"), gridPage);
+    gridLayout->addWidget(importReference);
+    gridLayout->addWidget(compareReference);
+    auto *validateGridButton = makeButton(tr("Valider la grille ✓"), gridPage, true);
+    gridLayout->addWidget(validateGridButton);
+    gridLayout->addStretch();
+    gridScroll->setWidget(gridPage);
+    rightTabs->addTab(gridScroll, tr("Grille"));
+
+    connect(gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        gridRows = value;
+        selectedGridCell = qMin(selectedGridCell, gridRows * gridColumns - 1);
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        gridColumns = value;
+        selectedGridCell = qMin(selectedGridCell, gridRows * gridColumns - 1);
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, [this](int value) {
+        captureOrder = value;
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
+            this, [this](int value) {
+        horizontalOverlap = value;
+        if (overlapsLinked && verticalOverlapSpin)
+            verticalOverlapSpin->setValue(value);
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
+            this, [this](int value) {
+        verticalOverlap = value;
+        if (overlapsLinked && horizontalOverlapSpin)
+            horizontalOverlapSpin->setValue(value);
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {
+        overlapsLinked = linked;
+        if (linked && verticalOverlapSpin)
+            verticalOverlapSpin->setValue(horizontalOverlap);
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
+        modality = value;
+        gridValidated = false;
+        refreshGridControls();
+    });
+    connect(scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [this](double value) {
+        scaleMmPerPixel = value;
+        gridValidated = false;
+        refreshGridControls();
+    });
+    connect(automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {
+        automaticUncertainty = automatic;
+        uncertaintySpin->setEnabled(!automatic);
+        gridValidated = false;
+        refreshGridControls();
+    });
+    connect(uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [this](double value) {
+        uncertaintyMargin = value;
+        gridValidated = false;
+        refreshGridControls();
+    });
+    connect(rotateTile, &QPushButton::clicked, this, [this]() {
+        if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
+            gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
+            updateStatus(tr("Sélectionnez d'abord une tuile non vide."));
+            return;
+        }
+        gridTiles[selectedGridCell].rotation = (gridTiles.at(selectedGridCell).rotation + 90) % 360;
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(flipTile, &QPushButton::clicked, this, [this]() {
+        if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
+            gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
+            updateStatus(tr("Sélectionnez d'abord une tuile non vide."));
+            return;
+        }
+        gridTiles[selectedGridCell].flipped = !gridTiles.at(selectedGridCell).flipped;
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(emptyCellButton, &QPushButton::clicked, this, [this]() {
+        if (selectedGridCell < 0 || selectedGridCell >= gridRows * gridColumns) {
+            updateStatus(tr("Sélectionnez une case de la grille."));
+            return;
+        }
+        while (gridTiles.size() <= selectedGridCell)
+            gridTiles.append(GridTile{});
+        gridTiles[selectedGridCell].empty = !gridTiles.at(selectedGridCell).empty;
+        gridValidated = false;
+        refreshGrid();
+    });
+    connect(importReference, &QPushButton::clicked, this, &MainWindow::importReferenceImage);
+    connect(compareReference, &QPushButton::clicked, this, &MainWindow::compareReferenceImage);
+    connect(validateGridButton, &QPushButton::clicked, this, &MainWindow::validateGrid);
+    static_cast<ArtworkCanvas *>(canvas)->setGridCallbacks(
+        [this](int cell) {
+            selectedGridCell = cell;
+            refreshGridControls();
+        },
+        [this](int first, int second) { swapGridTiles(first, second); });
+
     auto *layersPage = new QWidget;
     auto *layersLayout = new QVBoxLayout(layersPage);
     layersLayout->addWidget(new QLabel(tr("Calques")));
@@ -830,7 +1271,9 @@ void MainWindow::createWorkspace()
     infoLayout->addWidget(projectNameLabel);
     tileCountLabel = new QLabel;
     infoLayout->addWidget(tileCountLabel);
-    infoLayout->addWidget(mutedLabel(tr("Modalité : infrarouge\nÉchelle : à renseigner"), infoPage));
+    auto *projectMetadata = mutedLabel(QString(), infoPage);
+    projectMetadata->setObjectName(QStringLiteral("projectMetadataLabel"));
+    infoLayout->addWidget(projectMetadata);
     auto *maskButton = makeButton(tr("Détecter les bords noirs"), infoPage);
     infoLayout->addWidget(maskButton);
     connect(maskButton, &QPushButton::clicked, this, [this]() {
@@ -933,6 +1376,8 @@ void MainWindow::createWorkspace()
     root->addWidget(status);
 
     pages->addWidget(workspace);
+    refreshGrid();
+    refreshProjectInfo();
     connect(pairsTable, &QTableWidget::cellClicked, this, [this](int row, int) {
         updateStatus(tr("Paire sélectionnée : %1").arg(pairsTable->item(row, 0)->text()));
     });
@@ -970,7 +1415,292 @@ void MainWindow::refreshProjectInfo()
         tileCountLabel->setText(tr("%1 tuile(s) chargée(s)").arg(tilePaths.size()));
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas))
         canvasView->setImagePaths(tilePaths);
+    refreshGrid();
     setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+}
+
+void MainWindow::initializeGridFromPaths()
+{
+    if (tilePaths.size() > gridRows * gridColumns)
+        gridRows = qMin(20, (static_cast<int>(tilePaths.size()) + gridColumns - 1) / gridColumns);
+
+    const int cellCount = qMax(gridRows * gridColumns, static_cast<int>(tilePaths.size()));
+    gridTiles = QVector<GridTile>(cellCount);
+    const QVector<int> positions = captureOrderCells(gridRows, gridColumns, captureOrder);
+    for (int index = 0; index < tilePaths.size(); ++index) {
+        const int cell = index < positions.size() ? positions.at(index) : index;
+        gridTiles[cell].path = tilePaths.at(index);
+    }
+    if (gridRowsSpin)
+        gridRowsSpin->setValue(gridRows);
+    if (gridColumnsSpin)
+        gridColumnsSpin->setValue(gridColumns);
+    selectedGridCell = 0;
+}
+
+void MainWindow::refreshGrid()
+{
+    while (gridTiles.size() < gridRows * gridColumns)
+        gridTiles.append(GridTile{});
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas)) {
+        canvasView->setGridState(gridRows, gridColumns, captureOrder,
+                                 gridTiles, selectedGridCell);
+    }
+    refreshGridControls();
+}
+
+void MainWindow::refreshGridControls()
+{
+    if (gridRowsSpin) {
+        const QSignalBlocker blocker(gridRowsSpin);
+        gridRowsSpin->setValue(gridRows);
+    }
+    if (gridColumnsSpin) {
+        const QSignalBlocker blocker(gridColumnsSpin);
+        gridColumnsSpin->setValue(gridColumns);
+    }
+    if (captureOrderCombo) {
+        const QSignalBlocker blocker(captureOrderCombo);
+        captureOrderCombo->setCurrentIndex(captureOrder);
+    }
+    if (arrangementCombo) {
+        const QSignalBlocker blocker(arrangementCombo);
+        arrangementCombo->setCurrentIndex(captureOrder);
+    }
+    if (horizontalOverlapSpin) {
+        const QSignalBlocker blocker(horizontalOverlapSpin);
+        horizontalOverlapSpin->setValue(horizontalOverlap);
+    }
+    if (verticalOverlapSpin) {
+        const QSignalBlocker blocker(verticalOverlapSpin);
+        verticalOverlapSpin->setValue(verticalOverlap);
+    }
+    if (linkedOverlapCheck) {
+        const QSignalBlocker blocker(linkedOverlapCheck);
+        linkedOverlapCheck->setChecked(overlapsLinked);
+    }
+    if (modalityCombo) {
+        const QSignalBlocker blocker(modalityCombo);
+        const int index = modalityCombo->findText(modality);
+        modalityCombo->setCurrentIndex(index >= 0 ? index : modalityCombo->findText(tr("Autre")));
+        if (index < 0)
+            modality = modalityCombo->currentText();
+    }
+    if (scaleSpin) {
+        const QSignalBlocker blocker(scaleSpin);
+        scaleSpin->setValue(scaleMmPerPixel);
+    }
+    if (automaticUncertaintyCheck) {
+        const QSignalBlocker blocker(automaticUncertaintyCheck);
+        automaticUncertaintyCheck->setChecked(automaticUncertainty);
+    }
+    if (uncertaintySpin) {
+        const QSignalBlocker blocker(uncertaintySpin);
+        uncertaintySpin->setValue(uncertaintyMargin);
+        uncertaintySpin->setEnabled(!automaticUncertainty);
+    }
+    const QString scaleText = scaleMmPerPixel > 0.0
+        ? tr("%1 mm/pixel").arg(scaleMmPerPixel, 0, 'g', 8) : tr("à renseigner");
+    if (auto *metadata = workspace ? workspace->findChild<QLabel *>(
+                QStringLiteral("projectMetadataLabel")) : nullptr) {
+        metadata->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
+                              .arg(modality, scaleText)
+                              .arg(horizontalOverlap).arg(verticalOverlap));
+    }
+    if (auto *title = workspace ? workspace->findChild<QLabel *>(
+                QStringLiteral("workspaceTitle")) : nullptr) {
+        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
+    }
+
+    int activeTiles = 0;
+    for (int index = 0; index < qMin(gridRows * gridColumns, static_cast<int>(gridTiles.size())); ++index) {
+        const GridTile &tile = gridTiles.at(index);
+        if (!tile.path.isEmpty() && !tile.empty)
+            ++activeTiles;
+    }
+    if (gridSummaryLabel) {
+        const QString validationStatus = gridValidated ? tr(" · grille validée") : QString();
+        gridSummaryLabel->setText(tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
+                                      .arg(activeTiles).arg(gridRows).arg(gridColumns)
+                                      .arg(validationStatus));
+    }
+    if (selectedGridTileLabel) {
+        const int row = selectedGridCell / qMax(1, gridColumns);
+        const int column = selectedGridCell % qMax(1, gridColumns);
+        const GridTile tile = selectedGridCell >= 0 && selectedGridCell < gridTiles.size()
+            ? gridTiles.at(selectedGridCell) : GridTile{};
+        const QString label = QStringLiteral("r%1_c%2").arg(row, 2, 10, QLatin1Char('0'))
+                                 .arg(column, 2, 10, QLatin1Char('0'));
+        if (tile.path.isEmpty()) {
+            selectedGridTileLabel->setText(tile.empty
+                ? tr("Case sélectionnée : %1 (vide)").arg(label)
+                : tr("Case sélectionnée : %1").arg(label));
+        } else {
+            selectedGridTileLabel->setText(
+                tr("Sélection : %1 · %2 · %3° · %4")
+                    .arg(label, QFileInfo(tile.path).fileName())
+                    .arg(tile.rotation)
+                    .arg(tile.empty ? tr("vide") : (tile.flipped ? tr("retournée") : tr("normale"))));
+        }
+    }
+    if (emptyCellButton) {
+        const bool canRestore = selectedGridCell >= 0 && selectedGridCell < gridTiles.size()
+            && gridTiles.at(selectedGridCell).empty;
+        emptyCellButton->setText(canRestore ? tr("Restaurer la tuile")
+                                            : tr("Marquer une case vide"));
+    }
+    if (referencePathLabel) {
+        referencePathLabel->setText(referenceImagePath.isEmpty()
+            ? tr("Aucune image de référence")
+            : tr("Référence : %1").arg(QFileInfo(referenceImagePath).fileName()));
+        referencePathLabel->setToolTip(referenceImagePath);
+    }
+}
+
+void MainWindow::swapGridTiles(int first, int second)
+{
+    const int cellCount = gridRows * gridColumns;
+    if (first < 0 || second < 0 || first >= cellCount || second >= cellCount)
+        return;
+    while (gridTiles.size() <= qMax(first, second))
+        gridTiles.append(GridTile{});
+    std::swap(gridTiles[first], gridTiles[second]);
+    selectedGridCell = second;
+    gridValidated = false;
+    refreshGrid();
+}
+
+void MainWindow::importReferenceImage()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("Importer une image de référence"), QString(),
+        tr("Images (*.tif *.tiff *.png *.jpg *.jpeg *.bmp);;Tous les fichiers (*)"));
+    if (path.isEmpty())
+        return;
+    if (readPreviewImage(path, QSize(600, 500)).isNull()) {
+        QMessageBox::warning(this, tr("Image illisible"),
+            tr("L'image de référence ne peut pas être ouverte."));
+        return;
+    }
+    referenceImagePath = QFileInfo(path).absoluteFilePath();
+    gridValidated = false;
+    refreshGridControls();
+    updateStatus(tr("Image de référence importée : %1").arg(QFileInfo(path).fileName()));
+}
+
+void MainWindow::compareReferenceImage()
+{
+    if (referenceImagePath.isEmpty()) {
+        importReferenceImage();
+        if (referenceImagePath.isEmpty())
+            return;
+    }
+    if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
+        gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
+        QMessageBox::information(this, tr("Aucune tuile sélectionnée"),
+            tr("Sélectionnez une tuile non vide dans la grille avant de la comparer."));
+        return;
+    }
+
+    const QString tilePath = gridTiles.at(selectedGridCell).path;
+    const QImage reference = readPreviewImage(referenceImagePath, QSize(420, 400));
+    QImage tile = readPreviewImage(tilePath, QSize(420, 400));
+    if (reference.isNull() || tile.isNull()) {
+        QMessageBox::warning(this, tr("Comparaison impossible"),
+            tr("L'image de référence ou la tuile sélectionnée ne peut pas être lue."));
+        return;
+    }
+    const GridTile selectedTile = gridTiles.at(selectedGridCell);
+    if (selectedTile.flipped)
+        tile = tile.mirrored(true, false);
+    if (selectedTile.rotation != 0)
+        tile = tile.transformed(QTransform().rotate(selectedTile.rotation),
+                                Qt::SmoothTransformation);
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Comparer avec l'image de référence"));
+    dialog.resize(980, 620);
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *imagesLayout = new QHBoxLayout;
+    const auto addImageColumn = [&imagesLayout](const QString &title, const QString &path,
+                                                const QImage &image) {
+        auto *column = new QWidget;
+        auto *columnLayout = new QVBoxLayout(column);
+        auto *name = new QLabel(title + QStringLiteral("\n") + QFileInfo(path).fileName(), column);
+        name->setWordWrap(true);
+        auto *preview = new QLabel(column);
+        preview->setAlignment(Qt::AlignCenter);
+        preview->setMinimumSize(400, 440);
+        preview->setStyleSheet(QStringLiteral("background:#202020;"));
+        preview->setPixmap(QPixmap::fromImage(image));
+        columnLayout->addWidget(name);
+        columnLayout->addWidget(preview, 1);
+        imagesLayout->addWidget(column, 1);
+    };
+    addImageColumn(tr("Image de référence"), referenceImagePath, reference);
+    addImageColumn(tr("Tuile sélectionnée"), tilePath, tile);
+    layout->addLayout(imagesLayout, 1);
+    layout->addWidget(mutedLabel(
+        tr("Comparaison visuelle côte à côte ; aucune similarité automatique n'est calculée."),
+        &dialog));
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    dialog.exec();
+    updateStatus(tr("Comparaison visuelle terminée."));
+}
+
+void MainWindow::validateGrid()
+{
+    QStringList errors;
+    const int cellCount = gridRows * gridColumns;
+    QSet<QString> assignedPaths;
+    int activeTiles = 0;
+    for (int index = cellCount; index < gridTiles.size(); ++index) {
+        if (!gridTiles.at(index).path.isEmpty())
+            errors.append(tr("La tuile %1 est hors de la grille.")
+                              .arg(QFileInfo(gridTiles.at(index).path).fileName()));
+    }
+    for (int index = 0; index < qMin(cellCount, static_cast<int>(gridTiles.size())); ++index) {
+        const GridTile &tile = gridTiles.at(index);
+        if (tile.path.isEmpty())
+            continue;
+        const QString absolutePath = QFileInfo(tile.path).absoluteFilePath();
+        if (assignedPaths.contains(absolutePath)) {
+            errors.append(tr("La même image est affectée à plusieurs cases : %1")
+                              .arg(QFileInfo(tile.path).fileName()));
+        }
+        assignedPaths.insert(absolutePath);
+        if (!QFileInfo::exists(tile.path))
+            errors.append(tr("Fichier introuvable : %1").arg(tile.path));
+        else if (readPreviewImage(tile.path, QSize(32, 32)).isNull())
+            errors.append(tr("Image illisible : %1").arg(tile.path));
+        if (!tile.empty)
+            ++activeTiles;
+    }
+    for (const QString &path : tilePaths) {
+        if (!assignedPaths.contains(QFileInfo(path).absoluteFilePath()))
+            errors.append(tr("Image non placée dans la grille : %1")
+                              .arg(QFileInfo(path).fileName()));
+    }
+    if (activeTiles == 0)
+        errors.append(tr("La grille doit contenir au moins une tuile active."));
+
+    if (!errors.isEmpty()) {
+        QMessageBox::warning(this, tr("Grille à corriger"), errors.join(QLatin1Char('\n')));
+        updateStatus(tr("La grille n'est pas valide : %1 problème(s).").arg(errors.size()));
+        gridValidated = false;
+        refreshGridControls();
+        return;
+    }
+
+    gridValidated = true;
+    refreshGridControls();
+    updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3, ordre « %4 ».")
+                     .arg(activeTiles).arg(gridRows).arg(gridColumns)
+                     .arg(captureOrderCombo ? captureOrderCombo->currentText() : QString()));
+    QMessageBox::information(this, tr("Grille validée"),
+        tr("La grille et ses paramètres sont valides. Enregistrez le projet pour conserver les réglages."));
 }
 
 void MainWindow::importTiles()
@@ -995,9 +1725,37 @@ void MainWindow::importTiles()
     QStringList paths;
     paths.reserve(imageFiles.size());
     for (const QFileInfo &imageFile : imageFiles)
-        paths.append(imageFile.absoluteFilePath());
+        if (!tilePaths.contains(imageFile.absoluteFilePath()))
+            paths.append(imageFile.absoluteFilePath());
+
+    if (paths.isEmpty()) {
+        QMessageBox::information(this, tr("Photos déjà importées"),
+            tr("Toutes les photos de ce dossier sont déjà dans le projet."));
+        return;
+    }
 
     tilePaths.append(paths);
+    tileDirectory = directoryPath;
+    const int requiredRows = (static_cast<int>(tilePaths.size()) + gridColumns - 1) / gridColumns;
+    gridRows = qMax(gridRows, qMin(20, requiredRows));
+    while (gridTiles.size() < gridRows * gridColumns)
+        gridTiles.append(GridTile{});
+    const QVector<int> positions = captureOrderCells(gridRows, gridColumns, captureOrder);
+    int positionIndex = 0;
+    for (const QString &path : paths) {
+        while (positionIndex < positions.size() &&
+               !gridTiles.at(positions.at(positionIndex)).path.isEmpty())
+            ++positionIndex;
+        if (positionIndex >= positions.size()) {
+            GridTile overflowTile;
+            overflowTile.path = path;
+            gridTiles.append(overflowTile);
+            continue;
+        }
+        gridTiles[positions.at(positionIndex)].path = path;
+        ++positionIndex;
+    }
+    gridValidated = false;
     refreshProjectInfo();
     setMode(1);
     updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
@@ -1019,10 +1777,31 @@ void MainWindow::saveProject()
     project.insert(QStringLiteral("mode"), currentMode);
     project.insert(QStringLiteral("tile_directory"), tileDirectory);
     project.insert(QStringLiteral("output_directory"), outputDirectory);
+    project.insert(QStringLiteral("grid_rows"), gridRows);
+    project.insert(QStringLiteral("grid_columns"), gridColumns);
+    project.insert(QStringLiteral("capture_order"), captureOrder);
+    project.insert(QStringLiteral("horizontal_overlap"), horizontalOverlap);
+    project.insert(QStringLiteral("vertical_overlap"), verticalOverlap);
+    project.insert(QStringLiteral("overlaps_linked"), overlapsLinked);
+    project.insert(QStringLiteral("modality"), modality);
+    project.insert(QStringLiteral("scale_mm_per_pixel"), scaleMmPerPixel);
+    project.insert(QStringLiteral("uncertainty_margin"), uncertaintyMargin);
+    project.insert(QStringLiteral("automatic_uncertainty"), automaticUncertainty);
+    project.insert(QStringLiteral("reference_image"), referenceImagePath);
     QJsonArray tiles;
     for (const QString &tile : tilePaths)
         tiles.append(tile);
     project.insert(QStringLiteral("tiles"), tiles);
+    QJsonArray grid;
+    for (const GridTile &tile : gridTiles) {
+        QJsonObject cell;
+        cell.insert(QStringLiteral("path"), tile.path);
+        cell.insert(QStringLiteral("rotation"), tile.rotation);
+        cell.insert(QStringLiteral("flipped"), tile.flipped);
+        cell.insert(QStringLiteral("empty"), tile.empty);
+        grid.append(cell);
+    }
+    project.insert(QStringLiteral("grid_tiles"), grid);
     QSaveFile file(path);
     if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(project).toJson(QJsonDocument::Indented)) < 0
         || !file.commit()) {
@@ -1056,9 +1835,43 @@ void MainWindow::openProject()
     projectName = project.value(QStringLiteral("project_name")).toString(QFileInfo(path).completeBaseName());
     tileDirectory = project.value(QStringLiteral("tile_directory")).toString();
     outputDirectory = project.value(QStringLiteral("output_directory")).toString();
+    gridRows = qBound(1, project.value(QStringLiteral("grid_rows")).toInt(3), 20);
+    gridColumns = qBound(1, project.value(QStringLiteral("grid_columns")).toInt(2), 20);
+    captureOrder = qBound(0, project.value(QStringLiteral("capture_order")).toInt(0), 5);
+    horizontalOverlap = qBound(0, project.value(QStringLiteral("horizontal_overlap")).toInt(20), 90);
+    verticalOverlap = qBound(0, project.value(QStringLiteral("vertical_overlap")).toInt(20), 90);
+    overlapsLinked = project.value(QStringLiteral("overlaps_linked")).toBool(true);
+    if (overlapsLinked)
+        verticalOverlap = horizontalOverlap;
+    modality = project.value(QStringLiteral("modality")).toString(QStringLiteral("Infrarouge"));
+    scaleMmPerPixel = qMax(0.0, project.value(QStringLiteral("scale_mm_per_pixel")).toDouble());
+    uncertaintyMargin = qMax(0.0, project.value(QStringLiteral("uncertainty_margin")).toDouble());
+    automaticUncertainty = project.value(QStringLiteral("automatic_uncertainty")).toBool(true);
+    referenceImagePath = project.value(QStringLiteral("reference_image")).toString();
     tilePaths.clear();
     for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
         tilePaths.append(tile.toString());
+    const QJsonArray grid = project.value(QStringLiteral("grid_tiles")).toArray();
+    if (grid.isEmpty()) {
+        initializeGridFromPaths();
+    } else {
+        gridTiles.clear();
+        gridTiles.reserve(qMax(gridRows * gridColumns, static_cast<int>(grid.size())));
+        for (const QJsonValue &cellValue : grid) {
+            const QJsonObject cell = cellValue.toObject();
+            GridTile tile;
+            tile.path = cell.value(QStringLiteral("path")).toString();
+            const int savedRotation = cell.value(QStringLiteral("rotation")).toInt();
+            tile.rotation = ((savedRotation % 360) + 360) % 360;
+            tile.flipped = cell.value(QStringLiteral("flipped")).toBool();
+            tile.empty = cell.value(QStringLiteral("empty")).toBool();
+            gridTiles.append(tile);
+        }
+        while (gridTiles.size() < gridRows * gridColumns)
+            gridTiles.append(GridTile{});
+    }
+    selectedGridCell = 0;
+    gridValidated = false;
     projectPath = path;
     refreshProjectInfo();
     pages->setCurrentWidget(workspace);

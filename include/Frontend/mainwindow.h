@@ -3,17 +3,30 @@
 
 #include <QMainWindow>
 #include <QObject>
+#include <QString>
 #include <QStringList>
+#include <QVector>
 
 class QComboBox;
+class QCheckBox;
+class QDoubleSpinBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
+class QSpinBox;
 class QStackedWidget;
 class QTabWidget;
 class QTableWidget;
 class QWidget;
 class QKeyEvent;
+
+struct GridTile
+{
+    QString path;
+    int rotation = 0;
+    bool flipped = false;
+    bool empty = false;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -28,6 +41,13 @@ private:
     void createHomePage();
     void createWorkspace();
     void createProject();
+    void refreshGrid();
+    void refreshGridControls();
+    void initializeGridFromPaths();
+    void swapGridTiles(int first, int second);
+    void importReferenceImage();
+    void compareReferenceImage();
+    void validateGrid();
     void setMode(int mode);
     void refreshProjectInfo();
     void importTiles();
@@ -50,11 +70,39 @@ private:
     QLabel *tileCountLabel = nullptr;
     QProgressBar *progressBar = nullptr;
     QComboBox *arrangementCombo = nullptr;
+    QSpinBox *gridRowsSpin = nullptr;
+    QSpinBox *gridColumnsSpin = nullptr;
+    QSpinBox *horizontalOverlapSpin = nullptr;
+    QSpinBox *verticalOverlapSpin = nullptr;
+    QComboBox *captureOrderCombo = nullptr;
+    QComboBox *modalityCombo = nullptr;
+    QDoubleSpinBox *scaleSpin = nullptr;
+    QDoubleSpinBox *uncertaintySpin = nullptr;
+    QCheckBox *linkedOverlapCheck = nullptr;
+    QCheckBox *automaticUncertaintyCheck = nullptr;
+    QPushButton *emptyCellButton = nullptr;
+    QLabel *selectedGridTileLabel = nullptr;
+    QLabel *gridSummaryLabel = nullptr;
+    QLabel *referencePathLabel = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString tileDirectory;
     QString outputDirectory;
     QStringList tilePaths;
+    QVector<GridTile> gridTiles;
+    QString referenceImagePath;
+    int gridRows = 3;
+    int gridColumns = 2;
+    int captureOrder = 0;
+    int selectedGridCell = 0;
+    int horizontalOverlap = 20;
+    int verticalOverlap = 20;
+    bool overlapsLinked = true;
+    QString modality = QStringLiteral("Infrarouge");
+    double scaleMmPerPixel = 0.0;
+    double uncertaintyMargin = 0.0;
+    bool automaticUncertainty = true;
+    bool gridValidated = false;
     int currentMode = 4;
     int zoomPercent = 12;
     bool panelsVisible = true;

@@ -20,7 +20,7 @@ Garder les fichiers fournis avec l’exécutable dans le même dossier : les bib
 1. Dans l’écran d’accueil, choisir **Nouveau projet…**, saisir un nom, puis choisir
    le dossier contenant les tuiles et le dossier de sortie. Les images reconnues
    directement dans le dossier des tuiles sont ajoutées au projet.
-2. Si nécessaire, dans l’espace de travail, choisir **Tuiles → Importer des tuiles…**
+2. Si nécessaire, dans l’espace de travail, choisir **Tuiles → Importer un dossier de photos…**
    ou utiliser `Ctrl+I` pour ajouter d’autres images.
 3. Enregistrer le projet avec **Enregistrer** ou `Ctrl+S`.
 4. Parcourir les six modes à l’aide de la barre d’étapes et inspecter les panneaux.
@@ -64,29 +64,42 @@ repérer. Les autres modes restent cliquables pour naviguer.
 | Mode | À quoi il est destiné | Comportement actuel |
 | --- | --- | --- |
 | **Projet** | Vue générale et résumé du projet. | Affiche l’illustration générale. |
-| **Tuiles** | Vérifier et organiser l’ordre des prises de vue. | Affiche une grille dessinée avec six tuiles fictives. Le choix d’ordre change le message d’état, mais ne réorganise pas les images. |
+| **Tuiles** | Vérifier et organiser l’ordre des prises de vue. | Affiche les images importées dans une grille configurable. Les permutations, rotations, retournements, cases vides et paramètres de prise de vue sont enregistrés dans le projet. |
 | **Masques** | Repérer et corriger les bords sombres ou les zones à exclure. | Affiche un masque rouge illustratif. Certains outils et le calque **Masques** peuvent masquer ou afficher cette illustration. Aucun masque n’est calculé ni enregistré. |
 | **Alignement** | Examiner une paire de tuiles et ses points de contrôle. | Affiche deux images fictives et des points de correspondance dessinés. Les mesures de la table sont des exemples. |
 | **Assemblage** | Examiner la mosaïque, les coutures et les erreurs d’alignement. | Affiche une illustration avec une couture dessinée. |
 | **Export** | Choisir le format et préparer les livrables. | Permet uniquement d’enregistrer le rapport HTML décrit à la section Export. |
 
-La barre descriptive sous les modes indique la vue active. Le menu **Tuiles →
-Organiser la grille** ouvre la vue Tuiles et affiche un message ; il ne modifie pas
-l’ordre des fichiers.
+La barre descriptive sous les modes indique la vue active. **Tuiles → Organiser la
+grille** ouvre la grille et ses paramètres.
 
 ### Choix de l’ordre des tuiles
 
-En mode **Tuiles**, le menu déroulant propose :
+Dans l’onglet **Grille** ou dans le menu déroulant de la barre supérieure, le choix
+d’ordre met à jour les numéros de parcours affichés sur les cases :
 
+- **Automatique (par lignes)**
 - **Serpentin vertical, bas gauche**
-- **Automatique**
+- **Serpentin vertical, haut droite**
 - **Serpentin horizontal**
 - **Par lignes**
 - **Par colonnes**
 
-Ces choix décrivent des ordres de prise de vue possibles. Dans le prototype, sélectionner
-un choix met à jour le message d’état seulement : cela ne déplace pas les tuiles et
-n’altère pas les données du projet.
+Le nombre de lignes et de colonnes est réglable dans l’onglet **Grille**. Cliquez sur
+une case pour la sélectionner, puis glissez-la sur une autre pour permuter les images.
+**Pivoter 90°** et **Retourner** modifient l’aperçu de la tuile sélectionnée.
+**Marquer une case vide** masque sa tuile sans supprimer son chemin ; **Restaurer la
+tuile** annule cette marque.
+
+Les recouvrements horizontal et vertical sont réglables en pourcentage. **Lier les deux
+valeurs** les synchronise. Le mode de prise de vue, l’échelle et la marge d’incertitude
+sont conservés dans le fichier projet. Ces réglages ne recalculent pas les images.
+
+**Importer une image de référence…** mémorise une image dans le projet. Sélectionnez
+ensuite une tuile et utilisez **Comparer à l’image de référence** pour afficher les deux
+images côte à côte. **Valider la grille** vérifie la capacité, les fichiers, les doublons
+et le placement de toutes les images importées. Enregistrez le projet pour conserver
+les réglages.
 
 ### Barre d’outils à gauche
 
