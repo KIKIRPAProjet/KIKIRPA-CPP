@@ -1,4 +1,4 @@
-#include "core/PipelineJson.h"
+#include "PipelineJson.h"
 #include <algorithm>
 #include <cctype>
 #include <fstream>
