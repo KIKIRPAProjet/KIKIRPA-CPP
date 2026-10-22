@@ -42,6 +42,8 @@ if(BUILD_TESTING)
   add_test(NAME correlation_phase COMMAND test_correlation_phase)
   add_test(NAME seamline COMMAND test_seamline)
   add_test(NAME chaine_paire COMMAND test_chaine_paire)
+  set_tests_properties(correlation_phase seamline PROPERTIES LABELS "unit")
+  set_tests_properties(chaine_paire PROPERTIES LABELS "integration")
 
   # Avec des images (non fournies dans le dépôt) : compilés seulement, à lancer à la main
   #   sift_matcher_test <dossier des images> [recouvrement]   (voir tests/algorithms/stitching/sift/data/README.md)

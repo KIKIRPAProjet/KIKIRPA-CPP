@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <opencv2/features2d.hpp>
 
 namespace stitching::matching::correlation_phase {
 
