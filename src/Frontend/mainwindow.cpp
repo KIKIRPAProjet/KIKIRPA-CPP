@@ -10,6 +10,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
+#include <QDir>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -21,6 +22,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QImage>
+#include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -43,6 +46,12 @@
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QAbstractItemView>
+#include <QtMath>
+
+#ifdef Q_OS_WIN
+#include <wincodec.h>
+#include <windows.h>
+#endif
 
 namespace {
 const QStringList modeNames = {
@@ -65,6 +74,91 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     return label;
 }
 
+#ifdef Q_OS_WIN
+QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
+{
+    HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    const bool uninitialize = SUCCEEDED(result);
+    if (FAILED(result) && result != RPC_E_CHANGED_MODE)
+        return {};
+
+    IWICImagingFactory *factory = nullptr;
+    IWICBitmapDecoder *decoder = nullptr;
+    IWICBitmapFrameDecode *frame = nullptr;
+    IWICBitmapScaler *scaler = nullptr;
+    IWICFormatConverter *converter = nullptr;
+    QImage image;
+
+    do {
+        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                     IID_PPV_ARGS(&factory)))) {
+            break;
+        }
+        if (FAILED(factory->CreateDecoderFromFilename(
+                reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, GENERIC_READ,
+                WICDecodeMetadataCacheOnLoad, &decoder))) {
+            break;
+        }
+        if (FAILED(decoder->GetFrame(0, &frame)))
+            break;
+
+        UINT sourceWidth = 0;
+        UINT sourceHeight = 0;
+        if (FAILED(frame->GetSize(&sourceWidth, &sourceHeight)) ||
+            sourceWidth == 0 || sourceHeight == 0)
+            break;
+
+        const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceWidth,
+                                  static_cast<double>(maximumSize.height()) / sourceHeight);
+        const UINT previewWidth = qMax<UINT>(1, qRound(sourceWidth * qMin(1.0, scale)));
+        const UINT previewHeight = qMax<UINT>(1, qRound(sourceHeight * qMin(1.0, scale)));
+        IWICBitmapSource *source = frame;
+        if (previewWidth != sourceWidth || previewHeight != sourceHeight) {
+            if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
+                FAILED(scaler->Initialize(frame, previewWidth, previewHeight,
+                                          WICBitmapInterpolationModeFant))) {
+                break;
+            }
+            source = scaler;
+        }
+
+        if (FAILED(factory->CreateFormatConverter(&converter)) ||
+            FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA,
+                                         WICBitmapDitherTypeNone, nullptr, 0.0,
+                                         WICBitmapPaletteTypeCustom))) {
+            break;
+        }
+
+        UINT width = 0;
+        UINT height = 0;
+        if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0)
+            break;
+
+        image = QImage(static_cast<int>(width), static_cast<int>(height), QImage::Format_ARGB32);
+        if (image.isNull() ||
+            FAILED(converter->CopyPixels(nullptr, static_cast<UINT>(image.bytesPerLine()),
+                                         static_cast<UINT>(image.sizeInBytes()),
+                                         image.bits()))) {
+            image = {};
+        }
+    } while (false);
+
+    if (converter)
+        converter->Release();
+    if (scaler)
+        scaler->Release();
+    if (frame)
+        frame->Release();
+    if (decoder)
+        decoder->Release();
+    if (factory)
+        factory->Release();
+    if (uninitialize)
+        CoUninitialize();
+    return image;
+}
+#endif
+
 class ArtworkCanvas final : public QWidget
 {
 public:
@@ -76,6 +170,7 @@ public:
 
     void setMode(int mode) { m_mode = mode; update(); }
     void setZoom(int zoom) { m_zoom = zoom; update(); }
+    void setImagePaths(const QStringList &paths) { m_imagePaths = paths; update(); }
     void toggleComparison() { m_comparison = !m_comparison; update(); }
     void toggleMask() { m_mask = !m_mask; update(); }
     void setMaskVisible(bool visible) { m_mask = visible; update(); }
@@ -109,9 +204,17 @@ protected:
         const int x0 = (width() - totalW) / 2;
         const int y0 = (height() - imageH) / 2;
 
-        drawPainting(p, QRect(x0, y0, imageW, imageH));
+        const QRect firstImageRect(x0, y0, imageW, imageH);
+        if (!m_imagePaths.isEmpty())
+            drawPhoto(p, firstImageRect, m_imagePaths.first());
+        else
+            drawPainting(p, firstImageRect);
         if (pair) {
-            drawPainting(p, QRect(x0 + imageW + gutter, y0, imageW, imageH));
+            const QRect secondImageRect(x0 + imageW + gutter, y0, imageW, imageH);
+            if (m_imagePaths.size() > 1)
+                drawPhoto(p, secondImageRect, m_imagePaths.at(1));
+            else
+                drawPainting(p, secondImageRect);
             p.setPen(QPen(QColor("#39b9e8"), 2));
             for (int i = 0; i < 10; ++i) {
                 const QPoint a(x0 + imageW - 10 + (i * 31) % qMax(1, imageW / 3),
@@ -173,24 +276,28 @@ private:
     void drawGrid(QPainter &p)
     {
         const int cols = 2;
-        const int rows = 3;
+        const int imageCount = m_imagePaths.size();
+        const int rows = qMax(1, (imageCount + cols - 1) / cols);
         const int cellW = qMin(190, (width() - 120) / cols);
         const int cellH = qMin(125, (height() - 100) / rows);
         const int left = (width() - cols * (cellW + 18)) / 2;
         const int top = (height() - rows * (cellH + 20)) / 2;
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < imageCount; ++i) {
             const int row = i / cols;
             const int col = i % cols;
             QRect r(left + col * (cellW + 18), top + row * (cellH + 20), cellW, cellH);
-            drawPainting(p, r);
+            drawPhoto(p, r, m_imagePaths.at(i));
             p.fillRect(QRect(r.left(), r.bottom() - 20, r.width(), 20), QColor(0, 0, 0, 125));
             p.setPen(Qt::white);
             p.drawText(r.adjusted(7, 4, -4, -4), Qt::AlignBottom | Qt::AlignLeft,
-                       QStringLiteral("r%1_c%2   %3.tif").arg(row, 2, 10, QLatin1Char('0'))
-                           .arg(col, 2, 10, QLatin1Char('0')).arg(i + 1));
+                       QFileInfo(m_imagePaths.at(i)).fileName());
             p.setPen(QPen(QColor("#e8c638"), 1, Qt::DashLine));
             p.drawRect(r.adjusted(0, 0, -1, -1));
             p.fillRect(QRect(r.left(), r.bottom() - 32, r.width(), 12), QColor(39, 175, 112, 80));
+        }
+        if (imageCount == 0) {
+            p.setPen(QColor("#eeeeee"));
+            p.drawText(rect(), Qt::AlignCenter, tr("Aucune image TIFF chargée"));
         }
         p.setPen(QColor("#eeeeee"));
         p.drawText(QRect(18, 12, width() - 36, 24), Qt::AlignLeft,
@@ -254,8 +361,39 @@ private:
         p.drawRect(r);
     }
 
+    void drawPhoto(QPainter &p, const QRect &r, const QString &path)
+    {
+        QImageReader reader(path);
+        reader.setAutoTransform(true);
+        reader.setScaledSize(r.size());
+        QImage image = reader.read();
+#ifdef Q_OS_WIN
+        if (image.isNull())
+            image = readWindowsTiff(path, r.size());
+#endif
+        if (image.isNull()) {
+            p.fillRect(r, QColor("#262626"));
+            p.setPen(QColor("#d35b55"));
+            p.drawText(r, Qt::AlignCenter, tr("TIFF illisible : %1").arg(reader.errorString()));
+            return;
+        }
+
+        p.save();
+        p.setClipRect(r);
+        const QImage scaled = image.scaled(r.size(), Qt::KeepAspectRatioByExpanding,
+                                           Qt::SmoothTransformation);
+        const int x = r.left() + (r.width() - scaled.width()) / 2;
+        const int y = r.top() + (r.height() - scaled.height()) / 2;
+        p.drawImage(x, y, scaled);
+        p.restore();
+        p.setPen(QPen(QColor("#101010"), 5));
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(r);
+    }
+
     int m_mode = 4;
     int m_zoom = 12;
+    QStringList m_imagePaths;
     bool m_mask = true;
     bool m_comparison = false;
 };
@@ -303,7 +441,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     auto *openAction = fileMenu->addAction(tr("Ouvrir un projet…"));
     openAction->setShortcut(QKeySequence::Open);
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
-    auto *importAction = fileMenu->addAction(tr("Importer des tuiles…"));
+    auto *importAction = fileMenu->addAction(tr("Importer un dossier de photos…"));
     importAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
     connect(importAction, &QAction::triggered, this, &MainWindow::importTiles);
     auto *saveAction = fileMenu->addAction(tr("Enregistrer le projet"));
@@ -353,7 +491,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         static_cast<ArtworkCanvas *>(canvas)->setZoom(zoomPercent);
     });
     auto *toolsMenu = menuBar()->addMenu(tr("Tuiles"));
-    toolsMenu->addAction(tr("Importer des tuiles…"), this, &MainWindow::importTiles);
+    toolsMenu->addAction(tr("Importer un dossier de photos…"), this, &MainWindow::importTiles);
     toolsMenu->addAction(tr("Organiser la grille"), this, [this]() {
         setMode(1);
         updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
@@ -484,8 +622,7 @@ void MainWindow::createProject()
         return;
 
     const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
-        {QStringLiteral("*.tif"), QStringLiteral("*.tiff"), QStringLiteral("*.png"),
-         QStringLiteral("*.jpg"), QStringLiteral("*.jpeg"), QStringLiteral("*.bmp")},
+        {QStringLiteral("*.tif"), QStringLiteral("*.tiff")},
         QDir::Files, QDir::Name);
 
     projectName = name;
@@ -831,20 +968,40 @@ void MainWindow::refreshProjectInfo()
         projectNameLabel->setText(projectName);
     if (tileCountLabel)
         tileCountLabel->setText(tr("%1 tuile(s) chargée(s)").arg(tilePaths.size()));
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas))
+        canvasView->setImagePaths(tilePaths);
     setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
 
 void MainWindow::importTiles()
 {
-    const QStringList paths = QFileDialog::getOpenFileNames(this, tr("Importer des tuiles"),
-        QString(), tr("Images TIFF (*.tif *.tiff);;Images (*.png *.jpg *.jpeg *.bmp);;Tous les fichiers (*)"));
-    if (paths.isEmpty())
+    const QString directoryPath = QFileDialog::getExistingDirectory(
+        this, tr("Sélectionner un dossier de photos"), QString(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (directoryPath.isEmpty())
         return;
+
+    const QDir directory(directoryPath);
+    const QStringList imageFilters = {QStringLiteral("*.tif"), QStringLiteral("*.tiff")};
+    const QFileInfoList imageFiles = directory.entryInfoList(
+        imageFilters, QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    if (imageFiles.isEmpty()) {
+        QMessageBox::warning(this, tr("Aucune photo trouvée"),
+            tr("Le dossier sélectionné ne contient aucune image TIFF compatible "
+               "(.tif ou .tiff)."));
+        return;
+    }
+
+    QStringList paths;
+    paths.reserve(imageFiles.size());
+    for (const QFileInfo &imageFile : imageFiles)
+        paths.append(imageFile.absoluteFilePath());
+
     tilePaths.append(paths);
     refreshProjectInfo();
     setMode(1);
-    updateStatus(tr("%1 fichier(s) ajouté(s). Les images source ne sont pas modifiées.")
-                 .arg(paths.size()));
+    updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
+                 .arg(paths.size()).arg(directory.dirName()));
 }
 
 void MainWindow::saveProject()

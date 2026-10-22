@@ -43,6 +43,9 @@ else()
 endif()
 
 target_link_libraries(Frontend PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+if(WIN32)
+    target_link_libraries(Frontend PRIVATE windowscodecs ole32)
+endif()
 target_include_directories(Frontend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend
 )
