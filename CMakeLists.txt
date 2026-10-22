@@ -15,7 +15,7 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 set(PROJECT_SOURCES
         src/Frontend/main.cpp
         src/Frontend/mainwindow.cpp
-        src/Frontend/mainwindow.h
+        include/Frontend/mainwindow.h
         src/Frontend/mainwindow.ui
 )
 
@@ -43,6 +43,9 @@ else()
 endif()
 
 target_link_libraries(Frontend PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
+target_include_directories(Frontend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend
+)
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
 # If you are developing for iOS or macOS you should consider setting an
