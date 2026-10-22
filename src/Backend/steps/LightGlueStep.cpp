@@ -44,6 +44,31 @@ void validateMatches(const Matches& m, const cv::Mat& a, const cv::Mat& b, size_
 
 } // namespace
 
+void to_json(Json& json, const MatchedTile& tile) {
+    json = {{"index", tile.index}, {"path", tile.path.string()}, {"col", tile.col}, {"row", tile.row}};
+}
+
+void to_json(Json& json, const TilePairMatches& pair) {
+    const char* direction;
+    switch (pair.direction) {
+    case Direction::Right: direction = "right"; break;
+    case Direction::Bottom: direction = "bottom"; break;
+    case Direction::Left: direction = "left"; break;
+    case Direction::Top: direction = "top"; break;
+    default: throw std::invalid_argument("unknown pair direction");
+    }
+    Json pointsA = Json::array(), pointsB = Json::array();
+    for (const auto& point : pair.matches.pointsA) pointsA.push_back({point.x, point.y});
+    for (const auto& point : pair.matches.pointsB) pointsB.push_back({point.x, point.y});
+    json = {{"a", pair.a}, {"b", pair.b}, {"direction", direction},
+            {"matches", {{"pointsA", std::move(pointsA)}, {"pointsB", std::move(pointsB)},
+                         {"scores", pair.matches.scores}, {"dx", pair.matches.dx}, {"dy", pair.matches.dy}}}};
+}
+
+void to_json(Json& json, const LightGlueOutput& output) {
+    json = {{"key", output.key}, {"value", output.value}, {"type", output.type}};
+}
+
 LightGlueStep::LightGlueStep(const LightGlueInput& input, MatcherFactory f)
     : factory(f ? std::move(f) : MatcherFactory(createMatcher)) {
     StepConfig cfg;
@@ -52,18 +77,18 @@ LightGlueStep::LightGlueStep(const LightGlueInput& input, MatcherFactory f)
                    {"int", "min_matches", input.minMatches},
                    {"float", "overlap", input.overlap}};
     cfg.pipelineOptions = {{"Tiles", "tiles"}};
-    cfg.signature.pipelineOptions = {{"PairMatches", "matches"}};
+    cfg.signature.pipelineOptions = {{output.type, output.key}};
     config = cfg;
 }
 
 bool LightGlueStep::execute() {
-    output.clear();
+    output = LightGlueOutput{};
     outputData = Json::object();
     std::string pair;
     try {
         if (!data) throw std::runtime_error("DataStore is not attached");
         // Une exécution en échec ne doit pas laisser une sortie antérieure accessible.
-        data->erase("matches");
+        data->erase(output.key);
         const auto cfg = config.get<StepConfig>();
         if (cfg.name != "lightglue") throw std::invalid_argument("expected step name 'lightglue'");
         std::map<std::string, Json> options;
@@ -139,9 +164,12 @@ bool LightGlueStep::execute() {
             pending.push_back({{p.a, a.path, a.col, a.row}, {p.b, b.path, b.col, b.row},
                                p.dir, std::move(matches)});
         }
-        data->set("matches", pending);
-        output = std::move(pending);
-        outputData = {{"pairs", output.size()}, {"tiles", tiles.size()}};
+        LightGlueOutput completed;
+        completed.value = std::move(pending);
+        Json exported = completed;
+        data->set(completed.key, completed.value);
+        output = std::move(completed);
+        outputData = std::move(exported);
         return true;
     } catch (const std::exception& e) {
         outputData = {{"error", e.what()}};

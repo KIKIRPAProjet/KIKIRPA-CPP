@@ -14,14 +14,10 @@ struct PipelineSettings {
     std::string matcher = "sift";
     std::string rejector = "ransac";
     std::string seamFinder = "dynprog";
-    std::string modelPath;
-    int minMatches = 4;
 };
 
-// Parcours import -> correspondances LightGlue (sans positionnement, fusion ni export).
-Pipeline buildLightGluePipeline(const PipelineSettings& settings);
-
-// Compatibilité avec l'ancienne signature ; seul matcher="lightglue" est implémenté.
+// Les tuiles doivent survivre au pipeline (les steps gardent des références).
+// Lève une exception si un nom d'algorithme est invalide.
 Pipeline buildPipeline(const PipelineSettings& settings, Tuile& a, Tuile& b);
 
 } // namespace stitching

@@ -26,6 +26,16 @@ struct TilePairMatches {
 
 using PairMatches = std::vector<TilePairMatches>;
 
+struct LightGlueOutput {
+    std::string key = "matches";
+    PairMatches value;
+    std::string type = "PairMatches";
+};
+
+void to_json(Json& json, const MatchedTile& tile);
+void to_json(Json& json, const TilePairMatches& pair);
+void to_json(Json& json, const LightGlueOutput& output);
+
 class LightGlueStep : public Step {
 public:
     using MatcherFactory = std::function<std::unique_ptr<matching::FeatureMatcher>(const Json&)>;
@@ -33,13 +43,13 @@ public:
     // La fabrique optionnelle permet de tester l'orchestration sans modèle ONNX.
     explicit LightGlueStep(const LightGlueInput& input = {}, MatcherFactory factory = {});
     bool execute() override;
-    const PairMatches& getOutput() const { return output; }
+    const LightGlueOutput& getOutput() const { return output; }
 
 private:
     MatcherFactory factory;
     std::unique_ptr<matching::FeatureMatcher> matcher;
     std::string loadedModel;
-    PairMatches output;
+    LightGlueOutput output;
 };
 
 } // namespace stitching::steps

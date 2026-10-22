@@ -1,5 +1,4 @@
-#include "core/PipelineBuilder.h"
-#include "steps/LightGlueStep.h"
+#include "LightGlueTestPipeline.h"
 #include <iostream>
 
 int main(int argc, char** argv) {
@@ -8,11 +7,11 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        stitching::PipelineSettings settings;
-        settings.imageDir = argv[1];
-        settings.modelPath = argv[2];
-        if (argc == 4) settings.format = argv[3];
-        auto pipeline = stitching::buildLightGluePipeline(settings);
+        stitching::steps::ImportInput input;
+        input.path = argv[1];
+        if (argc == 4) input.format = argv[3];
+        const stitching::steps::LightGlueInput lightGlue{argv[2]};
+        auto pipeline = stitching::tests::buildLightGlueTestPipeline(input, lightGlue);
         if (!pipeline.run([](const std::string& message) { std::cout << message << '\n'; })) return 1;
         const auto& pairs = pipeline.getData().get<stitching::steps::PairMatches>("matches");
         for (const auto& pair : pairs)

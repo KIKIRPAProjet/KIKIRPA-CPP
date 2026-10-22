@@ -1,6 +1,6 @@
 #include "steps/LightGlueStep.h"
 #include "steps/ImportStep.h"
-#include "core/PipelineBuilder.h"
+#include "LightGlueTestPipeline.h"
 #include <opencv2/imgcodecs.hpp>
 #include <chrono>
 #include <filesystem>
@@ -96,7 +96,7 @@ void failuresAndRetry() {
         require(step.execute(), "success before failure");
         state->mode = mode;
         require(!step.execute(), "invalid matcher result must fail");
-        require(!store.has("matches") && step.getOutput().empty(), "stale output removed");
+        require(!store.has("matches") && step.getOutput().value.empty(), "stale output removed");
         require(step.exportData().contains("error") && step.exportData().contains("pair"), "pair diagnostic");
         state->mode = Mode::Valid;
         require(step.execute() && !step.exportData().contains("error"), "clean retry");
@@ -106,7 +106,39 @@ void failuresAndRetry() {
     auto tiles = pairTiles();
     tiles.push_back({"c.tif", 2, 0, tiles[0].image});
     store.set("tiles", tiles);
-    require(!step.execute() && !store.has("matches") && step.getOutput().empty(), "no partial publication");
+    require(!step.execute() && !store.has("matches") && step.getOutput().value.empty(), "no partial publication");
+}
+
+void outputSerialization() {
+    auto state = std::make_shared<State>();
+    LightGlueStep step({"fixture.onnx"}, factory(state));
+    DataStore store;
+    auto tiles = pairTiles();
+    tiles[0].path = "images/a with spaces.tif";
+    store.set("tiles", tiles);
+    step.setDataStore(store);
+    require(step.execute(), "serialization fixture");
+    const auto& output = step.getOutput();
+    const Json serialized = output;
+    const Json decoded = Json::parse(serialized.dump());
+    require(decoded.size() == 3 && decoded.at("key") == "matches" && decoded.at("type") == "PairMatches",
+            "output envelope uses key, value and type");
+    require(decoded.at("value").is_array() && decoded.at("value").size() == 1, "array payload");
+    const auto& pair = decoded.at("value").at(0);
+    require(pair.at("a").at("path") == "images/a with spaces.tif" && pair.at("b").at("index") == 1,
+            "tile identity serialized");
+    require(pair.at("direction") == "right", "direction serialized by name");
+    require(pair.at("matches").at("pointsA").at(0) == Json::array({6.f, 6.f}) &&
+            pair.at("matches").at("pointsB").at(0) == Json::array({4.f, 4.f}), "point coordinates serialized");
+    require(pair.at("matches").at("scores").size() == 4 && pair.at("matches").at("dx") == 2.f,
+            "confidence and translation serialized");
+    require(step.exportData() == serialized, "exportData exposes the output envelope");
+    require(store.get<PairMatches>(output.key).size() == output.value.size(), "typed DataStore contract retained");
+    require(step.getConfig().at("signature").at("pipelineOptions").at(0).at("type") == output.type,
+            "signature and output type agree");
+    state->mode = Mode::False;
+    require(!step.execute() && step.exportData().contains("error") && step.getOutput().value.empty(),
+            "failure clears serialized payload");
 }
 
 void invalidInputs() {
@@ -196,19 +228,16 @@ void importIntegration() {
     require(cv::imwrite((dir / "img_C00_R00.tif").string(), image), "write first fixture");
     require(cv::imwrite((dir / "img_C01_R00.tif").string(), image), "write second fixture");
     auto state = std::make_shared<State>();
-    Pipeline pipeline;
-    pipeline.add(std::make_unique<ImportStep>(ImportInput{dir.string()}));
-    pipeline.add(std::make_unique<LightGlueStep>(LightGlueInput{"fixture.onnx"}, factory(state)));
+    auto pipeline = stitching::tests::buildLightGlueTestPipeline(
+        ImportInput{dir.string()}, LightGlueInput{"fixture.onnx"}, factory(state));
     require(pipeline.run(), "ImportStep -> LightGlueStep");
     require(pipeline.getData().get<PairMatches>("matches").size() == 1, "integration output");
     Json cfg = pipeline.exportConfig();
     cfg["pipeline"]["steps"][0]["options"][0]["value"] = (dir / "missing").string();
     pipeline.configure(cfg);
     require(!pipeline.run() && !pipeline.getData().has("matches"), "import failure clears previous run results");
-    PipelineSettings settings;
-    settings.imageDir = dir;
-    auto actual = buildLightGluePipeline(settings);
-    require(!actual.run(), "real builder rejects missing model path");
+    auto actual = stitching::tests::buildLightGlueTestPipeline(ImportInput{dir.string()}, LightGlueInput{});
+    require(!actual.run(), "test pipeline rejects missing model path");
 }
 } // namespace
 
@@ -216,6 +245,7 @@ int main() {
     int failures = 0;
     const std::pair<const char*, void (*)()> tests[] = {
         {"grid and session reuse", gridAndReuse}, {"failures and retry", failuresAndRetry},
+        {"output serialization", outputSerialization},
         {"invalid inputs", invalidInputs}, {"configuration", invalidConfiguration},
         {"import integration", importIntegration}
     };

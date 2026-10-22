@@ -31,7 +31,7 @@ int main(int argc, char** argv) {
             std::cerr << step.exportData().dump(2) << '\n';
             return 1;
         }
-        const auto& matches = step.getOutput().at(0).matches;
+        const auto& matches = step.getOutput().value.at(0).matches;
         size_t correct = 0;
         for (size_t i = 0; i < matches.pointsA.size(); ++i) {
             const auto delta = matches.pointsA[i] - matches.pointsB[i];

@@ -28,9 +28,6 @@ include(cmake/algorithms.cmake)
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
 
-add_executable(stitching_lightglue src/main_lightglue.cpp)
-target_link_libraries(stitching_lightglue PRIVATE stitching_backend)
-
 # Interface graphique (Qt 6), construite seulement si Qt est installé
 find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
 if(Qt6_FOUND)

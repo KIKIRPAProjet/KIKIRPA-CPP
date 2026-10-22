@@ -13,7 +13,34 @@ Une paire est traitée une seule fois : vers la droite puis vers le bas, dans l'
 - Sortie `DataStore` : `matches`, de type `stitching::steps::PairMatches`.
 - Chaque `TilePairMatches` contient deux références `MatchedTile` (index d'origine, chemin, colonne, ligne), une direction et un `Matches` (points A/B, scores, dx/dy).
 - `dx/dy` estime la translation par médiane des différences A - B. Ce n'est pas une transformation géométrique validée par RANSAC.
-- `getOutput()` donne accès aux mêmes résultats ; `exportData()` fournit le nombre de tuiles/paires ou un message d'erreur, pas les coordonnées complètes.
+- `LightGlueOutput` représente la sortie du step avec trois champs : `key` ("matches"), `value` (la liste `PairMatches`) et `type` ("PairMatches").
+- `getOutput()` renvoie un `const LightGlueOutput&` ; les résultats se lisent via `getOutput().value`. Comme pour `ImportOutput.tiles`, le DataStore conserve directement la liste sous sa clé (`matches` de type `PairMatches`).
+- Après succès, `exportData()` renvoie l'enveloppe JSON `key/value/type`, avec les identifiants des tuiles, la direction, les points, les scores et dx/dy. Sur échec, il renvoie un diagnostic `error`, accompagné de la paire si elle est connue.
+
+Exemple de forme JSON (une seule correspondance illustrée pour alléger l'exemple ; quatre sont requises par défaut) :
+
+```json
+{
+  "key": "matches",
+  "type": "PairMatches",
+  "value": [
+    {
+      "a": {"index": 0, "path": "a.tif", "col": 0, "row": 0},
+      "b": {"index": 1, "path": "b.tif", "col": 1, "row": 0},
+      "direction": "right",
+      "matches": {
+        "pointsA": [[900, 250]],
+        "pointsB": [[100, 252]],
+        "scores": [0.98],
+        "dx": 800,
+        "dy": -2
+      }
+    }
+  ]
+}
+```
+
+La sérialisation convertit les chemins en chaînes et les points OpenCV en tableaux `[x, y]`. Le parser Python du projet n'étant pas présent dans cette branche, son intégration doit encore être vérifiée avec son schéma effectif.
 
 ## Configuration
 
@@ -47,14 +74,15 @@ Cet objet peut configurer un `LightGlueStep` déjà construit. Le lanceur ci-des
 ## Utilisation C++
 
 ```cpp
-#include "core/PipelineBuilder.h"
+#include "core/Pipeline.h"
+#include "steps/ImportStep.h"
 #include "steps/LightGlueStep.h"
 
-stitching::PipelineSettings settings;
-settings.imageDir = "images/";
-settings.modelPath = "/chemin/modele.onnx";
-settings.minMatches = 4;
-auto pipeline = stitching::buildLightGluePipeline(settings);
+stitching::Pipeline pipeline;
+pipeline.add(std::make_unique<stitching::steps::ImportStep>(
+    stitching::steps::ImportInput{"images/"}));
+pipeline.add(std::make_unique<stitching::steps::LightGlueStep>(
+    stitching::steps::LightGlueInput{"/chemin/modele.onnx", 4}));
 if (!pipeline.run()) {
     // L'appelant présente l'erreur journalisée et interrompt le traitement.
 } else {
@@ -64,7 +92,7 @@ if (!pipeline.run()) {
 }
 ```
 
-L'ancienne signature `buildPipeline(settings, a, b)` délègue à ce parcours seulement si `settings.matcher == "lightglue"`. Elle lève désormais une erreur explicite pour les autres matchers, dont le builder n'était pas implémenté. Les arguments a/b ne sont pas utilisés par ce nouveau parcours.
+Le parcours de validation import -> LightGlue est défini dans `tests/steps/LightGlueTestPipeline.h` et utilisé par les tests et leur lanceur. Il ne fait pas partie de l'API du builder applicatif `buildPipeline(settings, a, b)`, dont l'implémentation initiale reste à compléter séparément.
 
 ## Gestion des erreurs
 
@@ -105,6 +133,8 @@ CMake garde le step compilable sans ONNX, mais son exécution réelle échoue al
 `lightglue_model` n'est enregistré dans CTest que si LightGlue est disponible et `LIGHTGLUE_TEST_MODEL` est fourni. Il vérifie une translation synthétique de 128 px en 8 et 16 bits, avec des dimensions non multiples de 32 et au moins 80 % des correspondances géométriquement cohérentes. Sans modèle, ce test n'a pas été exécuté ; il ne doit pas être présenté comme réussi.
 
 ## Exécution
+
+Le lanceur manuel se trouve dans `tests/steps/run_lightglue_pipeline.cpp`. Sa cible `stitching_lightglue` est construite uniquement avec `BUILD_TESTING=ON` et nécessite un modèle réel ; elle n'est pas lancée automatiquement par CTest.
 
 ```bash
 ./build/lightglue-step/stitching_lightglue "/chemin/images" "/chemin/modele.onnx"
