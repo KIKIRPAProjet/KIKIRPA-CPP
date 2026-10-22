@@ -17,9 +17,11 @@ Garder les fichiers fournis avec l’exécutable dans le même dossier : les bib
 
 ## 3. Prise en main rapide
 
-1. Dans l’écran d’accueil, choisir **Nouveau projet…** et saisir un nom.
-2. Dans l’espace de travail, choisir **Tuiles → Importer des tuiles…** ou utiliser
-   `Ctrl+I`, puis sélectionner une ou plusieurs images.
+1. Dans l’écran d’accueil, choisir **Nouveau projet…**, saisir un nom, puis choisir
+   le dossier contenant les tuiles et le dossier de sortie. Les images reconnues
+   directement dans le dossier des tuiles sont ajoutées au projet.
+2. Si nécessaire, dans l’espace de travail, choisir **Tuiles → Importer des tuiles…**
+   ou utiliser `Ctrl+I` pour ajouter d’autres images.
 3. Enregistrer le projet avec **Enregistrer** ou `Ctrl+S`.
 4. Parcourir les six modes à l’aide de la barre d’étapes et inspecter les panneaux.
 5. Utiliser **Tout lancer** ou `F5` pour voir la démonstration de progression. Cette
@@ -32,8 +34,11 @@ les chemins des fichiers sélectionnés dans le projet.
 
 ## 4. Écran d’accueil
 
-- **Nouveau projet…** : demande un nom, crée un projet vide en mémoire et ouvre la vue
-  de grille.
+- **Nouveau projet…** : demande un nom, le dossier des tuiles et le dossier de sortie,
+  puis ouvre la vue de grille. Les fichiers image présents directement dans le dossier
+  des tuiles sont référencés automatiquement. Le dossier de sortie est proposé par
+  défaut lors de l’enregistrement du rapport HTML.
+- **Fichier → Retour à l’accueil** : revient à l’écran d’accueil sans fermer le projet.
 - **Ouvrir un projet…** : ouvre un fichier projet JSON (`.kikproj` ou `.json`).
 - **Importer une chaîne de traitement (JSON)…** : sélectionne un fichier et ouvre
   l’espace de travail, mais ne lit pas ni n’applique les étapes de la chaîne. Vérifier

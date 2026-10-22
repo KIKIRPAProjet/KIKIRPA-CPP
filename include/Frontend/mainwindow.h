@@ -27,6 +27,7 @@ private:
     void keyPressEvent(QKeyEvent *event) override;
     void createHomePage();
     void createWorkspace();
+    void createProject();
     void setMode(int mode);
     void refreshProjectInfo();
     void importTiles();
@@ -51,6 +52,8 @@ private:
     QComboBox *arrangementCombo = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
+    QString tileDirectory;
+    QString outputDirectory;
     QStringList tilePaths;
     int currentMode = 4;
     int zoomPercent = 12;

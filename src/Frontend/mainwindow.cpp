@@ -6,6 +6,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -298,19 +299,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     auto *fileMenu = menuBar()->addMenu(tr("Fichier"));
     auto *newAction = fileMenu->addAction(tr("Nouveau projet…"));
     newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, this, [this]() {
-        bool ok = false;
-        const QString name = QInputDialog::getText(this, tr("Nouveau projet"),
-            tr("Nom du projet :"), QLineEdit::Normal, QString(), &ok);
-        if (ok && !name.trimmed().isEmpty()) {
-            projectName = name.trimmed();
-            tilePaths.clear();
-            projectPath.clear();
-            pages->setCurrentWidget(workspace);
-            setMode(1);
-            refreshProjectInfo();
-        }
-    });
+    connect(newAction, &QAction::triggered, this, &MainWindow::createProject);
     auto *openAction = fileMenu->addAction(tr("Ouvrir un projet…"));
     openAction->setShortcut(QKeySequence::Open);
     connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
@@ -325,6 +314,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     exportAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
     connect(exportAction, &QAction::triggered, this, &MainWindow::showExportDialog);
     fileMenu->addSeparator();
+    fileMenu->addAction(tr("Retour à l’accueil"), this, [this]() {
+        pages->setCurrentIndex(0);
+    });
     fileMenu->addAction(tr("Quitter"), QKeySequence::Quit, qApp, &QApplication::quit);
 
     auto *editMenu = menuBar()->addMenu(tr("Édition"));
@@ -441,6 +433,8 @@ void MainWindow::createHomePage()
         cards->addWidget(card);
         connect(card, &QPushButton::clicked, this, [this, i]() {
             projectName = i == 1 ? QStringLiteral("Savery") : QStringLiteral("VanDerVeken");
+            tileDirectory.clear();
+            outputDirectory.clear();
             tilePaths = {QStringLiteral("r00_c00.tif"), QStringLiteral("r00_c01.tif"),
                          QStringLiteral("r01_c00.tif"), QStringLiteral("r01_c01.tif")};
             pages->setCurrentWidget(workspace);
@@ -454,19 +448,7 @@ void MainWindow::createHomePage()
     recentLayout->addStretch();
     layout->addWidget(recentArea, 1);
     pages->addWidget(page);
-    connect(newProject, &QPushButton::clicked, this, [this]() {
-        bool ok = false;
-        const QString name = QInputDialog::getText(this, tr("Nouveau projet"),
-            tr("Nom du projet :"), QLineEdit::Normal, QString(), &ok);
-        if (ok && !name.trimmed().isEmpty()) {
-            projectName = name.trimmed();
-            tilePaths.clear();
-            projectPath.clear();
-            pages->setCurrentWidget(workspace);
-            setMode(1);
-            refreshProjectInfo();
-        }
-    });
+    connect(newProject, &QPushButton::clicked, this, &MainWindow::createProject);
     connect(open, &QPushButton::clicked, this, &MainWindow::openProject);
     connect(importJson, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(this, tr("Importer une chaîne"),
@@ -474,11 +456,54 @@ void MainWindow::createHomePage()
         if (!path.isEmpty()) {
             projectPath = path;
             projectName = QFileInfo(path).completeBaseName();
+            tileDirectory.clear();
+            outputDirectory.clear();
             pages->setCurrentWidget(workspace);
             setMode(4);
             updateStatus(tr("Chaîne chargée. Vérifiez les chemins de tuiles avant tout traitement."));
         }
     });
+}
+
+void MainWindow::createProject()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Nouveau projet"),
+        tr("Nom du projet :"), QLineEdit::Normal, QString(), &ok).trimmed();
+    if (!ok || name.isEmpty())
+        return;
+
+    const QString selectedTileDirectory = QFileDialog::getExistingDirectory(
+        this, tr("Choisir le dossier des tuiles"));
+    if (selectedTileDirectory.isEmpty())
+        return;
+
+    const QString selectedOutputDirectory = QFileDialog::getExistingDirectory(
+        this, tr("Choisir le dossier de sortie"));
+    if (selectedOutputDirectory.isEmpty())
+        return;
+
+    const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
+        {QStringLiteral("*.tif"), QStringLiteral("*.tiff"), QStringLiteral("*.png"),
+         QStringLiteral("*.jpg"), QStringLiteral("*.jpeg"), QStringLiteral("*.bmp")},
+        QDir::Files, QDir::Name);
+
+    projectName = name;
+    tileDirectory = selectedTileDirectory;
+    outputDirectory = selectedOutputDirectory;
+    projectPath.clear();
+    tilePaths.clear();
+    for (const QFileInfo &tileFile : tileFiles)
+        tilePaths.append(tileFile.absoluteFilePath());
+
+    pages->setCurrentWidget(workspace);
+    setMode(1);
+    refreshProjectInfo();
+    if (tilePaths.isEmpty()) {
+        updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
+    } else {
+        updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tilePaths.size()));
+    }
 }
 
 void MainWindow::createWorkspace()
@@ -835,6 +860,8 @@ void MainWindow::saveProject()
     project.insert(QStringLiteral("project_name"), projectName);
     project.insert(QStringLiteral("saved_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
     project.insert(QStringLiteral("mode"), currentMode);
+    project.insert(QStringLiteral("tile_directory"), tileDirectory);
+    project.insert(QStringLiteral("output_directory"), outputDirectory);
     QJsonArray tiles;
     for (const QString &tile : tilePaths)
         tiles.append(tile);
@@ -870,6 +897,8 @@ void MainWindow::openProject()
     }
     const QJsonObject project = document.object();
     projectName = project.value(QStringLiteral("project_name")).toString(QFileInfo(path).completeBaseName());
+    tileDirectory = project.value(QStringLiteral("tile_directory")).toString();
+    outputDirectory = project.value(QStringLiteral("output_directory")).toString();
     tilePaths.clear();
     for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
         tilePaths.append(tile.toString());
@@ -1017,8 +1046,11 @@ void MainWindow::showExportDialog()
                 tr("La génération de l'image mosaïque sera disponible une fois le backend connecté."));
             return;
         }
+        const QString reportName = projectName + QStringLiteral("_rapport.html");
+        const QString defaultPath = outputDirectory.isEmpty()
+            ? reportName : QDir(outputDirectory).filePath(reportName);
         const QString path = QFileDialog::getSaveFileName(&dialog, tr("Enregistrer le rapport"),
-            projectName + QStringLiteral("_rapport.html"), tr("Rapport HTML (*.html)"));
+            defaultPath, tr("Rapport HTML (*.html)"));
         if (path.isEmpty())
             return;
         QSaveFile file(path);
