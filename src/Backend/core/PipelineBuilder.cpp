@@ -1,12 +1,6 @@
 #include "Backend/core/PipelineBuilder.h"
 #include "core/Config.h"
-#include "steps/AbsolutePositioningStep.h"
-#include "steps/ExportStep.h"
-#include "steps/FusionStep.h"
 #include "steps/ImportStep.h"
-#include "steps/IntensityCorrectionStep.h"
-#include "steps/SeamlineStep.h"
-#include "steps/StitchingStep.h"
 #include <functional>
 #include <map>
 #include <memory>
