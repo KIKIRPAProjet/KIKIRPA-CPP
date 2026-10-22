@@ -63,6 +63,7 @@ private:
     QWidget *canvas = nullptr;
     QTabWidget *rightTabs = nullptr;
     QTabWidget *bottomTabs = nullptr;
+    QWidget *gridTabPage = nullptr;
     QTableWidget *pairsTable = nullptr;
     QLabel *projectNameLabel = nullptr;
     QLabel *statusLabel = nullptr;

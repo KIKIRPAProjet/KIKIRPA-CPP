@@ -26,6 +26,7 @@
 #include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLineF>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QMenu>
@@ -33,6 +34,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPolygonF>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -420,10 +422,22 @@ private:
         m_gridCellRects.clear();
         m_gridCellRects.reserve(cellCount);
 
-        QVector<int> orderCells = captureOrderCells(rows, columns, m_captureOrder);
+        const QVector<int> orderCells = captureOrderCells(rows, columns, m_captureOrder);
         QVector<int> captureNumbers(cellCount, 0);
-        for (int sequence = 0; sequence < orderCells.size(); ++sequence)
-            captureNumbers[orderCells.at(sequence)] = sequence + 1;
+        QVector<QPointF> routePoints;
+        int sequence = 0;
+        for (const int cellIndex : orderCells) {
+            if (cellIndex >= m_gridTiles.size())
+                continue;
+            const GridTile &tile = m_gridTiles.at(cellIndex);
+            if (tile.path.isEmpty() || tile.empty)
+                continue;
+            captureNumbers[cellIndex] = ++sequence;
+            const int row = cellIndex / columns;
+            const int column = cellIndex % columns;
+            routePoints.append(QPointF(left + column * (cellW + gapX) + cellW / 2.0,
+                                       top + row * (cellH + gapY) + cellH / 2.0));
+        }
 
         int activeTileCount = 0;
         for (int index = 0; index < qMin(cellCount, static_cast<int>(m_gridTiles.size())); ++index) {
@@ -486,6 +500,30 @@ private:
             p.setPen(Qt::white);
             p.drawText(QRect(cell.left() + 7, cell.top() + 7, 24, 24),
                        Qt::AlignCenter, QString::number(captureNumbers.at(index)));
+        }
+
+        if (routePoints.size() > 1) {
+            p.save();
+            QPen routePen(QColor(244, 204, 74, 225), 3, Qt::DashLine, Qt::RoundCap,
+                          Qt::RoundJoin);
+            p.setPen(routePen);
+            for (int index = 1; index < routePoints.size(); ++index)
+                p.drawLine(routePoints.at(index - 1), routePoints.at(index));
+
+            const QPointF end = routePoints.last();
+            const QLineF finalSegment(routePoints.at(routePoints.size() - 2), end);
+            const qreal angle = qAtan2(finalSegment.dy(), finalSegment.dx());
+            const qreal arrowLength = 16.0;
+            const qreal arrowAngle = qDegreesToRadians(28.0);
+            const QPointF leftWing(
+                end.x() - arrowLength * qCos(angle + arrowAngle),
+                end.y() - arrowLength * qSin(angle + arrowAngle));
+            const QPointF rightWing(
+                end.x() - arrowLength * qCos(angle - arrowAngle),
+                end.y() - arrowLength * qSin(angle - arrowAngle));
+            p.setBrush(routePen.color());
+            p.drawPolygon(QPolygonF() << end << leftWing << rightWing);
+            p.restore();
         }
 
         p.setPen(QColor("#eeeeee"));
@@ -1012,18 +1050,18 @@ void MainWindow::createWorkspace()
     auto *gridScroll = new QScrollArea;
     gridScroll->setWidgetResizable(true);
     gridScroll->setFrameShape(QFrame::NoFrame);
-    auto *gridPage = new QWidget;
-    auto *gridLayout = new QVBoxLayout(gridPage);
+    gridTabPage = new QWidget;
+    auto *gridLayout = new QVBoxLayout(gridTabPage);
     gridLayout->setContentsMargins(7, 8, 7, 8);
     gridSummaryLabel = new QLabel;
     gridLayout->addWidget(gridSummaryLabel);
 
     auto *dimensions = new QFormLayout;
-    gridRowsSpin = new QSpinBox(gridPage);
+    gridRowsSpin = new QSpinBox(gridTabPage);
     gridRowsSpin->setRange(1, 20);
     gridRowsSpin->setValue(gridRows);
     gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
-    gridColumnsSpin = new QSpinBox(gridPage);
+    gridColumnsSpin = new QSpinBox(gridTabPage);
     gridColumnsSpin->setRange(1, 20);
     gridColumnsSpin->setValue(gridColumns);
     gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
@@ -1031,7 +1069,7 @@ void MainWindow::createWorkspace()
     dimensions->addRow(tr("Colonnes"), gridColumnsSpin);
     gridLayout->addLayout(dimensions);
 
-    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), gridPage);
+    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), gridTabPage);
     auto *orderLayout = new QVBoxLayout(orderGroup);
     captureOrderCombo = new QComboBox(orderGroup);
     captureOrderCombo->addItems({
@@ -1045,19 +1083,19 @@ void MainWindow::createWorkspace()
     orderLayout->addWidget(captureOrderCombo);
     gridLayout->addWidget(orderGroup);
 
-    selectedGridTileLabel = mutedLabel(QString(), gridPage);
+    selectedGridTileLabel = mutedLabel(QString(), gridTabPage);
     selectedGridTileLabel->setWordWrap(true);
     gridLayout->addWidget(selectedGridTileLabel);
     auto *tileActions = new QHBoxLayout;
-    auto *rotateTile = makeButton(tr("Pivoter 90°"), gridPage);
-    auto *flipTile = makeButton(tr("Retourner"), gridPage);
+    auto *rotateTile = makeButton(tr("Pivoter 90°"), gridTabPage);
+    auto *flipTile = makeButton(tr("Retourner"), gridTabPage);
     tileActions->addWidget(rotateTile);
     tileActions->addWidget(flipTile);
     gridLayout->addLayout(tileActions);
-    emptyCellButton = makeButton(tr("Marquer une case vide"), gridPage);
+    emptyCellButton = makeButton(tr("Marquer une case vide"), gridTabPage);
     gridLayout->addWidget(emptyCellButton);
 
-    auto *captureGroup = new QGroupBox(tr("Prise de vue"), gridPage);
+    auto *captureGroup = new QGroupBox(tr("Prise de vue"), gridTabPage);
     auto *captureForm = new QFormLayout(captureGroup);
     horizontalOverlapSpin = new QSpinBox(captureGroup);
     horizontalOverlapSpin->setRange(0, 90);
@@ -1094,18 +1132,19 @@ void MainWindow::createWorkspace()
     captureForm->addRow(QString(), automaticUncertaintyCheck);
     gridLayout->addWidget(captureGroup);
 
-    referencePathLabel = mutedLabel(tr("Aucune image de référence"), gridPage);
+    referencePathLabel = mutedLabel(tr("Aucune image de référence"), gridTabPage);
     referencePathLabel->setWordWrap(true);
     gridLayout->addWidget(referencePathLabel);
-    auto *importReference = makeButton(tr("Importer une image de référence…"), gridPage);
-    auto *compareReference = makeButton(tr("Comparer à l'image de référence"), gridPage);
+    auto *importReference = makeButton(tr("Importer une image de référence…"), gridTabPage);
+    auto *compareReference = makeButton(tr("Comparer à l'image de référence"), gridTabPage);
     gridLayout->addWidget(importReference);
     gridLayout->addWidget(compareReference);
-    auto *validateGridButton = makeButton(tr("Valider la grille ✓"), gridPage, true);
+    auto *validateGridButton = makeButton(tr("Valider la grille ✓"), gridTabPage, true);
     gridLayout->addWidget(validateGridButton);
     gridLayout->addStretch();
-    gridScroll->setWidget(gridPage);
-    rightTabs->addTab(gridScroll, tr("Grille"));
+    gridScroll->setWidget(gridTabPage);
+    gridScroll->setObjectName(QStringLiteral("gridTabScrollArea"));
+    gridTabPage = gridScroll;
 
     connect(gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
         gridRows = value;
@@ -1387,6 +1426,18 @@ void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, 5);
     pages->setCurrentWidget(workspace);
+    if (rightTabs && gridTabPage) {
+        const int gridIndex = rightTabs->indexOf(gridTabPage);
+        if (currentMode == 1 && gridIndex < 0) {
+            rightTabs->insertTab(0, gridTabPage, tr("Grille"));
+            rightTabs->setCurrentWidget(gridTabPage);
+        } else if (currentMode != 1 && gridIndex >= 0) {
+            const bool gridWasSelected = rightTabs->currentWidget() == gridTabPage;
+            rightTabs->removeTab(gridIndex);
+            if (gridWasSelected && rightTabs->count() > 0)
+                rightTabs->setCurrentIndex(qMin(gridIndex, rightTabs->count() - 1));
+        }
+    }
     if (auto *button = workspace->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
     const QStringList descriptions = {
