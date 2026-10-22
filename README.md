@@ -43,9 +43,9 @@ les chemins des fichiers sélectionnés dans le projet.
 - **Importer une chaîne de traitement (JSON)…** : sélectionne un fichier et ouvre
   l’espace de travail, mais ne lit pas ni n’applique les étapes de la chaîne. Vérifier
   les chemins et paramètres reste à faire.
-- **Projets récents** : les cartes affichées sont des exemples codés dans l’interface,
-  pas une liste réelle de fichiers récemment ouverts. Cliquer sur l’une d’elles ouvre
-  un jeu de données fictif.
+- **Projets récents** : affiche les projets récemment enregistrés ou ouverts. Un
+  nouveau projet non enregistré est également visible pendant la session ; il devient
+  réouvrable depuis la liste après son premier enregistrement.
 
 ## 5. Espace de travail
 

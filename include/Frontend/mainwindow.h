@@ -10,6 +10,7 @@
 class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
+class QHBoxLayout;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -41,6 +42,9 @@ private:
     void createHomePage();
     void createWorkspace();
     void createProject();
+    void refreshRecentProjects();
+    void rememberRecentProject(const QString &path);
+    bool loadProjectFromPath(const QString &path);
     void refreshGrid();
     void refreshGridControls();
     void initializeGridFromPaths();
@@ -64,6 +68,8 @@ private:
     QTabWidget *rightTabs = nullptr;
     QTabWidget *bottomTabs = nullptr;
     QWidget *gridTabPage = nullptr;
+    QHBoxLayout *recentCardsLayout = nullptr;
+    QLabel *recentEmptyLabel = nullptr;
     QTableWidget *pairsTable = nullptr;
     QLabel *projectNameLabel = nullptr;
     QLabel *statusLabel = nullptr;
@@ -104,6 +110,7 @@ private:
     double uncertaintyMargin = 0.0;
     bool automaticUncertainty = true;
     bool gridValidated = false;
+    bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;
     bool panelsVisible = true;

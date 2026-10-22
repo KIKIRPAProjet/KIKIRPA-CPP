@@ -39,6 +39,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSaveFile>
+#include <QSettings>
 #include <QSet>
 #include <QSlider>
 #include <QSignalBlocker>
@@ -792,52 +793,17 @@ void MainWindow::createHomePage()
     auto *recentLayout = new QVBoxLayout(recentArea);
     recentLayout->setContentsMargins(30, 26, 30, 24);
     recentLayout->addWidget(new QLabel(tr("Projets récents")));
-    auto *cards = new QHBoxLayout;
-    const QStringList recentNames = {
-        QStringLiteral("VanDerVeken.kikproj"), QStringLiteral("Savery.kikproj"),
-        tr("Dernier assemblage")
-    };
-    for (int i = 0; i < recentNames.size(); ++i) {
-        auto *card = new QPushButton;
-        card->setMinimumSize(210, 180);
-        card->setMaximumWidth(260);
-        card->setStyleSheet(QStringLiteral("text-align:left;padding:0;background:#252525;"
-            "border:1px solid #383838;border-radius:5px;"));
-        auto *cardLayout = new QVBoxLayout(card);
-        cardLayout->setContentsMargins(0, 0, 0, 10);
-        auto *preview = new ArtworkCanvas(card);
-        preview->setMinimumSize(180, 120);
-        preview->setMaximumHeight(130);
-        cardLayout->addWidget(preview);
-        auto *caption = new QLabel(recentNames.at(i) + QStringLiteral("\n")
-            + (i == 0 ? tr("Infrarouge · 4 tuiles · assemblage terminé")
-                      : tr("Projet récent · ouvrir pour continuer")), card);
-        caption->setContentsMargins(10, 3, 8, 0);
-        cardLayout->addWidget(caption);
-        cards->addWidget(card);
-        connect(card, &QPushButton::clicked, this, [this, i]() {
-            projectName = i == 1 ? QStringLiteral("Savery") : QStringLiteral("VanDerVeken");
-            tileDirectory.clear();
-            outputDirectory.clear();
-            tilePaths = {QStringLiteral("r00_c00.tif"), QStringLiteral("r00_c01.tif"),
-                         QStringLiteral("r01_c00.tif"), QStringLiteral("r01_c01.tif")};
-            gridRows = 2;
-            gridColumns = 2;
-            captureOrder = 0;
-            referenceImagePath.clear();
-            initializeGridFromPaths();
-            gridValidated = false;
-            pages->setCurrentWidget(workspace);
-            setMode(4);
-            refreshProjectInfo();
-            updateStatus(tr("Projet récent ouvert. Les données illustrées sont une démonstration."));
-        });
-    }
-    cards->addStretch();
-    recentLayout->addLayout(cards, 0);
+    recentEmptyLabel = mutedLabel(tr("Aucun projet récent."), recentArea);
+    recentLayout->addWidget(recentEmptyLabel);
+    auto *cardsContainer = new QWidget(recentArea);
+    recentCardsLayout = new QHBoxLayout(cardsContainer);
+    recentCardsLayout->setContentsMargins(0, 0, 0, 0);
+    recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    recentLayout->addWidget(cardsContainer);
     recentLayout->addStretch();
     layout->addWidget(recentArea, 1);
     pages->addWidget(page);
+    refreshRecentProjects();
     connect(newProject, &QPushButton::clicked, this, &MainWindow::createProject);
     connect(open, &QPushButton::clicked, this, &MainWindow::openProject);
     connect(importJson, &QPushButton::clicked, this, [this]() {
@@ -846,6 +812,7 @@ void MainWindow::createHomePage()
         if (!path.isEmpty()) {
             projectPath = path;
             projectName = QFileInfo(path).completeBaseName();
+            projectCreated = false;
             tileDirectory.clear();
             outputDirectory.clear();
             pages->setCurrentWidget(workspace);
@@ -853,6 +820,114 @@ void MainWindow::createHomePage()
             updateStatus(tr("Chaîne chargée. Vérifiez les chemins de tuiles avant tout traitement."));
         }
     });
+}
+
+void MainWindow::refreshRecentProjects()
+{
+    if (!recentCardsLayout || !recentEmptyLabel)
+        return;
+
+    while (QLayoutItem *item = recentCardsLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget()) {
+            widget->hide();
+            widget->deleteLater();
+        }
+        delete item;
+    }
+
+    QSettings settings(QStringLiteral("KIK-IRPA"), QStringLiteral("Assemblage"));
+    QStringList recentPaths = settings.value(QStringLiteral("recentProjects")).toStringList();
+    QStringList validPaths;
+    for (const QString &path : recentPaths) {
+        const QString absolutePath = QFileInfo(path).absoluteFilePath();
+        if (QFileInfo::exists(absolutePath) && !validPaths.contains(absolutePath))
+            validPaths.append(absolutePath);
+    }
+    if (validPaths != recentPaths) {
+        recentPaths = validPaths;
+        settings.setValue(QStringLiteral("recentProjects"), recentPaths);
+    }
+
+    int cardCount = 0;
+    if (projectCreated && projectPath.isEmpty()) {
+        auto *card = makeButton(QString(), recentCardsLayout->parentWidget());
+        card->setMinimumSize(210, 100);
+        card->setMaximumWidth(260);
+        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
+            "border:1px solid #383838;border-radius:5px;"));
+        auto *cardLayout = new QVBoxLayout(card);
+        auto *name = new QLabel(projectName, card);
+        name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
+        auto *details = new QLabel(tr("Projet non enregistré · %1 tuile(s)")
+                                       .arg(tilePaths.size()), card);
+        details->setProperty("muted", true);
+        details->setWordWrap(true);
+        cardLayout->addWidget(name);
+        cardLayout->addWidget(details);
+        recentCardsLayout->addWidget(card);
+        connect(card, &QPushButton::clicked, this, [this]() {
+            pages->setCurrentWidget(workspace);
+            setMode(1);
+            updateStatus(tr("Projet courant : %1").arg(projectName));
+        });
+        ++cardCount;
+    }
+
+    for (const QString &path : recentPaths) {
+        QFile file(path);
+        QString recentName = QFileInfo(path).completeBaseName();
+        int recentTileCount = 0;
+        if (file.open(QIODevice::ReadOnly)) {
+            const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
+            if (document.isObject()) {
+                const QJsonObject project = document.object();
+                recentName = project.value(QStringLiteral("project_name"))
+                                 .toString(recentName);
+                recentTileCount = project.value(QStringLiteral("tiles")).toArray().size();
+            }
+        }
+
+        auto *card = makeButton(QString(), recentCardsLayout->parentWidget());
+        card->setMinimumSize(210, 100);
+        card->setMaximumWidth(260);
+        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
+            "border:1px solid #383838;border-radius:5px;"));
+        auto *cardLayout = new QVBoxLayout(card);
+        auto *name = new QLabel(recentName, card);
+        name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
+        name->setWordWrap(true);
+        auto *details = new QLabel(tr("%1 tuile(s)\n%2")
+                                       .arg(recentTileCount)
+                                       .arg(QFileInfo(path).fileName()), card);
+        details->setProperty("muted", true);
+        details->setWordWrap(true);
+        cardLayout->addWidget(name);
+        cardLayout->addWidget(details);
+        recentCardsLayout->addWidget(card);
+        connect(card, &QPushButton::clicked, this, [this, path]() {
+            loadProjectFromPath(path);
+        });
+        ++cardCount;
+    }
+
+    recentCardsLayout->addStretch();
+    recentEmptyLabel->setVisible(cardCount == 0);
+}
+
+void MainWindow::rememberRecentProject(const QString &path)
+{
+    const QString absolutePath = QFileInfo(path).absoluteFilePath();
+    if (!QFileInfo::exists(absolutePath))
+        return;
+
+    QSettings settings(QStringLiteral("KIK-IRPA"), QStringLiteral("Assemblage"));
+    QStringList recentPaths = settings.value(QStringLiteral("recentProjects")).toStringList();
+    recentPaths.removeAll(absolutePath);
+    recentPaths.prepend(absolutePath);
+    while (recentPaths.size() > 10)
+        recentPaths.removeLast();
+    settings.setValue(QStringLiteral("recentProjects"), recentPaths);
+    refreshRecentProjects();
 }
 
 void MainWindow::createProject()
@@ -881,6 +956,7 @@ void MainWindow::createProject()
     tileDirectory = selectedTileDirectory;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
+    projectCreated = true;
     tilePaths.clear();
     for (const QFileInfo &tileFile : tileFiles)
         tilePaths.append(tileFile.absoluteFilePath());
@@ -910,6 +986,7 @@ void MainWindow::createProject()
     } else {
         updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tilePaths.size()));
     }
+    refreshRecentProjects();
 }
 
 void MainWindow::createWorkspace()
@@ -1861,6 +1938,8 @@ void MainWindow::saveProject()
         return;
     }
     projectPath = path;
+    projectCreated = true;
+    rememberRecentProject(path);
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
@@ -1870,17 +1949,22 @@ void MainWindow::openProject()
         QString(), tr("Projet KIK-IRPA (*.kikproj *.json);;Tous les fichiers (*)"));
     if (path.isEmpty())
         return;
+    loadProjectFromPath(path);
+}
+
+bool MainWindow::loadProjectFromPath(const QString &path)
+{
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         QMessageBox::warning(this, tr("Ouverture impossible"), tr("Le fichier ne peut pas être lu."));
-        return;
+        return false;
     }
     QJsonParseError error;
     const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
     if (error.error != QJsonParseError::NoError || !document.isObject()) {
         QMessageBox::warning(this, tr("Projet invalide"),
             tr("Ce fichier n'est pas un projet JSON valide."));
-        return;
+        return false;
     }
     const QJsonObject project = document.object();
     projectName = project.value(QStringLiteral("project_name")).toString(QFileInfo(path).completeBaseName());
@@ -1924,10 +2008,13 @@ void MainWindow::openProject()
     selectedGridCell = 0;
     gridValidated = false;
     projectPath = path;
+    projectCreated = true;
     refreshProjectInfo();
     pages->setCurrentWidget(workspace);
     setMode(project.value(QStringLiteral("mode")).toInt(4));
+    rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    return true;
 }
 
 void MainWindow::startRun(int firstStep)
