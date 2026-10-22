@@ -377,8 +377,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
                             [this]() { startRun(1); });
     assemblyMenu->addAction(tr("Relancer à partir de…"), this, [this]() { startRun(6); });
     assemblyMenu->addAction(tr("Comparer deux exécutions…"), this, &MainWindow::showComparison);
-    auto *windowMenu = menuBar()->addMenu(tr("Fenêtre"));
-    windowMenu->addAction(togglePanels);
     auto *helpMenu = menuBar()->addMenu(tr("Aide"));
     helpMenu->addAction(tr("À propos"), this, [this]() {
         QMessageBox::about(this, tr("À propos"),
