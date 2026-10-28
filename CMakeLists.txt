@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Backend ---
 find_package(OpenCV REQUIRED)
+find_package(TIFF REQUIRED)
 find_package(nlohmann_json 3 QUIET)
 if(NOT nlohmann_json_FOUND)
   include(FetchContent)
@@ -18,7 +19,10 @@ add_library(stitching_backend STATIC ${BACKEND_SRC})
 target_include_directories(stitching_backend PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/Backend")
-target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlohmann_json)
+target_link_libraries(stitching_backend PUBLIC
+        ${OpenCV_LIBS}
+        nlohmann_json::nlohmann_json
+        TIFF::TIFF)
 
 # Algorithmes (LightGlue/ONNX Runtime, tests) : voir cmake/algorithms.cmake
 include(cmake/algorithms.cmake)
