@@ -15,7 +15,9 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 set(PROJECT_SOURCES
         src/Frontend/main.cpp
         src/Frontend/mainwindow.cpp
+        src/Frontend/logpanel.cpp
         include/Frontend/mainwindow.h
+        include/Frontend/logpanel.h
         src/Frontend/mainwindow.ui
 )
 

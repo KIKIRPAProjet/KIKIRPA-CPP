@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "logpanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -678,6 +679,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     pages = new QStackedWidget(this);
     setCentralWidget(pages);
+    logPanel = new LogPanel(this);
+    addDockWidget(Qt::BottomDockWidgetArea, logPanel);
+    logPanel->hide();
     createHomePage();
     createWorkspace();
 
@@ -737,6 +741,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         zoomLabel->setText(QStringLiteral("Ajuster"));
         static_cast<ArtworkCanvas *>(canvas)->setZoom(zoomPercent);
     });
+    auto *windowMenu = menuBar()->addMenu(tr("Fenêtre"));
+    auto *toggleLogAction = logPanel->toggleViewAction();
+    toggleLogAction->setText(tr("Afficher le journal"));
+    windowMenu->addAction(toggleLogAction);
     auto *toolsMenu = menuBar()->addMenu(tr("Tuiles"));
     toolsMenu->addAction(tr("Importer un dossier de photos…"), this, &MainWindow::importTiles);
     toolsMenu->addAction(tr("Organiser la grille"), this, [this]() {
@@ -1485,9 +1493,6 @@ void MainWindow::createWorkspace()
     pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     bottomTabs->addTab(pairsTable, tr("Paires (4)"));
     auto *journal = new QListWidget;
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                       tr("14:10  4 tuiles importées"),
-                       tr("14:02  Projet ouvert")});
     bottomTabs->addTab(journal, tr("Journal"));
     auto *positions = new QTableWidget(4, 3);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});

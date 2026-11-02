@@ -21,6 +21,7 @@ class QTabWidget;
 class QTableWidget;
 class QWidget;
 class QKeyEvent;
+class LogPanel;
 
 struct GridTile
 {
@@ -85,6 +86,7 @@ private:
     QLabel *zoomLabel = nullptr;
     QLabel *tileCountLabel = nullptr;
     QProgressBar *progressBar = nullptr;
+    LogPanel *logPanel = nullptr;
     QComboBox *arrangementCombo = nullptr;
     QSpinBox *gridRowsSpin = nullptr;
     QSpinBox *gridColumnsSpin = nullptr;
