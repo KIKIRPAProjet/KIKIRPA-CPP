@@ -23,6 +23,7 @@ target_link_libraries(stitching_backend PUBLIC ${OpenCV_LIBS} nlohmann_json::nlo
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
+target_compile_definitions(stitching PRIVATE PROJECT_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Test du backend : charge un script pipeline JSON et l'exécute
 add_executable(stitching_test src/main_test.cpp)
