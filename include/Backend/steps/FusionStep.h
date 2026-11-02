@@ -6,13 +6,13 @@ namespace stitching::steps {
 
 // Entrée du step = ses options
 struct FusionInput {
-    std::string blending = "multiband";
+    std::string blending = "average";
     int bands = 5;
 };
 
 // name : "fusion"
-// options : blending (string), bands (int)
-// pipelineOptions : { "type": "Tiles", "key": "tiles" }, { "type": "Positions", "key": "positions" }, { "type": "Seams", "key": "seams" }
+// options : blending (string), currently "average"
+// pipelineOptions : Tiles, Positions, LightCorrections, Territories
 // signature : { "type": "Mosaic", "key": "mosaic" }
 class FusionStep : public Step {
 public:
