@@ -16,8 +16,9 @@ std::vector<std::string> registeredSteps();
 // Crée un step avec sa config par défaut. Lève std::invalid_argument si le nom est inconnu.
 std::unique_ptr<Step> createStep(const std::string& name);
 
-// Construit le pipeline décrit par { "pipeline": { "steps": [...] } } (voir core/Config.h) : un step par entrée,
-// dans l'ordre, créé d'après son "name", puis configuré par Step::importConfig.
+// Construit le pipeline décrit par { "pipeline": { "steps": [...] }, "run": {...} } (voir core/Config.h et
+// core/RunState.h ; "run" est facultatif) : un step par entrée, dans l'ordre, créé d'après son "name", puis
+// configuré par Step::importConfig.
 // Lève std::invalid_argument si le JSON est mal formé, si un step est inconnu ou mal configuré, ou si une entrée
 // d'un step (pipelineOptions) n'est produite par aucun step précédent avec le même type (signature).
 Pipeline buildPipeline(const Json& script);
