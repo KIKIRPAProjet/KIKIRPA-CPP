@@ -1,7 +1,6 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
-#include "logpanel.h"
 
 #include <QAction>
 #include <QApplication>
@@ -125,9 +124,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setCentralWidget(pages);
     createHomePage();
     createWorkspace();
-    logPanel = new LogPanel(this);
-    addDockWidget(Qt::BottomDockWidgetArea, logPanel);
-    logPanel->hide();
 
     auto *fileMenu = menuBar()->addMenu(tr("Fichier"));
     auto *newAction = fileMenu->addAction(tr("Nouveau projet…"));
@@ -164,9 +160,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         rightTabs->setVisible(panelsVisible);
         bottomTabs->setVisible(panelsVisible);
     });
-    auto *toggleLogAction = logPanel->toggleViewAction();
-    toggleLogAction->setText(tr("Afficher le journal détaillé"));
-    viewMenu->addAction(toggleLogAction);
     auto *zoomIn = viewMenu->addAction(tr("Zoom avant"));
     zoomIn->setShortcut(QKeySequence::ZoomIn);
     connect(zoomIn, &QAction::triggered, this, [this]() {
@@ -436,7 +429,6 @@ void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, 5);
     pages->setCurrentWidget(workspace);
-    refreshProgressVisibility();
     if (rightTabs && gridTabPage) {
         const int gridIndex = rightTabs->indexOf(gridTabPage);
         if (currentMode == 1 && gridIndex < 0) {
@@ -1114,14 +1106,6 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 {
     currentStepLabel->setText(stepName);
     progressBar->setValue(qBound(0, percentage, 100));
-    refreshProgressVisibility();
-}
-
-void MainWindow::refreshProgressVisibility()
-{
-    const bool visible = progressRunning;
-    currentStepLabel->setVisible(visible);
-    progressBar->setVisible(visible);
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
