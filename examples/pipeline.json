@@ -1,0 +1,19 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "options": [
+          { "type": "string", "key": "path", "value": "images/" },
+          { "type": "string", "key": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
+        ]
+      },
+      {
+        "name": "phase-correlation",
+        "options": [
+          { "type": "float", "key": "overlap", "value": 0.2 }
+        ]
+      }
+    ]
+  }
+}
