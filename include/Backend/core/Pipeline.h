@@ -20,8 +20,12 @@ public:
     // Écrit le même format (script de reprise)
     Json exportConfig() const;
     void add(std::unique_ptr<Step> s) { steps.push_back(std::move(s)); }
+    // Exécute les steps dans l'ordre sur un DataStore vide ; s'arrête au premier step en échec (false, ou
+    // exception levée par le step) et renvoie false. Messages : `log` s'il est fourni, sinon std::cerr pour les échecs.
     bool run(const Logger& log = {});
     const DataStore& getData() const { return data; }
+    // Steps dans l'ordre d'exécution
+    const std::vector<std::unique_ptr<Step>>& getSteps() const { return steps; }
 };
 
 } // namespace stitching

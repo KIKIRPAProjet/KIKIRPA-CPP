@@ -49,3 +49,7 @@ endif()
 # Ligne de commande
 add_executable(stitching src/main.cpp)
 target_link_libraries(stitching PRIVATE stitching_backend)
+
+# Lance un pipeline à partir d'un script JSON : stitching_run <script.json> (exemple : examples/pipeline.json)
+add_executable(stitching_run src/run_pipeline.cpp)
+target_link_libraries(stitching_run PRIVATE stitching_backend)
