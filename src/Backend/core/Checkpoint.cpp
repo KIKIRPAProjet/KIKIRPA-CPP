@@ -1,5 +1,6 @@
 // Checkpoint.cpp
 #include "core/Checkpoint.h"
+#include "core/CheckpointTypes.h"
 #include "core/Config.h"
 #include <cctype>
 #include <cstdio>
@@ -18,8 +19,13 @@ struct Serializer {
     Checkpoint::Loader load;
 };
 
+// Types du pipeline déclarés d'office (core/CheckpointTypes), complétés par Checkpoint::registerType
 std::map<std::string, Serializer>& serializers() {
-    static std::map<std::string, Serializer> s;
+    static std::map<std::string, Serializer> s = [] {
+        std::map<std::string, Serializer> init;
+        for (auto& [type, fns] : pipelineTypes()) init[type] = {fns.first, fns.second};
+        return init;
+    }();
     return s;
 }
 
@@ -83,7 +89,7 @@ bool Checkpoint::save(size_t index, const Step& step, const DataStore& data, std
         }
     }
     const Json manifest = {{"step", cfg.name}, {"options", step.getConfig().value("options", Json::array())},
-                           {"outputs", outputs}, {"complete", complete}};
+                           {"inputs", step.inputFingerprint()}, {"outputs", outputs}, {"complete", complete}};
     writeAtomic(dir / "manifest.json", manifest.dump(2));   // en dernier
     return complete;
 }
@@ -93,7 +99,8 @@ bool Checkpoint::valid(size_t index, const Step& step) const {
     const std::string name = step.getConfig().value("name", "");
     const Json m = readManifest(stepDir(index, name));
     return m.is_object() && m.value("complete", false) && m.value("step", "") == name &&
-           m.value("options", Json()) == step.getConfig().value("options", Json::array());   // options changées = périmé
+           m.value("options", Json()) == step.getConfig().value("options", Json::array()) &&   // options changées
+           m.value("inputs", Json()) == step.inputFingerprint();                               // sources changées
 }
 
 void Checkpoint::load(size_t index, const Step& step, const std::string& key, const std::string& type,

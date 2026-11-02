@@ -36,7 +36,8 @@ public:
     // si une sortie n'a pas pu être écrite : le checkpoint est alors marqué incomplet.
     bool save(size_t index, const Step& step, const DataStore& data, std::string& why) const;
 
-    // Manifest présent, complet, même step, mêmes options qu'à la sauvegarde
+    // Manifest présent, complet, même step, mêmes options et même empreinte des entrées (Step::inputFingerprint)
+    // qu'à la sauvegarde
     bool valid(size_t index, const Step& step) const;
 
     // Recharge la sortie `key` (de type `type`) sauvegardée par le step `index`. Lève std::runtime_error si
