@@ -38,6 +38,11 @@ bool GraphCutStep::execute() {
         outputData["error"] = "Aucune tuile fournie pour le step GraphCut.";
         return false;
     }
+    if (tile_paths.size() > 254){
+        std::cerr<< "Erreur : Limite maximum de tuiles 254 pour le step GraphCut." << std::endl;
+        outputData["error"] = "Limite maximum de tuiles 254 pour le step GraphCut.";
+        return false;
+    }
     if (positions.size() != tile_paths.size()) {
         std::cerr << "Erreur : le nombre de positions ne correspond pas au nombre de tuiles." << std::endl;
         outputData["error"] = "Le nombre de positions ne correspond pas au nombre de tuiles.";
@@ -55,14 +60,13 @@ bool GraphCutStep::execute() {
     std::vector<cv::Point> original_corners, corners_small;
     std::vector<cv::Size> tile_sizes;
     Seamline::ImagePretreatment pretreatment;
-    cv::Mat final_mosaic;
     cv::Mat index_matrix;
     if (pretreatment.processImages(positions, tile_paths, scale, tile_sizes, masks_umat_small, original_corners, corners_small) < 0) {
         std::cerr << "Erreur lors du prétraitement des images." << std::endl;
         outputData["error"] = "Erreur lors du prétraitement des images.";
         return false;
     }
-    if (graphcut.computeSeamline(tile_paths, tile_sizes, original_corners, scale, corners_small, masks_umat_small,final_mosaic, index_matrix) < 0) {
+    if (graphcut.computeSeamline(tile_paths, tile_sizes, original_corners, scale, corners_small, masks_umat_small, index_matrix) < 0) {
         std::cerr << "Echec du calcul du GraphCut." << std::endl;
         outputData["error"] = "Echec du calcul du GraphCut.";
         return false;

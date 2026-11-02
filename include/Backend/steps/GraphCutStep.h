@@ -15,13 +15,13 @@ struct GraphCutInput {
 
 // Sortie du step
 struct GraphCutOutput {
-    std::vector<Seamline::TileTerritory> tiles;   // territoire de chaque tuile
+    std::vector<stitching::TileTerritory> tiles;   // territoire de chaque tuile
 };
 class GraphCutStep : public Step {
     GraphCutInput input;
     GraphCutOutput output;
 public:
-    explicit GraphCutStep(const GraphCutInput& input = {});
+    GraphCutStep(const GraphCutInput& input);
     virtual bool execute() override;
     const GraphCutOutput& getOutput() const {
         return output;
