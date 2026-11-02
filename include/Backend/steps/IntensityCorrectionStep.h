@@ -10,8 +10,8 @@ struct IntensityCorrectionInput {
 
 // name : "intensityCorrection"
 // options : enabled (bool)
-// pipelineOptions : { "type": "Tiles", "key": "tiles" }
-// signature : { "type": "Tiles", "key": "tiles" }
+// pipelineOptions : Tiles -> "tiles"
+// signature : LightCorrections -> "corrections"
 class IntensityCorrectionStep : public Step {
 public:
     explicit IntensityCorrectionStep(const IntensityCorrectionInput& input = {});
