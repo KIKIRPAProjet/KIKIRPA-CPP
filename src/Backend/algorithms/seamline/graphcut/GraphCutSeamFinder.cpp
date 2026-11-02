@@ -19,15 +19,18 @@ namespace Seamline {
 // Relit une tuile et la convertit en UMat flottant 0–255 (exigée par le GraphCutSeamFinder d'OpenCV).
 // Renvoie une UMat vide si la lecture échoue ou si la taille ne correspond pas au masque réduit attendu.
 static UMat loadSmallUMat(const string& path, double scale, const Size& expected) {
-    Mat f = ImagePretreatment::readSmallFloat(path, scale);
+    Mat f = ImagePretreatment::readSmallFloat(path, scale); //calls function from imagepretreatment
     UMat u;
-    if (f.empty() || f.size() != expected) return u;
-    f.copyTo(u);
+    if (f.empty() || f.size() != expected) return u; //if loding fails or dimensions not match -> return empty image
+    f.copyTo(u); //OpenCV image container used by seam finder
     return u;
 }
 
+//masks_umat_small -> Updated masks showing which parts of each reduced tile should be kept
+//index_matrix -> A full-resolution map identifying the source tile for each pixel
+//final_mosaic -> An 8-bit color image assembled using that map
 int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Size>& tile_sizes, const vector<Point>& original_corners, double scale, vector<Point>& corners_small, vector<UMat>& masks_umat_small, Mat& final_mosaic, Mat& index_matrix) {
-    const int n = (int)tile_sizes.size();
+    const int n = (int)tile_sizes.size(); //n = number of tiles
     if (n == 0 || n >= (int)NO_TILE) return -1;          // la carte de provenance est sur 8 bits (255 = aucune tuile)
     if ((int)tile_paths.size() != n || (int)masks_umat_small.size() != n ||
         (int)original_corners.size() != n || (int)corners_small.size() != n) return -1;
@@ -36,11 +39,13 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
     // utilise en interne. Les masques (8 bits) sont partagés avec la liste globale : la modification faite sur la paire
     // (i, j) est donc vue par les paires suivantes, comme dans l'appel unique d'origine. Les tuiles sont relues depuis le
     // disque : au plus DEUX en mémoire à un instant donné (i, puis chaque j qui la chevauche).
-    Ptr<SeamFinder> seam_finder = makePtr<GraphCutSeamFinder>(GraphCutSeamFinderBase::COST_COLOR);
+    Ptr<SeamFinder> seam_finder = makePtr<GraphCutSeamFinder>(GraphCutSeamFinderBase::COST_COLOR); //OpenCV’s graph-cut seam finder using a color-based cost : choose a boundary where switching between the two images should be less noticeable
+    // examine every pair of tiles
     for (int i = 0; i < n - 1; ++i) {
         UMat img_i;                                      // chargée à la première paire qui l'utilise, libérée en fin de tour
         for (int j = i + 1; j < n; ++j) {
             Rect roi;
+            //skips pairs whose rectangular footprints do not overlap
             if (!overlapRoi(corners_small[i], corners_small[j], masks_umat_small[i].size(), masks_umat_small[j].size(), roi)) continue;
             if (img_i.empty()) {
                 img_i = loadSmallUMat(tile_paths[i], scale, masks_umat_small[i].size());
@@ -51,6 +56,7 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
             vector<UMat> pair_images{img_i, img_j};
             vector<Point> pair_corners{corners_small[i], corners_small[j]};
             vector<UMat> pair_masks{masks_umat_small[i], masks_umat_small[j]};
+            // for an overlaping pair : loads the two reduced images and calls :
             seam_finder->find(pair_images, pair_corners, pair_masks);
         }
     }
@@ -59,7 +65,7 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
     int max_x = 0, max_y = 0;
     vector<Rect> rects(n);
     for (int i = 0; i < n; ++i) {
-        rects[i] = Rect(original_corners[i], tile_sizes[i]);
+        rects[i] = Rect(original_corners[i], tile_sizes[i]); //creates full mosaic dimension
         max_x = max(max_x, rects[i].x + rects[i].width);
         max_y = max(max_y, rects[i].y + rects[i].height);
     }
@@ -71,21 +77,21 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
         ws = max(ws, corners_small[i].x + s.width);
         hs = max(hs, corners_small[i].y + s.height);
     }
-    Mat small_label(hs, ws, CV_8U, Scalar(NO_TILE));
+    Mat small_label(hs, ws, CV_8U, Scalar(NO_TILE)); //creates small image whose values are tile numbers, rather than colors
     for (int i = 0; i < n; ++i) {
         Mat m = masks_umat_small[i].getMat(ACCESS_READ);
         for (int y = 0; y < m.rows; ++y) {
             const uchar* pm = m.ptr<uchar>(y);
             uchar* pl = small_label.ptr<uchar>(corners_small[i].y + y) + corners_small[i].x;
             for (int x = 0; x < m.cols; ++x)
-                if (pm[x] > 127 && pl[x] == NO_TILE) pl[x] = (uchar)i;      // même seuil que la version d'origine
+                if (pm[x] > 127 && pl[x] == NO_TILE) pl[x] = (uchar)i;      // même seuil que la version d'origine; If tile i keeps this pixel, and no tile has claimed it yet, assign it to tile i
         }
     }
     // pixels réduits qu'aucune tuile n'a gardés (arrondis aux bords) : prennent la tuile du pixel gardé le plus proche
     {
         Mat unclaimed = (small_label == NO_TILE), dist, lab;
         if (countNonZero(unclaimed) > 0 && countNonZero(unclaimed) < (int)unclaimed.total()) {
-            distanceTransform(unclaimed, dist, lab, DIST_L2, DIST_MASK_5, DIST_LABEL_PIXEL);
+            distanceTransform(unclaimed, dist, lab, DIST_L2, DIST_MASK_5, DIST_LABEL_PIXEL); //identify nearby assigned pixels
             double lmax;
             minMaxLoc(lab, nullptr, &lmax);
             vector<uchar> table((size_t)lmax + 1, NO_TILE);
@@ -99,9 +105,11 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
     }
 
     // ---- facteur de réduction réellement appliqué (même rapport sur le grand côté)
+    //Estimate the actual reduction ratio from first tile's dimension, accounting for rounding during resizing
     const Size s0 = masks_umat_small[0].size();
     const double grid_scale = (double)max(s0.width, s0.height) / (double)max(tile_sizes[0].width, tile_sizes[0].height);
     vector<int> xs(max_x), ys(max_y);
+    // array xs and ys map full-resolution coordinates to reduced coordinates 
     for (int x = 0; x < max_x; ++x) xs[x] = min(ws - 1, (int)(x * grid_scale));
     for (int y = 0; y < max_y; ++y) ys[y] = min(hs - 1, (int)(y * grid_scale));
 
@@ -130,37 +138,37 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
             float best_d = 1e30f;
             for (int i : row_tiles) {
                 if (x < rects[i].x || x >= rects[i].x + rects[i].width) continue;
-                const float d = wanted >= n ? 0.f : (float)norm(centers[i] - centers[wanted]);
+                const float d = wanted >= n ? 0.f : (float)norm(centers[i] - centers[wanted]); // The code searches for another tile that does cover it
                 if (d < best_d) { best_d = d; best = i; }      // la plus proche de la tuile désignée
             }
-            if (best >= 0) { pi[x] = (uchar)best; ++fallbackPixels; }
+            if (best >= 0) { pi[x] = (uchar)best; ++fallbackPixels; } //fallbackPixels counts how many pixels required this repair
         }
     }
 
     // ---- mosaïque visuelle (8 bits, affichage seulement) : les tuiles pleine résolution sont relues UNE À LA FOIS
-    final_mosaic = Mat::zeros(Size(max_x, max_y), CV_8UC3);
+    final_mosaic = Mat::zeros(Size(max_x, max_y), CV_8UC3); //creates a black, full-resolution color canvas
     for (int i = 0; i < n; ++i) {
         Mat tile16 = ImagePretreatment::read16(tile_paths[i]);
         if (tile16.empty() || tile16.size() != tile_sizes[i]) return -1;
         Mat tile8;
         tile16.convertTo(tile8, CV_8UC3, 255.0 / 65535.0);
         tile16.release();
-        Mat mask = (index_matrix(rects[i]) == i);
-        tile8.copyTo(final_mosaic(rects[i]), mask);
+        Mat mask = (index_matrix(rects[i]) == i); // = Select only the pixels assigned to tile i
+        tile8.copyTo(final_mosaic(rects[i]), mask); //copies those selected pixels onto the canvas
     }   // <- une seule tuile pleine résolution en mémoire à la fois
     return 1;
 }
 
-vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num_tiles) {
+vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num_tiles) { //turn pixels ownership into shapes
     vector<TileTerritory> territories;
     for (int i = 0; i < num_tiles; ++i) {
         // Création d'un masque binaire strictement dédié à la tuile 'i'
-        Mat mask_tile = (index_matrix == i);
+        Mat mask_tile = (index_matrix == i); //creates a binary image showing only the pixels belonging to tile i
 
         // Contours extérieurs ET trous (RETR_CCOMP) : sans les trous, le pavage ne serait pas exact.
         vector<vector<Point>> contours;
         vector<Vec4i> hier;
-        findContours(mask_tile, contours, hier, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
+        findContours(mask_tile, contours, hier, RETR_CCOMP, CHAIN_APPROX_SIMPLE); // finds the region boundaries
 
         TileTerritory territory;
         territory.tileIndex = i;
@@ -177,11 +185,12 @@ vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num
     return territories;
 }
 
+//Check the polygons against the pixel map
 SeamCheck GraphCut::verifyTiling(const vector<TileTerritory>& territories, const Mat& index_matrix,
                                  const vector<Size>& tile_sizes, const vector<Point>& original_corners) const {
     SeamCheck c;
     c.fallbackPixels = fallbackPixels;
-    Mat recomposed(index_matrix.size(), CV_8U, Scalar(NO_TILE));
+    Mat recomposed(index_matrix.size(), CV_8U, Scalar(NO_TILE)); //creates a blank label map
     const Rect canvas(0, 0, index_matrix.cols, index_matrix.rows);
     for (const TileTerritory& t : territories) {
         if (t.polygons.empty()) continue;
@@ -211,7 +220,7 @@ SeamCheck GraphCut::verifyTiling(const vector<TileTerritory>& territories, const
     Mat diff;
     compare(recomposed, index_matrix, diff, CMP_NE);
     c.differentPixels = countNonZero(diff);
-    c.exactTiling = c.differentPixels == 0;
+    c.exactTiling = c.differentPixels == 0; //only reports whether reconstruction matches the ownership map
 
     Mat covered = Mat::zeros(index_matrix.size(), CV_8U);
     for (size_t i = 0; i < tile_sizes.size(); ++i)
