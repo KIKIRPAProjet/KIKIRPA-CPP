@@ -7,7 +7,7 @@
 #include <cmath>
 #include <iostream>
 
-// Vérification d'une translation connue avec un vrai modèle ONNX ; aucun fichier image écrit.
+// Vérification d'une translation connue avec un vrai modèle ONNX ; images temporaires supprimées en fin de test.
 int main(int argc, char** argv) {
     if (argc != 2) {
         std::cerr << "Usage: test_lightglue_model <model.onnx>\n";
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
         ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
     } cleanup{dir};
     stitching::DataStore data;
-    stitching::steps::LightGlueStep step({argv[1]});
+    stitching::steps::LightGlueStep step({argv[1], 4, 205.f / 333.f});
     step.setDataStore(data);
     for (int depth : {CV_8U, CV_16U}) {
         cv::Mat source;

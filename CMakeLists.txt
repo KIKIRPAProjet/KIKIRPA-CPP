@@ -29,6 +29,7 @@ target_link_libraries(stitching_backend PUBLIC
 
 # Algorithmes (LightGlue/ONNX Runtime, tests) : voir cmake/algorithms.cmake
 include(cmake/algorithms.cmake)
+include(cmake/lightglue-tests.cmake)
 
 
 # --- Frontend ---

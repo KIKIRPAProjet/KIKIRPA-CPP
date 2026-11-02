@@ -3,6 +3,7 @@
 #include "core/Config.h"
 #include "steps/GraphCutStep.h"
 #include "steps/ImportStep.h"
+#include "steps/LightGlueStep.h"
 #include "steps/PhaseCorrelationStep.h"
 #include <fstream>
 #include <functional>
@@ -18,6 +19,7 @@ using StepCreator = std::function<std::unique_ptr<Step>()>;
 // Une ligne par step. Le nom doit être celui que le step écrit dans sa config (cfg.name).
 const std::map<std::string, StepCreator>& registry() {
     static const std::map<std::string, StepCreator> r = {
+        {"lightglue", [] { return std::make_unique<steps::LightGlueStep>(); }},
         {"import", [] { return std::make_unique<steps::ImportStep>(); }},
         {"phase-correlation", [] { return std::make_unique<steps::PhaseCorrelationStep>(); }},
         {"graphcut", [] { return std::make_unique<steps::GraphCutStep>(); }},

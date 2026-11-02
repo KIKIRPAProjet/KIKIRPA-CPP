@@ -68,7 +68,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = registeredSteps();
-    verifier(noms.size() == 3, "3 steps enregistrés");
+    verifier(noms.size() == 4, "4 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = createStep(nom);
         verifier(step && step->getConfig().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -113,7 +113,7 @@ void testerValidation() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == steps::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfig().at("options").size() == 6, "phase-correlation garde ses 6 options");
+    verifier(p.getSteps()[1]->getConfig().at("options").size() == 12, "phase-correlation garde ses 12 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const Pipeline copie = buildPipeline(p.exportConfig());
