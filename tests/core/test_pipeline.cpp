@@ -1,16 +1,15 @@
 // test_pipeline.cpp
 // Construction et exécution d'un pipeline à partir du script JSON (core/PipelineBuilder, Step::importConfig).
 //
-//   test_pipeline
-//       Registre des steps, validation du JSON (options, types, enchaînement des entrées), aller-retour
-//       exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
-//       phase-correlation sur deux tuiles 16 bits découpées à une position entière connue.
-//       Code de retour 0 si tous les tests passent.
+// GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
+// aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
+// phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
 #include "core/PipelineBuilder.h"
 #include "core/Config.h"
 #include "core/Tuile.h"
 #include "steps/ImportStep.h"
+#include <gtest/gtest.h>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
@@ -29,11 +28,9 @@ constexpr int    DECALAGE_B     = 320;    // px : coin de B dans A (recouvrement
 constexpr double SIGMA_TEXTURE  = 2.0;    // flou de la texture aléatoire
 constexpr double TOLERANCE      = 0.05;   // px
 
-int nbEchecs = 0;
-
+// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
-    std::cout << (ok ? "  OK    " : "  ECHEC ") << message << '\n';
-    if (!ok) ++nbEchecs;
+    EXPECT_TRUE(ok) << message;
 }
 
 // Vrai si `f` lève std::invalid_argument dont le message contient `extrait`
@@ -220,20 +217,11 @@ void testerRepriseReelle() {
     fs::remove_all(dossier);
 }
 
-} // namespace stitching::tests
+// Une exception inattendue fait échouer le test : GoogleTest l'attrape et affiche son message
+TEST(PipelineBuilder, Registre) { testerRegistre(); }
+TEST(PipelineBuilder, Validation) { testerValidation(); }
+TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
+TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
+TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
-int main() {
-    using namespace stitching::tests;
-    try {
-        testerRegistre();
-        testerValidation();
-        testerExceptionDansUnStep();
-        testerPipelineReel();
-        testerRepriseReelle();
-    } catch (const std::exception& e) {
-        std::cout << "  ECHEC exception inattendue : " << e.what() << '\n';
-        ++nbEchecs;
-    }
-    std::cout << (nbEchecs == 0 ? "Tous les tests passent\n" : std::to_string(nbEchecs) + " test(s) en échec\n");
-    return nbEchecs == 0 ? 0 : 1;
-}
+} // namespace stitching::tests

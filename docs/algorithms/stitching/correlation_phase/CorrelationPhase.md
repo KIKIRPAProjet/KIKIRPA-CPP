@@ -335,7 +335,7 @@ La marge de la deuxième passe (±4 px autour de la position de la première) es
 
 ## 7. Comment vérifier
 
-Les points 2 et 3 sont automatisés dans `tests/test_correlation_phase.cpp` (cible `test_correlation_phase`, lancée par `ctest`) ; le point 1 par `tests/comparer_python.py`. Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
+Les points 2 et 3 sont automatisés dans `tests/correlation_phase/test_correlation_phase.cpp` (GoogleTest, lancé par `ctest`, sur une texture générée) ; le point 1 par `tests/comparer_python.py`. Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
 
 1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(out.y, out.x)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Les deux versions ne font pas le même sous-pixel (parabole sur la surface lissée en Python, DFT sur la surface brute ici) : des écarts de quelques dixièmes de pixel sont normaux, pas des écarts de plusieurs pixels.
 2. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsA[i] − pointsB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.

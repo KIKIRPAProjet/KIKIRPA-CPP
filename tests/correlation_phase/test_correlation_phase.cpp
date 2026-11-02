@@ -1,28 +1,19 @@
 // test_correlation_phase.cpp
-// Vérification de CorrelationPhase (voir docs/CorrelationPhase.md §7).
+// Vérification de CorrelationPhase (voir docs/algorithms/stitching/correlation_phase/CorrelationPhase.md §7).
 //
-//   test_correlation_phase [image ...]
-//       Tests à vérité exacte : deux tuiles découpées dans une image source à des positions non entières
-//       connues, dans les 4 directions, puis les deux passes (recouvrement réel différent du nominal,
-//       première passe faite par le pipeline : EstimationRecouvrement) et les cas limites. Sans argument, la source est une texture
-//       générée ; sinon, chaque image donnée sert de source (ex. NOM_0001_full.tif, une tuile réelle).
-//       Code de retour 0 si tous les tests passent.
-//
-//   test_correlation_phase --paire A.tif B.tif position [recouvrement]
-//       Mesure une paire réelle (paramètres par défaut) et écrit le résultat en JSON sur une ligne
-//       (comparaison avec le Python).
-//       position : bas, haut, droite, gauche (où est B par rapport à A, comme mesurer_decalage).
+// Tests à vérité exacte (GoogleTest, ctest -L unit) : deux tuiles découpées dans une texture générée à des
+// positions non entières connues, dans les 4 directions, puis les deux passes (recouvrement réel différent du
+// nominal, première passe faite par le pipeline : EstimationRecouvrement) et les cas limites.
 
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
 #include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
-#include <opencv2/imgcodecs.hpp>
+#include <gtest/gtest.h>
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <iostream>
-#include <map>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -47,11 +38,9 @@ const cv::Point2d ERREUR_PIPELINE(2, -2);       // px : translation du pipeline 
 const cv::Point2d ERREUR_HORS_MARGE(0, 10);     // px : translation du pipeline trop fausse pour la deuxième passe
 const cv::Point2d SANS_RECOUVREMENT(0, 2000);   // px : B placée hors de A
 
-int nbEchecs = 0;
-
+// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool condition, const std::string& message) {
-    std::cout << (condition ? "  [ok]    " : "  [ECHEC] ") << message << '\n';
-    if (!condition) ++nbEchecs;
+    EXPECT_TRUE(condition) << message;
 }
 
 std::string format(const char* modele, double a, double b = 0, double c = 0, double d = 0) {
@@ -364,62 +353,8 @@ void testerCasLimites(const cv::Mat& source) {
              format("motif de période 75 px, vérité (5, 820) : dx = %.2f, dy = %.2f", m.dx, m.dy));
 }
 
-// Mode --paire : mesure une paire réelle, résultat en JSON sur une ligne
-int mesurerPaire(const std::string& cheminA, const std::string& cheminB, const std::string& position, double recouvrement) {
-    const std::map<std::string, Direction> directions = {
-        {"bas", Direction::Bottom}, {"haut", Direction::Top}, {"droite", Direction::Right}, {"gauche", Direction::Left}};
-    if (!directions.count(position)) {
-        std::cerr << "position inconnue : " << position << " (bas, haut, droite, gauche)\n";
-        return 2;
-    }
-    const cv::Mat A = cv::imread(cheminA, cv::IMREAD_UNCHANGED), B = cv::imread(cheminB, cv::IMREAD_UNCHANGED);
-    if (A.empty() || B.empty()) {
-        std::cerr << "lecture impossible : " << (A.empty() ? cheminA : cheminB) << '\n';
-        return 2;
-    }
-    CorrelationPhase cp;
-    Matches m;
-    const auto debut = std::chrono::steady_clock::now();
-    const bool ok = cp.match(A, B, {directions.at(position), static_cast<float>(recouvrement)}, m);
-    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - debut).count();
-
-    // Cohérence des points avec la translation globale (déformation locale, mauvais points)
-    const auto ecarts = ecartsPoints(m, {m.dx, m.dy});
-    Json sortie = {{"ok", ok}, {"erreur", cp.raisonEchec()}, {"dx", m.dx}, {"dy", m.dy}, {"nb_points", m.pointsA.size()}, {"ms", ms},
-                   {"ecart_points_median", ecarts.empty() ? Json() : Json(mediane(ecarts))},
-                   {"ecart_points_max", ecarts.empty() ? Json() : Json(*std::max_element(ecarts.begin(), ecarts.end()))}};
-    std::cout << sortie.dump() << '\n';
-    return 0;
-}
+TEST(CorrelationPhase, QuatreDirections) { testerDirections("texture générée", textureGeneree({2400, 2400}, 1)); }
+TEST(CorrelationPhase, DeuxPasses) { testerDeuxPasses(textureGeneree({2400, 2400}, 3)); }
+TEST(CorrelationPhase, CasLimites) { testerCasLimites(textureGeneree({2400, 2400}, 2)); }
 
 } // namespace stitching::tests
-
-int main(int argc, char** argv) {
-    using namespace stitching::tests;
-    const std::vector<std::string> args(argv + 1, argv + argc);
-    if (!args.empty() && args[0] == "--paire") {
-        if (args.size() < 4) {
-            std::cerr << "usage : test_correlation_phase --paire A.tif B.tif position [recouvrement]\n";
-            return 2;
-        }
-        return mesurerPaire(args[1], args[2], args[3], args.size() > 4 ? std::stod(args[4]) : RECOUVREMENT);
-    }
-
-    std::vector<std::pair<std::string, cv::Mat>> sources;
-    if (args.empty()) sources.emplace_back("texture générée", textureGeneree({2400, 2400}, 1));
-    for (const auto& chemin : args) {
-        const cv::Mat image = cv::imread(chemin, cv::IMREAD_UNCHANGED);
-        if (image.empty()) {
-            std::cerr << "lecture impossible : " << chemin << '\n';
-            return 2;
-        }
-        sources.emplace_back(chemin, image);
-    }
-
-    for (const auto& [nom, source] : sources) testerDirections(nom, source);
-    testerDeuxPasses(textureGeneree({2400, 2400}, 3));
-    testerCasLimites(textureGeneree({2400, 2400}, 2));
-
-    std::cout << '\n' << (nbEchecs == 0 ? "Tous les tests passent." : std::to_string(nbEchecs) + " échec(s).") << '\n';
-    return nbEchecs == 0 ? 0 : 1;
-}
