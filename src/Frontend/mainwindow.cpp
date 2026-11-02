@@ -971,7 +971,7 @@ void MainWindow::createProject()
     initializeGridFromPaths();
 
     pages->setCurrentWidget(workspace);
-    setMode(1);
+    setMode(0);
     refreshProjectInfo();
     if (tilePaths.isEmpty()) {
         updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
@@ -2083,7 +2083,7 @@ bool MainWindow::loadProjectFromPath(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     pages->setCurrentWidget(workspace);
-    setMode(project.value(QStringLiteral("mode")).toInt(4));
+    setMode(0);
     rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
     return true;
