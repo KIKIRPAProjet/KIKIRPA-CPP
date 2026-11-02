@@ -21,7 +21,7 @@ class GraphCutStep : public Step {
     GraphCutInput input;
     GraphCutOutput output;
 public:
-    GraphCutStep(const GraphCutInput& input);
+    explicit GraphCutStep(const GraphCutInput& input = {});
     virtual bool execute() override;
     const GraphCutOutput& getOutput() const {
         return output;
