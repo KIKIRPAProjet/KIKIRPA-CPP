@@ -69,7 +69,7 @@ Exemple d'objet décrivant uniquement cette étape :
 }
 ```
 
-Cet objet peut configurer un `LightGlueStep` déjà construit. Le lanceur ci-dessous reçoit des arguments ; il ne charge pas un script JSON.
+Cet objet peut configurer un `LightGlueStep` déjà construit via `importConfig()`.
 
 ## Utilisation C++
 
@@ -92,7 +92,7 @@ if (!pipeline.run()) {
 }
 ```
 
-Le parcours de validation import -> LightGlue est défini dans `tests/steps/LightGlueTestPipeline.h` et utilisé par les tests et leur lanceur. Il ne fait pas partie de l'API du builder applicatif `buildPipeline(settings, a, b)`, dont l'implémentation initiale reste à compléter séparément.
+Le parcours de validation import -> LightGlue est défini dans `tests/steps/LightGlueTestPipeline.h` et utilisé par les tests automatisés. Il ne fait pas partie de l'API du builder applicatif `buildPipeline(settings, a, b)`, dont l'implémentation initiale reste à compléter séparément.
 
 ## Gestion des erreurs
 
@@ -110,7 +110,7 @@ Prérequis : C++17, CMake, OpenCV (core/imgproc/imgcodecs et dnn pour LightGlue)
 
 ```bash
 cmake -S . -B build/lightglue-step -DBUILD_TESTING=ON -DFETCHCONTENT_FULLY_DISCONNECTED=ON
-cmake --build build/lightglue-step --target stitching_lightglue test_lightglue_step --parallel
+cmake --build build/lightglue-step --target test_lightglue_step --parallel
 ctest --test-dir build/lightglue-step -R '^lightglue_step$' --output-on-failure
 ```
 
@@ -131,22 +131,6 @@ ctest --test-dir build/lightglue-step --output-on-failure
 CMake garde le step compilable sans ONNX, mais son exécution réelle échoue alors explicitement. Le test d'orchestration injecte un matcher contrôlé et ne nécessite pas ONNX. Il nécessite néanmoins OpenCV réel pour sa compilation et son intégration TIFF.
 
 `lightglue_model` n'est enregistré dans CTest que si LightGlue est disponible et `LIGHTGLUE_TEST_MODEL` est fourni. Il vérifie une translation synthétique de 128 px en 8 et 16 bits, avec des dimensions non multiples de 32 et au moins 80 % des correspondances géométriquement cohérentes. Sans modèle, ce test n'a pas été exécuté ; il ne doit pas être présenté comme réussi.
-
-## Exécution
-
-Le lanceur manuel se trouve dans `tests/steps/run_lightglue_pipeline.cpp`. Sa cible `stitching_lightglue` est construite uniquement avec `BUILD_TESTING=ON` et nécessite un modèle réel ; elle n'est pas lancée automatiquement par CTest.
-
-```bash
-./build/lightglue-step/stitching_lightglue "/chemin/images" "/chemin/modele.onnx"
-```
-
-Par défaut : fichiers `img_C00_R00.tif`, `img_C01_R00.tif`, etc. Un troisième argument permet de remplacer la regex (captures colonne puis ligne) :
-
-```bash
-./build/lightglue-step/stitching_lightglue "/chemin/images" "/chemin/modele.onnx" 'tile_c(\d+)_r(\d+)\.tif'
-```
-
-Codes de sortie : 0 succès, 1 erreur de traitement, 2 arguments incorrects. Le programme affiche un résumé des correspondances ; il n'écrit pas de mosaïque.
 
 ## Limites
 

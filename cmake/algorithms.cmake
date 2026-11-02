@@ -36,8 +36,6 @@ endif()
 # Tests des algorithmes : ctest après la compilation
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(stitching_lightglue "${CMAKE_CURRENT_SOURCE_DIR}/tests/steps/run_lightglue_pipeline.cpp")
-  target_link_libraries(stitching_lightglue PRIVATE stitching_backend)
   add_executable(test_lightglue_step "${CMAKE_CURRENT_SOURCE_DIR}/tests/steps/test_lightglue_step.cpp")
   target_link_libraries(test_lightglue_step PRIVATE stitching_backend)
   add_test(NAME lightglue_step COMMAND test_lightglue_step)
