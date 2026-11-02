@@ -27,7 +27,7 @@
 ## 2. Le banc
 
 ```
-etude_confiance [resultats.csv]      tests/algorithms/stitching/correlation_phase/etude_confiance.cpp
+etude_confiance [resultats.csv]      tests/correlation_phase/etude_confiance.cpp
 ```
 
 Compilé avec les tests, mais pas lancé par `ctest` (~35 s en Release). **Reproductible** : les graines sont fixes, donc deux exécutions donnent une sortie identique, ce qui a été vérifié.

@@ -14,7 +14,7 @@ src/Backend/algorithms/egalisation/
 ├── Preparation.cpp
 ├── Algorithme.cpp
 └── Sortie.cpp
-tests/algorithms/egalisation/test_egalisation.cpp
+tests/egalisation/test_egalisation.cpp
 ```
 
 Seule dépendance : **OpenCV** (`core`, `imgproc`).
@@ -153,7 +153,7 @@ Mesuré sur les luminances réduites, en % (plus petit = mieux) :
 
 ## 6. Vérification
 
-`test_egalisation` (lancé par `ctest`) découpe 6 tuiles (grille 2 × 3, recouvrement de 17 %, décalages perpendiculaires aléatoires, une tuile plus haute de 50 px) dans une texture générée, applique des gains et un champ connus (c = −0,12), en 8 et 16 bits mélangés, en gris puis en couleur. Il vérifie :
+`tests/egalisation/test_egalisation.cpp` (GoogleTest, lancé par `ctest`) découpe 6 tuiles (grille 2 × 3, recouvrement de 17 %, décalages perpendiculaires aléatoires, une tuile plus haute de 50 px) dans une texture générée, applique des gains et un champ connus (c = −0,12), en 8 et 16 bits mélangés, en gris puis en couleur. Il vérifie :
 
 - les gains B à 1 % de la vérité, les gains A à 3 %, et c à 0,005 près ;
 - l'écart moyen dans les recouvrements : avant > A > B, et B < 0,5 % ;
