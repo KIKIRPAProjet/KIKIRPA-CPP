@@ -26,6 +26,8 @@ class ImportStep : public Step {
 public:
     explicit ImportStep(const ImportInput& input = {});
     bool execute() override;
+    // Nom, taille et date des fichiers source : une image ajoutée, retirée ou modifiée périme le checkpoint
+    Json inputFingerprint() const override;
     const ImportOutput& getOutput() const { return output; }
 };
 

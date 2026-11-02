@@ -19,6 +19,27 @@ ImportStep::ImportStep(const ImportInput& input) {
     config = cfg;
 }
 
+Json ImportStep::inputFingerprint() const {
+    // Nom, taille et date de modification des fichiers du dossier qui correspondent au format, triés par nom
+    // (l'ordre de parcours du dossier n'est pas garanti). Dossier ou format invalide : null, execute() échouera.
+    try {
+        const fs::path dir = option("path").get<std::string>();
+        const std::regex format(option("format").get<std::string>(), std::regex::icase);
+        std::map<std::string, Json> fichiers;
+        for (const auto& entry : fs::directory_iterator(dir)) {
+            const std::string name = entry.path().filename().string();
+            if (!entry.is_regular_file() || !std::regex_match(name, format)) continue;
+            fichiers[name] = {static_cast<long long>(entry.file_size()),
+                              static_cast<long long>(entry.last_write_time().time_since_epoch().count())};
+        }
+        Json empreinte = Json::array();
+        for (const auto& [name, tailleDate] : fichiers) empreinte.push_back({name, tailleDate[0], tailleDate[1]});
+        return empreinte;
+    } catch (const std::exception&) {
+        return Json();
+    }
+}
+
 bool ImportStep::execute() {
     output.tiles.clear();
     outputData = Json::object();
