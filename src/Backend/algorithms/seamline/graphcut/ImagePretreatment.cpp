@@ -29,7 +29,7 @@ Mat ImagePretreatment::read16(const string& path) {
     return out; // result = image in a consistent format for later
 }
 
-Mat ImagePretreatment::readSmallFloat(const string& path, double scale) { // create a dmaller image for calculation
+Mat ImagePretreatment::readSmallFloat(const string& path, double scale) { // create a smaller image for calculation
     Mat img = read16(path);
     if (img.empty()) return img;
     Mat small16 = img;
