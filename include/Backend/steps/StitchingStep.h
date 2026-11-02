@@ -16,7 +16,7 @@ struct StitchingInput {
 // name : "stitching"
 // options : matcher (string), rejector (string), level (int), ratio (float), threshold (float)
 // pipelineOptions : { "type": "Tiles", "key": "tiles" }
-// signature : { "type": "Alignments", "key": "alignments" }
+// signature : Matches -> "matches", Alignments -> "alignments"
 class StitchingStep : public Step {
 public:
     explicit StitchingStep(const StitchingInput& input = {});
