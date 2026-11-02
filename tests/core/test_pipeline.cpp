@@ -130,13 +130,11 @@ void testerExceptionDansUnStep() {
     verifier(message.find("boum") != std::string::npos, "le message de l'exception est transmis au journal");
 }
 
-void testerPipelineReel() {
-    std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
+// Deux tuiles 16 bits img_C00_R00.tif et img_C01_R00.tif découpées dans une texture aléatoire floutée,
+// B à DECALAGE_B px à droite de A : vérité exacte
+void creerTuiles(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
-
-    // Texture aléatoire floutée, découpée à deux positions entières : vérité exacte
     cv::Mat source(HAUTEUR_TUILE, DECALAGE_B + LARGEUR_TUILE, CV_32F);
     cv::RNG rng(12345);
     rng.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
@@ -146,9 +144,19 @@ void testerPipelineReel() {
     source.convertTo(source16, CV_16U);
     cv::imwrite((dossier / "img_C00_R00.tif").string(), source16(cv::Rect(0, 0, LARGEUR_TUILE, HAUTEUR_TUILE)));
     cv::imwrite((dossier / "img_C01_R00.tif").string(), source16(cv::Rect(DECALAGE_B, 0, LARGEUR_TUILE, HAUTEUR_TUILE)));
+}
 
-    Pipeline p = buildPipeline(script({etape("import", {{{"type", "string"}, {"key", "path"}, {"value", dossier.string()}}}),
-                                       etape("phase-correlation")}));
+Json scriptReel(const fs::path& dossier) {
+    return script({etape("import", {{{"type", "string"}, {"key", "path"}, {"value", dossier.string()}}}),
+                   etape("phase-correlation")});
+}
+
+void testerPipelineReel() {
+    std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
+    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
+    creerTuiles(dossier);
+
+    Pipeline p = buildPipeline(scriptReel(dossier));
     std::string journal;
     const bool ok = p.run([&](const std::string& m) { journal += "        " + m + "\n"; });
     verifier(ok, "run() réussit");
@@ -172,6 +180,46 @@ void testerPipelineReel() {
     fs::remove_all(dossier);
 }
 
+void testerRepriseReelle() {
+    std::cout << "Reprise du pipeline réel sur checkpoints\n";
+    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
+    const fs::path checkpoints = dossier / "checkpoints";
+    creerTuiles(dossier);
+
+    Pipeline p = buildPipeline(scriptReel(dossier));
+    RunState r;
+    r.checkpointDir = checkpoints.string();
+    p.setRunState(r);
+    std::string journal;
+    const auto log = [&](const std::string& m) { journal += m + "\n"; };
+    verifier(p.run(log), "run 1 réussi");
+    verifier(fs::exists(checkpoints / "00_import" / "tiles.json") && fs::exists(checkpoints / "01_phase-correlation" / "matches.json"),
+             "sorties des deux steps écrites");
+    const float dx1 = p.getData().get<std::vector<PairMatches>>("matches").at(0).matches.dx;
+
+    journal.clear();
+    verifier(p.run(log), "run 2 réussi");
+    verifier(journal.find("nothing to do") != std::string::npos, "run 2 : aucun step refait");
+    const auto& tuiles = p.getData().get<Tiles>("tiles");
+    verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get() && tuiles[1]->getLeft() == tuiles[0].get(),
+             "tuiles et voisins restaurés");
+    const auto& paires = p.getData().get<std::vector<PairMatches>>("matches");
+    verifier(paires.size() == 1 && paires[0].matches.dx == dx1 && paires[0].dir == Direction::Right,
+             "matches restaurés à l'identique");
+
+    // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
+    {
+        cv::Mat a = cv::imread((dossier / "img_C00_R00.tif").string(), cv::IMREAD_UNCHANGED);
+        a(cv::Rect(0, 0, 10, 10)).setTo(cv::Scalar(1000));
+        cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
+    }
+    journal.clear();
+    verifier(p.run(log), "run 3 réussi");
+    verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
+             "image modifiée : import et appariement refaits");
+    fs::remove_all(dossier);
+}
+
 } // namespace stitching::tests
 
 int main() {
@@ -181,6 +229,7 @@ int main() {
         testerValidation();
         testerExceptionDansUnStep();
         testerPipelineReel();
+        testerRepriseReelle();
     } catch (const std::exception& e) {
         std::cout << "  ECHEC exception inattendue : " << e.what() << '\n';
         ++nbEchecs;

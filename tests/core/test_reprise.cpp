@@ -8,8 +8,11 @@
 //       après chaque step, lecture du champ "run". Code de retour 0 si tous les tests passent.
 
 #include "core/Checkpoint.h"
+#include "core/CheckpointTypes.h"
 #include "core/Config.h"
 #include "core/Pipeline.h"
+#include "core/Tuile.h"
+#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -207,6 +210,62 @@ void testerScript(const fs::path& dossier) {
     verifier(leve, "skip non booléen refusé");
 }
 
+// Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
+void testerTypesDuPipeline(const fs::path& dossier) {
+    std::cout << "Sérialisation des types du pipeline\n";
+    fs::remove_all(dossier);
+    fs::create_directories(dossier);
+    const auto types = pipelineTypes();
+    verifier(types.size() == 4 && Checkpoint::hasType("Tiles") && Checkpoint::hasType("PairMatches") &&
+                 Checkpoint::hasType("Positions") && Checkpoint::hasType("Territories"),
+             "4 types déclarés d'office");
+
+    DataStore avant, apres;
+    auto t0 = std::make_shared<Tuile>(0, "a.tif", "", 400, 300, CV_16UC3);
+    auto t1 = std::make_shared<Tuile>(1, "b.tif", "", 400, 300, CV_16UC3);
+    t0->setVoisins(nullptr, t1.get(), nullptr, nullptr);
+    t1->setVoisins(t0.get(), nullptr, nullptr, nullptr);
+    avant.set("tiles", Tiles{t0, t1});
+    PairMatches pm{0, 1, Direction::Bottom, {}};
+    pm.matches.pointsA = {{1.25f, 2.5f}};
+    pm.matches.pointsB = {{3.125f, 4.f}};
+    pm.matches.scores = {0.75f};
+    pm.matches.dx = 319.875f;
+    pm.matches.dy = -0.03125f;
+    avant.set("matches", std::vector<PairMatches>{pm});
+    avant.set("positions", std::vector<TilePositionData>{{"r00_c01", {320.123456789, -0.5}, 0.001}});
+    Seamline::TileTerritory terr;
+    terr.tile_index = 1;
+    terr.polygons = {{{0, 0}, {10, 0}, {10, 10}}};
+    terr.holes = {{{{2, 2}, {3, 2}, {3, 3}}}};
+    avant.set("territories", std::vector<Seamline::TileTerritory>{terr});
+
+    const std::pair<const char*, const char*> cles[] = {
+        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"}};
+    for (const auto& [type, cle] : cles) {
+        types.at(type).first(avant, cle, dossier);
+        types.at(type).second(apres, cle, dossier);
+    }
+
+    const auto& tuiles = apres.get<Tiles>("tiles");
+    verifier(tuiles.size() == 2 && tuiles[0]->getSource() == "a.tif" && tuiles[0]->getType() == CV_16UC3 &&
+                 tuiles[0]->getNiveau(0).largeur == 400 && tuiles[0]->getRight() == tuiles[1].get() &&
+                 tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
+             "Tiles : fiches et voisins");
+    const auto& m = apres.get<std::vector<PairMatches>>("matches");
+    verifier(m.size() == 1 && m[0].dir == Direction::Bottom && m[0].matches.dx == pm.matches.dx &&
+                 m[0].matches.dy == pm.matches.dy && m[0].matches.pointsA == pm.matches.pointsA &&
+                 m[0].matches.pointsB == pm.matches.pointsB && m[0].matches.scores == pm.matches.scores,
+             "PairMatches : valeurs exactes");
+    const auto& pos = apres.get<std::vector<TilePositionData>>("positions");
+    verifier(pos.size() == 1 && pos[0].tile_id == "r00_c01" && pos[0].position == cv::Point2d(320.123456789, -0.5) &&
+                 pos[0].rotation == 0.001,
+             "Positions : valeurs exactes");
+    const auto& tr = apres.get<std::vector<Seamline::TileTerritory>>("territories");
+    verifier(tr.size() == 1 && tr[0].tile_index == 1 && tr[0].polygons == terr.polygons && tr[0].holes == terr.holes,
+             "Territories : polygones et trous");
+}
+
 } // namespace stitching::tests
 
 int main() {
@@ -218,6 +277,7 @@ int main() {
         testerEchecPuisReprise(dossier);
         testerPause(dossier);
         testerScript(dossier);
+        testerTypesDuPipeline(dossier);
     } catch (const std::exception& e) {
         std::cout << "  ECHEC exception inattendue : " << e.what() << '\n';
         ++nbEchecs;

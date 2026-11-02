@@ -87,10 +87,21 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - Dès qu'un step est invalide, lui et tous les suivants sont refaits.
 - `setScriptPath()` réécrit le script complet (`pipeline` + `run`) après chaque step. La CLI l'écrit dans `<checkpoints>/run.json`.
 
-**Sérialisation des sorties.**
-- Chaque type de sortie (`Tiles`, `PairMatches`…) a sa (dé)sérialisation, déclarée par `Checkpoint::registerType`.
-- Un step dont une sortie n'en a pas est refait à chaque reprise.
-- Le journal le signale : `checkpoint incomplete`.
+**Sérialisation des sorties** (`core/CheckpointTypes.cpp`) : un fichier `<clé>.json` par sortie.
+
+| Type | Ce qui est écrit |
+|---|---|
+| `Tiles` | les fiches `Tuile` (id, chemins source et TIFF pyramidal, taille, type OpenCV, voisins). **Les pixels ne sont pas recopiés** : à la reprise, le TIFF pyramidal doit toujours exister. |
+| `PairMatches` | `idA`, `idB`, direction, points, scores, `dx`, `dy` |
+| `Positions` | `tile_id`, position, rotation |
+| `Territories` | polygones et trous de chaque tuile |
+
+- Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `Checkpoint::registerType`.
+- Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
+
+**Empreinte des entrées.**
+- `Step::inputFingerprint()` décrit ce que le step lit hors du pipeline. Elle est gardée dans le manifest.
+- `ImportStep` y met le nom, la taille et la date de chaque image source. Une image ajoutée, retirée ou modifiée périme donc le checkpoint de l'import, et toute la suite est refaite.
 
 **Pause** : `Pipeline::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
 
