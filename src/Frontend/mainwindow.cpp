@@ -1492,12 +1492,15 @@ void MainWindow::createWorkspace()
     statusLayout->addStretch();
     statusLabel = new QLabel(tr("Affichage ajusté (contraste)"));
     statusLayout->addWidget(statusLabel);
-    progressBar = new QProgressBar(status);
-    progressBar->setRange(0, 100);
-    progressBar->setFixedWidth(130);
-    progressBar->hide();
-    statusLayout->addWidget(progressBar);
     root->addWidget(status);
+
+    currentStepLabel = new QLabel(tr("Aucune étape"), statusBar());
+    progressBar = new QProgressBar(statusBar());
+    progressBar->setRange(0, 100);
+    progressBar->setValue(0);
+    progressBar->setFixedWidth(160);
+    statusBar()->addPermanentWidget(currentStepLabel);
+    statusBar()->addPermanentWidget(progressBar);
 
     pages->addWidget(workspace);
     refreshGrid();
@@ -2027,7 +2030,7 @@ bool MainWindow::loadProjectFromPath(const QString &path)
 
 void MainWindow::startRun(int firstStep)
 {
-    if (progressBar->isVisible()) {
+    if (progressRunning) {
         updateStatus(tr("Une démonstration de progression est déjà en cours."));
         return;
     }
@@ -2063,8 +2066,9 @@ void MainWindow::startRun(int firstStep)
         if (confirmation.exec() != QDialog::Accepted)
             return;
     }
+    progressRunning = true;
     progressBar->setValue(0);
-    progressBar->show();
+    currentStepLabel->setText(tr("Démonstration"));
     updateStatus(tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
     auto *timer = new QTimer(this);
     connect(timer, &QTimer::timeout, this, [this, timer, firstStep]() {
@@ -2072,7 +2076,8 @@ void MainWindow::startRun(int firstStep)
         if (progressBar->value() >= 100) {
             timer->stop();
             timer->deleteLater();
-            progressBar->hide();
+            progressRunning = false;
+            currentStepLabel->setText(tr("Terminé"));
             updateStatus(tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
                          .arg(firstStep));
         }
@@ -2086,7 +2091,8 @@ void MainWindow::startRun(int firstStep)
             connect(cancel, &QPushButton::clicked, this, [this, timer, cancel]() {
                 timer->stop();
                 timer->deleteLater();
-                progressBar->hide();
+                progressRunning = false;
+                currentStepLabel->setText(tr("Annulée"));
                 cancel->deleteLater();
                 updateStatus(tr("Démonstration annulée."));
             });
@@ -2191,6 +2197,12 @@ void MainWindow::updateStatus(const QString &message)
     if (statusLabel)
         statusLabel->setText(message);
     statusBar()->showMessage(message, 5000);
+}
+
+void MainWindow::updateProgress(const QString &stepName, int percentage)
+{
+    currentStepLabel->setText(stepName);
+    progressBar->setValue(qBound(0, percentage, 100));
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event)

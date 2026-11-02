@@ -37,6 +37,9 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override = default;
 
+public slots:
+    void updateProgress(const QString &stepName, int percentage);
+
 private:
     void keyPressEvent(QKeyEvent *event) override;
     void createHomePage();
@@ -73,6 +76,7 @@ private:
     QTableWidget *pairsTable = nullptr;
     QLabel *projectNameLabel = nullptr;
     QLabel *statusLabel = nullptr;
+    QLabel *currentStepLabel = nullptr;
     QLabel *zoomLabel = nullptr;
     QLabel *tileCountLabel = nullptr;
     QProgressBar *progressBar = nullptr;
@@ -116,6 +120,7 @@ private:
     bool panelsVisible = true;
     bool maskVisible = true;
     bool comparisonVisible = false;
+    bool progressRunning = false;
 };
 
 #endif
