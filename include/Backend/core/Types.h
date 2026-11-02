@@ -50,6 +50,14 @@ struct Matches {
     float dy = 0.f;
 };
 
+// PipelineOption "PairMatches" (clé "matches") : appariement d'une paire de tuiles voisines,
+// produit par les steps d'appariement (corrélation de phase, SIFT, LightGlue...)
+struct PairMatches {
+    int idA = 0, idB = 0;                 // Tuile::getId() de A et de B
+    Direction dir = Direction::Right;     // position de B par rapport à A (Right ou Bottom)
+    Matches matches;
+};
+
 // Sortie d'un OutlierRejector
 struct Alignment {
     cv::Mat transform;            // transformation b -> a (3x3, CV_64F)

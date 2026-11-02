@@ -9,6 +9,7 @@ namespace stitching {
 // Les noms des champs = les clés JSON.
 
 // Paramètre réglable d'un step : { "type": "int", "key": "maxPoints", "value": 5000 }
+// Types autorisés : "string", "int", "float" (nombre réel, double en C++), "bool" (voir Step::importConfig).
 struct Option {
     std::string type;
     std::string key;
