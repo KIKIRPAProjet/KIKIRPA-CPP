@@ -66,6 +66,7 @@ private:
     void showComparison();
     void showExportDialog();
     void updateStatus(const QString &message);
+    void refreshProgressVisibility();
 
     QStackedWidget *pages = nullptr;
     QWidget *workspace = nullptr;

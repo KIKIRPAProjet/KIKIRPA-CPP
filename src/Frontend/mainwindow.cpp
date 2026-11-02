@@ -771,6 +771,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     connect(pages, &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
+        refreshProgressVisibility();
     });
     menuBar()->setVisible(false);
 }
@@ -1530,6 +1531,7 @@ void MainWindow::createWorkspace()
     progressBar->setFixedWidth(160);
     statusBar()->addPermanentWidget(currentStepLabel);
     statusBar()->addPermanentWidget(progressBar);
+    refreshProgressVisibility();
 
     pages->addWidget(workspace);
     refreshGrid();
@@ -1543,6 +1545,7 @@ void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, 5);
     pages->setCurrentWidget(workspace);
+    refreshProgressVisibility();
     if (rightTabs && gridTabPage) {
         const int gridIndex = rightTabs->indexOf(gridTabPage);
         if (currentMode == 1 && gridIndex < 0) {
@@ -2133,6 +2136,7 @@ void MainWindow::startRun(int firstStep)
             return;
     }
     progressRunning = true;
+    refreshProgressVisibility();
     progressBar->setValue(0);
     currentStepLabel->setText(tr("Démonstration"));
     updateStatus(tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
@@ -2143,6 +2147,7 @@ void MainWindow::startRun(int firstStep)
             timer->stop();
             timer->deleteLater();
             progressRunning = false;
+            refreshProgressVisibility();
             currentStepLabel->setText(tr("Terminé"));
             updateStatus(tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
                          .arg(firstStep));
@@ -2158,6 +2163,7 @@ void MainWindow::startRun(int firstStep)
                 timer->stop();
                 timer->deleteLater();
                 progressRunning = false;
+                refreshProgressVisibility();
                 currentStepLabel->setText(tr("Annulée"));
                 cancel->deleteLater();
                 updateStatus(tr("Démonstration annulée."));
@@ -2263,6 +2269,16 @@ void MainWindow::updateStatus(const QString &message)
     if (statusLabel)
         statusLabel->setText(message);
     statusBar()->showMessage(message, 5000);
+}
+
+void MainWindow::refreshProgressVisibility()
+{
+    const bool visible = pages && workspace && pages->currentWidget() == workspace &&
+                         (currentMode != 0 || progressRunning);
+    if (currentStepLabel)
+        currentStepLabel->setVisible(visible);
+    if (progressBar)
+        progressBar->setVisible(visible);
 }
 
 void MainWindow::updateProgress(const QString &stepName, int percentage)
