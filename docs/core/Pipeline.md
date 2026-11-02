@@ -5,13 +5,7 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-```bash
-stitching_run examples/pipeline.json
-```
-
-La commande affiche les steps et leurs options, puis le résultat de chaque step. Elle renvoie 0 si tout a réussi.
-
-Depuis le code :
+Il n'y a pas d'exécutable en ligne de commande : le pipeline se lance depuis le code (la GUI, les tests).
 
 ```cpp
 Pipeline p = buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)
@@ -62,11 +56,13 @@ const auto& tuiles = p.getData().get<Tiles>("tiles");   // sorties des steps
 
 Code : `core/RunState.h`, `core/Checkpoint`. Test : `tests/core/test_reprise.cpp`.
 
-```bash
-stitching_run pipeline.json --checkpoints output/checkpoints   # 1er run : échoue au step 3
-stitching_run output/checkpoints/run.json                       # reprise : steps 1 et 2 sautés
-stitching_run output/checkpoints/run.json --from phase-correlation   # refaire à partir d'un step
-stitching_run output/checkpoints/run.json --restart                  # tout refaire
+```cpp
+RunState r = p.getRunState();
+r.checkpointDir = "output/checkpoints";   // active les checkpoints et la reprise
+r.from = "phase-correlation";             // facultatif : refaire à partir de ce step
+p.setRunState(r);
+p.setScriptPath("output/checkpoints/run.json");   // script réécrit après chaque step, relu pour reprendre
+p.run(log);
 ```
 
 Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient deux sortes de valeurs.
@@ -75,7 +71,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - `status` : `idle`, `running`, `paused`, `failed` ou `completed` ;
 - `completedSteps` : les noms des steps déjà faits, dans l'ordre.
 
-**Les consignes, écrites par la CLI ou la GUI, et remises à leur défaut au démarrage :**
+**Les consignes, écrites par l'appelant (la GUI), et remises à leur défaut au démarrage :**
 - `skip` (`true` par défaut) : saute les steps déjà faits dont le checkpoint est valide ; `false` : repart de zéro ;
 - `from` : le nom du step où (re)démarrer. Il ne peut pas être après le premier step à refaire.
 
@@ -85,7 +81,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - Il y a un sous-dossier par step (`00_import/`, `01_phase-correlation/`…), avec les sorties du step et un `manifest.json` écrit en dernier.
 - Un checkpoint est valide si le manifest est complet, pour le même step, avec les mêmes options.
 - Dès qu'un step est invalide, lui et tous les suivants sont refaits.
-- `setScriptPath()` réécrit le script complet (`pipeline` + `run`) après chaque step. La CLI l'écrit dans `<checkpoints>/run.json`.
+- `setScriptPath()` réécrit le script complet (`pipeline` + `run`) après chaque step, par exemple dans `<checkpoints>/run.json`.
 
 **Sérialisation des sorties** (`core/CheckpointTypes.cpp`) : un fichier `<clé>.json` par sortie.
 

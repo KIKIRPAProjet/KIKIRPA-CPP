@@ -9,6 +9,8 @@ Application C++ de traitement et d’assemblage d’images. Le projet est en cou
 - GoogleTest pour compiler les tests (activés par défaut)
 - nlohmann-json 3 ou plus récent ; CMake le télécharge si aucun paquet compatible n’est installé
 
+**Sous Windows**, installer libTIFF, GoogleTest et Qt 6 avec vcpkg, puis compiler avec le preset `windows-msvc` : voir [docs/BUILD.md](docs/BUILD.md). Les commandes ci-dessous supposent des dépendances déjà trouvables par CMake.
+
 LightGlue est optionnel. Pour l’activer, installez ONNX Runtime ainsi que le module `dnn` d’OpenCV et indiquez son dossier d’installation avec `ONNXRUNTIME_ROOT`.
 
 ## Configurer et compiler

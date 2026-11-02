@@ -1,15 +1,14 @@
 // test_egalisation.cpp
 // Vérification de Egalisation (voir docs/algorithms/egalisation/Egalisation.md §6).
 //
-//   test_egalisation
-//       Tests à vérité exacte : 6 tuiles (grille 2 × 3) découpées dans une texture générée, à des positions
-//       connues (décalages perpendiculaires compris), puis multipliées par des gains et un champ d'éclairage
-//       connus. Tuiles 8 et 16 bits mélangées, gris puis couleur, une tuile plus haute que les autres.
-//       On vérifie les gains et le champ retrouvés, la tuile corrigée, puis les cas limites.
-//       Code de retour 0 si tous les tests passent.
+// Tests à vérité exacte (GoogleTest, ctest -L unit) : 6 tuiles (grille 2 × 3) découpées dans une texture
+// générée, à des positions connues (décalages perpendiculaires compris), puis multipliées par des gains et un
+// champ d'éclairage connus. Tuiles 8 et 16 bits mélangées, gris puis couleur, une tuile plus haute que les autres.
+// On vérifie les gains et le champ retrouvés, la tuile corrigée, puis les cas limites.
 
 #include "algorithms/egalisation/Egalisation.h"
 #include "algorithms/egalisation/Sortie.h"
+#include <gtest/gtest.h>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
 #include <cstdio>
@@ -37,11 +36,9 @@ constexpr double TOLERANCE_GAIN_A = 0.03;  // A ne modélise pas le champ : un p
 constexpr double TOLERANCE_CHAMP  = 0.005; // écart maximal de c à la vérité
 constexpr double ECART_MAX_APRES  = 0.5;   // % : écart moyen dans les recouvrements après B
 
-int nbEchecs = 0;
-
+// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool condition, const std::string& message) {
-    std::cout << (condition ? "  [ok]    " : "  [ECHEC] ") << message << '\n';
-    if (!condition) ++nbEchecs;
+    EXPECT_TRUE(condition) << message;
 }
 
 std::string format(const char* modele, double a, double b = 0, double c = 0) {
@@ -213,13 +210,8 @@ void testerCasLimites() {
     verifier(a.lum.size() == b.lum.size() && ecart < 1e-3, format("réduction depuis un niveau 1/8 : écart max %.1e", ecart));
 }
 
-} // namespace stitching::tests
+TEST(Egalisation, TuilesEnNiveauxDeGris) { testerJeu("Tuiles en niveaux de gris (8 et 16 bits)", 1); }
+TEST(Egalisation, TuilesCouleur) { testerJeu("Tuiles couleur BGR (8 et 16 bits)", 3); }
+TEST(Egalisation, CasLimites) { testerCasLimites(); }
 
-int main() {
-    using namespace stitching::tests;
-    testerJeu("Tuiles en niveaux de gris (8 et 16 bits)", 1);
-    testerJeu("Tuiles couleur BGR (8 et 16 bits)", 3);
-    testerCasLimites();
-    std::cout << '\n' << (nbEchecs == 0 ? "Tous les tests passent." : std::to_string(nbEchecs) + " échec(s).") << '\n';
-    return nbEchecs == 0 ? 0 : 1;
-}
+} // namespace stitching::tests
