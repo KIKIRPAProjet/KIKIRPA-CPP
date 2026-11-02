@@ -21,7 +21,7 @@ namespace PipelineNs {
 
         using StepCreator = std::function<std::unique_ptr<StepNs::StepClass>()>;
 
-        // Une ligne par step. Le nom doit être celui que le step écrit dans sa config (stepConfig.name).
+        // Registre des steps : une ligne par step. Le nom doit être celui que le step écrit dans sa config (stepConfig.name).
         const std::map<std::string, StepCreator>& stepRegistry() {
             static const std::map<std::string, StepCreator> registry = {
                 {"import", [] { return std::make_unique<stitching::steps::ImportStep>(); }},
@@ -31,7 +31,7 @@ namespace PipelineNs {
             return registry;
         }
 
-        // Structure générale du script : un objet avec "pipeline.steps" qui est un tableau
+        // Structure générale du script : un objet dont "pipeline.steps" est un tableau.
         void validateScriptStructure(const Json& scriptJson) {
             if (!scriptJson.is_object()) throw std::invalid_argument("pipeline script must be a JSON object");
             if (!scriptJson.contains("pipeline") || !scriptJson.at("pipeline").is_object())
@@ -40,7 +40,7 @@ namespace PipelineNs {
                 throw std::invalid_argument("field 'pipeline.steps' must be an array");
         }
 
-        // Enchaînement : chaque entrée doit avoir été produite plus tôt, avec le même type
+        // Enchaînement des steps : chaque entrée doit avoir été produite par un step précédent, avec le même type.
         void checkStepInputs(const ConfigNs::StepConfig& stepConfig, const std::string& stepPath, const std::string& stepName,
                              const std::map<std::string, std::string>& producedDataTypeByKey) {
             for (const ConfigNs::DataSlot& inputSlot : stepConfig.inputs) {
@@ -56,31 +56,36 @@ namespace PipelineNs {
 
     }
 
+    // La std::map étant triée par clé, les noms sortent par ordre alphabétique.
     std::vector<std::string> getRegisteredStepNames() {
         std::vector<std::string> stepNames;
         for (const auto& registryEntry : stepRegistry()) stepNames.push_back(registryEntry.first);
         return stepNames;
     }
 
+    // Appelle la fonction de création enregistrée pour ce nom ; le step est créé avec sa configuration par défaut.
     std::unique_ptr<StepNs::StepClass> createStep(const std::string& stepName) {
         const auto registryEntry = stepRegistry().find(stepName);
         if (registryEntry == stepRegistry().end()) throw std::invalid_argument("unknown step '" + stepName + "'");
         return registryEntry->second();
     }
 
+    // Lit les steps dans l'ordre. Pour chacun : lecture du nom, création, configuration, puis vérification que ses entrées
+    // sont produites plus haut dans le script. L'ordre compte : une entrée ne peut venir que d'un step précédent.
     PipelineClass buildPipeline(const Json& scriptJson) {
         validateScriptStructure(scriptJson);
 
         PipelineClass pipeline;
-        std::map<std::string, std::string> producedDataTypeByKey;   // clé -> type des données produites par les steps précédents
+        std::map<std::string, std::string> producedDataTypeByKey;   // clé -> type des données produites par les steps déjà lus
         const Json& stepsJson = scriptJson.at("pipeline").at("steps");
         for (size_t stepIndex = 0; stepIndex < stepsJson.size(); ++stepIndex) {
             const Json& stepJson = stepsJson.at(stepIndex);
-            const std::string stepPath = "pipeline.steps[" + std::to_string(stepIndex) + "]";
+            const std::string stepPath = "pipeline.steps[" + std::to_string(stepIndex) + "]";   // préfixe des messages d'erreur
             if (!stepJson.is_object() || !stepJson.contains("name") || !stepJson.at("name").is_string())
                 throw std::invalid_argument(stepPath + ": a step must be an object with a string 'name'");
             const std::string stepName = stepJson.at("name").get<std::string>();
 
+            // Création puis configuration du step ; toute erreur est préfixée du chemin du step dans le script.
             std::unique_ptr<StepNs::StepClass> step;
             try {
                 step = createStep(stepName);
@@ -89,6 +94,8 @@ namespace PipelineNs {
                 throw std::invalid_argument(stepPath + ": " + exception.what());
             }
 
+            // Contrôle des entrées de ce step, puis enregistrement de ses sorties pour les steps suivants.
+            // Une même clé produite deux fois garde le type du dernier producteur.
             const ConfigNs::StepConfig stepConfig = step->getConfigJson().get<ConfigNs::StepConfig>();
             checkStepInputs(stepConfig, stepPath, stepName, producedDataTypeByKey);
             for (const ConfigNs::DataSlot& outputSlot : stepConfig.outputs) producedDataTypeByKey[outputSlot.key] = outputSlot.dataType;
@@ -99,6 +106,7 @@ namespace PipelineNs {
         return pipeline;
     }
 
+    // Trois étapes : ouvrir le fichier, l'analyser en JSON, construire le pipeline. Chaque erreur nomme le fichier.
     PipelineClass buildPipelineFromFile(const std::filesystem::path& scriptFile) {
         std::ifstream input(scriptFile, std::ios::binary);
         if (!input) throw std::runtime_error("cannot open " + scriptFile.string());
@@ -111,7 +119,7 @@ namespace PipelineNs {
         try {
             return buildPipeline(scriptJson);
         } catch (const std::invalid_argument& exception) {
-            throw std::invalid_argument(scriptFile.string() + ": " + exception.what());
+            throw std::invalid_argument(scriptFile.string() + ": " + exception.what());   // indique quel fichier est en cause
         }
     }
 

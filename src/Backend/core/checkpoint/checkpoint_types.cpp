@@ -1,5 +1,5 @@
 // src/Backend/core/checkpoint/checkpoint_types.cpp
-#include "checkpoint_types.h"
+#include "core/checkpoint/checkpoint_types.h"
 
 #include "core/data/stitching_types.h"
 #include "core/data/tile.h"
@@ -24,38 +24,40 @@ namespace CheckpointNs {
 
     namespace {
 
-        // ----- Fichier JSON d'une sortie : <dossier>/<clé>.json
-
+        // Écrit `value` dans <directory>/<key>.json : une sortie du DataStoreClass = un fichier, nommé d'après sa clé.
         void writeJson(const fs::path& directory, const std::string& key, const Json& value) {
             std::ofstream output(directory / (key + ".json"), std::ios::binary);
             output << value.dump();
             if (!output) throw std::runtime_error("cannot write " + (directory / (key + ".json")).string());
         }
 
+        // Lit <directory>/<key>.json. Lève std::runtime_error s'il est absent.
         Json readJson(const fs::path& directory, const std::string& key) {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
             if (!input) throw std::runtime_error("missing " + (directory / (key + ".json")).string());
             return Json::parse(input);
         }
 
-        // ----- Briques communes
-
+        // Un point devient le tableau JSON [x, y].
         Json point(const cv::Point2f& coordinates) { return {coordinates.x, coordinates.y}; }
         Json point(const cv::Point2d& coordinates) { return {coordinates.x, coordinates.y}; }
         Json point(const cv::Point& coordinates) { return {coordinates.x, coordinates.y}; }
 
+        // Une ligne brisée devient un tableau de points.
         Json polyline(const std::vector<cv::Point>& vertices) {
             Json verticesJson = Json::array();
             for (const auto& vertex : vertices) verticesJson.push_back(point(vertex));
             return verticesJson;
         }
 
+        // Inverse de polyline.
         std::vector<cv::Point> readPolyline(const Json& verticesJson) {
             std::vector<cv::Point> vertices;
             for (const Json& vertexJson : verticesJson) vertices.emplace_back(vertexJson.at(0).get<int>(), vertexJson.at(1).get<int>());
             return vertices;
         }
 
+        // Direction -> texte du JSON.
         const char* directionName(DataNs::Direction direction) {
             switch (direction) {
             case DataNs::Direction::Top: return "top";
@@ -66,6 +68,7 @@ namespace CheckpointNs {
             return "right";
         }
 
+        // Texte du JSON -> Direction. Lève std::runtime_error pour un texte inconnu.
         DataNs::Direction readDirection(const std::string& name) {
             if (name == "top") return DataNs::Direction::Top;
             if (name == "bottom") return DataNs::Direction::Bottom;
@@ -74,10 +77,12 @@ namespace CheckpointNs {
             throw std::runtime_error("unknown direction '" + name + "'");
         }
 
-        // ----- "Tiles" : fiches seulement. Les voisins sont écrits par identifiant (-1 : pas de voisin).
-
+        // Identifiant d'une voisine pour le JSON, ou -1 si elle n'existe pas.
         int neighbourId(const DataNs::TileClass* neighbour) { return neighbour ? neighbour->getId() : -1; }
 
+        // Sauvegarde du type "Tiles" (TileList), une entrée par tuile : { id, source, tiff, width, height, type, left, right, top, bottom }.
+        // Seules les fiches sont écrites, jamais les pixels. width/height sont ceux de la pleine résolution (les autres
+        // niveaux se recalculent au chargement) ; les voisines sont écrites par identifiant.
         void saveTiles(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json tilesJson = Json::array();
             for (const auto& tile : dataStore.get<DataNs::TileList>(key)) {
@@ -90,19 +95,22 @@ namespace CheckpointNs {
             writeJson(directory, key, tilesJson);
         }
 
+        // Chargement du type "Tiles". Deux passes : création de toutes les tuiles, puis liaison des voisines (qui peuvent venir
+        // après dans la liste).
         void loadTiles(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             const Json tilesJson = readJson(directory, key);
             DataNs::TileList tiles;
             std::map<int, DataNs::TileClass*> tileById;
             for (const Json& tileJson : tilesJson) {
                 const fs::path tiffPath = fs::u8path(tileJson.at("tiff").get<std::string>());
-                // Le checkpoint ne recopie pas les pixels : le TIFF pyramidal doit toujours exister
+                // Les pixels ne sont pas recopiés dans le checkpoint : le TIFF pyramidal doit toujours exister.
                 if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + tiffPath.string());
                 tiles.push_back(std::make_shared<DataNs::TileClass>(tileJson.at("id").get<int>(), fs::u8path(tileJson.at("source").get<std::string>()),
                                                                     tiffPath, tileJson.at("width").get<int>(), tileJson.at("height").get<int>(),
                                                                     tileJson.at("type").get<int>()));
                 tileById[tiles.back()->getId()] = tiles.back().get();
             }
+            // Deuxième passe : identifiant JSON -> pointeur vers la tuile (-1 ou inconnu -> pas de voisine).
             const auto findTile = [&](const Json& tileIdJson) -> DataNs::TileClass* {
                 const auto entry = tileById.find(tileIdJson.get<int>());
                 return entry == tileById.end() ? nullptr : entry->second;
@@ -114,8 +122,8 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(tiles));
         }
 
-        // ----- "PairMatches" : std::vector<PairMatches>
-
+        // Sauvegarde du type "PairMatches" (std::vector<PairMatches>), une entrée par paire : identifiants des tuiles, direction,
+        // points appariés (pointsInA[i] <-> pointsInB[i]), scores de confiance et translation estimée.
         void savePairMatches(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json pairsJson = Json::array();
             for (const DataNs::PairMatches& pair : dataStore.get<std::vector<DataNs::PairMatches>>(key)) {
@@ -129,6 +137,7 @@ namespace CheckpointNs {
             writeJson(directory, key, pairsJson);
         }
 
+        // Chargement du type "PairMatches" : relit les champs écrits par savePairMatches.
         void loadPairMatches(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             std::vector<DataNs::PairMatches> pairs;
             for (const Json& pairJson : readJson(directory, key)) {
@@ -146,8 +155,7 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(pairs));
         }
 
-        // ----- "Positions" : std::vector<TilePositionData>
-
+        // Sauvegarde du type "Positions" (std::vector<TilePositionData>), une entrée par tuile placée : { tileId, position: [x, y], rotationRadians }.
         void savePositions(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json positionsJson = Json::array();
             for (const DataNs::TilePositionData& tilePosition : dataStore.get<std::vector<DataNs::TilePositionData>>(key))
@@ -155,6 +163,7 @@ namespace CheckpointNs {
             writeJson(directory, key, positionsJson);
         }
 
+        // Chargement du type "Positions" : relit les champs écrits par savePositions.
         void loadPositions(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             std::vector<DataNs::TilePositionData> positions;
             for (const Json& positionJson : readJson(directory, key))
@@ -164,8 +173,8 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(positions));
         }
 
-        // ----- "Territories" : std::vector<Seamline::TileTerritory>
-
+        // Sauvegarde du type "Territories" (std::vector<TileTerritory>), une entrée par tuile : { tileIndex, polygons, holes }.
+        // polygons est une liste de lignes brisées ; holes[i] liste les trous du polygone i (même indexation que TileTerritory).
         void saveTerritories(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json territoriesJson = Json::array();
             for (const DataNs::TileTerritory& territory : dataStore.get<std::vector<DataNs::TileTerritory>>(key)) {
@@ -181,6 +190,7 @@ namespace CheckpointNs {
             writeJson(directory, key, territoriesJson);
         }
 
+        // Chargement du type "Territories" : relit les champs écrits par saveTerritories.
         void loadTerritories(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             std::vector<DataNs::TileTerritory> territories;
             for (const Json& territoryJson : readJson(directory, key)) {
@@ -199,6 +209,7 @@ namespace CheckpointNs {
 
     }
 
+    // Un type de donnée du pipeline -> sa paire (sauvegarde, chargement).
     std::map<std::string, std::pair<CheckpointClass::Saver, CheckpointClass::Loader>> pipelineTypes() {
         return {
             {"Tiles", {saveTiles, loadTiles}},

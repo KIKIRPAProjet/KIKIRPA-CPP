@@ -20,21 +20,25 @@ namespace PipelineNs {
 
     namespace {
 
+        // Nom du step lu dans sa config JSON ; chaîne vide si le step n'a pas de config.
         std::string stepName(const StepNs::StepClass& step) {
             return step.getConfigJson().is_object() ? step.getConfigJson().value("name", "") : "";
         }
 
+        // Envoie le message au logger s'il existe ; sinon, seuls les messages d'erreur vont sur std::cerr.
         void report(const PipelineClass::Logger& log, const std::string& message, bool isError) {
             if (log) log(message);
             else if (isError) std::cerr << message << '\n';
         }
 
         // Index du step où démarrer :
-        //  - valid = nombre de steps de tête déjà faits (run.completedSteps), de même nom, dont le checkpoint est complet
-        //    et à jour (mêmes options). Dès qu'un step est invalide, lui et tous les suivants sont à refaire ;
-        //  - run.from permet de revenir plus tôt (refaire un step), jamais d'aller au-delà de valid (données manquantes).
+        //  - validStepCount = nombre de steps de tête déjà faits (runState.completedSteps), de même nom, dont le checkpoint
+        //    est complet et à jour. Dès qu'un step est invalide, lui et tous les suivants sont à refaire ;
+        //  - startFromStep permet de revenir plus tôt (refaire un step), jamais d'aller au-delà de validStepCount
+        //    (les données des steps précédents manqueraient).
         size_t resolveStart(const std::vector<std::unique_ptr<StepNs::StepClass>>& steps, const RunState& runState,
                             const CheckpointNs::CheckpointClass& checkpoint, const PipelineClass::Logger& log) {
+            // On avance tant que le step d'index validStepCount est déjà fait ET a un checkpoint valide ; on s'arrête au premier qui ne l'est pas.
             size_t validStepCount = 0;
             while (validStepCount < runState.completedSteps.size() && validStepCount < steps.size() &&
                 runState.completedSteps[validStepCount] == stepName(*steps[validStepCount]) && checkpoint.valid(validStepCount, *steps[validStepCount]))
@@ -43,6 +47,7 @@ namespace PipelineNs {
                 report(log, "checkpoint of step " + std::to_string(validStepCount + 1) + " ('" + runState.completedSteps[validStepCount] +
                                 "') is missing or outdated: resuming from there", false);
 
+            // Sans consigne de départ, on reprend au premier step à refaire. Sinon on cherche le step demandé.
             if (runState.startFromStep.empty()) return validStepCount;
             for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
                 if (stepName(*steps[stepIndex]) != runState.startFromStep) continue;
@@ -57,6 +62,7 @@ namespace PipelineNs {
     }
 
     void PipelineClass::configure(const Json& scriptJson) {
+        // Le script doit avoir exactement autant de steps que le pipeline : configure ne crée ni ne supprime de step.
         if (!scriptJson.is_object() || !scriptJson.contains("pipeline") || !scriptJson.at("pipeline").is_object() ||
             !scriptJson.at("pipeline").contains("steps") || !scriptJson.at("pipeline").at("steps").is_array())
             throw std::invalid_argument("expected { \"pipeline\": { \"steps\": [...] } }");
@@ -74,6 +80,7 @@ namespace PipelineNs {
         if (scriptJson.contains("run")) runState = RunState::fromJson(scriptJson.at("run"));
     }
 
+    // Chaque step est converti de son JSON en StepConfig ; un step sans config (JSON non objet) donne une config vide.
     Json PipelineClass::exportConfig() const {
         ConfigNs::PipelineConfig pipelineConfig;
         for (const auto& step : steps)
@@ -81,17 +88,18 @@ namespace PipelineNs {
         return {{"pipeline", pipelineConfig}};
     }
 
+    // Le script complet = la configuration + l'état du run : c'est ce fichier qui permet de reprendre un run interrompu.
     Json PipelineClass::exportScript() const {
         Json script = exportConfig();
         script["run"] = runState;
         return script;
     }
 
-    // Écriture atomique (fichier temporaire puis rename). Un échec n'arrête pas le pipeline, il est seulement signalé.
     void PipelineClass::saveScript(const Logger& log) const {
         if (scriptPath.empty()) return;
         try {
             if (scriptPath.has_parent_path()) fs::create_directories(scriptPath.parent_path());
+            // Fichier temporaire puis renommage : le script n'est jamais écrit à moitié.
             const fs::path temporaryPath = scriptPath.string() + ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
@@ -104,6 +112,8 @@ namespace PipelineNs {
         }
     }
 
+    // Quatre phases : 1. choisir le step de départ ; 2. remettre l'état à zéro ; 3. restaurer les sorties des steps sautés ;
+    // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
     bool PipelineClass::run(const Logger& log) {
         const size_t stepCount = steps.size();
         const CheckpointNs::CheckpointClass checkpoint(runState.checkpointDirectory);
@@ -114,15 +124,15 @@ namespace PipelineNs {
         else if (!runState.startFromStep.empty()) report(log, "run.startFromStep ignored: skipCompletedSteps=false restarts from the first step", false);
         if (startIndex > 0 && startIndex < stepCount) report(log, "resuming at step " + std::to_string(startIndex + 1) + "/" + std::to_string(stepCount), false);
 
-        // 2. État propre : les checkpoints des steps à refaire sont périmés, les consignes sont consommées
+        // 2. État propre : les checkpoints des steps à refaire sont périmés, les consignes sont consommées.
         checkpoint.removeFrom(startIndex);
         runState.completedSteps.resize(startIndex);
         runState.skipCompletedSteps = true;
         runState.startFromStep.clear();
         dataStore = StepNs::DataStoreClass();
 
-        // 3. Restauration des sorties des steps sautés (dernière version de chaque clé)
-        std::map<std::string, std::pair<size_t, std::string>> latestOutputByKey;   // clé -> (step producteur, type)
+        // 3. Restauration des sorties des steps sautés : pour chaque clé, la version du dernier step qui l'a produite.
+        std::map<std::string, std::pair<size_t, std::string>> latestOutputByKey;   // clé -> (index du step producteur, type)
         for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
             for (const ConfigNs::DataSlot& outputSlot : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
                 latestOutputByKey[outputSlot.key] = {stepIndex, outputSlot.dataType};
@@ -135,7 +145,7 @@ namespace PipelineNs {
             return false;
         }
 
-        // 4. Exécution
+        // 4. Exécution des steps restants.
         runState.status = RunStatus::Running;
         saveScript(log);
         for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex) {
@@ -164,7 +174,7 @@ namespace PipelineNs {
                 return false;   // reprise possible : completedSteps et checkpoints sont à jour
             }
 
-            // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait (jamais l'inverse)
+            // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
             std::string failureReason;
             if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
                 report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);

@@ -10,9 +10,7 @@
 
 namespace DataNs {
 
-    // Position de la tuile B par rapport à la tuile A.
-    // Top/Bottom/Left/Right : corrélation de phase. LeftRight et BottomRight (anciens noms, SIFT et placement
-    // global) valent respectivement Right (B à droite de A) et Bottom (B sous A).
+    // Position de la tuile B par rapport à la tuile A. PairMatches n'utilise que Right (B à droite de A) et Bottom (B sous A).
     enum class Direction {
         Top,
         Bottom,
@@ -20,71 +18,66 @@ namespace DataNs {
         Right,
     };
 
-    // Images chargées en mémoire par un traitement ponctuel.
+    // Image d'une tuile chargée en mémoire ; gridColumn/gridRow = position dans la grille, lue dans le nom du fichier.
     struct TileImage {
         std::filesystem::path filePath;
         int gridColumn = 0;
-        int gridRow = 0;   // position dans la grille, lue dans le nom du fichier
+        int gridRow = 0;
         cv::Mat pixels;
     };
-    // Il y avait une erreur de définition (using Tiles = ... dans Tuile.h et ici) -> pense que ces deux définitions sont différentes, je les ai séparées
     using TileImages = std::vector<TileImage>;
 
-    // Contexte d'une paire de tuiles voisines, transmis aux algorithmes
+    // Contexte d'une paire de tuiles voisines, transmis aux algorithmes d'appariement.
     struct PairContext {
         Direction direction = Direction::Right;
-        float overlapFraction = 0.f;   // recouvrement (fraction de la tuile) : nominal, ou réel une fois estimé
-        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe
-        // (EstimationRecouvrement). Absent : l'algorithme part du recouvrement nominal `overlap`.
+        float overlapFraction = 0.f;   // recouvrement en fraction de la tuile : nominal, ou réel une fois estimé
+        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe (EstimationRecouvrement).
+        // Absent : l'algorithme part du recouvrement nominal overlapFraction.
         std::optional<cv::Point2d> estimatedTranslation;
     };
 
-    // Sortie de la première passe (EstimationRecouvrement), commune à toutes les méthodes d'appariement
+    // Sortie de la première passe (EstimationRecouvrement), commune à toutes les méthodes d'appariement.
     struct OverlapEstimate {
         cv::Point2d translationBInA;   // coin haut-gauche de B dans le repère de A, au pixel près
-        float overlapFraction = 0.f;       // recouvrement réel : fraction de la tuile dans le sens du déplacement
-        double peakRatio = 0.0;      // rapport pic / second pic de la mesure (confiance)
+        float overlapFraction = 0.f;   // recouvrement réel, en fraction de la tuile dans le sens du déplacement
+        double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
-    // Sortie d'un FeatureMatcher : pointsA[i] <-> pointsB[i]
-    //   dx, dy : translation estimée (coin haut-gauche de B dans le repère de A, en px : pointsA - pointsB)
-    //   scores : score de confiance de chaque paire de points (entre 0 et 1)
+    // Sortie d'un FeatureMatcher : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;
         std::vector<cv::Point2f> pointsInB;
-        std::vector<float> confidenceScores;
-        float translationX = 0.f;
-        float translationY = 0.f;
+        std::vector<float> confidenceScores;   // un score entre 0 et 1 par paire de points
+        float translationX = 0.f;              // translation estimée de B dans le repère de A, en pixels
+        float translationY = 0.f;              // (pointsInA - pointsInB)
     };
 
-    // PipelineOption "PairMatches" (clé "matches") : appariement d'une paire de tuiles voisines,
-    // produit par les steps d'appariement (corrélation de phase, SIFT, LightGlue...)
+    // Appariement d'une paire de tuiles voisines (type "PairMatches", clé "matches"),
+    // produit par les steps d'appariement (corrélation de phase, SIFT, LightGlue...).
     struct PairMatches {
-        int tileIdA = 0;
-        int tileIdB = 0;                 // Tuile::getId() de A et de B
-        Direction direction = Direction::Right;     // position de B par rapport à A (Right ou Bottom)
+        int tileIdA = 0;   // TileClass::getId() de A et de B
+        int tileIdB = 0;
+        Direction direction = Direction::Right;   // position de B par rapport à A
         Matches featureMatches;
     };
 
-    // Sortie d'un OutlierRejector
+    // Sortie d'un OutlierRejector.
     struct Alignment {
-        cv::Mat transformBToA;            // transformation b -> a (3x3, CV_64F)
-        std::vector<uchar> inlierMask;   // 1 = inlier, même taille que Matches
+        cv::Mat transformBToA;           // transformation de B vers A (3x3, CV_64F)
+        std::vector<uchar> inlierMask;   // 1 = inlier ; même taille que les points de Matches
     };
 
-    // Position d'une tuile calculée par le placement global (TilePositioner)
+    // Position finale d'une tuile, calculée par le placement global (TilePositioner).
     struct TilePositionData {
-        std::string tileId;
-        cv::Point2d position;
-        // [AD 21/10/2026 20:41] Angle de rotation absolu de la tuile (en radians) résolu globalement par TilePositioner.
-        // La valeur par défaut 0.0 garantit une rétrocompatibilité totale avec les appels existants {id, position}.
-        double rotationRadians = 0.0;
+        std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
+        cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
+        double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
 
-    // Territoire d'une tuile : polygones (repère de la mosaïque) qui délimitent les pixels pris dans cette tuile.
+    // Territoire d'une tuile : polygones, dans le repère de la mosaïque, délimitant les pixels pris dans cette tuile.
     // polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
     struct TileTerritory {
-        int tileIndex = 0;
+        int tileIndex = 0;   // indice de la tuile dans la liste des tuiles
         std::vector<std::vector<cv::Point>> polygons;
         std::vector<std::vector<std::vector<cv::Point>>> holes;
     };

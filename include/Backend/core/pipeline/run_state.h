@@ -10,6 +10,7 @@ namespace PipelineNs {
 
     using Json = nlohmann::json;
 
+    // Statut d'un run : Idle (jamais lancé), Running, Paused (pause demandée), Failed, Completed.
     enum class RunStatus {
         Idle,
         Running,
@@ -25,25 +26,20 @@ namespace PipelineNs {
                                             {RunStatus::Completed, "completed"}})
 
     // Champ "run" du script, à côté de "pipeline" :
-    //   { "pipeline": { "steps": [...] },
-    //     "run": { "status": "failed", "completedSteps": ["import", "phase-correlation"],
-    //              "skip": true, "from": "", "checkpointDir": "output/checkpoints" } }
-    //
-    //  - ÉTAT, écrit par le pipeline après chaque step : status, completedSteps.
-    //  - CONSIGNES, écrites par l'appelant (CLI, GUI) et remises à leur défaut au démarrage du run :
-    //      skip  true : on saute les steps déjà faits dont le checkpoint est valide ; false : on repart de zéro ;
-    //      from  nom du step où (re)démarrer ; il ne peut pas être après le premier step à refaire.
-    //  - checkpointDir : dossier des checkpoints (voir core/CheckpointClass.h). Vide (défaut) : pas de checkpoint,
-    //    donc pas de reprise, chaque run repart du premier step.
+    //   "run": { "status": "failed", "completedSteps": ["import"], "skipCompletedSteps": true,
+    //            "startFromStep": "", "checkpointDirectory": "output/checkpoints" }
+    // - État, écrit par le pipeline après chaque step : status, completedSteps.
+    // - Consignes, écrites par l'appelant (CLI, GUI) et remises à leur valeur par défaut au démarrage du run :
+    //   skipCompletedSteps, startFromStep.
     struct RunState {
         RunStatus status = RunStatus::Idle;
-        std::vector<std::string> completedSteps;   // préfixe du pipeline, dans l'ordre
-        bool skipCompletedSteps = true;
-        std::string startFromStep;
-        std::string checkpointDirectory;
+        std::vector<std::string> completedSteps;   // noms des steps terminés : un préfixe du pipeline, dans l'ordre
+        bool skipCompletedSteps = true;            // vrai : saute les steps déjà faits dont le checkpoint est valide ; faux : repart du premier
+        std::string startFromStep;                 // nom du step où (re)démarrer ; ne peut pas être après le premier step à refaire
+        std::string checkpointDirectory;           // dossier des checkpoints ; vide : pas de checkpoint, donc pas de reprise
 
-        // Lit le champ "run" d'un script. Lève std::invalid_argument si un champ a le mauvais type
-        // ou si le statut est inconnu (sans ce contrôle, un statut inconnu deviendrait "idle" sans erreur).
+        // Lit le champ "run" d'un script. Lève std::invalid_argument si un champ a le mauvais type ou si le statut
+        // est inconnu (sans ce contrôle, un statut inconnu deviendrait "idle" sans erreur).
         static RunState fromJson(const Json& runJson);
     };
 

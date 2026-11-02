@@ -10,35 +10,40 @@ namespace ConfigNs {
 
     using Json = nlohmann::json;
 
-    // Format du script pipeline : { "pipeline": { "steps": [ ... ] } }
-    // Les noms des champs = les clés JSON.
+    // Configuration d'un pipeline, telle qu'écrite dans le script JSON : { "pipeline": { "steps": [ ... ] } }.
+    // Le nom de chaque champ C++ est sa clé JSON.
 
-    // Paramètre réglable d'un step : { "type": "int", "key": "maxPoints", "value": 5000 }
-    // Types autorisés : "string", "int", "float" (nombre réel, double en C++), "bool" (voir StepClass::importConfig).
+    // Réglage d'un step, ex. { "valueType": "int", "name": "maxPoints", "value": 5000 }.
+    // valueType : "string", "int", "float" (double en C++) ou "bool" ; value doit y correspondre (voir StepClass::importConfig).
     struct StepParameter {
         std::string valueType;
         std::string name;
         Json value;
     };
 
-    // Donnée qui circule entre les steps : { "type": "Tiles", "key": "tiles" }
+    // Donnée échangée entre steps, ex. { "dataType": "Tiles", "key": "tiles" } :
+    // dataType = type de la donnée, key = clé sous laquelle elle est rangée dans le DataStoreClass.
     struct DataSlot {
         std::string dataType;
         std::string key;
     };
 
+    // Configuration d'un step : name (nom dans le registre des steps), parameters (réglages),
+    // inputs (données lues, produites par un step précédent), outputs (données produites).
     struct StepConfig {
         std::string name;
         std::vector<StepParameter> parameters;
-        std::vector<DataSlot> inputs;    // entrées
-        std::vector<DataSlot> outputs;   // sorties
+        std::vector<DataSlot> inputs;
+        std::vector<DataSlot> outputs;
     };
 
+    // Steps dans l'ordre d'exécution.
     struct PipelineConfig {
         std::vector<StepConfig> steps;
     };
 
-    // Les tableaux absents du JSON sont lus comme vides
+    // Conversion JSON automatique. Avec _WITH_DEFAULT, une clé absente garde la valeur par défaut (tableau vide) ;
+    // sans, elle est obligatoire.
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(StepParameter, valueType, name, value)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(DataSlot, dataType, key)
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(StepConfig, name, parameters, inputs, outputs)

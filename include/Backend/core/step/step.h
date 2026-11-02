@@ -11,31 +11,40 @@ namespace StepNs {
 
     using Json = nlohmann::json;
 
-    // Classe abstraite (en italique dans l'UML)
+    // Étape d'un pipeline (classe abstraite). Un step lit ses entrées dans le DataStoreClass, s'exécute,
+    // puis y écrit ses sorties. Son constructeur par défaut fixe sa configuration par défaut (voir ConfigNs::StepConfig).
     class StepClass {
 
         public:
             explicit StepClass(const Json& initialConfig = {}) : configJson(initialConfig) {}
             virtual ~StepClass() = default;
 
-            virtual bool execute() = 0;                         // virtuelle pure
-            // Applique un JSON { name, options, ... } à la config par défaut du step : seules les valeurs des options
-            // sont reprises, une option absente garde sa valeur. Lève std::invalid_argument si le JSON est mal formé,
-            // si le nom ne correspond pas, si une option est inconnue ou si sa valeur n'a pas le type déclaré.
+            // Exécute le step. Renvoie false en cas d'échec (détail dans getResult()).
+            virtual bool execute() = 0;
+
+            // Applique un JSON { name, parameters, ... } à la configuration par défaut : seules les valeurs des
+            // paramètres sont reprises (le reste est fixé par le step) ; un paramètre absent garde sa valeur.
+            // Lève std::invalid_argument si le JSON est mal formé, si le nom ne correspond pas, si un paramètre
+            // est inconnu ou si sa valeur n'a pas le type déclaré.
             virtual void importConfig(const Json& newConfig);
+
+            // Compte rendu du dernier execute() (erreurs, compteurs...), affiché dans les messages du pipeline.
             virtual Json getResult() const { return result; }
-            // Empreinte de ce que le step lit hors du pipeline (ex. fichiers sources : nom, taille, date). Gardée dans
-            // le checkpoint : si elle change, le checkpoint est périmé. Par défaut null : seules les options comptent.
+
+            // Empreinte de ce que le step lit hors du pipeline (ex. fichiers sources : nom, taille, date). Enregistrée
+            // dans le checkpoint : si elle change, le checkpoint est périmé. Par défaut nulle : seuls les paramètres comptent.
             virtual Json externalInputsFingerprint() const { return Json(); }
+
             const Json& getConfigJson() const { return configJson; }
+            // Posé par le pipeline avant execute().
             void setDataStore(DataStoreClass& store) { dataStore = &store; }
 
         protected:
-            Json configJson;                 // { name, options, pipelineOptions, signature } (voir core/Config.h)
+            Json configJson;   // { name, parameters, inputs, outputs }, voir ConfigNs::StepConfig
             Json result;
-            DataStoreClass* dataStore = nullptr;   // lit ses pipelineOptions ici, y écrit sa signature (posé par PipelineClass)
+            DataStoreClass* dataStore = nullptr;   // non propriétaire : appartient au pipeline
 
-            // Valeur de l'option "key" dans config["options"] ; lève std::out_of_range si absente
+            // Valeur du paramètre `name`. Lève std::out_of_range s'il n'existe pas.
             Json getParameter(const std::string& name) const;
 
     };
