@@ -3,6 +3,8 @@
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <typeinfo>
+#include <utility>
 
 namespace stitching {
 
@@ -19,7 +21,13 @@ public:
     const T& get(const std::string& key) const {
         auto it = values.find(key);
         if (it == values.end()) throw std::out_of_range("DataStore: no data for key '" + key + "'");
-        return std::any_cast<const T&>(it->second);
+        try {
+            return std::any_cast<const T&>(it->second);
+        } catch (const std::bad_any_cast&) {
+            throw std::invalid_argument("DataStore: type mismatch for key '" + key +
+                                        "' (requested " + typeid(T).name() +
+                                        ", stored " + it->second.type().name() + ")");
+        }
     }
 
     bool has(const std::string& key) const { return values.count(key) > 0; }
