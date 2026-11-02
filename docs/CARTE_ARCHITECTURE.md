@@ -125,7 +125,7 @@ include/backend/  ⟷  src/backend/   🆕 en minuscules
         egalisation/    égalisation de luminosité
         seamline/       calcul des coutures
 include/frontend/ ⟷  src/frontend/   GUI Qt (quasi vide sur main)
-tests/               un dossier par module, en GoogleTest : core/, correlation_phase/, egalisation/, seamline/
+tests/               un dossier par module, en GoogleTest : core/, correlation_phase/, egalisation/, seamline/, steps/
 docs/                algorithms/ (une page par algorithme), core/ (le pipeline), steps/ (contrat de chaque step),
                      BUILD.md, CONVENTIONS.md 🆕, MIGRATION_REORGANISATION.md 🆕, cette carte
 cmake/               un fichier par partie du build
@@ -195,6 +195,7 @@ cmake/               un fichier par partie du build
 |---|---|---|---|---|
 | [ImportStepClass](../src/backend/steps/import_step.cpp) | `import` | paramètres `path`, `format` (regex col/ligne) | `"tiles"` : `Tiles` | `cv::imread` + `createPyramidalTiledTiff` (cache dans `<images>/.cache/pyramids`) |
 | [PhaseCorrelationStepClass](../src/backend/steps/phase_correlation_step.cpp) | `phase-correlation` | `"tiles"` ; 12 paramètres, dont `niveau` (analyse sur un niveau réduit de la pyramide, résultat ramené en pleine résolution) | `"matches"` : `vector<PairMatches>` | `CorrelationPhase` sur chaque paire droite/dessous, pixels lus par `readPixels()` |
+| [SiftStepClass](../src/backend/steps/sift_step.cpp) | `sift` | `tiles` ; `overlap`, `maxFeatures`, `loweRatio`, `contrastThreshold`, `claheClipLimit`, `minMatches` | `matches` : `vector<DataNs::PairMatches>` | Estimation du recouvrement, SIFT sur les bandes et recalage en pleine résolution ; doc [SiftStep.md](steps/SiftStep.md) |
 | [GraphCutStepClass](../src/backend/steps/graph_cut_step.cpp) | `graphcut` | `"tiles"`, `"positions"` : `vector<TilePositionData>` | `"territories"` : `vector<TileTerritory>` | `ImagePretreatment` + `GraphCut` |
 
 Ces 3 steps sont dans le registre : on peut les mettre dans un script JSON. `graphcut` ne peut pas encore y être utilisé, car aucun step ne produit `positions`, et `buildPipeline` le refuse.
@@ -404,3 +405,10 @@ Pour voir un fichier d'une branche sans changer de branche :
 ```bash
 git show origin/RansacStep:include/Backend/steps/RansacStep.h
 ```
+
+### Utilitaires d’appariement et tests SIFT
+
+[matching_step_utils.h](../include/backend/steps/matching_step_utils.h) / [.cpp](../src/backend/steps/matching_step_utils.cpp)
+(`StepsNs::MatchingNs`) : voisins, lecture des images, validation des correspondances, recalage et sérialisation.
+[tests/steps/CMakeLists.txt](../tests/steps/CMakeLists.txt) enregistre
+[test_sift_step.cpp](../tests/steps/test_sift_step.cpp) : formats 8/16 bits, repères, succès partiels, JSON et paramètres.

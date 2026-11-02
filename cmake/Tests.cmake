@@ -9,6 +9,7 @@ if(BUILD_TESTING)
     set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
     # Ajouter un subdirectory lors de tests suplementaires
+    add_subdirectory(tests/steps)
     add_subdirectory(tests/core)
     add_subdirectory(tests/correlation_phase)
     add_subdirectory(tests/egalisation)
