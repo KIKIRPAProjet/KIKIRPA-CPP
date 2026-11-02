@@ -7,6 +7,8 @@ namespace stitching {
 // un step par entrée, dans l'ordre, créé d'après son "name".
 // Lève std::invalid_argument si un nom de step est inconnu ou si une entrée d'un step
 // (pipelineOptions) n'est produite par aucun step précédent (signature).
+std::vector<std::string> registeredSteps();
+std::unique_ptr<Step> createStep(const std::string& name);
 Pipeline buildPipeline(const Json& script);
 
 } // namespace stitching
