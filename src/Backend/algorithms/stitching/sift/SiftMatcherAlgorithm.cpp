@@ -67,39 +67,10 @@ bool runSiftMatching(const cv::Mat& a, const cv::Mat& b,    //& = on ne copie pa
     const cv::Mat grayB = toGray(b);
 
 
-    // Decoupage de la zone (ROI)
-    cv::Rect roiA(0, 0, grayA.cols, grayA.rows); //cv::Rect : Définit un rectangle (origine X, origine Y, largeur, hauteur). Par défaut, il prend toute l'image
-    cv::Rect roiB(0, 0, grayB.cols, grayB.rows);
-    cv::Point2f offsetA(0.f, 0.f);
-    cv::Point2f offsetB(0.f, 0.f);
-
-    const float overlap = std::clamp(ctx.overlap, 0.f, 1.f);  //std::clamp S'assure que la valeur de overlap reste strictement bloquée entre 0.0 et 1.0.
-    if (overlap > 0.f && ctx.dir == Direction::LeftRight) {
-        const int width = std::min({  //std::min : Calcule la largeur de la zone de superposition, en s'assurant qu'elle ne dépasse ni la taille de l'image A, ni celle de la B.
-            static_cast<int>(grayB.cols * overlap), grayA.cols, grayB.cols
-        });
-
-        //ce bloc découpe virtuellement le bord droit de A et le bord gauche de B, et sauvegarde le décalage (offsetA, offsetB) pour pouvoir retrouver les coordonnées globales à la fin.
-        if (width > 0) {
-            roiA = cv::Rect(grayA.cols - width, 0, width, grayA.rows);
-            roiB = cv::Rect(0, 0, width, grayB.rows);
-            offsetA.x = static_cast<float>(grayA.cols - width);
-        }
-    } else if (overlap > 0.f) {
-        const int height = std::min({
-            static_cast<int>(grayB.rows * overlap), grayA.rows, grayB.rows
-        });
-        if (height > 0) {
-            roiA = cv::Rect(0, grayA.rows - height, grayA.cols, height);
-            roiB = cv::Rect(0, 0, grayB.cols, height);
-            offsetA.y = static_cast<float>(grayA.rows - height);
-        }
-    }
-
-
-
-    const cv::Mat cropA = grayA(roiA);
-    const cv::Mat cropB = grayB(roiB);
+    // Les images transmises sont déjà les bandes d'overlap prédécoupées
+    (void)ctx;
+    const cv::Mat& cropA = grayA;
+    const cv::Mat& cropB = grayB;
 
     cv::Mat enhancedA, enhancedB;
     if (claheClipLimit > 0.0) { //cv::createCLAHE : Si demandé, on crée un algorithme qui va booster les micro-contrastes (les ombres/lumières) pour aider SIFT à voir des détails.
@@ -112,11 +83,17 @@ bool runSiftMatching(const cv::Mat& a, const cv::Mat& b,    //& = on ne copie pa
     }
 
     // cv::SIFT (OpenCV) n'accepte QUE du CV_8U en entree : c'est la SEULE etape ou l'on quantifie, tout en fin de chaine.
-    // La lecture, le niveau de gris et le CLAHE ci-dessus restent en 16 bits ; l'echelle est fixe (65535 -> 255), la meme
-    // pour A et B, afin que les descripteurs des deux images restent comparables.
+    // La lecture, le niveau de gris et le CLAHE ci-dessus restent en 16 bits. On étire la dynamique réelle conjointe
+    // vers [0, 255] avec les mêmes coefficients pour A et B afin de préserver la comparabilité des descripteurs,
+    // sans écraser les images 16 bits sombres ou infrarouges (Apollo).
     cv::Mat inputA, inputB;
-    enhancedA.convertTo(inputA, CV_8U, 255.0 / 65535.0);
-    enhancedB.convertTo(inputB, CV_8U, 255.0 / 65535.0);
+    double minA = 0.0, maxA = 0.0, minB = 0.0, maxB = 0.0;
+    cv::minMaxLoc(enhancedA, &minA, &maxA);
+    cv::minMaxLoc(enhancedB, &minB, &maxB);
+    const double minAB = std::min(minA, minB), span = std::max(maxA, maxB) - minAB;
+    const double alpha = (span > 0.0) ? (255.0 / span) : (255.0 / 65535.0);
+    enhancedA.convertTo(inputA, CV_8U, alpha, (span > 0.0) ? (-minAB * alpha) : 0.0);
+    enhancedB.convertTo(inputB, CV_8U, alpha, (span > 0.0) ? (-minAB * alpha) : 0.0);
 
     const auto sift = cv::SIFT::create(
         maxFeatures, 3, contrastThreshold, 10.0, 1.6);
@@ -148,9 +125,9 @@ bool runSiftMatching(const cv::Mat& a, const cv::Mat& b,    //& = on ne copie pa
         }
 
         const cv::DMatch& match = candidates[0];
-        out.pointsA.push_back(keypointsA[match.trainIdx].pt + offsetA); //ajout des coordonees des pts valides dans listes de sorties
-        out.pointsB.push_back(keypointsB[match.queryIdx].pt + offsetB); //+offsetA : On réajoute le décalage qu'on avait enlevé lors du découpage (ROI) pour que les coordonnées redeviennent celles de l'image globale.
-        out.scores.push_back(1.f - match.distance / candidates[1].distance); //1.f - ... : On transforme la distance d'erreur (où 0 est parfait) en un score de confiance (où 1 est parfait) 1.f précise a C++ que c'est un float
+        out.pointsA.push_back(keypointsA[match.trainIdx].pt); // ajout des coordonnees des pts valides dans listes de sorties
+        out.pointsB.push_back(keypointsB[match.queryIdx].pt);
+        out.scores.push_back(1.f - match.distance / candidates[1].distance);
     }
 
     if (out.pointsA.size() < 4) { //SI moins que 4 points trouvés, on efface tout et on retourne faux car pas assez de points d'interets

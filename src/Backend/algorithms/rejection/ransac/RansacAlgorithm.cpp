@@ -62,6 +62,9 @@ bool RansacAlgorithm::estimate(
     // --------------------------------------------------------
 
     cv::Mat masqueInliers;
+    // [AD 21/10/2026 20:41] Réinitialisation de la graine du générateur pseudo-aléatoire OpenCV :
+    // garantit la reproductibilité stricte (déterminisme § 4.4 du cahier des charges) pour RANSAC.
+    cv::theRNG().state = 0xffffffff;
 
     cv::Mat affine =
         cv::estimateAffinePartial2D(

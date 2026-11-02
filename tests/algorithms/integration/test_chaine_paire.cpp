@@ -79,7 +79,7 @@ double msDepuis(Horloge::time_point debut) {
 // "alignments" : translation mesurée entre les deux tuiles
 struct Alignement {
     bool ok = false;
-    Matches matches;               // x, y : coin haut-gauche de B dans le repère de A (sous-pixel)
+    Matches matches;               // dx, dy : coin haut-gauche de B dans le repère de A (sous-pixel)
     std::string erreur;            // CorrelationPhase::raisonEchec() si ok = false
     double ms = 0;
 };
@@ -124,7 +124,7 @@ Alignement aligner(const cv::Mat& A, const cv::Mat& B, Direction position, doubl
 
 // positions : A en (0, 0) sauf si B dépasse en haut ou à gauche ; translation arrondie au pixel
 Positions positionner(const Alignement& al, cv::Size tailleA, cv::Size tailleB) {
-    const cv::Point b(static_cast<int>(std::lround(al.matches.x)), static_cast<int>(std::lround(al.matches.y)));
+    const cv::Point b(static_cast<int>(std::lround(al.matches.dx)), static_cast<int>(std::lround(al.matches.dy)));
     Positions p;
     p.a = cv::Point(std::max(0, -b.x), std::max(0, -b.y));
     p.b = p.a + b;
@@ -307,9 +307,9 @@ void testerVerite(const std::string& nom, const cv::Mat& source, seamlib::Method
 
         std::cout << nomPosition << "  (vérité x = " << vrai.x << ", y = " << vrai.y << ")\n";
         const Alignement al = aligner(A, B, position, RECOUVREMENT);
-        verifier(al.ok && std::abs(al.matches.x - vrai.x) < TOLERANCE_ARRONDI &&
-                     std::abs(al.matches.y - vrai.y) < TOLERANCE_ARRONDI,
-                 format("alignments : x = %.3f, y = %.3f (%.0f ms)", al.matches.x, al.matches.y, al.ms) +
+        verifier(al.ok && std::abs(al.matches.dx - vrai.x) < TOLERANCE_ARRONDI &&
+                     std::abs(al.matches.dy - vrai.y) < TOLERANCE_ARRONDI,
+                 format("alignments : dx = %.3f, dy = %.3f (%.0f ms)", al.matches.dx, al.matches.dy, al.ms) +
                      (al.ok ? "" : " : " + al.erreur));
         if (!al.ok) continue;
 
@@ -410,9 +410,9 @@ int chainePaire(const std::string& cheminA, const std::string& cheminB, const st
         std::cout << "   ECHEC : " << al.erreur << format(" (%.0f ms)\n", al.ms);
         return 1;
     }
-    std::vector<float> confiances = al.matches.confidence;
+    std::vector<float> confiances = al.matches.scores;
     std::sort(confiances.begin(), confiances.end());
-    std::cout << format("   B dans A : x = %.3f, y = %.3f px  (%.0f ms)\n", al.matches.x, al.matches.y, al.ms)
+    std::cout << format("   B dans A : dx = %.3f, dy = %.3f px  (%.0f ms)\n", al.matches.dx, al.matches.dy, al.ms)
               << "   " << al.matches.pointsA.size() << " points locaux"
               << (confiances.empty() ? "" : format(", confiance médiane %.3f", confiances[confiances.size() / 2])) << '\n';
 

@@ -1,5 +1,9 @@
 #include "steps/LightGlueStep.h"
 #include "core/Config.h"
+#include "core/Tuile.h"
+#include <opencv2/imgcodecs.hpp>
+#include <algorithm>
+#include <set>
 #if defined(STITCHING_HAS_LIGHTGLUE)
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #endif
@@ -42,31 +46,63 @@ void validateMatches(const Matches& m, const cv::Mat& a, const cv::Mat& b, size_
     }
 }
 
+struct NeighborPair { const Tuile* a; const Tuile* b; Direction direction; };
+
+std::vector<NeighborPair> collectPairs(const Tiles& tiles) {
+    if (tiles.size() < 2) throw std::invalid_argument("at least two tiles are required");
+    std::set<const Tuile*> members;
+    std::set<int> ids;
+    for (const auto& tile : tiles) {
+        if (!tile) throw std::invalid_argument("null tile");
+        if (!members.insert(tile.get()).second || !ids.insert(tile->getId()).second)
+            throw std::invalid_argument("duplicate tile or tile id");
+        if (tile->getId() < 0) throw std::invalid_argument("negative tile id");
+    }
+    std::vector<NeighborPair> pairs;
+    std::set<std::pair<int, int>> seen;
+    for (const auto& tile : tiles) {
+        const std::pair<const Tuile*, Direction> neighbors[] = {
+            {tile->getRight(), Direction::Right}, {tile->getBottom(), Direction::Bottom}
+        };
+        for (const auto& neighbor : neighbors) {
+            if (!neighbor.first) continue;
+            if (neighbor.first == tile.get() || !members.count(neighbor.first))
+                throw std::invalid_argument("neighbor must be a distinct tile from the input Tiles");
+            const auto edge = std::minmax({tile->getId(), neighbor.first->getId()});
+            if (!seen.emplace(edge.first, edge.second).second)
+                throw std::invalid_argument("duplicate or cyclic neighbor pair");
+            pairs.push_back({tile.get(), neighbor.first, neighbor.second});
+        }
+    }
+    if (pairs.empty()) throw std::invalid_argument("no right or bottom neighbor pairs");
+    return pairs;
+}
+
+cv::Mat readImage(const Tuile& tile) {
+    auto image = cv::imread(tile.getSource().string(), cv::IMREAD_UNCHANGED);
+    if (image.empty()) throw std::runtime_error("cannot read " + tile.getSource().string());
+    if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
+        (image.channels() != 1 && image.channels() != 3 && image.channels() != 4))
+        throw std::invalid_argument("expected a 2D 8/16-bit image with 1, 3 or 4 channels");
+    return image;
+}
+
 } // namespace
 
-void to_json(Json& json, const MatchedTile& tile) {
-    json = {{"index", tile.index}, {"path", tile.path.string()}, {"col", tile.col}, {"row", tile.row}};
-}
-
-void to_json(Json& json, const TilePairMatches& pair) {
-    const char* direction;
-    switch (pair.direction) {
-    case Direction::Right: direction = "right"; break;
-    case Direction::Bottom: direction = "bottom"; break;
-    case Direction::Left: direction = "left"; break;
-    case Direction::Top: direction = "top"; break;
-    default: throw std::invalid_argument("unknown pair direction");
-    }
-    Json pointsA = Json::array(), pointsB = Json::array();
-    for (const auto& point : pair.matches.pointsA) pointsA.push_back({point.x, point.y});
-    for (const auto& point : pair.matches.pointsB) pointsB.push_back({point.x, point.y});
-    json = {{"a", pair.a}, {"b", pair.b}, {"direction", direction},
-            {"matches", {{"pointsA", std::move(pointsA)}, {"pointsB", std::move(pointsB)},
-                         {"scores", pair.matches.scores}, {"dx", pair.matches.dx}, {"dy", pair.matches.dy}}}};
-}
-
 void to_json(Json& json, const LightGlueOutput& output) {
-    json = {{"key", output.key}, {"value", output.value}, {"type", output.type}};
+    Json pairs = Json::array();
+    for (const auto& pair : output.value) {
+        if (pair.dir != Direction::Right && pair.dir != Direction::Bottom)
+            throw std::invalid_argument("LightGlueOutput expects right or bottom pairs");
+        Json pointsA = Json::array(), pointsB = Json::array();
+        for (const auto& point : pair.matches.pointsA) pointsA.push_back({point.x, point.y});
+        for (const auto& point : pair.matches.pointsB) pointsB.push_back({point.x, point.y});
+        pairs.push_back({{"idA", pair.idA}, {"idB", pair.idB},
+                         {"direction", pair.dir == Direction::Right ? "right" : "bottom"},
+                         {"matches", {{"pointsA", std::move(pointsA)}, {"pointsB", std::move(pointsB)},
+                                      {"scores", pair.matches.scores}, {"dx", pair.matches.dx}, {"dy", pair.matches.dy}}}});
+    }
+    json = {{"key", output.key}, {"value", std::move(pairs)}, {"type", output.type}};
 }
 
 LightGlueStep::LightGlueStep(const LightGlueInput& input, MatcherFactory f)
@@ -116,56 +152,30 @@ bool LightGlueStep::execute() {
             throw std::invalid_argument("overlap must be in (0, 1]");
         const std::string model = pathValue.get<std::string>();
         const auto minimum = static_cast<size_t>(minimumValue.get<int>());
-        const auto& tiles = data->get<Tiles>("tiles");
-        if (tiles.size() < 2) throw std::invalid_argument("at least two tiles are required");
-
-        std::map<std::pair<int, int>, size_t> grid;
-        for (size_t i = 0; i < tiles.size(); ++i) {
-            const auto& t = tiles[i];
-            if (t.col < 0 || t.row < 0) throw std::invalid_argument("negative tile coordinates");
-            if (!grid.emplace(std::make_pair(t.row, t.col), i).second)
-                throw std::invalid_argument("duplicate grid position");
-            if (t.image.empty() || t.image.dims != 2)
-                throw std::invalid_argument("empty or non-2D tile: " + t.path.string());
-            if ((t.image.depth() != CV_8U && t.image.depth() != CV_16U) ||
-                (t.image.channels() != 1 && t.image.channels() != 3 && t.image.channels() != 4))
-                throw std::invalid_argument("expected 8/16-bit tile with 1, 3 or 4 channels: " + t.path.string());
-        }
-
-        struct Pair { size_t a, b; Direction dir; };
-        std::vector<Pair> pairs;
-        for (const auto& entry : grid) {
-            const int row = entry.first.first, col = entry.first.second;
-            const auto append = [&](int r, int c, Direction dir) {
-                const auto neighbor = grid.find({r, c});
-                if (neighbor != grid.end()) pairs.push_back({entry.second, neighbor->second, dir});
-            };
-            if (col < std::numeric_limits<int>::max()) append(row, col + 1, Direction::Right);
-            if (row < std::numeric_limits<int>::max()) append(row + 1, col, Direction::Bottom);
-        }
-        if (pairs.empty()) throw std::invalid_argument("no horizontally or vertically adjacent tiles");
-        if (!matcher || loadedModel != model) {
-            auto next = factory(Json{{"model_path", model}});
-            if (!next) throw std::runtime_error("matcher factory returned null");
-            matcher = std::move(next);
-            loadedModel = model;
-        }
-
-        PairMatches pending;
-        for (const auto& p : pairs) {
-            const auto& a = tiles[p.a];
-            const auto& b = tiles[p.b];
-            pair = "(" + std::to_string(a.col) + "," + std::to_string(a.row) + ") -> (" +
-                   std::to_string(b.col) + "," + std::to_string(b.row) + ")";
-            Matches matches;
-            if (!matcher->match(a.image, b.image, {p.dir, static_cast<float>(overlap)}, matches))
-                throw std::runtime_error("matcher could not find correspondences");
-            validateMatches(matches, a.image, b.image, minimum);
-            pending.push_back({{p.a, a.path, a.col, a.row}, {p.b, b.path, b.col, b.row},
-                               p.dir, std::move(matches)});
-        }
+        const auto pairs = collectPairs(data->get<Tiles>("tiles"));
         LightGlueOutput completed;
-        completed.value = std::move(pending);
+        completed.value.reserve(pairs.size());
+        cv::Mat a;
+        const Tuile* loadedA = nullptr;
+        for (const auto& p : pairs) {
+            pair = std::to_string(p.a->getId()) + " -> " + std::to_string(p.b->getId());
+            if (loadedA != p.a) {
+                a = readImage(*p.a);
+                loadedA = p.a;
+            }
+            const cv::Mat b = readImage(*p.b);
+            if (!matcher || loadedModel != model) {
+                auto next = factory(Json{{"model_path", model}});
+                if (!next) throw std::runtime_error("matcher factory returned null");
+                matcher = std::move(next);
+                loadedModel = model;
+            }
+            PairMatches result{p.a->getId(), p.b->getId(), p.direction, {}};
+            if (!matcher->match(a, b, {p.direction, static_cast<float>(overlap), std::nullopt}, result.matches))
+                throw std::runtime_error("matcher could not find correspondences");
+            validateMatches(result.matches, a, b, minimum);
+            completed.value.push_back(std::move(result));
+        }
         Json exported = completed;
         data->set(completed.key, completed.value);
         output = std::move(completed);

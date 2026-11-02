@@ -12,28 +12,12 @@ struct LightGlueInput {
     float overlap = 0.2f;
 };
 
-struct MatchedTile {
-    size_t index = 0; // index dans le vecteur Tiles d'origine
-    std::filesystem::path path;
-    int col = 0, row = 0;
-};
-
-struct TilePairMatches {
-    MatchedTile a, b;
-    Direction direction = Direction::Right;
-    Matches matches; // coordonnées dans les images complètes ; aucune transformation RANSAC
-};
-
-using PairMatches = std::vector<TilePairMatches>;
-
 struct LightGlueOutput {
     std::string key = "matches";
-    PairMatches value;
+    std::vector<PairMatches> value;
     std::string type = "PairMatches";
 };
 
-void to_json(Json& json, const MatchedTile& tile);
-void to_json(Json& json, const TilePairMatches& pair);
 void to_json(Json& json, const LightGlueOutput& output);
 
 class LightGlueStep : public Step {

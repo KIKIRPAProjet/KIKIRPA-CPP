@@ -4,14 +4,14 @@
 
 `LightGlueStep` consomme les tuiles chargées par `ImportStep` et produit les correspondances entre les voisines immédiates. Il utilise le modèle existant `LightGlueMatcher`, sans RANSAC, positionnement global, fusion ni export de mosaïque.
 
-Une paire est traitée une seule fois : vers la droite puis vers le bas, dans l'ordre ligne/colonne. Les images complètes sont transmises au matcher. Aucun découpage de bande n'est réalisé ; les coordonnées de sortie restent dans les repères des images originales.
+Une paire est traitée une seule fois : vers la droite puis vers le bas, dans l'ordre des tuiles reçues. Les images complètes sont transmises au matcher. Aucun découpage de bande n'est réalisé ; les coordonnées de sortie restent dans les repères des images originales.
 
 ## Contrat
 
 - Nom de l'étape : `lightglue`.
-- Entrée `DataStore` : `tiles`, de type `stitching::Tiles` (`vector<TileImage>`).
-- Sortie `DataStore` : `matches`, de type `stitching::steps::PairMatches`.
-- Chaque `TilePairMatches` contient deux références `MatchedTile` (index d'origine, chemin, colonne, ligne), une direction et un `Matches` (points A/B, scores, dx/dy).
+- Entrée `DataStore` : `tiles`, de type `stitching::Tiles` (`vector<shared_ptr<Tuile>>`).
+- Sortie `DataStore` : `matches`, de type `vector<stitching::PairMatches>`.
+- Chaque `PairMatches` contient les identifiants `idA` et `idB`, une direction et un `Matches` (points A/B, scores, dx/dy). Les voisins sont lus via `Tuile::getRight()` et `Tuile::getBottom()`.
 - `dx/dy` estime la translation par médiane des différences A - B. Ce n'est pas une transformation géométrique validée par RANSAC.
 - `LightGlueOutput` représente la sortie du step avec trois champs : `key` ("matches"), `value` (la liste `PairMatches`) et `type` ("PairMatches").
 - `getOutput()` renvoie un `const LightGlueOutput&` ; les résultats se lisent via `getOutput().value`. Comme pour `ImportOutput.tiles`, le DataStore conserve directement la liste sous sa clé (`matches` de type `PairMatches`).
@@ -25,8 +25,8 @@ Exemple de forme JSON (une seule correspondance illustrée pour alléger l'exemp
   "type": "PairMatches",
   "value": [
     {
-      "a": {"index": 0, "path": "a.tif", "col": 0, "row": 0},
-      "b": {"index": 1, "path": "b.tif", "col": 1, "row": 0},
+      "idA": 0,
+      "idB": 1,
       "direction": "right",
       "matches": {
         "pointsA": [[900, 250]],
@@ -40,7 +40,7 @@ Exemple de forme JSON (une seule correspondance illustrée pour alléger l'exemp
 }
 ```
 
-La sérialisation convertit les chemins en chaînes et les points OpenCV en tableaux `[x, y]`. Le parser Python du projet n'étant pas présent dans cette branche, son intégration doit encore être vérifiée avec son schéma effectif.
+La sérialisation convertit les points OpenCV en tableaux `[x, y]`. Le parser Python du projet n'étant pas présent dans cette branche, son intégration doit encore être vérifiée avec son schéma effectif.
 
 ## Configuration
 
@@ -87,7 +87,7 @@ if (!pipeline.run()) {
     // L'appelant présente l'erreur journalisée et interrompt le traitement.
 } else {
     const auto& pairs = pipeline.getData()
-        .get<stitching::steps::PairMatches>("matches");
+        .get<std::vector<stitching::PairMatches>>("matches");
     // Consommer pairs dans l'étape suivante.
 }
 ```
@@ -96,7 +96,7 @@ Le parcours de validation import -> LightGlue est défini dans `tests/steps/Ligh
 
 ## Gestion des erreurs
 
-Le step renvoie `false` avec `outputData.error` pour les erreurs attendues : configuration, données absentes/mal typées, coordonnées négatives ou dupliquées, images vides, format de pixels non pris en charge, absence de voisins, dépendances ou modèle manquants, erreur d'inférence et correspondances insuffisantes.
+Le step renvoie `false` avec `outputData.error` pour les erreurs attendues : configuration, données absentes/mal typées, identifiants négatifs ou dupliqués, voisins invalides, images vides, format de pixels non pris en charge, absence de voisins, dépendances ou modèle manquants, erreur d'inférence et correspondances insuffisantes.
 
 Les images acceptées sont des matrices 2D en 8 ou 16 bits non signés, avec 1, 3 ou 4 canaux. Chaque paire doit réussir : il n'y a pas de mode qui ignore silencieusement une paire en échec. Les tuiles sans voisin sont sans paire ; la connexité de toute la grille n'est pas garantie par cette étape.
 
@@ -136,4 +136,4 @@ CMake garde le step compilable sans ONNX, mais son exécution réelle échoue al
 
 Le modèle doit respecter l'un des deux formats déjà décodés par le matcher : une entrée batch avec keypoints/matches/mscores, ou deux entrées image0/image1 avec six sorties. Le mode batch exige des dimensions identiques après préparation. La détection automatique de canaux suppose un contrat NCHW ; les modèles à canaux dynamiques doivent être vérifiés séparément.
 
-Le chargement de toutes les tuiles en mémoire par ImportStep est conservé. Les variantes de la branche `tuile`, les checkpoints et la validation JSON globale ne sont pas fusionnés dans ce changement.
+Les images sources sont lues à partir des chemins portés par les objets `Tuile`. Les checkpoints et la validation JSON globale restent hors du périmètre de cette étape.

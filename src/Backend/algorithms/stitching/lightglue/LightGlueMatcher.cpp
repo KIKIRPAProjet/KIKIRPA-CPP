@@ -110,16 +110,16 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
             session_options, coreml_flags);
     }
     #endif
-    
+
     // Instancie un objet Ort::Session (le moteur d'inférence d'ONNX) et l'enveloppe dans un pointeur 'intelligent' (unique_ptr). Assure que la mémoire allouée pour la session est libérée automatiquement et sans fuite de mémoire quand l'objet LightGlueMatcher sera détruit.
     // this->session permet de stocker la session ONNX finalisée dans l'attribut session de la classe. Permet d'y accéder dans la méthode match().
     this->session = std::make_unique<Ort::Session>(this->env, modelPath.c_str(), session_options);
 
     std::cout << "[DEBUG] Initialisation du LightGlueMatcher : fin\n";
 }
-  
 
-cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::string& imageName, float& scale, bool grayscale) const {
+
+cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::string& imageName, float& scaleX, float& scaleY, bool grayscale) const {
     std::cout << "[DEBUG] preprocessing de l'image " << imageName << " : début\n";
 
     // Vérifier que l'image contient bien des données.
@@ -127,28 +127,28 @@ cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::strin
         throw std::runtime_error("LightGlueMatcher: " + imageName + " est vide.");
     }
 
-    if ((image.depth() != CV_8U && image.depth() != CV_16U) ||
+    if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
         (image.channels() != 1 && image.channels() != 3 && image.channels() != 4)) {
-        throw std::invalid_argument("LightGlueMatcher: expected an 8/16-bit image with 1, 3 or 4 channels");
+        throw std::invalid_argument("LightGlueMatcher: expected a 2D 8/16-bit image with 1, 3 or 4 channels");
     }
-    // Limiter le coût de l'inférence et respecter les dimensions multiples de 32.
+    // Conserver les contraintes du modèle et calculer les deux échelles après arrondi.
     constexpr int max_edge = 3200;
     const float reduction = std::min(1.0f, static_cast<float>(max_edge) / std::max(image.cols, image.rows));
     const int width = std::max(32, static_cast<int>(std::round(image.cols * reduction / 32.0f)) * 32);
     const int height = std::max(32, static_cast<int>(std::round(image.rows * reduction / 32.0f)) * 32);
-    scale = static_cast<float>(width) / image.cols;
+    scaleX = static_cast<float>(width) / image.cols;
+    scaleY = static_cast<float>(height) / image.rows;
     cv::Mat resizedImage;
     if (width == image.cols && height == image.rows) resizedImage = image;
     else cv::resize(image, resizedImage, cv::Size(width, height), 0.0, 0.0, cv::INTER_AREA);
 
-    std::cout << "[DEBUG] " << imageName 
-            << " | Taille originale : " << image.cols << "x" << image.rows 
-            << " | Scale : " << scale 
+    std::cout << "[DEBUG] " << imageName
+            << " | Taille originale : " << image.cols << "x" << image.rows
+            << " | ScaleX : " << scaleX << ", ScaleY : " << scaleY
             << " | Nouvelle taille : " << resizedImage.cols << "x" << resizedImage.rows << std::endl;
 
 
-    // Gestion intelligente des canaux de couleur (le modèle attend une image avec trois canaux BGR.)
-    // Pourquoi on applique un grayscale ou non ? Car si on utilise le modèle Superpoint, on a besoin d'une image en niveaux de gris (1 canal), alors que pour les modèles DISK ou ALIKED, on a besoin d'une image en couleur (3 canaux).
+    // Gestion intelligente des canaux de couleur (le modèle attend une image avec 1 canal Grayscale ou 3 canaux RGB).
     cv::Mat finalImage;
     if (grayscale) {
         // Le modèle exige du Niveaux de Gris (ex: SuperPoint)
@@ -184,21 +184,24 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     // Ajout d'un chronomètre pour mesurer le temps d'exécution de la méthode match() (13/10/26)
     auto start_time = std::chrono::steady_clock::now();
 
-    // Le contexte n'est pas utilisé par le modèle LightGlue.
-    (void)ctx;
-
     // On supprime les anciens résultats si la sortie est réutilisée.
     out.pointsA.clear();
     out.pointsB.clear();
     out.scores.clear();
     out.dx = 0.0f;
     out.dy = 0.0f;
-    if (a.empty() || b.empty()) return false;
+
+    if (a.empty() || b.empty()) {
+        return false;
+    }
 
     // Test de la session lors de l'exécution -> si la session n'est pas initialisée, on génère une erreur, sinon on continue.
     if (!this->session) {
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
+
+    // Les images transmises sont déjà les bandes d'overlap prédécoupées
+    (void)ctx;
 
     // Ajout de la détection automatique si le modèle attend du niveaux de gris (1 canal) ou du RGB (3 canaux) (13/10/26)
     bool use_grayscale = false;
@@ -212,12 +215,10 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         std::cout << "[DEBUG] Modèle " << (use_grayscale ? "Grayscale" : "RGB") << " détecté.\n";
     }
 
-    // Préparer les deux images dans le même format pour le modèle.
-    float scale1 = 1.0f, scale2 = 1.0f; // Ajout des ratios de redimensionnement pour chaque image (13/10/26)
-    cv::Mat blob1 = preprocessImage(a, "image A", scale1, use_grayscale);
-    cv::Mat blob2 = preprocessImage(b, "image B", scale2, use_grayscale);
-    const float scaleY1 = static_cast<float>(blob1.size[2]) / a.rows;
-    const float scaleY2 = static_cast<float>(blob2.size[2]) / b.rows;
+    // Préparer les deux bandes de recouvrement dans le même format pour le modèle.
+    float scaleX1 = 1.0f, scaleY1 = 1.0f, scaleX2 = 1.0f, scaleY2 = 1.0f;
+    cv::Mat blob1 = preprocessImage(a, "image A", scaleX1, scaleY1, use_grayscale);
+    cv::Mat blob2 = preprocessImage(b, "image B", scaleX2, scaleY2, use_grayscale);
 
     // Les modèles RACO/ALIKED+LightGlue exportés récemment utilisent une
     // entrée batch unique et trois sorties: keypoints, matches, mscores.
@@ -235,8 +236,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
                 "LightGlueMatcher: un modèle batch doit renvoyer keypoints, matches et mscores.");
         }
 
-        if (blob1.size[1] != blob2.size[1] || blob1.size[2] != blob2.size[2] || blob1.size[3] != blob2.size[3])
-            throw std::invalid_argument("LightGlueMatcher: batch model requires equal preprocessed image dimensions");
+        if (blob1.size[1] != blob2.size[1] || blob1.size[2] != blob2.size[2] || blob1.size[3] != blob2.size[3]) {
+            throw std::runtime_error(
+                "LightGlueMatcher: les deux bandes doivent avoir les mêmes dimensions après prétraitement pour le mode batch.");
+        }
+
         std::vector<float> batch_data;
         batch_data.reserve(blob1.total() + blob2.total());
         batch_data.insert(batch_data.end(), blob1.ptr<float>(),
@@ -315,38 +319,42 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             const size_t point_b = (keypoint_count +
                                     static_cast<size_t>(index_b)) * 2;
             out.pointsA.emplace_back(
-                keypoints[point_a] / scale1, keypoints[point_a + 1] / scaleY1);
+                keypoints[point_a] / scaleX1,
+                keypoints[point_a + 1] / scaleY1);
             out.pointsB.emplace_back(
-                keypoints[point_b] / scale2, keypoints[point_b + 1] / scaleY2);
+                keypoints[point_b] / scaleX2,
+                keypoints[point_b + 1] / scaleY2);
             out.scores.push_back(scores[i]);
         }
 
-        if (!out.pointsA.empty()) {
-            std::vector<float> dx_list, dy_list;
-            for (size_t i = 0; i < out.pointsA.size(); ++i) {
-                dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
-                dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
-            }
-            const auto median = [](std::vector<float>& values) {
-                const size_t mid = values.size() / 2;
-                std::nth_element(values.begin(), values.begin() + mid, values.end());
-                if (values.size() % 2 == 0) {
-                    const float upper = values[mid];
-                    std::nth_element(values.begin(), values.begin() + mid - 1, values.end());
-                    return (values[mid - 1] + upper) / 2.0f;
-                }
-                return values[mid];
-            };
-            out.dx = median(dx_list);
-            out.dy = median(dy_list);
+        if (out.pointsA.empty()) {
+            return false;
         }
+
+        std::vector<float> dx_list, dy_list;
+        for (size_t i = 0; i < out.pointsA.size(); ++i) {
+            dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
+            dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
+        }
+        const auto median = [](std::vector<float>& values) {
+            const size_t mid = values.size() / 2;
+            std::nth_element(values.begin(), values.begin() + mid, values.end());
+            if (values.size() % 2 == 0) {
+                const float upper = values[mid];
+                std::nth_element(values.begin(), values.begin() + mid - 1, values.end());
+                return (values[mid - 1] + upper) / 2.0f;
+            }
+            return values[mid];
+        };
+        out.dx = median(dx_list);
+        out.dy = median(dy_list);
 
         std::cout << "[DEBUG] Modèle RACO/ALIKED+LightGlue exécuté\n";
         const auto end_time = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = end_time - start_time;
         std::cout << "[DEBUG] Temps total exécution match() : "
                   << elapsed.count() << " secondes\n";
-        return !out.pointsA.empty();
+        return true;
     }
 
     if (this->session->GetInputCount() != 2) {
@@ -379,7 +387,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     // Inférence
 
     // Noms des nœuds d'entrée/sortie (à adapter selon l'export ONNX -> j'ai vérifié via Netron)
-    const char* input_names[] = {"image0", "image1"}; 
+    const char* input_names[] = {"image0", "image1"};
     const char* output_names[] = {"matches0", "matches1", "mscores0", "mscores1", "kpts0", "kpts1"};  // -> 6 outputs
 
     std::vector<Ort::Value> inputs;
@@ -442,7 +450,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         throw std::runtime_error("LightGlueMatcher: mscores1 doit être un tenseur FLOAT.");
     }
 
-    // Les correspondances sont parcourues depuis matches0 ; mscores0 fournit le score de chaque entrée.
+    // Les associations dirigées A -> B utilisent les scores correspondants de mscores0.
 
     // Extraction des coordonnées des points-clés (float)
     auto kpts0_info = output_tensors[4].GetTensorTypeAndShapeInfo();
@@ -465,7 +473,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             "LightGlueMatcher: les dimensions des tenseurs kpts0/kpts1 sont incompatibles avec matches0.");
     }
     const size_t kpts1_count = kpts1_elements / 2;
-    
+
     float* kpts0_f = nullptr; float* kpts1_f = nullptr;
     int64_t* kpts0_i = nullptr; int64_t* kpts1_i = nullptr;
 
@@ -485,10 +493,10 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     //  - Stockage : Les coordonnées sont converties en objets cv::Point2f et poussées dans out.pointsA et out.pointsB. À ce stade, pointsA[k] et pointsB[k] représentent les coordonnées exactes du k-ème match valide.
 
     std::cout << "[DEBUG] match LightGlue : association des coordonnées\n";
-    
+
     for (size_t i = 0; i < num_elements; ++i) {
         int64_t match_idx = matches0_data[i];
-        
+
         if (match_idx >= 0 && static_cast<uint64_t>(match_idx) < kpts1_count) {
             const float confidence_score = scores0_data[i];
             if (confidence_score < kMinConfidenceScore) {
@@ -496,7 +504,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             }
 
             float x0, y0, x1, y1;
-            
+
             // On lit les coordonnées seulement après avoir vérifié l'indice.
             if (kpts0_f) {
                 x0 = kpts0_f[i * 2];
@@ -509,11 +517,9 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
                 x1 = static_cast<float>(kpts1_i[match_idx * 2]);
                 y1 = static_cast<float>(kpts1_i[match_idx * 2 + 1]);
             }
-            
-            // On enregistre les points correspondants dans les vecteurs de la structure de sortie
-            // Ajout de la division par le scale pour replacer les points sur les images 5176x5176 (13/10/26)
-            out.pointsA.push_back(cv::Point2f(x0 / scale1, y0 / scaleY1));
-            out.pointsB.push_back(cv::Point2f(x1 / scale2, y1 / scaleY2));
+
+            out.pointsA.push_back(cv::Point2f(x0 / scaleX1, y0 / scaleY1));
+            out.pointsB.push_back(cv::Point2f(x1 / scaleX2, y1 / scaleY2));
 
             // On enregistre le score correspondant
             out.scores.push_back(confidence_score);
@@ -529,44 +535,44 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         throw std::runtime_error("LightGlueMatcher: les vecteurs de sortie ont des tailles incohérentes.");
     }
 
+    if (out.pointsA.empty()) {
+        return false;
+    }
+
     std::cout << "[DEBUG] match LightGlue : calcul de dx et dy\n";
 
     // Calcul du décalage (dx, dy) et enregistrement dans la structure de sortie.
-    if (!out.pointsA.empty()) {
-        std::vector<float> dx_list;
-        std::vector<float> dy_list;
-        
-        // Calculer la différence pour chaque paire de points
-        for (size_t i = 0; i < out.pointsA.size(); ++i) {
-            dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
-            dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
-        }
+    std::vector<float> dx_list;
+    std::vector<float> dy_list;
 
-        // La médiane limite l'effet des mauvaises correspondances.
-        const auto median = [](std::vector<float>& values) {
-            const size_t mid_idx = values.size() / 2;
-            std::nth_element(values.begin(), values.begin() + mid_idx, values.end());
-            if (values.size() % 2 == 0) {
-                const float upper = values[mid_idx];
-                std::nth_element(values.begin(), values.begin() + mid_idx - 1, values.end());
-                return (values[mid_idx - 1] + upper) / 2.0f;
-            }
-            return values[mid_idx];
-        };
-
-        out.dx = median(dx_list);
-        out.dy = median(dy_list);
-
-        std::cout << "Dx : " << out.dx << ", Dy : " << out.dy << '\n';
+    // Calculer la différence pour chaque paire de points
+    for (size_t i = 0; i < out.pointsA.size(); ++i) {
+        dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
+        dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
     }
 
-    // std::cout << "[DEBUG] match LightGlue : fin\n";
+    // La médiane limite l'effet des mauvaises correspondances.
+    const auto median = [](std::vector<float>& values) {
+        const size_t mid_idx = values.size() / 2;
+        std::nth_element(values.begin(), values.begin() + mid_idx, values.end());
+        if (values.size() % 2 == 0) {
+            const float upper = values[mid_idx];
+            std::nth_element(values.begin(), values.begin() + mid_idx - 1, values.end());
+            return (values[mid_idx - 1] + upper) / 2.0f;
+        }
+        return values[mid_idx];
+    };
+
+    out.dx = median(dx_list);
+    out.dy = median(dy_list);
+
+    std::cout << "Dx : " << out.dx << ", Dy : " << out.dy << '\n';
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;
     std::cout << "[DEBUG] Temps total exécution match() : " << elapsed.count() << " secondes\n";
 
-    return !out.pointsA.empty();
+    return true;
 }
 
 } // namespace stitching::matching

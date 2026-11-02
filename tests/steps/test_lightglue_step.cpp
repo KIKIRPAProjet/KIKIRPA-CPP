@@ -1,5 +1,8 @@
 #include "steps/LightGlueStep.h"
 #include "steps/ImportStep.h"
+#include "core/Tuile.h"
+#include <algorithm>
+#include <set>
 #include "LightGlueTestPipeline.h"
 #include <opencv2/imgcodecs.hpp>
 #include <chrono>
@@ -55,9 +58,28 @@ LightGlueStep::MatcherFactory factory(const std::shared_ptr<State>& state) {
     };
 }
 
+struct FixtureDirectory {
+    std::filesystem::path path;
+    FixtureDirectory() {
+        const auto stamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+        path = std::filesystem::temp_directory_path() / ("lightglue-fixtures-" + std::to_string(stamp));
+        require(std::filesystem::create_directory(path), "create isolated fixtures");
+    }
+    ~FixtureDirectory() { std::error_code ec; std::filesystem::remove_all(path, ec); }
+};
+
+std::shared_ptr<Tuile> makeTile(int id, const cv::Mat& image = cv::Mat(32, 32, CV_16UC1, cv::Scalar(2000))) {
+    static FixtureDirectory directory;
+    const auto path = directory.path / (std::to_string(id) + ".tif");
+    require(cv::imwrite(path.string(), image), "write tile fixture");
+    return std::make_shared<Tuile>(id, path, std::filesystem::path{}, image.cols, image.rows, image.type());
+}
+
 Tiles pairTiles() {
-    return {{"a.tif", 0, 0, cv::Mat(32, 32, CV_16UC1, cv::Scalar(2000))},
-            {"b.tif", 1, 0, cv::Mat(32, 32, CV_16UC1, cv::Scalar(2000))}};
+    auto a = makeTile(0), b = makeTile(1);
+    a->setVoisins(nullptr, b.get(), nullptr, nullptr);
+    b->setVoisins(a.get(), nullptr, nullptr, nullptr);
+    return {a, b};
 }
 
 void gridAndReuse() {
@@ -65,17 +87,24 @@ void gridAndReuse() {
     LightGlueStep step({"fixture.onnx"}, factory(state));
     DataStore store;
     Tiles tiles = pairTiles();
-    tiles.push_back({"c.tif", 0, 1, tiles[0].image});
-    tiles.push_back({"d.tif", 1, 1, tiles[0].image});
-    std::swap(tiles[0], tiles[3]); // indices d'origine conservés malgré l'ordre de parcours de la grille
+    auto c = makeTile(2), d = makeTile(3);
+    tiles[0]->setVoisins(nullptr, tiles[1].get(), nullptr, c.get());
+    tiles[1]->setVoisins(tiles[0].get(), nullptr, nullptr, d.get());
+    c->setVoisins(nullptr, d.get(), tiles[0].get(), nullptr);
+    d->setVoisins(c.get(), nullptr, tiles[1].get(), nullptr);
+    tiles.push_back(c);
+    tiles.push_back(d);
+    std::swap(tiles[0], tiles[3]);
     store.set("tiles", tiles);
     step.setDataStore(store);
     require(step.execute(), "2x2 grid should succeed");
-    const auto& results = store.get<PairMatches>("matches");
+    const auto& results = store.get<std::vector<PairMatches>>("matches");
     require(results.size() == 4 && state->calls == 4, "each right/bottom pair exactly once");
-    require(results[0].a.index == 3 && results[0].b.index == 1, "original tile indices");
-    require(results[0].a.path == "a.tif", "tile paths are preserved");
-    require(results[0].direction == Direction::Right && results[1].direction == Direction::Bottom,
+    std::set<std::pair<int, int>> edges;
+    for (const auto& result : results) edges.emplace(result.idA, result.idB);
+    require(edges == std::set<std::pair<int, int>>{{0, 1}, {0, 2}, {1, 3}, {2, 3}}, "tile ids and no duplicates");
+    require(std::count(state->directions.begin(), state->directions.end(), Direction::Right) == 2 &&
+            std::count(state->directions.begin(), state->directions.end(), Direction::Bottom) == 2,
             "horizontal and vertical contexts");
     require(results[0].matches.pointsA.size() == 4, "correspondences published");
     require(step.execute() && state->creations == 1, "session reused across executions");
@@ -104,7 +133,9 @@ void failuresAndRetry() {
     state->mode = Mode::SecondPairFails;
     state->calls = 0;
     auto tiles = pairTiles();
-    tiles.push_back({"c.tif", 2, 0, tiles[0].image});
+    auto c = makeTile(2);
+    tiles[1]->setVoisins(tiles[0].get(), c.get(), nullptr, nullptr);
+    tiles.push_back(c);
     store.set("tiles", tiles);
     require(!step.execute() && !store.has("matches") && step.getOutput().value.empty(), "no partial publication");
 }
@@ -114,7 +145,6 @@ void outputSerialization() {
     LightGlueStep step({"fixture.onnx"}, factory(state));
     DataStore store;
     auto tiles = pairTiles();
-    tiles[0].path = "images/a with spaces.tif";
     store.set("tiles", tiles);
     step.setDataStore(store);
     require(step.execute(), "serialization fixture");
@@ -125,15 +155,14 @@ void outputSerialization() {
             "output envelope uses key, value and type");
     require(decoded.at("value").is_array() && decoded.at("value").size() == 1, "array payload");
     const auto& pair = decoded.at("value").at(0);
-    require(pair.at("a").at("path") == "images/a with spaces.tif" && pair.at("b").at("index") == 1,
-            "tile identity serialized");
+    require(pair.at("idA") == 0 && pair.at("idB") == 1, "tile ids serialized");
     require(pair.at("direction") == "right", "direction serialized by name");
     require(pair.at("matches").at("pointsA").at(0) == Json::array({6.f, 6.f}) &&
             pair.at("matches").at("pointsB").at(0) == Json::array({4.f, 4.f}), "point coordinates serialized");
     require(pair.at("matches").at("scores").size() == 4 && pair.at("matches").at("dx") == 2.f,
             "confidence and translation serialized");
     require(step.exportData() == serialized, "exportData exposes the output envelope");
-    require(store.get<PairMatches>(output.key).size() == output.value.size(), "typed DataStore contract retained");
+    require(store.get<std::vector<PairMatches>>(output.key).size() == output.value.size(), "typed DataStore contract retained");
     require(step.getConfig().at("signature").at("pipelineOptions").at(0).at("type") == output.type,
             "signature and output type agree");
     state->mode = Mode::False;
@@ -153,29 +182,32 @@ void invalidInputs() {
     store.set("tiles", Tiles{});
     require(!step.execute(), "empty grid");
     auto tiles = pairTiles();
-    tiles[1].col = 0;
+    tiles[1] = tiles[0];
     store.set("tiles", tiles);
-    require(!step.execute(), "duplicate coordinates");
-    tiles[1].col = 2;
-    store.set("tiles", tiles);
-    require(!step.execute(), "non-adjacent grid");
+    require(!step.execute(), "duplicate tile");
     tiles = pairTiles();
-    tiles[1].image = {};
+    tiles[1]->setVoisins(nullptr, nullptr, nullptr, nullptr);
+    tiles[0]->setVoisins(nullptr, nullptr, nullptr, nullptr);
     store.set("tiles", tiles);
-    require(!step.execute(), "empty image");
-    tiles[1].image = cv::Mat(32, 32, CV_32FC1);
+    require(!step.execute(), "non-adjacent tiles");
+    tiles = pairTiles();
+    tiles[1] = nullptr;
     store.set("tiles", tiles);
+    require(!step.execute(), "null tile");
+    tiles = pairTiles();
+    auto floating = makeTile(1, cv::Mat(32, 32, CV_32FC1, cv::Scalar(1)));
+    tiles[0]->setVoisins(nullptr, floating.get(), nullptr, nullptr);
+    store.set("tiles", Tiles{tiles[0], floating});
     require(!step.execute(), "unsupported pixel depth");
-    tiles = pairTiles();
-    tiles[0].col = -1;
-    store.set("tiles", tiles);
-    require(!step.execute(), "negative coordinates");
+    auto negative = makeTile(-1);
+    store.set("tiles", Tiles{negative, tiles[0]});
+    require(!step.execute(), "negative tile id");
     require(state->creations == 0, "invalid inputs do not load a model");
-    tiles = pairTiles();
-    tiles[0].col = std::numeric_limits<int>::max() - 1;
-    tiles[1].col = std::numeric_limits<int>::max();
-    store.set("tiles", tiles);
-    require(step.execute(), "maximum grid coordinate without overflow");
+    auto largeA = makeTile(std::numeric_limits<int>::max() - 1);
+    auto largeB = makeTile(std::numeric_limits<int>::max());
+    largeA->setVoisins(nullptr, largeB.get(), nullptr, nullptr);
+    store.set("tiles", Tiles{largeA, largeB});
+    require(step.execute(), "large tile ids");
 }
 
 void invalidConfiguration() {
@@ -231,7 +263,7 @@ void importIntegration() {
     auto pipeline = stitching::tests::buildLightGlueTestPipeline(
         ImportInput{dir.string()}, LightGlueInput{"fixture.onnx"}, factory(state));
     require(pipeline.run(), "ImportStep -> LightGlueStep");
-    require(pipeline.getData().get<PairMatches>("matches").size() == 1, "integration output");
+    require(pipeline.getData().get<std::vector<PairMatches>>("matches").size() == 1, "integration output");
     Json cfg = pipeline.exportConfig();
     cfg["pipeline"]["steps"][0]["options"][0]["value"] = (dir / "missing").string();
     pipeline.configure(cfg);
