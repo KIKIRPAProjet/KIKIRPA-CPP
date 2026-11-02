@@ -19,7 +19,10 @@ public:
     virtual ~Step() = default;
 
     virtual bool execute() = 0;                         // virtuelle pure
-    virtual void importConfig(const Json& cfg) { config = cfg; }
+    // Applique un JSON { name, options, ... } à la config par défaut du step : seules les valeurs des options
+    // sont reprises, une option absente garde sa valeur. Lève std::invalid_argument si le JSON est mal formé,
+    // si le nom ne correspond pas, si une option est inconnue ou si sa valeur n'a pas le type déclaré.
+    virtual void importConfig(const Json& cfg);
     virtual Json exportData() const { return outputData; }
     const Json& getConfig() const { return config; }
     void setDataStore(DataStore& d) { data = &d; }
