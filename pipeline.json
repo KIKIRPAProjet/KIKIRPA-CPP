@@ -33,26 +33,20 @@
       {
         "name": "seamline",
         "options": [
-          { "type": "string", "key": "seamFinder", "value": "graphcut" },
-          { "type": "int", "key": "level", "value": 1 }
+          { "type": "string", "key": "seamFinder", "value": "none" }
         ]
       },
       {
         "name": "fusion",
         "options": [
-          { "type": "string", "key": "blending", "value": "multiband" },
-          { "type": "int", "key": "bands", "value": 5 }
+          { "type": "string", "key": "blending", "value": "average" }
         ]
       },
       {
         "name": "export",
         "options": [
           { "type": "string", "key": "path", "value": "output/mosaic.tif" },
-          { "type": "string", "key": "format", "value": "bigtiff" },
-          { "type": "int", "key": "bits", "value": 16 },
-          { "type": "int", "key": "blockSize", "value": 4096 },
-          { "type": "bool", "key": "keepIcc", "value": true },
-          { "type": "bool", "key": "pyramid", "value": true }
+          { "type": "int", "key": "bits", "value": 16 }
         ]
       }
     ]
