@@ -4,6 +4,7 @@
 #include <regex>
 #include <stdexcept>
 #include <map>
+#include <cstdio>
 
 using namespace std;
 using namespace cv;

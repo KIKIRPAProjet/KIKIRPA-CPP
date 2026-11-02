@@ -72,5 +72,13 @@ struct TilePositionData {
     // La valeur par défaut 0.0 garantit une rétrocompatibilité totale avec les appels existants {id, position}.
     double rotation = 0.0;
 };
-
+//Sortie d'un graphCut
+// Territoire d'une tuile : polygones (repère de la mosaïque) qui délimitent les pixels pris dans cette tuile.
+// polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
+struct TileTerritory {
+    int tile_index = 0;
+    std::vector<std::vector<cv::Point>> polygons;
+    std::vector<std::vector<std::vector<cv::Point>>> holes;
+};
 } // namespace stitching
+

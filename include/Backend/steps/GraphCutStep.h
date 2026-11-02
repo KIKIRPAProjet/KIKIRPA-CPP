@@ -15,7 +15,7 @@ struct GraphCutInput {
 
 // Sortie du step
 struct GraphCutOutput {
-    std::vector<Seamline::TileTerritory> tiles;   // territoire de chaque tuile
+    std::vector<stitching::TileTerritory> tiles;   // territoire de chaque tuile
 };
 class GraphCutStep : public Step {
     GraphCutInput input;
