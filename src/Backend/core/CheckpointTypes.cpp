@@ -2,7 +2,6 @@
 #include "core/CheckpointTypes.h"
 #include "core/Tuile.h"
 #include "core/Types.h"
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include <fstream>
 #include <stdexcept>
 
@@ -152,11 +151,11 @@ void loadPositions(DataStore& d, const std::string& key, const fs::path& dir) {
     d.set(key, std::move(positions));
 }
 
-// ----- "Territories" : std::vector<Seamline::TileTerritory>
+// ----- "Territories" : std::vector<stitching::TileTerritory>
 
 void saveTerritories(const DataStore& d, const std::string& key, const fs::path& dir) {
     Json a = Json::array();
-    for (const Seamline::TileTerritory& t : d.get<std::vector<Seamline::TileTerritory>>(key)) {
+    for (const stitching::TileTerritory& t : d.get<std::vector<stitching::TileTerritory>>(key)) {
         Json polygons = Json::array(), holes = Json::array();
         for (const auto& poly : t.polygons) polygons.push_back(polyline(poly));
         for (const auto& hs : t.holes) {
@@ -170,9 +169,9 @@ void saveTerritories(const DataStore& d, const std::string& key, const fs::path&
 }
 
 void loadTerritories(DataStore& d, const std::string& key, const fs::path& dir) {
-    std::vector<Seamline::TileTerritory> territories;
+    std::vector<stitching::TileTerritory> territories;
     for (const Json& j : readJson(dir, key)) {
-        Seamline::TileTerritory t;
+        stitching::TileTerritory t;
         t.tile_index = j.at("tile_index").get<int>();
         for (const Json& poly : j.at("polygons")) t.polygons.push_back(readPolyline(poly));
         for (const Json& hs : j.at("holes")) {

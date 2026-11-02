@@ -2,18 +2,11 @@
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
-
+#include "core/Types.h"
 namespace Seamline {
 
 constexpr uchar NO_TILE = 255;   // étiquette d'un pixel couvert par aucune tuile (comme l'ancien fond à 255)
 
-// Territoire d'une tuile : polygones (repère de la mosaïque) qui délimitent les pixels pris dans cette tuile.
-// polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
-struct TileTerritory {
-    int tile_index = 0;
-    std::vector<std::vector<cv::Point>> polygons;
-    std::vector<std::vector<std::vector<cv::Point>>> holes;
-};
 
 // Résultat de la vérification du pavage
 struct SeamCheck {
@@ -42,14 +35,13 @@ public:
                         double scale,
                         std::vector<cv::Point>& corners_small,
                         std::vector<cv::UMat>& masks_umat_small,
-                        cv::Mat& final_mosaic,
                         cv::Mat& index_matrix);
 
     // Polygones de chaque territoire, trous compris (RETR_CCOMP), sans filtre d'aire : le pavage doit rester exact.
-    std::vector<TileTerritory> extractPolygons(const cv::Mat& index_matrix, int num_tiles);
+    std::vector<stitching::TileTerritory> extractPolygons(const cv::Mat& index_matrix, int num_tiles);
 
     // Redessine les territoires et compare à la carte de provenance (pavage exact, sans trou ni chevauchement ?).
-    SeamCheck verifyTiling(const std::vector<TileTerritory>& territories,
+    SeamCheck verifyTiling(const std::vector<stitching::TileTerritory>& territories,
                            const cv::Mat& index_matrix,
                            const std::vector<cv::Size>& tile_sizes,
                            const std::vector<cv::Point>& original_corners) const;

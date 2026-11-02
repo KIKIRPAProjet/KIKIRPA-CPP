@@ -12,7 +12,7 @@ namespace stitching {
 //                  source et pyramidaux, qui ne sont pas recopiés)
 //   "PairMatches"  std::vector<PairMatches>
 //   "Positions"    std::vector<TilePositionData>
-//   "Territories"  std::vector<Seamline::TileTerritory>
+//   "Territories"  std::vector<stitching::TileTerritory>
 // Pour un nouveau type : une entrée dans pipelineTypes() (CheckpointTypes.cpp), ou Checkpoint::registerType.
 std::map<std::string, std::pair<Checkpoint::Saver, Checkpoint::Loader>> pipelineTypes();
 

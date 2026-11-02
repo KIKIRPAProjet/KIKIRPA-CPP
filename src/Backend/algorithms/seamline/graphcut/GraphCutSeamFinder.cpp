@@ -11,6 +11,7 @@
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include <climits>
 #include <vector>
+#include "core/Types.h"
 using namespace std;
 using namespace cv;
 using namespace cv::detail;
@@ -26,7 +27,7 @@ static UMat loadSmallUMat(const string& path, double scale, const Size& expected
     return u;
 }
 
-int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Size>& tile_sizes, const vector<Point>& original_corners, double scale, vector<Point>& corners_small, vector<UMat>& masks_umat_small, Mat& final_mosaic, Mat& index_matrix) {
+int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Size>& tile_sizes, const vector<Point>& original_corners, double scale, vector<Point>& corners_small, vector<UMat>& masks_umat_small, Mat& index_matrix) {
     const int n = (int)tile_sizes.size();
     if (n == 0 || n >= (int)NO_TILE) return -1;          // la carte de provenance est sur 8 bits (255 = aucune tuile)
     if ((int)tile_paths.size() != n || (int)masks_umat_small.size() != n ||
@@ -136,23 +137,11 @@ int GraphCut::computeSeamline(const vector<string>& tile_paths, const vector<Siz
             if (best >= 0) { pi[x] = (uchar)best; ++fallbackPixels; }
         }
     }
-
-    // ---- mosaïque visuelle (8 bits, affichage seulement) : les tuiles pleine résolution sont relues UNE À LA FOIS
-    final_mosaic = Mat::zeros(Size(max_x, max_y), CV_8UC3);
-    for (int i = 0; i < n; ++i) {
-        Mat tile16 = ImagePretreatment::read16(tile_paths[i]);
-        if (tile16.empty() || tile16.size() != tile_sizes[i]) return -1;
-        Mat tile8;
-        tile16.convertTo(tile8, CV_8UC3, 255.0 / 65535.0);
-        tile16.release();
-        Mat mask = (index_matrix(rects[i]) == i);
-        tile8.copyTo(final_mosaic(rects[i]), mask);
-    }   // <- une seule tuile pleine résolution en mémoire à la fois
     return 1;
 }
 
-vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num_tiles) {
-    vector<TileTerritory> territories;
+vector<stitching::TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num_tiles) {
+    vector<stitching::TileTerritory> territories;
     for (int i = 0; i < num_tiles; ++i) {
         // Création d'un masque binaire strictement dédié à la tuile 'i'
         Mat mask_tile = (index_matrix == i);
@@ -162,7 +151,7 @@ vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num
         vector<Vec4i> hier;
         findContours(mask_tile, contours, hier, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
 
-        TileTerritory territory;
+        stitching::TileTerritory territory;
         territory.tile_index = i;
         for (size_t j = 0; j < contours.size(); ++j) {
             if (hier[j][3] >= 0) continue;               // un trou : rattaché à son polygone ci-dessous
@@ -177,13 +166,13 @@ vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num
     return territories;
 }
 
-SeamCheck GraphCut::verifyTiling(const vector<TileTerritory>& territories, const Mat& index_matrix,
+SeamCheck GraphCut::verifyTiling(const vector<stitching::TileTerritory>& territories, const Mat& index_matrix,
                                  const vector<Size>& tile_sizes, const vector<Point>& original_corners) const {
     SeamCheck c;
     c.fallbackPixels = fallbackPixels;
     Mat recomposed(index_matrix.size(), CV_8U, Scalar(NO_TILE));
     const Rect canvas(0, 0, index_matrix.cols, index_matrix.rows);
-    for (const TileTerritory& t : territories) {
+    for (const stitching::TileTerritory& t : territories) {
         if (t.polygons.empty()) continue;
         vector<Point> all;
         for (const auto& p : t.polygons) all.insert(all.end(), p.begin(), p.end());
