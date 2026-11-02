@@ -10,7 +10,7 @@ struct AbsolutePositioningInput {
 
 // name : "absolutePositioning"
 // options : referenceTile (int)
-// pipelineOptions : { "type": "Alignments", "key": "alignments" }
+// pipelineOptions : Tiles -> "tiles", Alignments -> "alignments"
 // signature : { "type": "Positions", "key": "positions" }
 class AbsolutePositioningStep : public Step {
 public:
