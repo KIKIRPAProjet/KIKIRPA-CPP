@@ -23,6 +23,10 @@ public:
     // les options absentes gardent leur valeur. Lève std::invalid_argument si option inconnue.
     virtual void importConfig(const Json& cfg);
     virtual Json exportData() const { return outputData; }
+    // Empreinte de ce que le step lit hors du pipeline (ex. fichiers sources : nom, taille, date).
+    // Gardée dans le checkpoint : si elle change, le checkpoint est périmé. Par défaut null :
+    // seules les options comptent.
+    virtual Json inputFingerprint() const { return Json(); }
     const Json& getConfig() const { return config; }
     void setDataStore(DataStore& d) { data = &d; }
 };
