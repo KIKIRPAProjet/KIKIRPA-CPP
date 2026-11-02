@@ -1,15 +1,16 @@
+// Step.cpp
 #include "core/Step.h"
 #include "core/Config.h"
 #include <algorithm>
-#include <cmath>
-#include <regex>
+#include <set>
 #include <stdexcept>
 
 namespace stitching {
 
 namespace {
 
-bool matchesType(const Json& value, const std::string& type) {
+// La valeur JSON correspond-elle au type déclaré de l'option ("int" n'accepte pas 2.5, "float" accepte 2)
+bool valueMatchesType(const Json& value, const std::string& type) {
     if (type == "string") return value.is_string();
     if (type == "int") return value.is_number_integer();
     if (type == "float") return value.is_number();
@@ -17,126 +18,65 @@ bool matchesType(const Json& value, const std::string& type) {
     return false;
 }
 
-void validateOption(const Option& option, const std::string& stepName) {
-    if (option.key.empty())
-        throw std::invalid_argument("step '" + stepName + "': option key cannot be empty");
-    if (option.type != "string" && option.type != "int" &&
-        option.type != "float" && option.type != "bool")
-        throw std::invalid_argument("step '" + stepName + "', option '" + option.key +
-                                    "': unsupported type '" + option.type + "'");
-    if (!matchesType(option.value, option.type))
-        throw std::invalid_argument("step '" + stepName + "', option '" + option.key +
-                                    "': expected " + option.type + " value");
-    if (option.type == "float" && !std::isfinite(option.value.get<double>()))
-        throw std::invalid_argument("step '" + stepName + "', option '" + option.key +
-                                    "': value must be finite");
-}
+// Structure du JSON d'un step, avant toute conversion en StepConfig (messages précis plutôt qu'un type_error)
+void validateStepJson(const Json& cfg) {
+    if (!cfg.is_object()) throw std::invalid_argument("step config must be an object");
+    if (cfg.contains("name") && !cfg.at("name").is_string())
+        throw std::invalid_argument("field 'name' must be a string");
+    if (!cfg.contains("options")) return;
+    if (!cfg.at("options").is_array()) throw std::invalid_argument("field 'options' must be an array");
 
-void validateStepOptions(const StepConfig& config) {
-    const auto value = [&](const std::string& key) -> const Json& {
-        const auto it = std::find_if(config.options.begin(), config.options.end(),
-                                     [&](const Option& option) { return option.key == key; });
-        if (it == config.options.end())
-            throw std::invalid_argument("step '" + config.name + "': missing default option '" + key + "'");
-        return it->value;
-    };
-    const auto invalid = [&](const std::string& key, const std::string& reason) {
-        throw std::invalid_argument("step '" + config.name + "', option '" + key + "': " + reason);
-    };
-
-    if (config.name == "import") {
-        if (value("path").get<std::string>().empty()) invalid("path", "cannot be empty");
-        const std::string format = value("format").get<std::string>();
-        try {
-            if (std::regex(format).mark_count() < 2)
-                invalid("format", "regex must contain capture groups for column and row");
-        } catch (const std::regex_error& e) {
-            invalid("format", std::string("invalid regex: ") + e.what());
-        }
-    } else if (config.name == "stitching") {
-        const std::string matcher = value("matcher").get<std::string>();
-        if (matcher != "sift" && matcher != "orb") invalid("matcher", "must be 'sift' or 'orb'");
-        if (value("rejector").get<std::string>() != "ransac") invalid("rejector", "must be 'ransac'");
-        const int level = value("level").get<int>();
-        if (level < 0 || level > 5) invalid("level", "must be between 0 and 5");
-        const double ratio = value("ratio").get<double>();
-        if (!(ratio > 0.0 && ratio < 1.0)) invalid("ratio", "must be in (0, 1)");
-        if (value("threshold").get<double>() <= 0.0) invalid("threshold", "must be positive");
-    } else if (config.name == "absolutePositioning") {
-        if (value("referenceTile").get<int>() < 0)
-            invalid("referenceTile", "must be non-negative");
-    } else if (config.name == "seamline") {
-        if (value("seamFinder").get<std::string>() != "none")
-            invalid("seamFinder", "currently only 'none' is implemented");
-    } else if (config.name == "fusion") {
-        if (value("blending").get<std::string>() != "average")
-            invalid("blending", "currently only 'average' is implemented");
-    } else if (config.name == "export") {
-        if (value("path").get<std::string>().empty()) invalid("path", "cannot be empty");
-        const int bits = value("bits").get<int>();
-        if (bits != 8 && bits != 16) invalid("bits", "must be 8 or 16");
+    std::set<std::string> keys;
+    for (size_t i = 0; i < cfg.at("options").size(); ++i) {
+        const Json& o = cfg.at("options").at(i);
+        const std::string path = "options[" + std::to_string(i) + "]";
+        if (!o.is_object()) throw std::invalid_argument(path + " must be an object");
+        if (!o.contains("key") || !o.at("key").is_string() || o.at("key").get<std::string>().empty())
+            throw std::invalid_argument(path + ".key must be a non-empty string");
+        if (!o.contains("type") || !o.at("type").is_string())
+            throw std::invalid_argument(path + ".type must be a string");
+        if (!o.contains("value")) throw std::invalid_argument(path + ".value is required");
+        if (!keys.insert(o.at("key").get<std::string>()).second)
+            throw std::invalid_argument("duplicate option '" + o.at("key").get<std::string>() + "'");
     }
 }
 
 } // namespace
 
 Json Step::option(const std::string& key) const {
-    if (config.is_object() && config.contains("options"))
+    if (config.contains("options"))
         for (const auto& o : config.at("options"))
             if (o.value("key", "") == key) return o.at("value");
-    const std::string name = config.is_object() ? config.value("name", "?") : "?";
-    throw std::out_of_range("step '" + name + "': missing option '" + key + "'");
+    throw std::out_of_range("Step '" + config.value("name", "") + "': no option '" + key + "'");
 }
 
 void Step::importConfig(const Json& cfg) {
-    if (!config.is_object()) {   // step sans config par défaut
+    validateStepJson(cfg);
+    if (!config.is_object()) {   // step sans config par défaut : rien à quoi comparer
         config = cfg;
         return;
     }
 
     StepConfig own = config.get<StepConfig>();
-    if (!cfg.is_object() || !cfg.contains("name") || !cfg.at("name").is_string())
-        throw std::invalid_argument("step '" + own.name + "': expected a string 'name'");
-    for (auto it = cfg.begin(); it != cfg.end(); ++it) {
-        if (it.key() != "name" && it.key() != "options" &&
-            it.key() != "pipelineOptions" && it.key() != "signature")
-            throw std::invalid_argument("step '" + own.name + "': unknown field '" + it.key() + "'");
-    }
-    if (cfg.contains("options") && !cfg.at("options").is_array())
-        throw std::invalid_argument("step '" + own.name + "': 'options' must be an array");
-
-    StepConfig in;
-    try {
-        in = cfg.get<StepConfig>();
-    } catch (const Json::exception& e) {
-        throw std::invalid_argument("step '" + own.name + "': invalid configuration: " + e.what());
-    }
+    const StepConfig in = cfg.get<StepConfig>();
     if (!in.name.empty() && in.name != own.name)
-        throw std::invalid_argument("step '" + own.name + "': cannot import config of step '" + in.name + "'");
-    if (cfg.contains("pipelineOptions") &&
-        Json(in.pipelineOptions) != Json(own.pipelineOptions))
-        throw std::invalid_argument("step '" + own.name + "': input pipelineOptions do not match the declared contract");
-    if (cfg.contains("signature") &&
-        Json(in.signature.pipelineOptions) != Json(own.signature.pipelineOptions))
-        throw std::invalid_argument("step '" + own.name + "': output signature does not match the declared contract");
+        throw std::invalid_argument("step '" + own.name + "' cannot import the config of step '" + in.name + "'");
 
-    std::vector<std::string> seen;
+    // Seules les valeurs sont reprises : les clés et les types des options, les entrées et les sorties
+    // sont fixés par le step (une option absente du JSON garde sa valeur par défaut)
     for (const Option& o : in.options) {
-        validateOption(o, own.name);
-        if (std::find(seen.begin(), seen.end(), o.key) != seen.end())
-            throw std::invalid_argument("step '" + own.name + "': duplicate option '" + o.key + "'");
-        seen.push_back(o.key);
-        auto it = std::find_if(own.options.begin(), own.options.end(),
-                               [&](const Option& d) { return d.key == o.key; });
+        const auto it = std::find_if(own.options.begin(), own.options.end(),
+                                     [&](const Option& d) { return d.key == o.key; });
         if (it == own.options.end())
             throw std::invalid_argument("step '" + own.name + "': unknown option '" + o.key + "'");
         if (o.type != it->type)
-            throw std::invalid_argument("step '" + own.name + "', option '" + o.key +
-                                        "': expected type '" + it->type + "', got '" + o.type + "'");
+            throw std::invalid_argument("step '" + own.name + "': option '" + o.key + "' has type '" + it->type +
+                                        "', got '" + o.type + "'");
+        if (!valueMatchesType(o.value, it->type))
+            throw std::invalid_argument("step '" + own.name + "': option '" + o.key + "' expects a value of type '" +
+                                        it->type + "', got " + o.value.dump());
         it->value = o.value;
     }
-    for (const Option& option : own.options) validateOption(option, own.name);
-    validateStepOptions(own);
     config = own;
 }
 
