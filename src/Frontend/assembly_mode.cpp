@@ -60,5 +60,5 @@ QWidget *MainWindow::createAssemblyMode()
         updateStatus(tr("Algorithme sélectionné : %1 — étapes suivantes à refaire.").arg(algorithm));
     });
     rightTabs->addTab(chainPage, tr("Chaîne"));
-
+    return chainPage;
 }
