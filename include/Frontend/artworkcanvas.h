@@ -2,7 +2,7 @@
 #define ARTWORKCANVAS_H
 
 #include "frontendutils.h"
-#include "mainwindow.h"
+#include "projectgrid.h"
 
 #include <QFontMetrics>
 #include <QFileInfo>
@@ -51,6 +51,7 @@ public:
         m_cellsSwapped = std::move(cellsSwapped);
     }
     void toggleComparison() { m_comparison = !m_comparison; update(); }
+    void setComparisonVisible(bool visible) { m_comparison = visible; update(); }
     void toggleMask() { m_mask = !m_mask; update(); }
     void setMaskVisible(bool visible) { m_mask = visible; update(); }
 

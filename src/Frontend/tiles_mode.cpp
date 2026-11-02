@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "projectgrid.h"
 #include "workspace_helpers.h"
 
 #include <QButtonGroup>
@@ -43,11 +44,11 @@ QWidget *MainWindow::createTilesMode()
     auto *dimensions = new QFormLayout;
     gridRowsSpin = new QSpinBox(gridTabPage);
     gridRowsSpin->setRange(1, 20);
-    gridRowsSpin->setValue(gridRows);
+    gridRowsSpin->setValue(projectGrid->state().gridRows);
     gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
     gridColumnsSpin = new QSpinBox(gridTabPage);
     gridColumnsSpin->setRange(1, 20);
-    gridColumnsSpin->setValue(gridColumns);
+    gridColumnsSpin->setValue(projectGrid->state().gridColumns);
     gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
     dimensions->addRow(tr("Lignes"), gridRowsSpin);
     dimensions->addRow(tr("Colonnes"), gridColumnsSpin);
@@ -87,10 +88,10 @@ QWidget *MainWindow::createTilesMode()
     verticalOverlapSpin = new QSpinBox(captureGroup);
     verticalOverlapSpin->setRange(0, 90);
     verticalOverlapSpin->setSuffix(QStringLiteral(" %"));
-    horizontalOverlapSpin->setValue(horizontalOverlap);
-    verticalOverlapSpin->setValue(verticalOverlap);
+    horizontalOverlapSpin->setValue(projectGrid->state().horizontalOverlap);
+    verticalOverlapSpin->setValue(projectGrid->state().verticalOverlap);
     linkedOverlapCheck = new QCheckBox(tr("Lier les deux valeurs"), captureGroup);
-    linkedOverlapCheck->setChecked(overlapsLinked);
+    linkedOverlapCheck->setChecked(projectGrid->state().overlapsLinked);
     captureForm->addRow(tr("Recouvrement horizontal"), horizontalOverlapSpin);
     captureForm->addRow(tr("Recouvrement vertical"), verticalOverlapSpin);
     captureForm->addRow(QString(), linkedOverlapCheck);
@@ -106,12 +107,12 @@ QWidget *MainWindow::createTilesMode()
     scaleSpin->setSuffix(tr(" mm / pixel"));
     captureForm->addRow(tr("Échelle"), scaleSpin);
     automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
-    automaticUncertaintyCheck->setChecked(automaticUncertainty);
+    automaticUncertaintyCheck->setChecked(projectGrid->state().automaticUncertainty);
     uncertaintySpin = new QDoubleSpinBox(captureGroup);
     uncertaintySpin->setRange(0.0, 1000000.0);
     uncertaintySpin->setDecimals(3);
     uncertaintySpin->setSuffix(tr(" px"));
-    uncertaintySpin->setEnabled(!automaticUncertainty);
+    uncertaintySpin->setEnabled(!projectGrid->state().automaticUncertainty);
     captureForm->addRow(tr("Marge d'incertitude"), uncertaintySpin);
     captureForm->addRow(QString(), automaticUncertaintyCheck);
     gridLayout->addWidget(captureGroup);
@@ -128,111 +129,58 @@ QWidget *MainWindow::createTilesMode()
     gridLayout->addStretch();
     gridScroll->setWidget(gridTabPage);
     gridScroll->setObjectName(QStringLiteral("gridTabScrollArea"));
-    return gridScroll;
 
     connect(gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        gridRows = value;
-        selectedGridCell = qMin(selectedGridCell, gridRows * gridColumns - 1);
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setGridRows(value);
     });
     connect(gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        gridColumns = value;
-        selectedGridCell = qMin(selectedGridCell, gridRows * gridColumns - 1);
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setGridColumns(value);
     });
     connect(captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int value) {
-        captureOrder = value;
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setCaptureOrder(value);
     });
     connect(horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, [this](int value) {
-        horizontalOverlap = value;
-        if (overlapsLinked && verticalOverlapSpin)
-            verticalOverlapSpin->setValue(value);
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setHorizontalOverlap(value);
     });
     connect(verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, [this](int value) {
-        verticalOverlap = value;
-        if (overlapsLinked && horizontalOverlapSpin)
-            horizontalOverlapSpin->setValue(value);
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setVerticalOverlap(value);
     });
     connect(linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {
-        overlapsLinked = linked;
-        if (linked && verticalOverlapSpin)
-            verticalOverlapSpin->setValue(horizontalOverlap);
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setOverlapsLinked(linked);
     });
     connect(modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
-        modality = value;
-        gridValidated = false;
-        refreshGridControls();
+        projectGrid->setModality(value);
     });
     connect(scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
             this, [this](double value) {
-        scaleMmPerPixel = value;
-        gridValidated = false;
-        refreshGridControls();
+        projectGrid->setScaleMmPerPixel(value);
     });
     connect(automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {
-        automaticUncertainty = automatic;
-        uncertaintySpin->setEnabled(!automatic);
-        gridValidated = false;
-        refreshGridControls();
+        projectGrid->setAutomaticUncertainty(automatic);
     });
     connect(uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
             this, [this](double value) {
-        uncertaintyMargin = value;
-        gridValidated = false;
-        refreshGridControls();
+        projectGrid->setUncertaintyMargin(value);
     });
-    connect(rotateTile, &QPushButton::clicked, this, [this]() {
-        if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
-            gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
-            updateStatus(tr("Sélectionnez d'abord une tuile non vide."));
-            return;
-        }
-        gridTiles[selectedGridCell].rotation = (gridTiles.at(selectedGridCell).rotation + 90) % 360;
-        gridValidated = false;
-        refreshGrid();
+    connect(rotateTile, &QPushButton::clicked, projectGrid, &ProjectGrid::rotateSelectedTile);
+    connect(flipTile, &QPushButton::clicked, projectGrid, &ProjectGrid::flipSelectedTile);
+    connect(emptyCellButton, &QPushButton::clicked,
+            projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
+    connect(importReference, &QPushButton::clicked, this, [this]() {
+        chooseReferenceImage();
     });
-    connect(flipTile, &QPushButton::clicked, this, [this]() {
-        if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
-            gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
-            updateStatus(tr("Sélectionnez d'abord une tuile non vide."));
-            return;
-        }
-        gridTiles[selectedGridCell].flipped = !gridTiles.at(selectedGridCell).flipped;
-        gridValidated = false;
-        refreshGrid();
-    });
-    connect(emptyCellButton, &QPushButton::clicked, this, [this]() {
-        if (selectedGridCell < 0 || selectedGridCell >= gridRows * gridColumns) {
-            updateStatus(tr("Sélectionnez une case de la grille."));
-            return;
-        }
-        while (gridTiles.size() <= selectedGridCell)
-            gridTiles.append(GridTile{});
-        gridTiles[selectedGridCell].empty = !gridTiles.at(selectedGridCell).empty;
-        gridValidated = false;
-        refreshGrid();
-    });
-    connect(importReference, &QPushButton::clicked, this, &MainWindow::importReferenceImage);
-    connect(compareReference, &QPushButton::clicked, this, &MainWindow::compareReferenceImage);
-    connect(validateGridButton, &QPushButton::clicked, this, &MainWindow::validateGrid);
+    connect(compareReference, &QPushButton::clicked,
+            projectGrid, &ProjectGrid::compareReferenceImage);
+    connect(validateGridButton, &QPushButton::clicked,
+            projectGrid, &ProjectGrid::validateGrid);
     static_cast<ArtworkCanvas *>(canvas)->setGridCallbacks(
         [this](int cell) {
-            selectedGridCell = cell;
-            refreshGridControls();
+            projectGrid->setSelectedGridCell(cell);
         },
-        [this](int first, int second) { swapGridTiles(first, second); });
+        [this](int first, int second) { projectGrid->swapGridTiles(first, second); });
 
+    return gridScroll;
 }

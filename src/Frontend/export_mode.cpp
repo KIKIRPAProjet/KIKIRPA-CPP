@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "projectgrid.h"
 #include "workspace_helpers.h"
 
 #include <QCheckBox>
@@ -56,7 +57,8 @@ void MainWindow::showExportDialog()
             "<p>Tuiles référencées : %4</p><p>Les mesures présentées sont celles de la maquette.</p>")
             .arg(projectName.toHtmlEscaped(),
                  QDateTime::currentDateTime().toString(Qt::ISODate).toHtmlEscaped(),
-                 format->currentText().toHtmlEscaped()).arg(tilePaths.size());
+                 format->currentText().toHtmlEscaped())
+                .arg(projectGrid->state().tilePaths.size());
         if (!file.open(QIODevice::WriteOnly) || file.write(html.toUtf8()) < 0 || !file.commit()) {
             QMessageBox::warning(&dialog, tr("Export impossible"),
                 tr("Le rapport n'a pas pu être enregistré."));

@@ -1,6 +1,9 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "homepage.h"
+#include "projectgrid.h"
+#include "simulationrunner.h"
 
 #include <QAction>
 #include <QApplication>
@@ -12,20 +15,18 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
-#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QGraphicsDropShadowEffect>
 #include <QGroupBox>
+#include <QHBoxLayout>
 #include <QHeaderView>
-#include <QInputDialog>
 #include <QKeyEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QImage>
-#include <QImageReader>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLineF>
@@ -41,8 +42,6 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSaveFile>
-#include <QSettings>
-#include <QSet>
 #include <QSlider>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -50,14 +49,12 @@
 #include <QStackedWidget>
 #include <QTabWidget>
 #include <QTableWidget>
-#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QStatusBar>
 #include <QAbstractItemView>
 #include <QFontMetrics>
 #include <QFrame>
-#include <QTransform>
 #include <QPixmap>
 #include <QtMath>
 #include <functional>
@@ -67,28 +64,6 @@
 #include <wincodec.h>
 #include <windows.h>
 #endif
-
-namespace {
-const QStringList modeNames = {
-    QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
-    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
-};
-
-QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false)
-{
-    auto *button = new QPushButton(text, parent);
-    button->setProperty("primary", primary);
-    button->setCursor(Qt::PointingHandCursor);
-    return button;
-}
-QLabel *mutedLabel(const QString &text, QWidget *parent)
-{
-    auto *label = new QLabel(text, parent);
-    label->setProperty("muted", true);
-    return label;
-}
-
-}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -122,19 +97,69 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     pages = new QStackedWidget(this);
     setCentralWidget(pages);
-    createHomePage();
+    projectGrid = new ProjectGrid(this);
+    simulationRunner = new SimulationRunner(this);
+    homePage = new HomePage;
+    pages->addWidget(homePage);
     createWorkspace();
+    connect(projectGrid, &ProjectGrid::gridUpdated,
+            this, &MainWindow::refreshProjectInfo);
+    connect(projectGrid, &ProjectGrid::gridValidated,
+            this, &MainWindow::refreshProjectInfo);
+    connect(projectGrid, &ProjectGrid::referenceImageLoaded,
+            this, &MainWindow::refreshProjectInfo);
+    connect(projectGrid, &ProjectGrid::messageRequested,
+            this, &MainWindow::showGridMessage);
+    connect(projectGrid, &ProjectGrid::statusRequested,
+            this, &MainWindow::updateStatus);
+    connect(projectGrid, &ProjectGrid::tilesImported,
+            this, &MainWindow::handleTilesImported);
+    connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
+        if (chooseReferenceImage())
+            projectGrid->compareReferenceImage();
+    });
+    connect(projectGrid, &ProjectGrid::comparisonReady,
+            this, &MainWindow::showReferenceComparison);
+    connect(projectGrid, &ProjectGrid::gridValidationCompleted,
+            this, &MainWindow::handleGridValidation);
+    connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
+        progressBar->setValue(0);
+    });
+    connect(simulationRunner, &SimulationRunner::progressAdvanced,
+            progressBar, &QProgressBar::setValue);
+    connect(simulationRunner, &SimulationRunner::stepChanged,
+            currentStepLabel, &QLabel::setText);
+    connect(simulationRunner, &SimulationRunner::statusChanged,
+            this, &MainWindow::updateStatus);
+    connect(simulationRunner, &SimulationRunner::cancellationAvailable,
+            this, &MainWindow::showCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::runFinished,
+            this, &MainWindow::removeCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::runCancelled,
+            this, &MainWindow::removeCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::comparisonRequested,
+            this, &MainWindow::showComparisonDialog);
+    connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
+            this, [this](bool visible) {
+        static_cast<ArtworkCanvas *>(canvas)->setComparisonVisible(visible);
+    });
+    connect(homePage, &HomePage::projectCreationRequested,
+            this, &MainWindow::initializeNewProject);
+    connect(homePage, &HomePage::projectLoaded,
+            this, &MainWindow::applyLoadedProject);
+    connect(homePage, &HomePage::currentProjectRequested,
+            this, &MainWindow::openCurrentProjectFromHome);
 
     auto *fileMenu = menuBar()->addMenu(tr("Fichier"));
     auto *newAction = fileMenu->addAction(tr("Nouveau projet…"));
     newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, this, &MainWindow::createProject);
+    connect(newAction, &QAction::triggered, homePage, &HomePage::createProject);
     auto *openAction = fileMenu->addAction(tr("Ouvrir un projet…"));
     openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &MainWindow::openProject);
+    connect(openAction, &QAction::triggered, homePage, &HomePage::openProject);
     auto *importAction = fileMenu->addAction(tr("Importer un dossier de photos…"));
     importAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
-    connect(importAction, &QAction::triggered, this, &MainWindow::importTiles);
+    connect(importAction, &QAction::triggered, this, &MainWindow::chooseTilesDirectory);
     auto *saveAction = fileMenu->addAction(tr("Enregistrer le projet"));
     saveAction->setShortcut(QKeySequence::Save);
     connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
@@ -182,7 +207,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         static_cast<ArtworkCanvas *>(canvas)->setZoom(zoomPercent);
     });
     auto *toolsMenu = menuBar()->addMenu(tr("Tuiles"));
-    toolsMenu->addAction(tr("Importer un dossier de photos…"), this, &MainWindow::importTiles);
+    toolsMenu->addAction(tr("Importer un dossier de photos…"),
+                         this, &MainWindow::chooseTilesDirectory);
     toolsMenu->addAction(tr("Organiser la grille"), this, [this]() {
         setMode(1);
         updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
@@ -195,9 +221,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     });
     auto *assemblyMenu = menuBar()->addMenu(tr("Assemblage"));
     assemblyMenu->addAction(tr("Tout lancer"), QKeySequence(Qt::Key_F5), this,
-                            [this]() { startRun(1); });
-    assemblyMenu->addAction(tr("Relancer à partir de…"), this, [this]() { startRun(6); });
-    assemblyMenu->addAction(tr("Comparer deux exécutions…"), this, &MainWindow::showComparison);
+                            [this]() { requestRun(1); });
+    assemblyMenu->addAction(tr("Relancer à partir de…"), this, [this]() { requestRun(6); });
+    assemblyMenu->addAction(tr("Comparer deux exécutions…"),
+                            simulationRunner, &SimulationRunner::showComparison);
     auto *helpMenu = menuBar()->addMenu(tr("Aide"));
     helpMenu->addAction(tr("À propos"), this, [this]() {
         QMessageBox::about(this, tr("À propos"),
@@ -211,218 +238,91 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     menuBar()->setVisible(false);
 }
 
-void MainWindow::createHomePage()
+void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
+                                      const QStringList &newTilePaths)
 {
-    auto *page = new QWidget;
-    auto *layout = new QHBoxLayout(page);
-    layout->setContentsMargins(0, 0, 0, 0);
-    auto *side = new QWidget;
-    side->setFixedWidth(245);
-    side->setStyleSheet(QStringLiteral("background:#202020;"));
-    auto *sideLayout = new QVBoxLayout(side);
-    sideLayout->setContentsMargins(20, 24, 20, 20);
-    auto *brand = new QLabel(tr("KIK-IRPA Assemblage"));
-    brand->setStyleSheet(QStringLiteral("font-size:18px;font-weight:600;color:#d5d5d5;"));
-    sideLayout->addWidget(brand);
-    sideLayout->addSpacing(14);
-    sideLayout->addWidget(mutedLabel(tr("Assemblage de tuiles haute résolution\n"
-                                        "de peintures planes."), side));
-    sideLayout->addSpacing(16);
-    auto *newProject = makeButton(tr("+ Nouveau projet…"), side, true);
-    sideLayout->addWidget(newProject);
-    auto *open = makeButton(tr("Importer un projet…"), side);
-    sideLayout->addWidget(open);
-    sideLayout->addStretch();
-    sideLayout->addWidget(mutedLabel(tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
-    layout->addWidget(side);
-
-    auto *recentArea = new QWidget;
-    auto *recentLayout = new QVBoxLayout(recentArea);
-    recentLayout->setContentsMargins(30, 26, 30, 24);
-    recentLayout->addWidget(new QLabel(tr("Projets récents")));
-    recentEmptyLabel = mutedLabel(tr("Aucun projet récent."), recentArea);
-    recentLayout->addWidget(recentEmptyLabel);
-    auto *cardsContainer = new QWidget(recentArea);
-    recentCardsLayout = new QHBoxLayout(cardsContainer);
-    recentCardsLayout->setContentsMargins(0, 0, 0, 0);
-    recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    recentLayout->addWidget(cardsContainer);
-    recentLayout->addStretch();
-    layout->addWidget(recentArea, 1);
-    pages->addWidget(page);
-    refreshRecentProjects();
-    connect(newProject, &QPushButton::clicked, this, &MainWindow::createProject);
-    connect(open, &QPushButton::clicked, this, &MainWindow::openProject);
-}
-
-void MainWindow::refreshRecentProjects()
-{
-    if (!recentCardsLayout || !recentEmptyLabel)
-        return;
-
-    while (QLayoutItem *item = recentCardsLayout->takeAt(0)) {
-        if (QWidget *widget = item->widget()) {
-            widget->hide();
-            widget->deleteLater();
-        }
-        delete item;
-    }
-
-    QSettings settings(QStringLiteral("KIK-IRPA"), QStringLiteral("Assemblage"));
-    QStringList recentPaths = settings.value(QStringLiteral("recentProjects")).toStringList();
-    QStringList validPaths;
-    for (const QString &path : recentPaths) {
-        const QString absolutePath = QFileInfo(path).absoluteFilePath();
-        if (QFileInfo::exists(absolutePath) && !validPaths.contains(absolutePath))
-            validPaths.append(absolutePath);
-    }
-    if (validPaths != recentPaths) {
-        recentPaths = validPaths;
-        settings.setValue(QStringLiteral("recentProjects"), recentPaths);
-    }
-
-    const auto formatModifiedDate = [](const QDateTime &dateTime) {
-        return dateTime.isValid()
-            ? dateTime.toString(QStringLiteral("dd/MM/yyyy HH:mm"))
-            : QObject::tr("Date inconnue");
-    };
-
-    int cardCount = 0;
-    if (projectCreated && projectPath.isEmpty()) {
-        auto *card = makeButton(QString(), recentCardsLayout->parentWidget());
-        card->setMinimumSize(210, 100);
-        card->setMaximumWidth(260);
-        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
-            "border:1px solid #383838;border-radius:5px;"));
-        auto *cardLayout = new QVBoxLayout(card);
-        auto *name = new QLabel(projectName, card);
-        name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
-        auto *details = new QLabel(tr("%1 tuile(s)\nModifié le : %2")
-                                       .arg(tilePaths.size())
-                                       .arg(tr("Non enregistré")), card);
-        details->setProperty("muted", true);
-        details->setWordWrap(true);
-        cardLayout->addWidget(name);
-        cardLayout->addWidget(details);
-        recentCardsLayout->addWidget(card);
-        connect(card, &QPushButton::clicked, this, [this]() {
-            pages->setCurrentWidget(workspace);
-            setMode(1);
-            updateStatus(tr("Projet courant : %1").arg(projectName));
-        });
-        ++cardCount;
-    }
-
-    for (const QString &path : recentPaths) {
-        QFile file(path);
-        QString recentName = QFileInfo(path).completeBaseName();
-        int recentTileCount = 0;
-        if (file.open(QIODevice::ReadOnly)) {
-            const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
-            if (document.isObject()) {
-                const QJsonObject project = document.object();
-                recentName = project.value(QStringLiteral("project_name"))
-                                 .toString(recentName);
-                const QJsonArray paths = project.value(QStringLiteral("tiles")).toArray();
-                recentTileCount = paths.size();
-            }
-        }
-
-        auto *card = makeButton(QString(), recentCardsLayout->parentWidget());
-        card->setMinimumSize(210, 100);
-        card->setMaximumWidth(260);
-        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
-            "border:1px solid #383838;border-radius:5px;"));
-        auto *cardLayout = new QVBoxLayout(card);
-        auto *name = new QLabel(recentName, card);
-        name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
-        name->setWordWrap(true);
-        auto *details = new QLabel(tr("%1 tuile(s)\nModifié le %2")
-                                       .arg(recentTileCount)
-                                       .arg(formatModifiedDate(QFileInfo(path).lastModified())), card);
-        details->setProperty("muted", true);
-        details->setWordWrap(true);
-        cardLayout->addWidget(name);
-        cardLayout->addWidget(details);
-        recentCardsLayout->addWidget(card);
-        connect(card, &QPushButton::clicked, this, [this, path]() {
-            loadProjectFromPath(path);
-        });
-        ++cardCount;
-    }
-
-    recentCardsLayout->addStretch();
-    recentEmptyLabel->setVisible(cardCount == 0);
-}
-
-void MainWindow::rememberRecentProject(const QString &path)
-{
-    const QString absolutePath = QFileInfo(path).absoluteFilePath();
-    if (!QFileInfo::exists(absolutePath))
-        return;
-
-    QSettings settings(QStringLiteral("KIK-IRPA"), QStringLiteral("Assemblage"));
-    QStringList recentPaths = settings.value(QStringLiteral("recentProjects")).toStringList();
-    recentPaths.removeAll(absolutePath);
-    recentPaths.prepend(absolutePath);
-    while (recentPaths.size() > 10)
-        recentPaths.removeLast();
-    settings.setValue(QStringLiteral("recentProjects"), recentPaths);
-    refreshRecentProjects();
-}
-
-void MainWindow::createProject()
-{
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, tr("Nouveau projet"),
-        tr("Nom du projet :"), QLineEdit::Normal, QString(), &ok).trimmed();
-    if (!ok || name.isEmpty())
-        return;
-
-    const QString selectedTileDirectory = QFileDialog::getExistingDirectory(
-        this, tr("Choisir le dossier des tuiles"));
-    if (selectedTileDirectory.isEmpty())
-        return;
-
-    const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
-        {QStringLiteral("*.tif"), QStringLiteral("*.tiff")},
-        QDir::Files, QDir::Name);
-
     projectName = name;
-    tileDirectory = selectedTileDirectory;
     outputDirectory.clear();
     projectPath.clear();
     projectCreated = true;
-    tilePaths.clear();
-    for (const QFileInfo &tileFile : tileFiles)
-        tilePaths.append(tileFile.absoluteFilePath());
-
-    gridRows = 3;
-    gridColumns = 2;
-    gridRows = qMax(1, qMin(20, (static_cast<int>(tilePaths.size()) + gridColumns - 1)
-                                     / gridColumns));
-    captureOrder = 0;
-    horizontalOverlap = 20;
-    verticalOverlap = 20;
-    overlapsLinked = true;
-    modality = QStringLiteral("Infrarouge");
-    scaleMmPerPixel = 0.0;
-    uncertaintyMargin = 0.0;
-    automaticUncertainty = true;
-    referenceImagePath.clear();
-    selectedGridCell = 0;
-    gridValidated = false;
-    initializeGridFromPaths();
+    projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
 
     pages->setCurrentWidget(workspace);
     setMode(0);
     refreshProjectInfo();
-    if (tilePaths.isEmpty()) {
+    const int tileCount = projectGrid->state().tilePaths.size();
+    homePage->setCurrentProjectInfo(projectCreated, projectPath, projectName, tileCount);
+    if (tileCount == 0) {
         updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
     } else {
-        updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tilePaths.size()));
+        updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tileCount));
     }
-    refreshRecentProjects();
+}
+
+void MainWindow::applyLoadedProject(const QString &path, const QJsonObject &project)
+{
+    projectName = project.value(QStringLiteral("project_name"))
+                      .toString(QFileInfo(path).completeBaseName());
+    outputDirectory = project.value(QStringLiteral("output_directory")).toString();
+    ProjectGrid::State gridState;
+    gridState.tileDirectory = project.value(QStringLiteral("tile_directory")).toString();
+    gridState.gridRows = qBound(1, project.value(QStringLiteral("grid_rows")).toInt(3), 20);
+    gridState.gridColumns = qBound(1, project.value(QStringLiteral("grid_columns")).toInt(2), 20);
+    gridState.captureOrder = qBound(0, project.value(QStringLiteral("capture_order")).toInt(0), 5);
+    gridState.horizontalOverlap = qBound(
+        0, project.value(QStringLiteral("horizontal_overlap")).toInt(20), 90);
+    gridState.verticalOverlap = qBound(
+        0, project.value(QStringLiteral("vertical_overlap")).toInt(20), 90);
+    gridState.overlapsLinked = project.value(QStringLiteral("overlaps_linked")).toBool(true);
+    if (gridState.overlapsLinked)
+        gridState.verticalOverlap = gridState.horizontalOverlap;
+    gridState.modality = project.value(QStringLiteral("modality"))
+                             .toString(QStringLiteral("Infrarouge"));
+    gridState.scaleMmPerPixel = qMax(
+        0.0, project.value(QStringLiteral("scale_mm_per_pixel")).toDouble());
+    gridState.uncertaintyMargin = qMax(
+        0.0, project.value(QStringLiteral("uncertainty_margin")).toDouble());
+    gridState.automaticUncertainty =
+        project.value(QStringLiteral("automatic_uncertainty")).toBool(true);
+    gridState.referenceImagePath = project.value(QStringLiteral("reference_image")).toString();
+    for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
+        gridState.tilePaths.append(tile.toString());
+    const QJsonArray grid = project.value(QStringLiteral("grid_tiles")).toArray();
+    if (!grid.isEmpty()) {
+        gridState.gridTiles.reserve(qMax(gridState.gridRows * gridState.gridColumns,
+                                         static_cast<int>(grid.size())));
+        for (const QJsonValue &cellValue : grid) {
+            const QJsonObject cell = cellValue.toObject();
+            GridTile tile;
+            tile.path = cell.value(QStringLiteral("path")).toString();
+            const int savedRotation = cell.value(QStringLiteral("rotation")).toInt();
+            tile.rotation = ((savedRotation % 360) + 360) % 360;
+            tile.flipped = cell.value(QStringLiteral("flipped")).toBool();
+            tile.empty = cell.value(QStringLiteral("empty")).toBool();
+            gridState.gridTiles.append(tile);
+        }
+    }
+    gridState.selectedGridCell = 0;
+    gridState.gridValidated = false;
+    projectGrid->setState(gridState);
+    if (grid.isEmpty())
+        projectGrid->initializeGridFromPaths();
+    projectPath = path;
+    projectCreated = true;
+    refreshProjectInfo();
+    pages->setCurrentWidget(workspace);
+    setMode(0);
+    homePage->setCurrentProjectInfo(
+        projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
+    homePage->rememberRecentProject(path);
+    updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+}
+
+void MainWindow::openCurrentProjectFromHome()
+{
+    pages->setCurrentWidget(workspace);
+    setMode(1);
+    updateStatus(tr("Projet courant : %1").arg(projectName));
 }
 
 void MainWindow::setMode(int mode)
@@ -466,24 +366,25 @@ void MainWindow::setMode(int mode)
         bottomTabs->setCurrentIndex(1);
     if (currentMode == 3)
         bottomTabs->setCurrentIndex(0);
-    updateStatus(tr("Mode : %1").arg(modeNames.at(currentMode)));
+    updateStatus(tr("Mode : %1").arg(FrontendUtils::modeNames.at(currentMode)));
 }
 
 void MainWindow::refreshProjectInfo()
 {
+    const ProjectGrid::State &gridState = projectGrid->state();
     if (projectNameLabel)
         projectNameLabel->setText(projectName);
     if (projectNameEdit)
         projectNameEdit->setText(projectName);
     if (projectFolderLabel) {
-        projectFolderLabel->setText(tileDirectory.isEmpty()
+        projectFolderLabel->setText(gridState.tileDirectory.isEmpty()
             ? tr("Dossier sélectionné : aucun dossier")
-            : tr("Dossier sélectionné :\n%1").arg(tileDirectory));
+            : tr("Dossier sélectionné :\n%1").arg(gridState.tileDirectory));
     }
     if (projectFormatLabel) {
-        const QFileInfoList folderFiles = tileDirectory.isEmpty()
+        const QFileInfoList folderFiles = gridState.tileDirectory.isEmpty()
             ? QFileInfoList()
-            : QDir(tileDirectory).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
+            : QDir(gridState.tileDirectory).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
                                                 QDir::Name | QDir::IgnoreCase);
         int validFiles = 0;
         for (const QFileInfo &file : folderFiles) {
@@ -503,123 +404,110 @@ void MainWindow::refreshProjectInfo()
             : QStringLiteral("color:#e0a45f;"));
     }
     if (tileCountLabel)
-        tileCountLabel->setText(tr("%1 tuile(s) chargée(s)").arg(tilePaths.size()));
+        tileCountLabel->setText(tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas))
-        canvasView->setImagePaths(tilePaths);
+        canvasView->setImagePaths(gridState.tilePaths);
     refreshGrid();
     setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
 
-void MainWindow::initializeGridFromPaths()
-{
-    if (tilePaths.size() > gridRows * gridColumns)
-        gridRows = qMin(20, (static_cast<int>(tilePaths.size()) + gridColumns - 1) / gridColumns);
-
-    const int cellCount = qMax(gridRows * gridColumns, static_cast<int>(tilePaths.size()));
-    gridTiles = QVector<GridTile>(cellCount);
-    const QVector<int> positions = captureOrderCells(gridRows, gridColumns, captureOrder);
-    for (int index = 0; index < tilePaths.size(); ++index) {
-        const int cell = index < positions.size() ? positions.at(index) : index;
-        gridTiles[cell].path = tilePaths.at(index);
-    }
-    if (gridRowsSpin)
-        gridRowsSpin->setValue(gridRows);
-    if (gridColumnsSpin)
-        gridColumnsSpin->setValue(gridColumns);
-    selectedGridCell = 0;
-}
-
 void MainWindow::refreshGrid()
 {
-    while (gridTiles.size() < gridRows * gridColumns)
-        gridTiles.append(GridTile{});
+    const ProjectGrid::State &gridState = projectGrid->state();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas)) {
-        canvasView->setGridState(gridRows, gridColumns, captureOrder,
-                                 gridTiles, selectedGridCell);
+        canvasView->setGridState(gridState.gridRows, gridState.gridColumns,
+                                 gridState.captureOrder, gridState.gridTiles,
+                                 gridState.selectedGridCell);
     }
     refreshGridControls();
 }
 
 void MainWindow::refreshGridControls()
 {
+    const ProjectGrid::State &gridState = projectGrid->state();
     if (gridRowsSpin) {
         const QSignalBlocker blocker(gridRowsSpin);
-        gridRowsSpin->setValue(gridRows);
+        gridRowsSpin->setValue(gridState.gridRows);
     }
     if (gridColumnsSpin) {
         const QSignalBlocker blocker(gridColumnsSpin);
-        gridColumnsSpin->setValue(gridColumns);
+        gridColumnsSpin->setValue(gridState.gridColumns);
     }
     if (captureOrderCombo) {
         const QSignalBlocker blocker(captureOrderCombo);
-        captureOrderCombo->setCurrentIndex(captureOrder);
+        captureOrderCombo->setCurrentIndex(gridState.captureOrder);
     }
     if (arrangementCombo) {
         const QSignalBlocker blocker(arrangementCombo);
-        arrangementCombo->setCurrentIndex(captureOrder);
+        arrangementCombo->setCurrentIndex(gridState.captureOrder);
     }
     if (horizontalOverlapSpin) {
         const QSignalBlocker blocker(horizontalOverlapSpin);
-        horizontalOverlapSpin->setValue(horizontalOverlap);
+        horizontalOverlapSpin->setValue(gridState.horizontalOverlap);
     }
     if (verticalOverlapSpin) {
         const QSignalBlocker blocker(verticalOverlapSpin);
-        verticalOverlapSpin->setValue(verticalOverlap);
+        verticalOverlapSpin->setValue(gridState.verticalOverlap);
     }
     if (linkedOverlapCheck) {
         const QSignalBlocker blocker(linkedOverlapCheck);
-        linkedOverlapCheck->setChecked(overlapsLinked);
+        linkedOverlapCheck->setChecked(gridState.overlapsLinked);
     }
     if (modalityCombo) {
         const QSignalBlocker blocker(modalityCombo);
-        const int index = modalityCombo->findText(modality);
+        const int index = modalityCombo->findText(gridState.modality);
         modalityCombo->setCurrentIndex(index >= 0 ? index : modalityCombo->findText(tr("Autre")));
         if (index < 0)
-            modality = modalityCombo->currentText();
+            projectGrid->setModality(modalityCombo->currentText());
     }
     if (scaleSpin) {
         const QSignalBlocker blocker(scaleSpin);
-        scaleSpin->setValue(scaleMmPerPixel);
+        scaleSpin->setValue(gridState.scaleMmPerPixel);
     }
     if (automaticUncertaintyCheck) {
         const QSignalBlocker blocker(automaticUncertaintyCheck);
-        automaticUncertaintyCheck->setChecked(automaticUncertainty);
+        automaticUncertaintyCheck->setChecked(gridState.automaticUncertainty);
     }
     if (uncertaintySpin) {
         const QSignalBlocker blocker(uncertaintySpin);
-        uncertaintySpin->setValue(uncertaintyMargin);
-        uncertaintySpin->setEnabled(!automaticUncertainty);
+        uncertaintySpin->setValue(gridState.uncertaintyMargin);
+        uncertaintySpin->setEnabled(!gridState.automaticUncertainty);
     }
-    const QString scaleText = scaleMmPerPixel > 0.0
-        ? tr("%1 mm/pixel").arg(scaleMmPerPixel, 0, 'g', 8) : tr("à renseigner");
+    const QString scaleText = gridState.scaleMmPerPixel > 0.0
+        ? tr("%1 mm/pixel").arg(gridState.scaleMmPerPixel, 0, 'g', 8) : tr("à renseigner");
     if (auto *metadata = workspace ? workspace->findChild<QLabel *>(
                 QStringLiteral("projectMetadataLabel")) : nullptr) {
         metadata->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
-                              .arg(modality, scaleText)
-                              .arg(horizontalOverlap).arg(verticalOverlap));
+                              .arg(gridState.modality, scaleText)
+                              .arg(gridState.horizontalOverlap).arg(gridState.verticalOverlap));
     }
     if (auto *title = workspace ? workspace->findChild<QLabel *>(
                 QStringLiteral("workspaceTitle")) : nullptr) {
-        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
+        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
+                           .arg(projectName, gridState.modality));
     }
 
     int activeTiles = 0;
-    for (int index = 0; index < qMin(gridRows * gridColumns, static_cast<int>(gridTiles.size())); ++index) {
-        const GridTile &tile = gridTiles.at(index);
+    for (int index = 0;
+         index < qMin(gridState.gridRows * gridState.gridColumns,
+                      static_cast<int>(gridState.gridTiles.size())); ++index) {
+        const GridTile &tile = gridState.gridTiles.at(index);
         if (!tile.path.isEmpty() && !tile.empty)
             ++activeTiles;
     }
     if (gridSummaryLabel) {
-        const QString validationStatus = gridValidated ? tr(" · grille validée") : QString();
+        const QString validationStatus =
+            gridState.gridValidated ? tr(" · grille validée") : QString();
         gridSummaryLabel->setText(tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
-                                      .arg(activeTiles).arg(gridRows).arg(gridColumns)
+                                      .arg(activeTiles).arg(gridState.gridRows).arg(gridState.gridColumns)
                                       .arg(validationStatus));
     }
     if (selectedGridTileLabel) {
-        const int row = selectedGridCell / qMax(1, gridColumns);
-        const int column = selectedGridCell % qMax(1, gridColumns);
-        const GridTile tile = selectedGridCell >= 0 && selectedGridCell < gridTiles.size()
-            ? gridTiles.at(selectedGridCell) : GridTile{};
+        const int row = gridState.selectedGridCell / qMax(1, gridState.gridColumns);
+        const int column = gridState.selectedGridCell % qMax(1, gridState.gridColumns);
+        const GridTile tile = gridState.selectedGridCell >= 0 &&
+                gridState.selectedGridCell < gridState.gridTiles.size()
+            ? gridState.gridTiles.at(gridState.selectedGridCell) : GridTile{};
         const QString label = QStringLiteral("r%1_c%2").arg(row, 2, 10, QLatin1Char('0'))
                                  .arg(column, 2, 10, QLatin1Char('0'));
         if (tile.path.isEmpty()) {
@@ -635,79 +523,44 @@ void MainWindow::refreshGridControls()
         }
     }
     if (emptyCellButton) {
-        const bool canRestore = selectedGridCell >= 0 && selectedGridCell < gridTiles.size()
-            && gridTiles.at(selectedGridCell).empty;
+        const bool canRestore = gridState.selectedGridCell >= 0 &&
+                gridState.selectedGridCell < gridState.gridTiles.size()
+            && gridState.gridTiles.at(gridState.selectedGridCell).empty;
         emptyCellButton->setText(canRestore ? tr("Restaurer la tuile")
                                             : tr("Marquer une case vide"));
     }
     if (referencePathLabel) {
-        referencePathLabel->setText(referenceImagePath.isEmpty()
+        referencePathLabel->setText(gridState.referenceImagePath.isEmpty()
             ? tr("Aucune image de référence")
-            : tr("Référence : %1").arg(QFileInfo(referenceImagePath).fileName()));
-        referencePathLabel->setToolTip(referenceImagePath);
+            : tr("Référence : %1")
+                  .arg(QFileInfo(gridState.referenceImagePath).fileName()));
+        referencePathLabel->setToolTip(gridState.referenceImagePath);
     }
 }
 
-void MainWindow::swapGridTiles(int first, int second)
+void MainWindow::chooseTilesDirectory()
 {
-    const int cellCount = gridRows * gridColumns;
-    if (first < 0 || second < 0 || first >= cellCount || second >= cellCount)
-        return;
-    while (gridTiles.size() <= qMax(first, second))
-        gridTiles.append(GridTile{});
-    std::swap(gridTiles[first], gridTiles[second]);
-    selectedGridCell = second;
-    gridValidated = false;
-    refreshGrid();
+    const QString directoryPath = QFileDialog::getExistingDirectory(
+        this, tr("Sélectionner un dossier de photos"), QString(),
+        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+    if (!directoryPath.isEmpty())
+        projectGrid->importTiles(directoryPath);
 }
 
-void MainWindow::importReferenceImage()
+bool MainWindow::chooseReferenceImage()
 {
     const QString path = QFileDialog::getOpenFileName(
         this, tr("Importer une image de référence"), QString(),
         tr("Images (*.tif *.tiff *.png *.jpg *.jpeg *.bmp);;Tous les fichiers (*)"));
-    if (path.isEmpty())
-        return;
-    if (readPreviewImage(path, QSize(600, 500)).isNull()) {
-        QMessageBox::warning(this, tr("Image illisible"),
-            tr("L'image de référence ne peut pas être ouverte."));
-        return;
-    }
-    referenceImagePath = QFileInfo(path).absoluteFilePath();
-    gridValidated = false;
-    refreshGridControls();
-    updateStatus(tr("Image de référence importée : %1").arg(QFileInfo(path).fileName()));
+    if (!path.isEmpty())
+        projectGrid->importReferenceImage(path);
+    return !projectGrid->state().referenceImagePath.isEmpty();
 }
 
-void MainWindow::compareReferenceImage()
+void MainWindow::showReferenceComparison(const QString &referencePath, const QString &tilePath,
+                                         const QImage &referenceImage,
+                                         const QImage &tileImage)
 {
-    if (referenceImagePath.isEmpty()) {
-        importReferenceImage();
-        if (referenceImagePath.isEmpty())
-            return;
-    }
-    if (selectedGridCell < 0 || selectedGridCell >= gridTiles.size() ||
-        gridTiles.at(selectedGridCell).path.isEmpty() || gridTiles.at(selectedGridCell).empty) {
-        QMessageBox::information(this, tr("Aucune tuile sélectionnée"),
-            tr("Sélectionnez une tuile non vide dans la grille avant de la comparer."));
-        return;
-    }
-
-    const QString tilePath = gridTiles.at(selectedGridCell).path;
-    const QImage reference = readPreviewImage(referenceImagePath, QSize(420, 400));
-    QImage tile = readPreviewImage(tilePath, QSize(420, 400));
-    if (reference.isNull() || tile.isNull()) {
-        QMessageBox::warning(this, tr("Comparaison impossible"),
-            tr("L'image de référence ou la tuile sélectionnée ne peut pas être lue."));
-        return;
-    }
-    const GridTile selectedTile = gridTiles.at(selectedGridCell);
-    if (selectedTile.flipped)
-        tile = tile.mirrored(true, false);
-    if (selectedTile.rotation != 0)
-        tile = tile.transformed(QTransform().rotate(selectedTile.rotation),
-                                Qt::SmoothTransformation);
-
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Comparer avec l'image de référence"));
     dialog.resize(980, 620);
@@ -728,10 +581,10 @@ void MainWindow::compareReferenceImage()
         columnLayout->addWidget(preview, 1);
         imagesLayout->addWidget(column, 1);
     };
-    addImageColumn(tr("Image de référence"), referenceImagePath, reference);
-    addImageColumn(tr("Tuile sélectionnée"), tilePath, tile);
+    addImageColumn(tr("Image de référence"), referencePath, referenceImage);
+    addImageColumn(tr("Tuile sélectionnée"), tilePath, tileImage);
     layout->addLayout(imagesLayout, 1);
-    layout->addWidget(mutedLabel(
+    layout->addWidget(FrontendUtils::mutedLabel(
         tr("Comparaison visuelle côte à côte ; aucune similarité automatique n'est calculée."),
         &dialog));
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
@@ -741,120 +594,41 @@ void MainWindow::compareReferenceImage()
     updateStatus(tr("Comparaison visuelle terminée."));
 }
 
-void MainWindow::validateGrid()
+void MainWindow::showGridMessage(const QString &title, const QString &message, bool warning)
 {
-    QStringList errors;
-    const int cellCount = gridRows * gridColumns;
-    QSet<QString> assignedPaths;
-    int activeTiles = 0;
-    for (int index = cellCount; index < gridTiles.size(); ++index) {
-        if (!gridTiles.at(index).path.isEmpty())
-            errors.append(tr("La tuile %1 est hors de la grille.")
-                              .arg(QFileInfo(gridTiles.at(index).path).fileName()));
-    }
-    for (int index = 0; index < qMin(cellCount, static_cast<int>(gridTiles.size())); ++index) {
-        const GridTile &tile = gridTiles.at(index);
-        if (tile.path.isEmpty())
-            continue;
-        const QString absolutePath = QFileInfo(tile.path).absoluteFilePath();
-        if (assignedPaths.contains(absolutePath)) {
-            errors.append(tr("La même image est affectée à plusieurs cases : %1")
-                              .arg(QFileInfo(tile.path).fileName()));
-        }
-        assignedPaths.insert(absolutePath);
-        if (!QFileInfo::exists(tile.path))
-            errors.append(tr("Fichier introuvable : %1").arg(tile.path));
-        else if (readPreviewImage(tile.path, QSize(32, 32)).isNull())
-            errors.append(tr("Image illisible : %1").arg(tile.path));
-        if (!tile.empty)
-            ++activeTiles;
-    }
-    for (const QString &path : tilePaths) {
-        if (!assignedPaths.contains(QFileInfo(path).absoluteFilePath()))
-            errors.append(tr("Image non placée dans la grille : %1")
-                              .arg(QFileInfo(path).fileName()));
-    }
-    if (activeTiles == 0)
-        errors.append(tr("La grille doit contenir au moins une tuile active."));
+    if (warning)
+        QMessageBox::warning(this, title, message);
+    else
+        QMessageBox::information(this, title, message);
+}
 
-    if (!errors.isEmpty()) {
+void MainWindow::handleGridValidation(bool valid, int activeTileCount,
+                                      const QStringList &errors)
+{
+    const ProjectGrid::State &gridState = projectGrid->state();
+    if (!valid) {
         QMessageBox::warning(this, tr("Grille à corriger"), errors.join(QLatin1Char('\n')));
         updateStatus(tr("La grille n'est pas valide : %1 problème(s).").arg(errors.size()));
-        gridValidated = false;
-        refreshGridControls();
         return;
     }
 
-    gridValidated = true;
-    refreshGridControls();
     updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3, ordre « %4 ».")
-                     .arg(activeTiles).arg(gridRows).arg(gridColumns)
+                     .arg(activeTileCount).arg(gridState.gridRows).arg(gridState.gridColumns)
                      .arg(captureOrderCombo ? captureOrderCombo->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides. Enregistrez le projet pour conserver les réglages."));
 }
 
-void MainWindow::importTiles()
+void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
-    const QString directoryPath = QFileDialog::getExistingDirectory(
-        this, tr("Sélectionner un dossier de photos"), QString(),
-        QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-    if (directoryPath.isEmpty())
-        return;
-
-    const QDir directory(directoryPath);
-    const QStringList imageFilters = {QStringLiteral("*.tif"), QStringLiteral("*.tiff")};
-    const QFileInfoList imageFiles = directory.entryInfoList(
-        imageFilters, QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
-    if (imageFiles.isEmpty()) {
-        QMessageBox::warning(this, tr("Aucune photo trouvée"),
-            tr("Le dossier sélectionné ne contient aucune image TIFF compatible "
-               "(.tif ou .tiff)."));
-        return;
-    }
-
-    QStringList paths;
-    paths.reserve(imageFiles.size());
-    for (const QFileInfo &imageFile : imageFiles)
-        if (!tilePaths.contains(imageFile.absoluteFilePath()))
-            paths.append(imageFile.absoluteFilePath());
-
-    if (paths.isEmpty()) {
-        QMessageBox::information(this, tr("Photos déjà importées"),
-            tr("Toutes les photos de ce dossier sont déjà dans le projet."));
-        return;
-    }
-
-    tilePaths.append(paths);
-    tileDirectory = directoryPath;
-    const int requiredRows = (static_cast<int>(tilePaths.size()) + gridColumns - 1) / gridColumns;
-    gridRows = qMax(gridRows, qMin(20, requiredRows));
-    while (gridTiles.size() < gridRows * gridColumns)
-        gridTiles.append(GridTile{});
-    const QVector<int> positions = captureOrderCells(gridRows, gridColumns, captureOrder);
-    int positionIndex = 0;
-    for (const QString &path : paths) {
-        while (positionIndex < positions.size() &&
-               !gridTiles.at(positions.at(positionIndex)).path.isEmpty())
-            ++positionIndex;
-        if (positionIndex >= positions.size()) {
-            GridTile overflowTile;
-            overflowTile.path = path;
-            gridTiles.append(overflowTile);
-            continue;
-        }
-        gridTiles[positions.at(positionIndex)].path = path;
-        ++positionIndex;
-    }
-    gridValidated = false;
-    refreshProjectInfo();
     setMode(1);
     updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
-                 .arg(paths.size()).arg(directory.dirName()));
+                     .arg(importedCount).arg(QFileInfo(directory).fileName()));
 }
 
 void MainWindow::saveProject()
 {
+    const ProjectGrid::State &gridState = projectGrid->state();
     QString path = projectPath;
     if (path.isEmpty())
         path = QFileDialog::getSaveFileName(this, tr("Enregistrer le projet"),
@@ -866,25 +640,25 @@ void MainWindow::saveProject()
     project.insert(QStringLiteral("project_name"), projectName);
     project.insert(QStringLiteral("saved_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
     project.insert(QStringLiteral("mode"), currentMode);
-    project.insert(QStringLiteral("tile_directory"), tileDirectory);
+    project.insert(QStringLiteral("tile_directory"), gridState.tileDirectory);
     project.insert(QStringLiteral("output_directory"), outputDirectory);
-    project.insert(QStringLiteral("grid_rows"), gridRows);
-    project.insert(QStringLiteral("grid_columns"), gridColumns);
-    project.insert(QStringLiteral("capture_order"), captureOrder);
-    project.insert(QStringLiteral("horizontal_overlap"), horizontalOverlap);
-    project.insert(QStringLiteral("vertical_overlap"), verticalOverlap);
-    project.insert(QStringLiteral("overlaps_linked"), overlapsLinked);
-    project.insert(QStringLiteral("modality"), modality);
-    project.insert(QStringLiteral("scale_mm_per_pixel"), scaleMmPerPixel);
-    project.insert(QStringLiteral("uncertainty_margin"), uncertaintyMargin);
-    project.insert(QStringLiteral("automatic_uncertainty"), automaticUncertainty);
-    project.insert(QStringLiteral("reference_image"), referenceImagePath);
+    project.insert(QStringLiteral("grid_rows"), gridState.gridRows);
+    project.insert(QStringLiteral("grid_columns"), gridState.gridColumns);
+    project.insert(QStringLiteral("capture_order"), gridState.captureOrder);
+    project.insert(QStringLiteral("horizontal_overlap"), gridState.horizontalOverlap);
+    project.insert(QStringLiteral("vertical_overlap"), gridState.verticalOverlap);
+    project.insert(QStringLiteral("overlaps_linked"), gridState.overlapsLinked);
+    project.insert(QStringLiteral("modality"), gridState.modality);
+    project.insert(QStringLiteral("scale_mm_per_pixel"), gridState.scaleMmPerPixel);
+    project.insert(QStringLiteral("uncertainty_margin"), gridState.uncertaintyMargin);
+    project.insert(QStringLiteral("automatic_uncertainty"), gridState.automaticUncertainty);
+    project.insert(QStringLiteral("reference_image"), gridState.referenceImagePath);
     QJsonArray tiles;
-    for (const QString &tile : tilePaths)
+    for (const QString &tile : gridState.tilePaths)
         tiles.append(tile);
     project.insert(QStringLiteral("tiles"), tiles);
     QJsonArray grid;
-    for (const GridTile &tile : gridTiles) {
+    for (const GridTile &tile : gridState.gridTiles) {
         QJsonObject cell;
         cell.insert(QStringLiteral("path"), tile.path);
         cell.insert(QStringLiteral("rotation"), tile.rotation);
@@ -902,91 +676,19 @@ void MainWindow::saveProject()
     }
     projectPath = path;
     projectCreated = true;
-    rememberRecentProject(path);
+    homePage->setCurrentProjectInfo(
+        projectCreated, projectPath, projectName, gridState.tilePaths.size());
+    homePage->rememberRecentProject(path);
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
-void MainWindow::openProject()
+void MainWindow::requestRun(int firstStep)
 {
-    const QString path = QFileDialog::getOpenFileName(this, tr("Ouvrir un projet"),
-        QString(), tr("Projet KIK-IRPA (*.kikproj *.json);;Tous les fichiers (*)"));
-    if (path.isEmpty())
-        return;
-    loadProjectFromPath(path);
-}
-
-bool MainWindow::loadProjectFromPath(const QString &path)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, tr("Ouverture impossible"), tr("Le fichier ne peut pas être lu."));
-        return false;
-    }
-    QJsonParseError error;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
-    if (error.error != QJsonParseError::NoError || !document.isObject()) {
-        QMessageBox::warning(this, tr("Projet invalide"),
-            tr("Ce fichier n'est pas un projet JSON valide."));
-        return false;
-    }
-    const QJsonObject project = document.object();
-    projectName = project.value(QStringLiteral("project_name")).toString(QFileInfo(path).completeBaseName());
-    tileDirectory = project.value(QStringLiteral("tile_directory")).toString();
-    outputDirectory = project.value(QStringLiteral("output_directory")).toString();
-    gridRows = qBound(1, project.value(QStringLiteral("grid_rows")).toInt(3), 20);
-    gridColumns = qBound(1, project.value(QStringLiteral("grid_columns")).toInt(2), 20);
-    captureOrder = qBound(0, project.value(QStringLiteral("capture_order")).toInt(0), 5);
-    horizontalOverlap = qBound(0, project.value(QStringLiteral("horizontal_overlap")).toInt(20), 90);
-    verticalOverlap = qBound(0, project.value(QStringLiteral("vertical_overlap")).toInt(20), 90);
-    overlapsLinked = project.value(QStringLiteral("overlaps_linked")).toBool(true);
-    if (overlapsLinked)
-        verticalOverlap = horizontalOverlap;
-    modality = project.value(QStringLiteral("modality")).toString(QStringLiteral("Infrarouge"));
-    scaleMmPerPixel = qMax(0.0, project.value(QStringLiteral("scale_mm_per_pixel")).toDouble());
-    uncertaintyMargin = qMax(0.0, project.value(QStringLiteral("uncertainty_margin")).toDouble());
-    automaticUncertainty = project.value(QStringLiteral("automatic_uncertainty")).toBool(true);
-    referenceImagePath = project.value(QStringLiteral("reference_image")).toString();
-    tilePaths.clear();
-    for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
-        tilePaths.append(tile.toString());
-    const QJsonArray grid = project.value(QStringLiteral("grid_tiles")).toArray();
-    if (grid.isEmpty()) {
-        initializeGridFromPaths();
-    } else {
-        gridTiles.clear();
-        gridTiles.reserve(qMax(gridRows * gridColumns, static_cast<int>(grid.size())));
-        for (const QJsonValue &cellValue : grid) {
-            const QJsonObject cell = cellValue.toObject();
-            GridTile tile;
-            tile.path = cell.value(QStringLiteral("path")).toString();
-            const int savedRotation = cell.value(QStringLiteral("rotation")).toInt();
-            tile.rotation = ((savedRotation % 360) + 360) % 360;
-            tile.flipped = cell.value(QStringLiteral("flipped")).toBool();
-            tile.empty = cell.value(QStringLiteral("empty")).toBool();
-            gridTiles.append(tile);
-        }
-        while (gridTiles.size() < gridRows * gridColumns)
-            gridTiles.append(GridTile{});
-    }
-    selectedGridCell = 0;
-    gridValidated = false;
-    projectPath = path;
-    projectCreated = true;
-    refreshProjectInfo();
-    pages->setCurrentWidget(workspace);
-    setMode(0);
-    rememberRecentProject(path);
-    updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
-    return true;
-}
-
-void MainWindow::startRun(int firstStep)
-{
-    if (progressRunning) {
+    if (simulationRunner->isRunning()) {
         updateStatus(tr("Une démonstration de progression est déjà en cours."));
         return;
     }
-    if (tilePaths.isEmpty()) {
+    if (projectGrid->state().tilePaths.isEmpty()) {
         const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
             tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
@@ -1006,7 +708,7 @@ void MainWindow::startRun(int firstStep)
         for (int step = firstStep; step <= 8; ++step)
             recalculated->addItem(tr("↻  Étape %1 — résultat recalculé").arg(step));
         layout->addWidget(recalculated);
-        layout->addWidget(mutedLabel(
+        layout->addWidget(FrontendUtils::mutedLabel(
             tr("Les résultats actuels seront conservés dans l'historique. "
                "Cette maquette ne lance pas de calcul backend."), &confirmation));
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok,
@@ -1018,42 +720,10 @@ void MainWindow::startRun(int firstStep)
         if (confirmation.exec() != QDialog::Accepted)
             return;
     }
-    progressRunning = true;
-    progressBar->setValue(0);
-    currentStepLabel->setText(tr("Démonstration"));
-    updateStatus(tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
-    auto *timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this, timer, firstStep]() {
-        progressBar->setValue(progressBar->value() + 4);
-        if (progressBar->value() >= 100) {
-            timer->stop();
-            timer->deleteLater();
-            progressRunning = false;
-            currentStepLabel->setText(tr("Terminé"));
-            updateStatus(tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
-                         .arg(firstStep));
-        }
-    });
-    timer->start(100);
-    QTimer::singleShot(150, this, [this, timer]() {
-        if (timer->isActive()) {
-            auto *cancel = makeButton(tr("Annuler"), this);
-            cancel->setObjectName(QStringLiteral("cancelRunButton"));
-            statusBar()->addPermanentWidget(cancel);
-            connect(cancel, &QPushButton::clicked, this, [this, timer, cancel]() {
-                timer->stop();
-                timer->deleteLater();
-                progressRunning = false;
-                currentStepLabel->setText(tr("Annulée"));
-                cancel->deleteLater();
-                updateStatus(tr("Démonstration annulée."));
-            });
-            connect(timer, &QTimer::destroyed, cancel, &QPushButton::deleteLater);
-        }
-    });
+    simulationRunner->startRun(firstStep);
 }
 
-void MainWindow::showComparison()
+void MainWindow::showComparisonDialog()
 {
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Comparer deux exécutions"));
@@ -1078,21 +748,38 @@ void MainWindow::showComparison()
     buttons->addButton(QDialogButtonBox::Close);
     layout->addWidget(buttons);
     connect(show, &QPushButton::clicked, this, [this, &dialog]() {
-        comparisonVisible = !comparisonVisible;
-        static_cast<ArtworkCanvas *>(canvas)->toggleComparison();
-        updateStatus(comparisonVisible ? tr("Comparaison affichée — curseur de séparation actif.")
-                                       : tr("Comparaison côte à côte affichée."));
+        simulationRunner->toggleComparison();
         dialog.accept();
     });
     connect(keepA, &QPushButton::clicked, this, [this, &dialog]() {
-        updateStatus(tr("Résultat A conservé; les étapes suivantes sont à refaire."));
+        simulationRunner->keepComparisonA();
         dialog.accept();
     });
     connect(keepB, &QPushButton::clicked, this, [this, &dialog]() {
-        updateStatus(tr("Résultat B conservé; les étapes suivantes sont à refaire."));
+        simulationRunner->keepComparisonB();
         dialog.accept();
     });
     dialog.exec();
+}
+
+void MainWindow::showCancelRunButton()
+{
+    if (cancelRunButton)
+        return;
+    cancelRunButton = FrontendUtils::makeButton(tr("Annuler"), this);
+    cancelRunButton->setObjectName(QStringLiteral("cancelRunButton"));
+    statusBar()->addPermanentWidget(cancelRunButton);
+    connect(cancelRunButton, &QPushButton::clicked,
+            simulationRunner, &SimulationRunner::cancelRun);
+}
+
+void MainWindow::removeCancelRunButton()
+{
+    if (!cancelRunButton)
+        return;
+    statusBar()->removeWidget(cancelRunButton);
+    cancelRunButton->deleteLater();
+    cancelRunButton = nullptr;
 }
 
 void MainWindow::updateStatus(const QString &message)

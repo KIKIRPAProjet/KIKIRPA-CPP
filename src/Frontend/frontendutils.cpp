@@ -1,12 +1,39 @@
 #include "frontendutils.h"
 
 #include <QImageReader>
+#include <QLabel>
+#include <QObject>
+#include <QPushButton>
 #include <QtMath>
 
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
 #endif
+
+namespace FrontendUtils {
+
+const QStringList modeNames = {
+    QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
+    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
+};
+
+QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)
+{
+    auto *button = new QPushButton(text, parent);
+    button->setProperty("primary", primary);
+    button->setCursor(Qt::PointingHandCursor);
+    return button;
+}
+
+QLabel *mutedLabel(const QString &text, QWidget *parent)
+{
+    auto *label = new QLabel(text, parent);
+    label->setProperty("muted", true);
+    return label;
+}
+
+}
 
 QVector<int> captureOrderCells(int rows, int columns, int order)
 {
@@ -166,4 +193,3 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
         image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     return image;
 }
-

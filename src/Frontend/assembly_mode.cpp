@@ -45,13 +45,13 @@ QWidget *MainWindow::createAssemblyMode()
     }
     chainLayout->addWidget(stepList);
     connect(stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
-        startRun(item->data(Qt::UserRole).toInt());
+        requestRun(item->data(Qt::UserRole).toInt());
     });
     auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), chainPage);
     chainLayout->addWidget(relaunch);
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
         const int row = qMax(0, stepList->currentRow());
-        startRun(row + 1);
+        requestRun(row + 1);
     });
     auto *selectAlgo = new QComboBox(chainPage);
     selectAlgo->addItems({tr("Coupe de graphe"), tr("Programmation dynamique"), tr("Dijkstra")});

@@ -1,5 +1,7 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
+#include "projectgrid.h"
+#include "simulationrunner.h"
 #include "frontendutils.h"
 #include "workspace_helpers.h"
 
@@ -67,10 +69,11 @@ void MainWindow::createWorkspace()
     }
     auto *run = makeWorkspaceButton(tr("▶ Tout lancer"), stages, true);
     stageLayout->addWidget(run);
-    connect(run, &QPushButton::clicked, this, [this]() { startRun(1); });
+    connect(run, &QPushButton::clicked, this, [this]() { requestRun(1); });
     auto *compare = makeWorkspaceButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
-    connect(compare, &QPushButton::clicked, this, &MainWindow::showComparison);
+    connect(compare, &QPushButton::clicked,
+            simulationRunner, &SimulationRunner::showComparison);
     root->addWidget(stages);
 
     auto *modeOptions = new QWidget;
@@ -88,9 +91,7 @@ void MainWindow::createWorkspace()
     arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
     optionsLayout->addWidget(arrangementCombo);
     connect(arrangementCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int value) {
-        captureOrder = value;
-        gridValidated = false;
-        refreshGrid();
+        projectGrid->setCaptureOrder(value);
         updateStatus(tr("Ordre de prise de vue : %1").arg(arrangementCombo->currentText()));
     });
     root->addWidget(modeOptions);

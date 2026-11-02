@@ -10,7 +10,6 @@
 class QComboBox;
 class QCheckBox;
 class QDoubleSpinBox;
-class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QProgressBar;
@@ -22,14 +21,11 @@ class QTableWidget;
 class QWidget;
 class QKeyEvent;
 class LogPanel;
-
-struct GridTile
-{
-    QString path;
-    int rotation = 0;
-    bool flipped = false;
-    bool empty = false;
-};
+class HomePage;
+class ProjectGrid;
+class SimulationRunner;
+class QJsonObject;
+class QImage;
 
 class MainWindow : public QMainWindow
 {
@@ -44,44 +40,49 @@ public slots:
 
 private:
     void keyPressEvent(QKeyEvent *event) override;
-    void createHomePage();
     void createWorkspace();
     void createProjectMode(QWidget *center);
     QWidget *createTilesMode();
     QWidget *createMasksMode();
     QWidget *createAlignmentMode();
     QWidget *createAssemblyMode();
-    void createProject();
-    void refreshRecentProjects();
-    void rememberRecentProject(const QString &path);
-    bool loadProjectFromPath(const QString &path);
     void refreshGrid();
     void refreshGridControls();
-    void initializeGridFromPaths();
-    void swapGridTiles(int first, int second);
-    void importReferenceImage();
-    void compareReferenceImage();
-    void validateGrid();
+    void chooseTilesDirectory();
+    bool chooseReferenceImage();
+    void showReferenceComparison(const QString &referencePath, const QString &tilePath,
+                                 const QImage &referenceImage, const QImage &tileImage);
     void setMode(int mode);
     void refreshProjectInfo();
-    void importTiles();
     void saveProject();
-    void openProject();
-    void startRun(int firstStep);
-    void showComparison();
+    void requestRun(int firstStep);
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
 
+private slots:
+    void initializeNewProject(const QString &name, const QString &tileDirectory,
+                              const QStringList &tilePaths);
+    void applyLoadedProject(const QString &path, const QJsonObject &project);
+    void openCurrentProjectFromHome();
+    void handleTilesImported(const QString &directory, int importedCount);
+    void showGridMessage(const QString &title, const QString &message, bool warning);
+    void handleGridValidation(bool valid, int activeTileCount, const QStringList &errors);
+    void showComparisonDialog();
+    void showCancelRunButton();
+    void removeCancelRunButton();
+
+private:
     QStackedWidget *pages = nullptr;
+    HomePage *homePage = nullptr;
+    ProjectGrid *projectGrid = nullptr;
+    SimulationRunner *simulationRunner = nullptr;
     QWidget *workspace = nullptr;
     QWidget *canvas = nullptr;
     QWidget *projectInfoPanel = nullptr;
     QTabWidget *rightTabs = nullptr;
     QTabWidget *bottomTabs = nullptr;
     QWidget *gridTabPage = nullptr;
-    QHBoxLayout *recentCardsLayout = nullptr;
-    QLabel *recentEmptyLabel = nullptr;
     QTableWidget *pairsTable = nullptr;
     QLabel *projectNameLabel = nullptr;
     QLineEdit *projectNameEdit = nullptr;
@@ -108,32 +109,15 @@ private:
     QLabel *selectedGridTileLabel = nullptr;
     QLabel *gridSummaryLabel = nullptr;
     QLabel *referencePathLabel = nullptr;
+    QPushButton *cancelRunButton = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
-    QString tileDirectory;
     QString outputDirectory;
-    QStringList tilePaths;
-    QVector<GridTile> gridTiles;
-    QString referenceImagePath;
-    int gridRows = 3;
-    int gridColumns = 2;
-    int captureOrder = 0;
-    int selectedGridCell = 0;
-    int horizontalOverlap = 20;
-    int verticalOverlap = 20;
-    bool overlapsLinked = true;
-    QString modality = QStringLiteral("Infrarouge");
-    double scaleMmPerPixel = 0.0;
-    double uncertaintyMargin = 0.0;
-    bool automaticUncertainty = true;
-    bool gridValidated = false;
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;
     bool panelsVisible = true;
     bool maskVisible = true;
-    bool comparisonVisible = false;
-    bool progressRunning = false;
 };
 
 #endif
