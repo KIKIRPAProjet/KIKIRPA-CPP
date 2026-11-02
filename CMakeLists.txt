@@ -16,8 +16,19 @@ set(PROJECT_SOURCES
         src/Frontend/main.cpp
         src/Frontend/mainwindow.cpp
         src/Frontend/logpanel.cpp
+        src/Frontend/mainwindow_workspace.cpp
+        src/Frontend/frontendutils.cpp
+        src/Frontend/project_mode.cpp
+        src/Frontend/tiles_mode.cpp
+        src/Frontend/masks_mode.cpp
+        src/Frontend/alignment_mode.cpp
+        src/Frontend/assembly_mode.cpp
+        src/Frontend/export_mode.cpp
         include/Frontend/mainwindow.h
         include/Frontend/logpanel.h
+        include/Frontend/frontendutils.h
+        include/Frontend/artworkcanvas.h
+        include/Frontend/workspace_helpers.h
         src/Frontend/mainwindow.ui
 )
 

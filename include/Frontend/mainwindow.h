@@ -46,6 +46,11 @@ private:
     void keyPressEvent(QKeyEvent *event) override;
     void createHomePage();
     void createWorkspace();
+    void createProjectMode(QWidget *center);
+    QWidget *createTilesMode();
+    QWidget *createMasksMode();
+    QWidget *createAlignmentMode();
+    QWidget *createAssemblyMode();
     void createProject();
     void refreshRecentProjects();
     void rememberRecentProject(const QString &path);
