@@ -786,10 +786,8 @@ void MainWindow::createHomePage()
     sideLayout->addSpacing(16);
     auto *newProject = makeButton(tr("+ Nouveau projet…"), side, true);
     sideLayout->addWidget(newProject);
-    auto *open = makeButton(tr("Ouvrir un projet…"), side);
+    auto *open = makeButton(tr("Importer un projet…"), side);
     sideLayout->addWidget(open);
-    auto *importJson = makeButton(tr("Importer une chaîne de traitement (JSON)…"), side);
-    sideLayout->addWidget(importJson);
     sideLayout->addStretch();
     sideLayout->addWidget(mutedLabel(tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
     layout->addWidget(side);
@@ -811,20 +809,6 @@ void MainWindow::createHomePage()
     refreshRecentProjects();
     connect(newProject, &QPushButton::clicked, this, &MainWindow::createProject);
     connect(open, &QPushButton::clicked, this, &MainWindow::openProject);
-    connect(importJson, &QPushButton::clicked, this, [this]() {
-        const QString path = QFileDialog::getOpenFileName(this, tr("Importer une chaîne"),
-            QString(), tr("Projet JSON (*.json *.kikproj)"));
-        if (!path.isEmpty()) {
-            projectPath = path;
-            projectName = QFileInfo(path).completeBaseName();
-            projectCreated = false;
-            tileDirectory.clear();
-            outputDirectory.clear();
-            pages->setCurrentWidget(workspace);
-            setMode(4);
-            updateStatus(tr("Chaîne chargée. Vérifiez les chemins de tuiles avant tout traitement."));
-        }
-    });
 }
 
 void MainWindow::refreshRecentProjects()
@@ -1091,9 +1075,48 @@ void MainWindow::createWorkspace()
     auto *center = new QWidget;
     auto *centerLayout = new QVBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
+    projectInfoPanel = new QWidget(center);
+    auto *projectInfoLayout = new QVBoxLayout(projectInfoPanel);
+    projectInfoLayout->setContentsMargins(32, 32, 32, 32);
+    projectInfoLayout->setSpacing(14);
+    auto *projectInfoTitle = new QLabel(tr("Informations du projet"), projectInfoPanel);
+    projectInfoTitle->setStyleSheet(QStringLiteral("font-size:18px;font-weight:600;"));
+    projectInfoLayout->addWidget(projectInfoTitle);
+
+    auto *projectNameForm = new QFormLayout;
+    projectNameEdit = new QLineEdit(projectInfoPanel);
+    projectNameEdit->setObjectName(QStringLiteral("projectNameEdit"));
+    auto *renameProject = makeButton(tr("Renommer"), projectInfoPanel);
+    auto *projectNameRow = new QHBoxLayout;
+    projectNameRow->addWidget(projectNameEdit, 1);
+    projectNameRow->addWidget(renameProject);
+    projectNameForm->addRow(tr("Nom du projet"), projectNameRow);
+    connect(renameProject, &QPushButton::clicked, this, [this]() {
+        const QString newName = projectNameEdit->text().trimmed();
+        if (newName.isEmpty()) {
+            QMessageBox::warning(this, tr("Nom invalide"),
+                tr("Le nom du projet ne peut pas être vide."));
+            return;
+        }
+        projectName = newName;
+        refreshProjectInfo();
+        updateStatus(tr("Projet renommé : %1").arg(projectName));
+    });
+    projectInfoLayout->addLayout(projectNameForm);
+
+    projectFolderLabel = mutedLabel(QString(), projectInfoPanel);
+    projectFolderLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(projectFolderLabel);
+    projectFormatLabel = new QLabel(projectInfoPanel);
+    projectFormatLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(projectFormatLabel);
+    projectInfoLayout->addStretch();
+    centerLayout->addWidget(projectInfoPanel, 1);
+
     canvas = new ArtworkCanvas(center);
     centerLayout->addWidget(canvas, 1);
     auto *canvasControls = new QWidget;
+    canvasControls->setObjectName(QStringLiteral("canvasControls"));
     auto *canvasControlsLayout = new QHBoxLayout(canvasControls);
     canvasControlsLayout->setContentsMargins(8, 3, 8, 3);
     auto *minus = makeButton(QStringLiteral("−"), canvasControls);
@@ -1108,6 +1131,7 @@ void MainWindow::createWorkspace()
     canvasControlsLayout->addWidget(oneToOne);
     canvasControlsLayout->addStretch();
     centerLayout->addWidget(canvasControls);
+    projectInfoPanel->setVisible(false);
     connect(minus, &QPushButton::clicked, this, [this]() {
         zoomPercent = qMax(5, zoomPercent - 5);
         zoomLabel->setText(QString::number(zoomPercent) + "%");
@@ -1535,6 +1559,14 @@ void MainWindow::setMode(int mode)
         label->setText(descriptions.at(currentMode));
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas))
         canvasView->setMode(currentMode);
+    if (projectInfoPanel)
+        projectInfoPanel->setVisible(currentMode == 0);
+    if (canvas)
+        canvas->setVisible(currentMode != 0);
+    if (auto *canvasControls = workspace->findChild<QWidget *>(
+                QStringLiteral("canvasControls"))) {
+        canvasControls->setVisible(currentMode != 0);
+    }
     arrangementCombo->setVisible(currentMode == 1);
     if (currentMode == 1)
         bottomTabs->setCurrentIndex(1);
@@ -1547,6 +1579,35 @@ void MainWindow::refreshProjectInfo()
 {
     if (projectNameLabel)
         projectNameLabel->setText(projectName);
+    if (projectNameEdit)
+        projectNameEdit->setText(projectName);
+    if (projectFolderLabel) {
+        projectFolderLabel->setText(tileDirectory.isEmpty()
+            ? tr("Dossier sélectionné : aucun dossier")
+            : tr("Dossier sélectionné :\n%1").arg(tileDirectory));
+    }
+    if (projectFormatLabel) {
+        const QFileInfoList folderFiles = tileDirectory.isEmpty()
+            ? QFileInfoList()
+            : QDir(tileDirectory).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
+                                                QDir::Name | QDir::IgnoreCase);
+        int validFiles = 0;
+        for (const QFileInfo &file : folderFiles) {
+            const QString suffix = file.suffix().toLower();
+            if (suffix == QStringLiteral("tif") || suffix == QStringLiteral("tiff"))
+                ++validFiles;
+        }
+        const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
+        projectFormatLabel->setText(allFilesValid
+            ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
+                  .arg(validFiles)
+            : tr("Format : %1 fichier(s) TIFF compatible(s) sur %2 ; certains éléments "
+                "ne sont pas au bon format.")
+                  .arg(validFiles).arg(folderFiles.size()));
+        projectFormatLabel->setStyleSheet(allFilesValid
+            ? QStringLiteral("color:#66c98a;")
+            : QStringLiteral("color:#e0a45f;"));
+    }
     if (tileCountLabel)
         tileCountLabel->setText(tr("%1 tuile(s) chargée(s)").arg(tilePaths.size()));
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas))

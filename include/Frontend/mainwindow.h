@@ -12,6 +12,7 @@ class QCheckBox;
 class QDoubleSpinBox;
 class QHBoxLayout;
 class QLabel;
+class QLineEdit;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
@@ -65,6 +66,7 @@ private:
     QStackedWidget *pages = nullptr;
     QWidget *workspace = nullptr;
     QWidget *canvas = nullptr;
+    QWidget *projectInfoPanel = nullptr;
     QTabWidget *rightTabs = nullptr;
     QTabWidget *bottomTabs = nullptr;
     QWidget *gridTabPage = nullptr;
@@ -72,6 +74,9 @@ private:
     QLabel *recentEmptyLabel = nullptr;
     QTableWidget *pairsTable = nullptr;
     QLabel *projectNameLabel = nullptr;
+    QLineEdit *projectNameEdit = nullptr;
+    QLabel *projectFolderLabel = nullptr;
+    QLabel *projectFormatLabel = nullptr;
     QLabel *statusLabel = nullptr;
     QLabel *zoomLabel = nullptr;
     QLabel *tileCountLabel = nullptr;
