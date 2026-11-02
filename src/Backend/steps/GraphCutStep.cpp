@@ -13,7 +13,6 @@ namespace stitching::steps {
         cfg.signature.pipelineOptions = {{"Territories", "territories"}};
         config = cfg;
     }
-explicit GraphCutStep(const GraphCutInput& input = {});
 bool GraphCutStep::execute() {
     // Entrées : le DataStore (pipeline) si présent, sinon la structure input (appel direct)
     std::vector<std::string> tile_paths = input.tile_paths;
