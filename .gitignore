@@ -1,4 +1,8 @@
 cmake-build-*/
 build/
+build-*/
+out/
 .idea/
+.vs/
+CMakeUserPresets.json
 .DS_Store
