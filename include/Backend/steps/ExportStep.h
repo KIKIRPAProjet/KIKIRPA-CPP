@@ -7,15 +7,11 @@ namespace stitching::steps {
 // Entrée du step = ses options
 struct ExportInput {
     std::string path = "output/mosaic.tif";
-    std::string format = "bigtiff";
-    int bits = 16;
-    int blockSize = 4096;
-    bool keepIcc = true;
-    bool pyramid = true;
+    int bits = 16;  
 };
 
 // name : "export"
-// options : path (string), format (string), bits (int), blockSize (int), keepIcc (bool), pyramid (bool)
+// options : path (string), bits (int, 8 or 16)
 // pipelineOptions : { "type": "Mosaic", "key": "mosaic" }
 // signature : aucune
 class ExportStep : public Step {
