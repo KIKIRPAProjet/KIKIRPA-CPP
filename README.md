@@ -18,8 +18,8 @@ Garder les fichiers fournis avec l’exécutable dans le même dossier : les bib
 ## 3. Prise en main rapide
 
 1. Dans l’écran d’accueil, choisir **Nouveau projet…**, saisir un nom, puis choisir
-   le dossier contenant les tuiles et le dossier de sortie. Les images reconnues
-   directement dans le dossier des tuiles sont ajoutées au projet.
+   le dossier contenant les tuiles. Les images reconnues directement dans ce dossier
+   sont ajoutées au projet.
 2. Si nécessaire, dans l’espace de travail, choisir **Tuiles → Importer un dossier de photos…**
    ou utiliser `Ctrl+I` pour ajouter d’autres images.
 3. Enregistrer le projet avec **Enregistrer** ou `Ctrl+S`.
@@ -34,7 +34,7 @@ les chemins des fichiers sélectionnés dans le projet.
 
 ## 4. Écran d’accueil
 
-- **Nouveau projet…** : demande un nom, le dossier des tuiles et le dossier de sortie,
+- **Nouveau projet…** : demande un nom et le dossier des tuiles,
   puis ouvre la vue de grille. Les fichiers image présents directement dans le dossier
   des tuiles sont référencés automatiquement. Le dossier de sortie est proposé par
   défaut lors de l’enregistrement du rapport HTML.
