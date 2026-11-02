@@ -113,7 +113,7 @@ void testerValidation() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == steps::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfig().at("options").size() == 12, "phase-correlation garde ses 12 options");
+    verifier(p.getSteps()[1]->getConfig().at("options").size() == 15, "phase-correlation garde ses 15 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const Pipeline copie = buildPipeline(p.exportConfig());

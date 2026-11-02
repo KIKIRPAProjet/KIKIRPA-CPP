@@ -2,15 +2,25 @@
 #include "core/Step.h"
 #include "core/Tuile.h"
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include <string>
 #include <vector>
 
 namespace stitching::steps {
+
+// Contrôles de confiance appliqués à chaque paire mesurée (voir docs/algorithms/stitching/correlation_phase/EtudeConfiance.md).
+// Une paire qui échoue à un contrôle est rejetée (exportData()["failures"]), comme une paire non mesurable.
+struct ControleConfiance {
+    double nccMin = 0.3;          // NCC médiane minimale des points locaux (fond sombre, bruit). <= 0 : contrôle désactivé
+    double dispersionMax = 0.5;   // écart médian maximal (px du niveau analysé) entre les points et la translation. <= 0 : désactivé
+    double autosimMax = 0.6;      // auto-similarité maximale de la bande de A (motif répété : mesure ambiguë). >= 1 : désactivé
+};
 
 // Entrée du step = ses options
 struct PhaseCorrelationInput {
     float overlap = 0.2f;   // recouvrement nominal, fraction de la tuile
     int niveau = 0;         // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à NB_NIVEAUX - 1)
     matching::CorrelationPhase::Parametres parametres;   // longueurs en px du niveau analysé
+    ControleConfiance confiance;
 };
 
 // Sortie du step = sa signature
@@ -24,7 +34,8 @@ struct PhaseCorrelationOutput {
 // name : "phase-correlation"
 // options : overlap (float), niveau (int), et les champs de CorrelationPhase::Parametres :
 //           lissage, seuilRapport, lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float),
-//           nbPoints, fenetre, facteurDft (int). Option absente du JSON : valeur par défaut.
+//           nbPoints, fenetre, facteurDft (int) ; contrôles de confiance : nccMin, dispersionMax, autosimMax (float).
+//           Option absente du JSON : valeur par défaut.
 // pipelineOptions : { "type": "Tiles", "key": "tiles" }
 // signature : { "type": "PairMatches", "key": "matches" }
 //
@@ -39,7 +50,9 @@ struct PhaseCorrelationOutput {
 //   pleine résolution : (dx, dy) × s, et points p ↦ (p + 0,5)·s − 0,5 (centre des pixels moyennés).
 //   Les longueurs des paramètres (marge, fenetre, ecartMax...) et les messages d'échec sont en px du niveau analysé.
 //
-// Une paire qui échoue est ignorée et listée dans exportData()["failures"] ({idA, idB, reason}) ;
+// Une paire qui échoue (mesure impossible, ou contrôle de confiance) est ignorée et listée dans
+// exportData()["failures"] ({idA, idB, reason}). Une paire gardée sans point local pour la vérifier est listée
+// dans exportData()["unverified"] ({idA, idB}) ;
 // le step échoue (exportData()["error"]) si aucune paire ne réussit, si une option est invalide,
 // s'il n'y a pas de tuiles ou si une tuile est illisible.
 class PhaseCorrelationStep : public Step {
@@ -57,6 +70,20 @@ public:
 
     // Ramène une mesure faite au niveau n vers la pleine résolution (voir « Niveau réduit » ci-dessus)
     static void versPleineResolution(Matches& m, int niveau);
+
+    // Auto-similarité de la bande de recouvrement nominal de A, côté B (dir = Right ou Bottom) : la bande
+    // ressemble-t-elle à elle-même à un décalage non nul de la marge du rail (hors ±10 px) ? 1 = motif répété
+    // (plusieurs positions de B possibles), proche de 0 = aucune répétition. NaN si la bande est vide à plus de 75 %.
+    // marge : Parametres::marge (0 = automatique, même règle que l'algorithme).
+    static double autoSimilarite(const cv::Mat& a, Direction dir, float overlap, double marge);
+
+    // Raison du rejet de la paire par les contrôles de confiance (vide si elle les passe). Mesure m et image a
+    // au niveau analysé. Sans point local, la paire est rejetée si la zone commune permettait d'en placer (bruit) ;
+    // sinon (zone trop étroite pour un patch, ou nbPoints = 0) les contrôles sur les points sont sautés et
+    // pointsVerifies vaut false.
+    static std::string controlerConfiance(const Matches& m, const cv::Mat& a, Direction dir, float overlap,
+                                          const matching::CorrelationPhase::Parametres& p, const ControleConfiance& c,
+                                          bool& pointsVerifies);
 };
 
 } // namespace stitching::steps

@@ -60,11 +60,13 @@ if(BUILD_TESTING)
   #   sift_matcher_test <dossier des images> [recouvrement]   (voir tests/algorithms/stitching/sift/data/README.md)
   #   positioning_test [--chevauchement=0.3] <tuile1_rLL_cCC.tif> [tuile2 ...]
   #   check_pyramid <fichier_pyramidal.tif>
+  #   etude_confiance [resultats.csv]   (voir docs/algorithms/stitching/correlation_phase/EtudeConfiance.md)
   add_executable(sift_matcher_test "${_tests}/stitching/sift/SiftMatcherTest.cpp")
   add_executable(positioning_test "${_tests}/stitching/positioning/PositioningTest.cpp")
   add_executable(check_pyramid "${CMAKE_CURRENT_SOURCE_DIR}/tests/check_pyramid.cpp")
+  add_executable(etude_confiance "${_tests}/stitching/correlation_phase/etude_confiance.cpp")
 
-  foreach(_cible test_correlation_phase test_seamline test_chaine_paire test_egalisation sift_matcher_test positioning_test check_pyramid)
+  foreach(_cible test_correlation_phase test_seamline test_chaine_paire test_egalisation sift_matcher_test positioning_test check_pyramid etude_confiance)
     target_link_libraries(${_cible} PRIVATE stitching_backend)
   endforeach()
 endif()
