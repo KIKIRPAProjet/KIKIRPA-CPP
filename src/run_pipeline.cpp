@@ -10,57 +10,62 @@
 //   --restart                ignore les checkpoints et repart du premier step
 //
 // Code de retour : 0 si tous les steps réussissent, 1 sinon (script invalide, step en échec).
-#include "core/PipelineBuilder.h"
+#include "core/pipeline/pipeline_builder.h"
+
 #include <filesystem>
 #include <iostream>
 #include <string>
 
-using namespace stitching;
+using namespace PipelineNs;
 
-int main(int argc, char** argv) {
-    std::string script, from, checkpoints;
-    bool restart = false;
-    for (int i = 1; i < argc; ++i) {
-        const std::string a = argv[i];
-        if (a == "--restart") restart = true;
-        else if (a == "--from" && i + 1 < argc) from = argv[++i];
-        else if (a == "--checkpoints" && i + 1 < argc) checkpoints = argv[++i];
-        else if (script.empty() && a.rfind("--", 0) != 0) script = a;
-        else {
-            std::cerr << "usage: " << argv[0] << " <script.json> [--checkpoints <dossier>] [--from <step>] [--restart]\n";
-            return 1;
-        }
-    }
-    if (script.empty()) {
-        std::cerr << "usage: " << argv[0] << " <script.json> [--checkpoints <dossier>] [--from <step>] [--restart]\n";
+namespace {
+
+    int printUsage(const char* programName) {
+        std::cerr << "usage: " << programName << " <script.json> [--checkpoints <dossier>] [--from <step>] [--restart]\n";
         return 1;
     }
 
+}
+
+int main(int argc, char** argv) {
+    std::string scriptPath, startFromStep, checkpointDirectory;
+    bool restart = false;
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
+        const std::string argument = argv[argumentIndex];
+        if (argument == "--restart") restart = true;
+        else if (argument == "--from" && argumentIndex + 1 < argc) startFromStep = argv[++argumentIndex];
+        else if (argument == "--checkpoints" && argumentIndex + 1 < argc) checkpointDirectory = argv[++argumentIndex];
+        else if (scriptPath.empty() && argument.rfind("--", 0) != 0) scriptPath = argument;
+        else return printUsage(argv[0]);
+    }
+    if (scriptPath.empty()) return printUsage(argv[0]);
+
     try {
-        Pipeline p = buildPipelineFromFile(script);
-        const auto& steps = p.getSteps();
-        for (size_t i = 0; i < steps.size(); ++i) {
-            const Json& cfg = steps[i]->getConfig();
-            std::cout << i + 1 << ". " << cfg.value("name", "?");
-            for (const Json& o : cfg.at("options")) std::cout << "  " << o.value("key", "") << '=' << o.at("value");
+        PipelineClass pipeline = buildPipelineFromFile(scriptPath);
+        const auto& steps = pipeline.getSteps();
+        for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
+            const Json& stepConfigJson = steps[stepIndex]->getConfigJson();
+            std::cout << stepIndex + 1 << ". " << stepConfigJson.value("name", "?");
+            for (const Json& parameterJson : stepConfigJson.at("parameters"))
+                std::cout << "  " << parameterJson.value("name", "") << '=' << parameterJson.at("value");
             std::cout << '\n';
         }
 
         // Consignes de la ligne de commande (la GUI les écrira directement dans "run")
-        RunState run = p.getRunState();
-        if (!checkpoints.empty()) run.checkpointDir = checkpoints;
-        if (restart) run.skip = false;
-        if (!from.empty()) run.from = from;
-        p.setRunState(run);
-        if (!run.checkpointDir.empty()) p.setScriptPath(std::filesystem::path(run.checkpointDir) / "run.json");
+        RunState runState = pipeline.getRunState();
+        if (!checkpointDirectory.empty()) runState.checkpointDirectory = checkpointDirectory;
+        if (restart) runState.skipCompletedSteps = false;
+        if (!startFromStep.empty()) runState.startFromStep = startFromStep;
+        pipeline.setRunState(runState);
+        if (!runState.checkpointDirectory.empty()) pipeline.setScriptPath(std::filesystem::path(runState.checkpointDirectory) / "run.json");
 
-        const bool ok = p.run([](const std::string& m) { std::cout << "  " << m << '\n'; });
-        std::cout << (ok ? "Pipeline OK" : "Pipeline KO") << '\n';
-        if (!ok && !run.checkpointDir.empty())
-            std::cout << "Pour reprendre : " << argv[0] << ' ' << (std::filesystem::path(run.checkpointDir) / "run.json").string() << '\n';
-        return ok ? 0 : 1;
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
+        const bool succeeded = pipeline.run([](const std::string& message) { std::cout << "  " << message << '\n'; });
+        std::cout << (succeeded ? "Pipeline OK" : "Pipeline KO") << '\n';
+        if (!succeeded && !runState.checkpointDirectory.empty())
+            std::cout << "Pour reprendre : " << argv[0] << ' ' << (std::filesystem::path(runState.checkpointDirectory) / "run.json").string() << '\n';
+        return succeeded ? 0 : 1;
+    } catch (const std::exception& exception) {
+        std::cerr << exception.what() << '\n';
         return 1;
     }
 }

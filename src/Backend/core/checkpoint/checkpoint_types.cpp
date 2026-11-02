@@ -1,0 +1,211 @@
+// src/Backend/core/checkpoint/checkpoint_types.cpp
+#include "checkpoint_types.h"
+
+#include "core/data/stitching_types.h"
+#include "core/data/tile.h"
+#include "core/step/data_store.h"
+
+#include <nlohmann/json.hpp>
+#include <opencv2/core.hpp>
+
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace CheckpointNs {
+
+    using Json = nlohmann::json;
+    namespace fs = std::filesystem;
+
+    namespace {
+
+        // ----- Fichier JSON d'une sortie : <dossier>/<clé>.json
+
+        void writeJson(const fs::path& directory, const std::string& key, const Json& value) {
+            std::ofstream output(directory / (key + ".json"), std::ios::binary);
+            output << value.dump();
+            if (!output) throw std::runtime_error("cannot write " + (directory / (key + ".json")).string());
+        }
+
+        Json readJson(const fs::path& directory, const std::string& key) {
+            std::ifstream input(directory / (key + ".json"), std::ios::binary);
+            if (!input) throw std::runtime_error("missing " + (directory / (key + ".json")).string());
+            return Json::parse(input);
+        }
+
+        // ----- Briques communes
+
+        Json point(const cv::Point2f& coordinates) { return {coordinates.x, coordinates.y}; }
+        Json point(const cv::Point2d& coordinates) { return {coordinates.x, coordinates.y}; }
+        Json point(const cv::Point& coordinates) { return {coordinates.x, coordinates.y}; }
+
+        Json polyline(const std::vector<cv::Point>& vertices) {
+            Json verticesJson = Json::array();
+            for (const auto& vertex : vertices) verticesJson.push_back(point(vertex));
+            return verticesJson;
+        }
+
+        std::vector<cv::Point> readPolyline(const Json& verticesJson) {
+            std::vector<cv::Point> vertices;
+            for (const Json& vertexJson : verticesJson) vertices.emplace_back(vertexJson.at(0).get<int>(), vertexJson.at(1).get<int>());
+            return vertices;
+        }
+
+        const char* directionName(DataNs::Direction direction) {
+            switch (direction) {
+            case DataNs::Direction::Top: return "top";
+            case DataNs::Direction::Bottom: return "bottom";
+            case DataNs::Direction::Left: return "left";
+            case DataNs::Direction::Right: return "right";
+            }
+            return "right";
+        }
+
+        DataNs::Direction readDirection(const std::string& name) {
+            if (name == "top") return DataNs::Direction::Top;
+            if (name == "bottom") return DataNs::Direction::Bottom;
+            if (name == "left") return DataNs::Direction::Left;
+            if (name == "right") return DataNs::Direction::Right;
+            throw std::runtime_error("unknown direction '" + name + "'");
+        }
+
+        // ----- "Tiles" : fiches seulement. Les voisins sont écrits par identifiant (-1 : pas de voisin).
+
+        int neighbourId(const DataNs::TileClass* neighbour) { return neighbour ? neighbour->getId() : -1; }
+
+        void saveTiles(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json tilesJson = Json::array();
+            for (const auto& tile : dataStore.get<DataNs::TileList>(key)) {
+                const DataNs::Level& fullResolutionLevel = tile->getLevel(0);
+                tilesJson.push_back({{"id", tile->getId()}, {"source", tile->getSource().u8string()}, {"tiff", tile->getTiff().u8string()},
+                                    {"width", fullResolutionLevel.width}, {"height", fullResolutionLevel.height}, {"type", tile->getType()},
+                                    {"left", neighbourId(tile->getLeft())}, {"right", neighbourId(tile->getRight())},
+                                    {"top", neighbourId(tile->getTop())}, {"bottom", neighbourId(tile->getBottom())}});
+            }
+            writeJson(directory, key, tilesJson);
+        }
+
+        void loadTiles(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const Json tilesJson = readJson(directory, key);
+            DataNs::TileList tiles;
+            std::map<int, DataNs::TileClass*> tileById;
+            for (const Json& tileJson : tilesJson) {
+                const fs::path tiffPath = fs::u8path(tileJson.at("tiff").get<std::string>());
+                // Le checkpoint ne recopie pas les pixels : le TIFF pyramidal doit toujours exister
+                if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + tiffPath.string());
+                tiles.push_back(std::make_shared<DataNs::TileClass>(tileJson.at("id").get<int>(), fs::u8path(tileJson.at("source").get<std::string>()),
+                                                                    tiffPath, tileJson.at("width").get<int>(), tileJson.at("height").get<int>(),
+                                                                    tileJson.at("type").get<int>()));
+                tileById[tiles.back()->getId()] = tiles.back().get();
+            }
+            const auto findTile = [&](const Json& tileIdJson) -> DataNs::TileClass* {
+                const auto entry = tileById.find(tileIdJson.get<int>());
+                return entry == tileById.end() ? nullptr : entry->second;
+            };
+            for (size_t index = 0; index < tiles.size(); ++index) {
+                const Json& tileJson = tilesJson.at(index);
+                tiles[index]->setNeighbours(findTile(tileJson.at("left")), findTile(tileJson.at("right")), findTile(tileJson.at("top")), findTile(tileJson.at("bottom")));
+            }
+            dataStore.replace(key, std::move(tiles));
+        }
+
+        // ----- "PairMatches" : std::vector<PairMatches>
+
+        void savePairMatches(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json pairsJson = Json::array();
+            for (const DataNs::PairMatches& pair : dataStore.get<std::vector<DataNs::PairMatches>>(key)) {
+                Json pointsInAJson = Json::array(), pointsInBJson = Json::array();
+                for (const auto& matchPoint : pair.featureMatches.pointsInA) pointsInAJson.push_back(point(matchPoint));
+                for (const auto& matchPoint : pair.featureMatches.pointsInB) pointsInBJson.push_back(point(matchPoint));
+                pairsJson.push_back({{"tileIdA", pair.tileIdA}, {"tileIdB", pair.tileIdB}, {"direction", directionName(pair.direction)},
+                                    {"pointsInA", pointsInAJson}, {"pointsInB", pointsInBJson}, {"confidenceScores", pair.featureMatches.confidenceScores},
+                                    {"translationX", pair.featureMatches.translationX}, {"translationY", pair.featureMatches.translationY}});
+            }
+            writeJson(directory, key, pairsJson);
+        }
+
+        void loadPairMatches(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            std::vector<DataNs::PairMatches> pairs;
+            for (const Json& pairJson : readJson(directory, key)) {
+                DataNs::PairMatches pair;
+                pair.tileIdA = pairJson.at("tileIdA").get<int>();
+                pair.tileIdB = pairJson.at("tileIdB").get<int>();
+                pair.direction = readDirection(pairJson.at("direction").get<std::string>());
+                for (const Json& pointJson : pairJson.at("pointsInA")) pair.featureMatches.pointsInA.emplace_back(pointJson.at(0).get<float>(), pointJson.at(1).get<float>());
+                for (const Json& pointJson : pairJson.at("pointsInB")) pair.featureMatches.pointsInB.emplace_back(pointJson.at(0).get<float>(), pointJson.at(1).get<float>());
+                pair.featureMatches.confidenceScores = pairJson.at("confidenceScores").get<std::vector<float>>();
+                pair.featureMatches.translationX = pairJson.at("translationX").get<float>();
+                pair.featureMatches.translationY = pairJson.at("translationY").get<float>();
+                pairs.push_back(std::move(pair));
+            }
+            dataStore.replace(key, std::move(pairs));
+        }
+
+        // ----- "Positions" : std::vector<TilePositionData>
+
+        void savePositions(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json positionsJson = Json::array();
+            for (const DataNs::TilePositionData& tilePosition : dataStore.get<std::vector<DataNs::TilePositionData>>(key))
+                positionsJson.push_back({{"tileId", tilePosition.tileId}, {"position", point(tilePosition.position)}, {"rotationRadians", tilePosition.rotationRadians}});
+            writeJson(directory, key, positionsJson);
+        }
+
+        void loadPositions(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            std::vector<DataNs::TilePositionData> positions;
+            for (const Json& positionJson : readJson(directory, key))
+                positions.push_back({positionJson.at("tileId").get<std::string>(),
+                                    cv::Point2d(positionJson.at("position").at(0).get<double>(), positionJson.at("position").at(1).get<double>()),
+                                    positionJson.at("rotationRadians").get<double>()});
+            dataStore.replace(key, std::move(positions));
+        }
+
+        // ----- "Territories" : std::vector<Seamline::TileTerritory>
+
+        void saveTerritories(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json territoriesJson = Json::array();
+            for (const DataNs::TileTerritory& territory : dataStore.get<std::vector<DataNs::TileTerritory>>(key)) {
+                Json polygonsJson = Json::array(), holesJson = Json::array();
+                for (const auto& polygon : territory.polygons) polygonsJson.push_back(polyline(polygon));
+                for (const auto& polygonHoles : territory.holes) {
+                    Json polygonHolesJson = Json::array();
+                    for (const auto& hole : polygonHoles) polygonHolesJson.push_back(polyline(hole));
+                    holesJson.push_back(polygonHolesJson);
+                }
+                territoriesJson.push_back({{"tileIndex", territory.tileIndex}, {"polygons", polygonsJson}, {"holes", holesJson}});
+            }
+            writeJson(directory, key, territoriesJson);
+        }
+
+        void loadTerritories(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            std::vector<DataNs::TileTerritory> territories;
+            for (const Json& territoryJson : readJson(directory, key)) {
+                DataNs::TileTerritory territory;
+                territory.tileIndex = territoryJson.at("tileIndex").get<int>();
+                for (const Json& polygonJson : territoryJson.at("polygons")) territory.polygons.push_back(readPolyline(polygonJson));
+                for (const Json& polygonHolesJson : territoryJson.at("holes")) {
+                    std::vector<std::vector<cv::Point>> polygonHoles;
+                    for (const Json& holeJson : polygonHolesJson) polygonHoles.push_back(readPolyline(holeJson));
+                    territory.holes.push_back(std::move(polygonHoles));
+                }
+                territories.push_back(std::move(territory));
+            }
+            dataStore.replace(key, std::move(territories));
+        }
+
+    }
+
+    std::map<std::string, std::pair<CheckpointClass::Saver, CheckpointClass::Loader>> pipelineTypes() {
+        return {
+            {"Tiles", {saveTiles, loadTiles}},
+            {"PairMatches", {savePairMatches, loadPairMatches}},
+            {"Positions", {savePositions, loadPositions}},
+            {"Territories", {saveTerritories, loadTerritories}},
+        };
+    }
+
+}

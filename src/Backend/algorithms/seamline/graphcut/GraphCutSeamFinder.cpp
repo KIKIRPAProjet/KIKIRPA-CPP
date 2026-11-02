@@ -163,7 +163,7 @@ vector<TileTerritory> GraphCut::extractPolygons(const Mat &index_matrix, int num
         findContours(mask_tile, contours, hier, RETR_CCOMP, CHAIN_APPROX_SIMPLE);
 
         TileTerritory territory;
-        territory.tile_index = i;
+        territory.tileIndex = i;
         for (size_t j = 0; j < contours.size(); ++j) {
             if (hier[j][3] >= 0) continue;               // un trou : rattaché à son polygone ci-dessous
             vector<vector<Point>> holes;
@@ -206,7 +206,7 @@ SeamCheck GraphCut::verifyTiling(const vector<TileTerritory>& territories, const
         Mat rc = recomposed(bb), filled;
         compare(rc, Scalar(NO_TILE), filled, CMP_NE);
         c.overlapPixels += countNonZero(filled & m);
-        rc.setTo(t.tile_index, m);
+        rc.setTo(t.tileIndex, m);
     }
     Mat diff;
     compare(recomposed, index_matrix, diff, CMP_NE);

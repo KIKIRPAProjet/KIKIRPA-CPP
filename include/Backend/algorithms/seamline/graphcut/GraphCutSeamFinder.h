@@ -1,4 +1,5 @@
 #pragma once
+#include "core/data/stitching_types.h"
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
@@ -7,13 +8,8 @@ namespace Seamline {
 
 constexpr uchar NO_TILE = 255;   // étiquette d'un pixel couvert par aucune tuile (comme l'ancien fond à 255)
 
-// Territoire d'une tuile : polygones (repère de la mosaïque) qui délimitent les pixels pris dans cette tuile.
-// polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
-struct TileTerritory {
-    int tile_index = 0;
-    std::vector<std::vector<cv::Point>> polygons;
-    std::vector<std::vector<std::vector<cv::Point>>> holes;
-};
+// Défini dans core/data/stitching_types.h (partagé avec les checkpoints) ; alias pour garder le nom Seamline::TileTerritory
+using TileTerritory = DataNs::TileTerritory;
 
 // Résultat de la vérification du pavage
 struct SeamCheck {
