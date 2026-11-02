@@ -79,6 +79,7 @@ Pipeline buildPipeline(const Json& script) {
 
         p.add(std::move(step));
     }
+    if (script.contains("run")) p.setRunState(parseRunState(script.at("run")));   // état d'un run précédent
     return p;
 }
 

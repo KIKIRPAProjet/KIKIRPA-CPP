@@ -48,8 +48,11 @@ if(BUILD_TESTING)
   # Cœur du pipeline (core/) : construction à partir du JSON, exécution
   add_executable(test_pipeline "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_pipeline.cpp")
   target_link_libraries(test_pipeline PRIVATE stitching_backend)
+  add_executable(test_reprise "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/test_reprise.cpp")
+  target_link_libraries(test_reprise PRIVATE stitching_backend)
   add_test(NAME pipeline COMMAND test_pipeline)
-  set_tests_properties(pipeline PROPERTIES LABELS "unit")
+  add_test(NAME reprise COMMAND test_reprise)
+  set_tests_properties(pipeline reprise PROPERTIES LABELS "unit")
 
   # Avec des images (non fournies dans le dépôt) : compilés seulement, à lancer à la main
   #   sift_matcher_test <dossier des images> [recouvrement]   (voir tests/algorithms/stitching/sift/data/README.md)

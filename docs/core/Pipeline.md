@@ -58,6 +58,42 @@ const auto& tuiles = p.getData().get<Tiles>("tiles");   // sorties des steps
 
 `Pipeline::run` part d'un `DataStore` vide et exécute les steps dans l'ordre. Il s'arrête au premier step qui renvoie `false` **ou lève une exception**, et renvoie `false`. Le message (`outputData` du step, ou le texte de l'exception) va au logger, ou sur `std::cerr` s'il n'y en a pas.
 
+## Reprise, pause, checkpoints
+
+Code : `core/RunState.h`, `core/Checkpoint`. Test : `tests/core/test_reprise.cpp`.
+
+```bash
+stitching_run pipeline.json --checkpoints output/checkpoints   # 1er run : échoue au step 3
+stitching_run output/checkpoints/run.json                       # reprise : steps 1 et 2 sautés
+stitching_run output/checkpoints/run.json --from phase-correlation   # refaire à partir d'un step
+stitching_run output/checkpoints/run.json --restart                  # tout refaire
+```
+
+Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient deux sortes de valeurs.
+
+**L'état, écrit par le pipeline :**
+- `status` : `idle`, `running`, `paused`, `failed` ou `completed` ;
+- `completedSteps` : les noms des steps déjà faits, dans l'ordre.
+
+**Les consignes, écrites par la CLI ou la GUI, et remises à leur défaut au démarrage :**
+- `skip` (`true` par défaut) : saute les steps déjà faits dont le checkpoint est valide ; `false` : repart de zéro ;
+- `from` : le nom du step où (re)démarrer. Il ne peut pas être après le premier step à refaire.
+
+**`checkpointDir`** : dossier des checkpoints. **Vide par défaut, ce qui veut dire ni checkpoint ni reprise.**
+
+**Dans le dossier des checkpoints :**
+- Il y a un sous-dossier par step (`00_import/`, `01_phase-correlation/`…), avec les sorties du step et un `manifest.json` écrit en dernier.
+- Un checkpoint est valide si le manifest est complet, pour le même step, avec les mêmes options.
+- Dès qu'un step est invalide, lui et tous les suivants sont refaits.
+- `setScriptPath()` réécrit le script complet (`pipeline` + `run`) après chaque step. La CLI l'écrit dans `<checkpoints>/run.json`.
+
+**Sérialisation des sorties.**
+- Chaque type de sortie (`Tiles`, `PairMatches`…) a sa (dé)sérialisation, déclarée par `Checkpoint::registerType`.
+- Un step dont une sortie n'en a pas est refait à chaque reprise.
+- Le journal le signale : `checkpoint incomplete`.
+
+**Pause** : `Pipeline::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
+
 ## Steps enregistrés
 
 | `name` | Classe | Entrées | Sorties |
