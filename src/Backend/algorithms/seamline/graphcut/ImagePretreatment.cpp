@@ -70,7 +70,8 @@ int ImagePretreatment::processImages(//Input
                                      vector<Size>& tile_sizes, //Original image dimensions
                                      vector<UMat>& masks_umat_small, //mask for each image at the reduced size
                                      vector<Point>& original_corners, //tile positions in full-resolution masaic
-                                     vector<Point>& corners_small)//tile positions in reduced masaic {
+                                     vector<Point>& corners_small)//tile positions in reduced masaic
+    {
     if (!(scale > 0.0 && scale <= 1.0)) { // if the scale is invalid -> returns -1
         cout << "Scale expected below 1.0 : " << scale << endl;
         return -1;
