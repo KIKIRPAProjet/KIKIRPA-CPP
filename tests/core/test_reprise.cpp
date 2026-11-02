@@ -3,9 +3,8 @@
 // "a" produit un entier, "b" lui ajoute sa valeur. Chaque step compte ses exécutions, ce qui permet de vérifier
 // lesquels sont sautés à la reprise.
 //
-//   test_reprise
-//       Sans checkpoint, échec puis reprise, options modifiées, run.from, skip=false, pause, script réécrit
-//       après chaque step, lecture du champ "run". Code de retour 0 si tous les tests passent.
+// GoogleTest, ctest -L unit : sans checkpoint, échec puis reprise, options modifiées, run.from, skip=false,
+// pause, script réécrit après chaque step, lecture du champ "run", sérialisation des types du pipeline.
 
 #include "core/Checkpoint.h"
 #include "core/CheckpointTypes.h"
@@ -13,6 +12,7 @@
 #include "core/Pipeline.h"
 #include "core/Tuile.h"
 #include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
+#include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -27,11 +27,9 @@ namespace stitching::tests {
 constexpr int VALEUR_A = 10;
 constexpr int VALEUR_B = 5;
 
-int nbEchecs = 0;
-
+// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
-    std::cout << (ok ? "  OK    " : "  ECHEC ") << message << '\n';
-    if (!ok) ++nbEchecs;
+    EXPECT_TRUE(ok) << message;
 }
 
 // Step de test : sortie = valeur (+ entrée si elle existe). Option "echoue" : renvoie false.
@@ -266,23 +264,23 @@ void testerTypesDuPipeline(const fs::path& dossier) {
              "Territories : polygones et trous");
 }
 
-} // namespace stitching::tests
-
-int main() {
-    using namespace stitching::tests;
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_reprise";
-    try {
+// Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en
+// parallèle) et déclare le type "Compteur" dans son processus
+class Reprise : public ::testing::Test {
+protected:
+    fs::path dossier;
+    void SetUp() override {
         declarerCompteur();
-        testerSansCheckpoint();
-        testerEchecPuisReprise(dossier);
-        testerPause(dossier);
-        testerScript(dossier);
-        testerTypesDuPipeline(dossier);
-    } catch (const std::exception& e) {
-        std::cout << "  ECHEC exception inattendue : " << e.what() << '\n';
-        ++nbEchecs;
+        dossier = fs::temp_directory_path() /
+                  ("kikirpa_test_reprise_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
     }
-    fs::remove_all(dossier);
-    std::cout << (nbEchecs == 0 ? "Tous les tests passent\n" : std::to_string(nbEchecs) + " test(s) en échec\n");
-    return nbEchecs == 0 ? 0 : 1;
-}
+    void TearDown() override { fs::remove_all(dossier); }
+};
+
+TEST_F(Reprise, SansCheckpoint) { testerSansCheckpoint(); }
+TEST_F(Reprise, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
+TEST_F(Reprise, Pause) { testerPause(dossier); }
+TEST_F(Reprise, Script) { testerScript(dossier); }
+TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
+
+} // namespace stitching::tests
