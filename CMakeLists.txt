@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Backend ---
 find_package(OpenCV REQUIRED)
+# libtiff : écriture des TIFF tuilés pyramidaux (core/PyramidalTiffWriter). Sous Windows, l'installer avec
+# vcpkg et configurer avec le preset "windows-msvc" (voir docs/BUILD.md).
 find_package(TIFF REQUIRED)
 find_package(nlohmann_json 3 QUIET)
 if(NOT nlohmann_json_FOUND)
@@ -29,14 +31,20 @@ include(cmake/algorithms.cmake)
 
 
 # --- Frontend ---
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
-file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
-add_library(stitching_frontend STATIC ${FRONTEND_SRC})
-target_include_directories(stitching_frontend PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend")
-target_link_libraries(stitching_frontend PUBLIC stitching_backend Qt6::Widgets Qt6::Concurrent)
+# Facultatif : sans Qt 6, la GUI n'est pas construite, le backend, la CLI et les tests le sont.
+find_package(Qt6 QUIET COMPONENTS Widgets Concurrent)
+if(Qt6_FOUND)
+  file(GLOB_RECURSE FRONTEND_SRC CONFIGURE_DEPENDS
+          "${CMAKE_CURRENT_SOURCE_DIR}/src/Frontend/*.cpp")
+  list(FILTER FRONTEND_SRC EXCLUDE REGEX "/ToDelete\\.cpp$")
+  add_library(stitching_frontend STATIC ${FRONTEND_SRC})
+  target_include_directories(stitching_frontend PUBLIC
+          "${CMAKE_CURRENT_SOURCE_DIR}/include"
+          "${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend")
+  target_link_libraries(stitching_frontend PUBLIC stitching_backend Qt6::Widgets Qt6::Concurrent)
+else()
+  message(STATUS "Qt 6 introuvable : la GUI (stitching_frontend) ne sera pas construite")
+endif()
 
 # Ligne de commande
 add_executable(stitching src/main.cpp)

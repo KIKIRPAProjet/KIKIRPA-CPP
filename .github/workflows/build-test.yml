@@ -33,6 +33,7 @@ jobs:
             build-essential \
             cmake \
             libopencv-dev \
+            libtiff-dev \
             ninja-build \
             nlohmann-json3-dev \
             qt6-base-dev
