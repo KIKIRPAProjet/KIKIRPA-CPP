@@ -5,19 +5,20 @@
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
-#include <nlohmann/json.hpp>
 
 #include <functional>
 #include <memory>
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
 namespace StepsNs {
 
     struct LightGlueInput {
+        static constexpr float DEFAULT_OVERLAP = 0.2f;
         std::string modelPath;
         int minMatches = 4;
-        float overlap = 0.2f;
+        float overlap = DEFAULT_OVERLAP;
     };
 
     // Coordonnées dans les repères pleine résolution de chaque tuile.

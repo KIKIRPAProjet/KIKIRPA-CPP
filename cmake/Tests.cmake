@@ -5,7 +5,7 @@ if(BUILD_TESTING)
     endif()
 
     # Liste des tests lue au lancement de ctest, pas après la compilation : sous Windows, les DLL d'OpenCV
-    # ne sont dans le PATH qu'à ce moment-là (ctest --preset windows-msvc)
+    # ne sont dans le PATH qu'à ce moment-là (ctest --preset windows-aqt)
     set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
     # Ajouter un subdirectory lors de tests suplementaires

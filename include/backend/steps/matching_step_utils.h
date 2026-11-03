@@ -4,9 +4,10 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 
-#include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
 
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <string>
 #include <vector>
 

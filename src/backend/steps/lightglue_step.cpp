@@ -1,15 +1,21 @@
 // src/backend/steps/lightglue_step.cpp
 #include "steps/lightglue_step.h"
 
+#include "algorithms/stitching/FeatureMatcher.h"
 #include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "steps/matching_step_utils.h"
+#include <memory>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/mat.hpp>
+#include <exception>
 #if defined(STITCHING_HAS_LIGHTGLUE)
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #endif
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
 
 #include <cmath>
 #include <limits>
@@ -25,7 +31,7 @@ namespace StepsNs {
 
         std::unique_ptr<stitching::matching::FeatureMatcher> createMatcher(const nlohmann::json& parameters) {
 #if defined(STITCHING_HAS_LIGHTGLUE)
-            return std::make_unique<stitching::matching::LightGlueMatcher>(parameters);
+            return std::make_unique<stitching::matching::LightGlueMatcherClass>(parameters);
 #else
             (void)parameters;
             throw std::runtime_error("LightGlue unavailable: rebuild with ONNX Runtime and OpenCV dnn");
@@ -58,6 +64,39 @@ namespace StepsNs {
             restoreCoordinates(pairOutput.featureMatches, regions.first, regions.second);
             validateMatches(pairOutput.featureMatches, imageA.size(), imageB.size(), context.input.minMatches);
             return {std::move(pairOutput), {}};
+        }
+
+        struct ImageCache {
+            cv::Mat pixels;
+            const DataNs::TileClass* tile = nullptr;
+        };
+
+        PairMeasurement tryMeasurePair(const NeighborPair& pair, const PairProcessingContext& context,
+                                       ImageCache& cache) {
+            try {
+                if (cache.tile != pair.tileA) {
+                    cache.pixels = readImage(*pair.tileA);
+                    cache.tile = pair.tileA;
+                }
+                const cv::Mat imageB = readImage(*pair.tileB);
+                return measurePair(pair, cache.pixels, imageB, context);
+            } catch (const std::exception& exception) {
+                return {std::nullopt, exception.what()};
+            }
+        }
+
+        void measurePairs(const std::vector<NeighborPair>& pairs, const PairProcessingContext& context,
+                          LightGlueOutput& output, nlohmann::json& result) {
+            ImageCache cache;
+            for (const auto& pair : pairs) {
+                auto measurement = tryMeasurePair(pair, context, cache);
+                if (measurement.value) {
+                    output.value.push_back(std::move(*measurement.value));
+                } else {
+                    result["failures"].push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
+                                                  {"reason", measurement.error}});
+                }
+            }
         }
 
     }
@@ -110,27 +149,7 @@ namespace StepsNs {
             loadMatcher(input.modelPath);
             stitching::matching::EstimationRecouvrement estimator;
             const PairProcessingContext context{input, *matcher, estimator};
-            cv::Mat imageA;
-            const DataNs::TileClass* loadedTile = nullptr;
-            for (const auto& pair : pairs) {
-                try {
-                    if (loadedTile != pair.tileA) {
-                        imageA = readImage(*pair.tileA);
-                        loadedTile = pair.tileA;
-                    }
-                    const cv::Mat imageB = readImage(*pair.tileB);
-                    auto measurement = measurePair(pair, imageA, imageB, context);
-                    if (measurement.value) {
-                        output.value.push_back(std::move(*measurement.value));
-                    } else {
-                        result["failures"].push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
-                                                      {"reason", measurement.error}});
-                    }
-                } catch (const std::exception& exception) {
-                    result["failures"].push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
-                                                  {"reason", exception.what()}});
-                }
-            }
+            measurePairs(pairs, context, output, result);
             result["pairs"] = output.value.size();
             if (output.value.empty()) {
                 result["error"] = "no pair could be measured";

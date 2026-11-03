@@ -1,25 +1,34 @@
+// include/backend/algorithms/stitching/lightglue/LightGlueMatcher.h
 #pragma once
-#include "algorithms/stitching/FeatureMatcher.h"
 
-#include <onnxruntime_cxx_api.h>
+#include "algorithms/stitching/FeatureMatcher.h"
+#include "core/data/algorithm_types.h"
+
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/mat.hpp>
+
 #include <memory>
-#include <string>
 
 namespace stitching::matching {
 
-class LightGlueMatcher : public FeatureMatcher {
-private:
-    Json params;
-    // Permet de ne pas recharger le modèle à chaque paire d'images
-    Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "LightGlue"};
-    std::unique_ptr<Ort::Session> session;
+    // Le SDK ONNX reste privé : ce header est utilisable même si la dépendance est absente.
+    class LightGlueMatcherClass : public FeatureMatcher {
 
-    // Prépare une image au format attendu par le modèle ONNX.
-    cv::Mat preprocessImage(const cv::Mat& image, const std::string& imageName, float& scaleX, float& scaleY, bool grayscale = false) const;
+        public:
+            LightGlueMatcherClass();
+            explicit LightGlueMatcherClass(const nlohmann::json& parameters);
+            ~LightGlueMatcherClass() override;
+            bool match(const cv::Mat& imageA, const cv::Mat& imageB,
+                       const DataNs::PairContext& context, DataNs::Matches& matches) override;
 
-public:
-    explicit LightGlueMatcher(const Json& params = {});
-    bool match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) override;
-};
+        private:
+            cv::Mat preprocessImage(const cv::Mat& image, float& scaleX,
+                                    float& scaleY, bool grayscale) const;
+            struct SessionState;
+            std::unique_ptr<SessionState> state;
+    };
 
-} // namespace stitching::matching
+    // Compatibilité avec les algorithmes pas encore migrés vers le suffixe Class.
+    using LightGlueMatcher = LightGlueMatcherClass;
+
+}

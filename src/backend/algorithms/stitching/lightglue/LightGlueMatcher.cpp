@@ -1,6 +1,9 @@
 // src/backend/algorithms/stitching/lightglue/LightGlueMatcher.cpp
+#if defined(STITCHING_HAS_LIGHTGLUE)
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #include <onnxruntime_cxx_api.h>
+#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -29,12 +32,25 @@ constexpr float MIN_CONFIDENCE_SCORE = 0.9f;
 
 namespace stitching::matching {
 
+struct LightGlueMatcherClass::SessionState {
+    nlohmann::json parameters;
+    Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "LightGlue"};
+    std::unique_ptr<Ort::Session> session;
+};
+
+LightGlueMatcherClass::~LightGlueMatcherClass() = default;
+
+LightGlueMatcherClass::LightGlueMatcherClass() : LightGlueMatcherClass(nlohmann::json::object()) {}
+
+
 // Initialisation du matcher LightGlue
 // Cherche le fichier du modèle ONNX sélectionné et initialise la session ONNX
-LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
+LightGlueMatcherClass::LightGlueMatcherClass(const nlohmann::json& parameters) : state(std::make_unique<SessionState>()) {
+
+    state->parameters = parameters;
 
     // Lire le chemin du modèle passé par la configuration du pipeline
-    const auto configuredPath = this->params.value("model_path", std::string{});
+    const auto configuredPath = state->parameters.value("model_path", std::string{});
     if (configuredPath.empty()) {
         throw std::invalid_argument("LightGlue model_path is missing");
     }
@@ -66,7 +82,7 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
     }
 
     // Conserver le chemin résolu pour la future session ONNX Runtime
-    this->params["model_path"] = modelPath.string();
+    state->parameters["model_path"] = modelPath.string();
 
     // Initialisation du modèle ONNX Runtime
     Ort::SessionOptions session_options;
@@ -109,23 +125,22 @@ LightGlueMatcher::LightGlueMatcher(const Json& params) : params(params) {
     #endif
 
     // Instancie un objet Ort::Session (le moteur d'inférence d'ONNX) et l'enveloppe dans un pointeur 'intelligent' (unique_ptr). Assure que la mémoire allouée pour la session est libérée automatiquement et sans fuite de mémoire quand l'objet LightGlueMatcher sera détruit.
-    // this->session permet de stocker la session ONNX finalisée dans l'attribut session de la classe. Permet d'y accéder dans la méthode match().
-    this->session = std::make_unique<Ort::Session>(this->env, modelPath.c_str(), session_options);
+    // state->session permet de stocker la session ONNX finalisée dans l'attribut session de la classe. Permet d'y accéder dans la méthode match().
+    state->session = std::make_unique<Ort::Session>(state->env, modelPath.c_str(), session_options);
 
 }
 
-cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::string& imageName, float& scaleX, float& scaleY, bool grayscale) const {
+cv::Mat LightGlueMatcherClass::preprocessImage(const cv::Mat& image, float& scaleX, float& scaleY, bool grayscale) const {
 
     // Vérifier que l'image contient bien des données.
     if (image.empty()) {
-        throw std::runtime_error("LightGlueMatcher: " + imageName + " est vide.");
+        throw std::runtime_error("LightGlueMatcher: image must not be empty");
     }
 
     if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
         (image.channels() != 1 && image.channels() != 3 && image.channels() != 4)) {
         throw std::invalid_argument("LightGlueMatcher: expected a 2D 8/16-bit image with 1, 3 or 4 channels");
     }
-    (void)imageName;
     // Conserver les contraintes du modèle et calculer les deux échelles après arrondi.
     constexpr int max_edge = 3200;
     const float reduction = std::min(1.0f, static_cast<float>(max_edge) / std::max(image.cols, image.rows));
@@ -165,7 +180,7 @@ cv::Mat LightGlueMatcher::preprocessImage(const cv::Mat& image, const std::strin
     return cv::dnn::blobFromImage(finalImage, 1.0, cv::Size(), cv::Scalar(), !grayscale, false);
 }
 
-bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
+bool LightGlueMatcherClass::match(const cv::Mat& a, const cv::Mat& b, const PairContext& ctx, Matches& out) {
 
     // On supprime les anciens résultats si la sortie est réutilisée.
     out.pointsInA.clear();
@@ -179,7 +194,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     }
 
     // Test de la session lors de l'exécution -> si la session n'est pas initialisée, on génère une erreur, sinon on continue.
-    if (!this->session) {
+    if (!state->session) {
         throw std::runtime_error("Erreur : La session ONNX n'est pas initialisée.");
     }
 
@@ -188,7 +203,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
     // Ajout de la détection automatique si le modèle attend du niveaux de gris (1 canal) ou du RGB (3 canaux) (13/10/26)
     bool use_grayscale = false;
-    Ort::TypeInfo type_info = this->session->GetInputTypeInfo(0);
+    Ort::TypeInfo type_info = state->session->GetInputTypeInfo(0);
     auto tensor_info = type_info.GetTensorTypeAndShapeInfo();
     std::vector<int64_t> input_dims = tensor_info.GetShape();
 
@@ -199,21 +214,21 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 
     // Préparer les deux bandes de recouvrement dans le même format pour le modèle.
     float scaleX1 = 1.0f, scaleY1 = 1.0f, scaleX2 = 1.0f, scaleY2 = 1.0f;
-    cv::Mat blob1 = preprocessImage(a, "image A", scaleX1, scaleY1, use_grayscale);
-    cv::Mat blob2 = preprocessImage(b, "image B", scaleX2, scaleY2, use_grayscale);
+    cv::Mat blob1 = preprocessImage(a, scaleX1, scaleY1, use_grayscale);
+    cv::Mat blob2 = preprocessImage(b, scaleX2, scaleY2, use_grayscale);
 
     // Les modèles RACO/ALIKED+LightGlue exportés récemment utilisent une
     // entrée batch unique et trois sorties: keypoints, matches, mscores.
     // Les modèles SuperPoint/DISK historiques restent traités plus bas avec
     // leurs deux entrées image0/image1 et leurs six sorties.
-    if (this->session->GetInputCount() == 1) {
-        const auto input_name = this->session->GetInputNameAllocated(
+    if (state->session->GetInputCount() == 1) {
+        const auto input_name = state->session->GetInputNameAllocated(
             0, Ort::AllocatorWithDefaultOptions{});
         const std::array<const char*, 3> output_names = {
             "keypoints", "matches", "mscores"
         };
 
-        if (this->session->GetOutputCount() != output_names.size()) {
+        if (state->session->GetOutputCount() != output_names.size()) {
             throw std::runtime_error(
                 "LightGlueMatcher: un modèle batch doit renvoyer keypoints, matches et mscores.");
         }
@@ -240,7 +255,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             batch_shape.data(), batch_shape.size());
 
         const std::array<const char*, 1> input_names = {input_name.get()};
-        auto output_tensors = this->session->Run(
+        auto output_tensors = state->session->Run(
             Ort::RunOptions{nullptr},
             input_names.data(), &input_tensor, 1,
             output_names.data(), output_names.size());
@@ -334,7 +349,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         return true;
     }
 
-    if (this->session->GetInputCount() != 2) {
+    if (state->session->GetInputCount() != 2) {
         throw std::runtime_error(
             "LightGlueMatcher: nombre d'entrées ONNX non supporté.");
     }
@@ -372,7 +387,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     inputs.push_back(std::move(tensor2));
 
     // Exécution du modèle
-    auto output_tensors = this->session->Run(
+    auto output_tensors = state->session->Run(
         Ort::RunOptions{nullptr},
         input_names, inputs.data(), inputs.size(),
         output_names, 6 // Nombre d'outputs attendus
@@ -540,3 +555,5 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
 }
 
 } // namespace stitching::matching
+
+#endif // STITCHING_HAS_LIGHTGLUE
