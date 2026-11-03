@@ -3,13 +3,13 @@
 Port C++ du notebook `egalisation_gain_champ_final.ipynb` (méthodes A et B), organisé comme la corrélation de phase en trois modules :
 
 ```
-include/Backend/algorithms/egalisation/
+include/backend/algorithms/egalisation/
 ├── Egalisation.h      header global : le seul que le pipeline inclut
 ├── Types.h            structures échangées entre les modules
 ├── Preparation.h      1. luminances réduites
 ├── Algorithme.h       2. échantillons, moindres carrés, bilan
 └── Sortie.h           3. correction des tuiles, rapport
-src/Backend/algorithms/egalisation/
+src/backend/algorithms/egalisation/
 ├── Egalisation.cpp    enchaîne les 3 modules
 ├── Preparation.cpp
 ├── Algorithme.cpp
