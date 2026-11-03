@@ -12,7 +12,6 @@
 #include "core/data/algorithm_types.h"
 #include "core/pipeline/pipeline.h"
 #include "core/data/tile.h"
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>

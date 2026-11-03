@@ -3,7 +3,7 @@
 
 #include "algorithms/rejection/outlier_rejector.h"
 #include "algorithms/rejection/ransac/ransac_rejector.h"
-#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "algorithms/stitching/feature_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
@@ -121,14 +121,14 @@ namespace PositioningNs {
     bool computeTilePositions(const std::vector<std::string>& tilePaths, const PositioningSettings& settings,
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log) {
         positions.clear();
-        using Seamline::ImagePretreatment;
+        using GraphCutNs::ImagePretreatmentClass;
 
         // Tuiles : nom -> (ligne, colonne, identifiant)
         std::vector<TileInfo> tiles;
         for (const std::string& tilePath : tilePaths) {
             TileInfo tile;
             tile.filePath = tilePath;
-            if (!ImagePretreatment::parseTileName(tilePath, tile.row, tile.column, tile.tileId)) {
+            if (!ImagePretreatmentClass::parseTileName(tilePath, tile.row, tile.column, tile.tileId)) {
                 log << "wrong tile name: " << tilePath << '\n';
                 return false;
             }
@@ -178,8 +178,8 @@ namespace PositioningNs {
                 << (direction == Direction::Right ? " (H) : " : " (V) : ");
 
             // 16 bits sans perte, 2 tuiles à la fois
-            const cv::Mat imageA = ImagePretreatment::read16(tiles[tileIndexA].filePath);
-            const cv::Mat imageB = ImagePretreatment::read16(tiles[tileIndexB].filePath);
+            const cv::Mat imageA = ImagePretreatmentClass::read16Bit(tiles[tileIndexA].filePath);
+            const cv::Mat imageB = ImagePretreatmentClass::read16Bit(tiles[tileIndexB].filePath);
             if (imageA.empty() || imageB.empty()) {
                 log << "cannot read (" << (imageA.empty() ? tiles[tileIndexA].filePath : tiles[tileIndexB].filePath) << ")\n";
                 return false;
