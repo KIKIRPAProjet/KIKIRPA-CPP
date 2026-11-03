@@ -52,6 +52,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
                          ProjectGrid *projectGrid, SimulationRunner *simulationRunner)
     : QObject(mainWindow),
@@ -66,6 +67,11 @@ WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
     m_mainWindow->setCentralWidget(m_pages);
 }
 
+/**
+ * Met à jour l'interface utilisateur en fonction de l'état de la grille du projet.
+ * @param projectName Le nom du projet.
+ * @param gridState L'état de la grille.
+ */
 void WorkspaceUI::updateFromGridState(const QString &projectName,
                                       const ProjectGrid::State &gridState)
 {
@@ -84,6 +90,11 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
     m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
 
+/** 
+ * Met à jour les informations du projet dans l'interface utilisateur.
+ * @param projectName Le nom du projet.
+ * @param gridState L'état de la grille.
+ */
 void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState)
 {
     m_projectNameLabel->setText(projectName);
@@ -136,6 +147,10 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
     }
 }
 
+/**
+ * Met à jour les paramètres de la grille dans l'interface utilisateur.
+ * @param gridState L'état de la grille.
+ */
 void WorkspaceUI::updateGridParameters(const ProjectGrid::State &gridState)
 {
     if (m_gridRowsSpin) {
@@ -189,6 +204,10 @@ void WorkspaceUI::updateGridParameters(const ProjectGrid::State &gridState)
     }
 }
 
+/**
+ * Met à jour le résumé de la grille dans l'interface utilisateur.
+ * @param gridState L'état de la grille.
+ */
 void WorkspaceUI::updateGridSummary(const ProjectGrid::State &gridState)
 {
     int activeTiles = 0;
@@ -203,8 +222,6 @@ void WorkspaceUI::updateGridSummary(const ProjectGrid::State &gridState)
     const QString validationStatus = gridState.gridValidated ? tr(" · grille validée") : QString();
     m_gridSummaryLabel->setText(tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
                 .arg(activeTiles).arg(gridState.gridRows).arg(gridState.gridColumns).arg(validationStatus));
-
-
    
     const int row = gridState.selectedGridCell / qMax(1, gridState.gridColumns);
     const int column = gridState.selectedGridCell % qMax(1, gridState.gridColumns);
@@ -232,6 +249,9 @@ void WorkspaceUI::updateGridSummary(const ProjectGrid::State &gridState)
             : tr("Référence : %1").arg(QFileInfo(gridState.referenceImagePath).fileName()));
 }
 
+/** 
+ * Crée l'espace de travail principal avec les barres d'outils, les onglets et les panneaux.
+ */
 void WorkspaceUI::createWorkspace()
 {
     m_workspace = new QWidget;
@@ -277,7 +297,6 @@ void WorkspaceUI::createWorkspace()
     m_pages->addWidget(m_workspace);
 }
 
-
 void WorkspaceUI::createProjectMode(QWidget *center)
 {
     m_projectInfoPanel = new QWidget(center);
@@ -321,27 +340,82 @@ void WorkspaceUI::createProjectMode(QWidget *center)
 
 }
 
-
+/**
+ * Construit le contenue de la grille de tuiles avec les contrôles et les informations associées.
+ * @return Un QWidget contenant la vue de la grille de tuiles.
+ */
 QWidget *WorkspaceUI::createTilesMode()
 {
     auto *gridScroll = new QScrollArea;
     gridScroll->setWidgetResizable(true);
     gridScroll->setFrameShape(QFrame::NoFrame);
+
     m_gridTabPage = new QWidget;
     auto *gridLayout = new QVBoxLayout(m_gridTabPage);
     gridLayout->setContentsMargins(7, 8, 7, 8);
+
     m_gridSummaryLabel = new QLabel;
     gridLayout->addWidget(m_gridSummaryLabel);
+
+    //appel de la fonction createGridDimensionsGroup pour créer le groupe de dimensions de la grille
+    gridLayout->addWidget(createGridDimensionsGroup(m_gridTabPage));
+
+    m_selectedGridTileLabel = makeMutedLabel(QString(), m_gridTabPage);
+    m_selectedGridTileLabel->setWordWrap(true);
+    gridLayout->addWidget(m_selectedGridTileLabel);
+
+    auto *tileActions = new QHBoxLayout;
+    auto *rotateTile = makeWorkspaceButton(tr("Pivoter 90°"), m_gridTabPage);
+    auto *flipTile = makeWorkspaceButton(tr("Retourner"), m_gridTabPage);
+    tileActions->addWidget(rotateTile);
+    tileActions->addWidget(flipTile);
+    gridLayout->addLayout(tileActions);
+
+    m_emptyCellButton = makeWorkspaceButton(tr("Marquer une case vide"), m_gridTabPage);
+    gridLayout->addWidget(m_emptyCellButton);
+
+    //appel de la fonction createGridCaptureGroup pour créer le groupe de capture de la grille
+    gridLayout->addWidget(createGridCaptureGroup(m_gridTabPage));
+
+    m_referencePathLabel = makeMutedLabel(tr("Aucune image de référence"), m_gridTabPage);
+    m_referencePathLabel->setWordWrap(true);
+    gridLayout->addWidget(m_referencePathLabel);
+
+    auto *importReference = makeWorkspaceButton(tr("Importer une image de référence…"), m_gridTabPage);
+    auto *compareReference = makeWorkspaceButton(tr("Comparer à l'image de référence"), m_gridTabPage);
+    auto *validateGridButton = makeWorkspaceButton(tr("Valider la grille ✓"), m_gridTabPage, true);
+
+    gridLayout->addWidget(importReference);
+    gridLayout->addWidget(compareReference);
+    gridLayout->addWidget(validateGridButton);
+    gridLayout->addStretch();
+    
+    gridScroll->setWidget(m_gridTabPage);
+    gridScroll->setObjectName(QStringLiteral("gridTabScrollArea"));
+
+    connectTilesModeSignals(rotateTile, flipTile, importReference, compareReference, validateGridButton);
+
+    return gridScroll;
+}
+
+/**
+ * Construit le groupe de dimensions de la grille et l'ordre de prise de vue.
+ */
+QWidget *WorkspaceUI::createGridDimensionsGroup(QWidget *parent)
+{
+    QWidget *container = new QWidget(parent);
+    auto *layout = new QBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
 
     auto *dimensions = new QFormLayout;
     m_gridRowsSpin = new QSpinBox(m_gridTabPage);
     m_gridRowsSpin->setRange(1, 20);
     m_gridRowsSpin->setValue(m_projectGrid->state().gridRows);
-    m_gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
+   
     m_gridColumnsSpin = new QSpinBox(m_gridTabPage);
     m_gridColumnsSpin->setRange(1, 20);
     m_gridColumnsSpin->setValue(m_projectGrid->state().gridColumns);
-    m_gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
+
     dimensions->addRow(tr("Lignes"), m_gridRowsSpin);
     dimensions->addRow(tr("Colonnes"), m_gridColumnsSpin);
     gridLayout->addLayout(dimensions);
@@ -360,37 +434,39 @@ QWidget *WorkspaceUI::createTilesMode()
     orderLayout->addWidget(m_captureOrderCombo);
     gridLayout->addWidget(orderGroup);
 
-    m_selectedGridTileLabel = makeMutedLabel(QString(), m_gridTabPage);
-    m_selectedGridTileLabel->setWordWrap(true);
-    gridLayout->addWidget(m_selectedGridTileLabel);
-    auto *tileActions = new QHBoxLayout;
-    auto *rotateTile = makeWorkspaceButton(tr("Pivoter 90°"), m_gridTabPage);
-    auto *flipTile = makeWorkspaceButton(tr("Retourner"), m_gridTabPage);
-    tileActions->addWidget(rotateTile);
-    tileActions->addWidget(flipTile);
-    gridLayout->addLayout(tileActions);
-    m_emptyCellButton = makeWorkspaceButton(tr("Marquer une case vide"), m_gridTabPage);
-    gridLayout->addWidget(m_emptyCellButton);
+    return container;
+}
 
+/**
+ * construit le groupe gérant les dimensions physiques de la grille, le recouvrement et la modalité de capture.
+ */
+QWidget *WorkspaceUI::createGridCaptureGroup(QWidget *parent)
+{
     auto *captureGroup = new QGroupBox(tr("Prise de vue"), m_gridTabPage);
     auto *captureForm = new QFormLayout(captureGroup);
+
     m_horizontalOverlapSpin = new QSpinBox(captureGroup);
     m_horizontalOverlapSpin->setRange(0, 90);
     m_horizontalOverlapSpin->setSuffix(QStringLiteral(" %"));
+    m_horizontalOverlapSpin->setValue(m_projectGrid->state().horizontalOverlap);
+
     m_verticalOverlapSpin = new QSpinBox(captureGroup);
     m_verticalOverlapSpin->setRange(0, 90);
     m_verticalOverlapSpin->setSuffix(QStringLiteral(" %"));
-    m_horizontalOverlapSpin->setValue(m_projectGrid->state().horizontalOverlap);
     m_verticalOverlapSpin->setValue(m_projectGrid->state().verticalOverlap);
+    
     m_linkedOverlapCheck = new QCheckBox(tr("Lier les deux valeurs"), captureGroup);
     m_linkedOverlapCheck->setChecked(m_projectGrid->state().overlapsLinked);
+    
     captureForm->addRow(tr("Recouvrement horizontal"), m_horizontalOverlapSpin);
     captureForm->addRow(tr("Recouvrement vertical"), m_verticalOverlapSpin);
     captureForm->addRow(QString(), m_linkedOverlapCheck);
+    
     m_modalityCombo = new QComboBox(captureGroup);
     m_modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
                              tr("Radiographie"), tr("Autre")});
     captureForm->addRow(tr("Modalité"), m_modalityCombo);
+    
     m_scaleSpin = new QDoubleSpinBox(captureGroup);
     m_scaleSpin->setRange(0.0, 1000000.0);
     m_scaleSpin->setDecimals(6);
@@ -398,86 +474,61 @@ QWidget *WorkspaceUI::createTilesMode()
     m_scaleSpin->setSpecialValueText(tr("À renseigner"));
     m_scaleSpin->setSuffix(tr(" mm / pixel"));
     captureForm->addRow(tr("Échelle"), m_scaleSpin);
+    
     m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
     m_automaticUncertaintyCheck->setChecked(m_projectGrid->state().automaticUncertainty);
+    
     m_uncertaintySpin = new QDoubleSpinBox(captureGroup);
     m_uncertaintySpin->setRange(0.0, 1000000.0);
     m_uncertaintySpin->setDecimals(3);
     m_uncertaintySpin->setSuffix(tr(" px"));
     m_uncertaintySpin->setEnabled(!m_projectGrid->state().automaticUncertainty);
+    
     captureForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
     captureForm->addRow(QString(), m_automaticUncertaintyCheck);
-    gridLayout->addWidget(captureGroup);
-
-    m_referencePathLabel = makeMutedLabel(tr("Aucune image de référence"), m_gridTabPage);
-    m_referencePathLabel->setWordWrap(true);
-    gridLayout->addWidget(m_referencePathLabel);
-    auto *importReference = makeWorkspaceButton(tr("Importer une image de référence…"), m_gridTabPage);
-    auto *compareReference = makeWorkspaceButton(tr("Comparer à l'image de référence"), m_gridTabPage);
-    gridLayout->addWidget(importReference);
-    gridLayout->addWidget(compareReference);
-    auto *validateGridButton = makeWorkspaceButton(tr("Valider la grille ✓"), m_gridTabPage, true);
-    gridLayout->addWidget(validateGridButton);
-    gridLayout->addStretch();
-    gridScroll->setWidget(m_gridTabPage);
-    gridScroll->setObjectName(QStringLiteral("gridTabScrollArea"));
-
-    connect(m_gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        m_projectGrid->setGridRows(value);
-    });
-    connect(m_gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        m_projectGrid->setGridColumns(value);
-    });
-    connect(m_captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),
-            this, [this](int value) {
-        m_projectGrid->setCaptureOrder(value);
-    });
-    connect(m_horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
-            this, [this](int value) {
-        m_projectGrid->setHorizontalOverlap(value);
-    });
-    connect(m_verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
-            this, [this](int value) {
-        m_projectGrid->setVerticalOverlap(value);
-    });
-    connect(m_linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {
-        m_projectGrid->setOverlapsLinked(linked);
-    });
-    connect(m_modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
-        m_projectGrid->setModality(value);
-    });
-    connect(m_scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-            this, [this](double value) {
-        m_projectGrid->setScaleMmPerPixel(value);
-    });
-    connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {
-        m_projectGrid->setAutomaticUncertainty(automatic);
-    });
-    connect(m_uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
-            this, [this](double value) {
-        m_projectGrid->setUncertaintyMargin(value);
-    });
-    connect(rotateTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::rotateSelectedTile);
-    connect(flipTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::flipSelectedTile);
-    connect(m_emptyCellButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
-    connect(importReference, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->chooseReferenceImage();
-    });
-    connect(compareReference, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::compareReferenceImage);
-    connect(validateGridButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::validateGrid);
-    static_cast<ArtworkCanvas *>(m_canvas)->setGridCallbacks(
-        [this](int cell) {
-            m_projectGrid->setSelectedGridCell(cell);
-        },
-        [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
-
-    return gridScroll;
+    
+    return captureGroup;
 }
 
+/**
+ * Relie les signaux des boutons et des contrôles de la vue de la grille de tuiles aux slots correspondants.
+ * @param rotateTile Bouton pour pivoter la tuile sélectionnée.
+ * @param flipTile Bouton pour retourner la tuile sélectionnée.
+ * @param importReference Bouton pour importer une image de référence.
+ * @param compareReference Bouton pour comparer à l'image de référence.
+ * @param validateGridButton Bouton pour valider la grille.
+ */
+void WorkspaceUI::connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
+                                         QPushButton *importReference, QPushButton *compareReference,
+                                         QPushButton *validateGridButton)
+{
+    connect(m_gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {m_projectGrid->setGridRows(value);});
+    connect(m_gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) { m_projectGrid->setGridColumns(value);});
+    connect(m_captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),this, [this](int value) {m_projectGrid->setCaptureOrder(value);});
+    connect(m_horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),this, [this](int value) {m_projectGrid->setHorizontalOverlap(value);});
+    connect(m_verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),this, [this](int value) { m_projectGrid->setVerticalOverlap(value);});
+    connect(m_linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {m_projectGrid->setOverlapsLinked(linked);});
+    connect(m_modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {m_projectGrid->setModality(value);});
+    connect(m_scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),this, [this](double value) {m_projectGrid->setScaleMmPerPixel(value);});
+    connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {m_projectGrid->setAutomaticUncertainty(automatic);});
+    connect(m_uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {m_projectGrid->setUncertaintyMargin(value);});
 
+    connect(rotateTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::rotateSelectedTile);
+    connect(flipTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::flipSelectedTile);
+    connect(m_emptyCellButton, &QPushButton::clicked, m_projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
+    connect(importReference, &QPushButton::clicked, this, [this]() { m_mainWindow->chooseReferenceImage();});
+    connect(compareReference, &QPushButton::clicked,m_projectGrid, &ProjectGrid::compareReferenceImage);
+    connect(validateGridButton, &QPushButton::clicked,m_projectGrid, &ProjectGrid::validateGrid);
+
+    static_cast<ArtworkCanvas *>(m_canvas)->setGridCallbacks(
+        [this](int cell) { m_projectGrid->setSelectedGridCell(cell);},
+        [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
+}
+
+/**
+ * Crée l'interface pour le mode masques.
+ * @return Un QWidget contenant l'interface du mode masques.
+ */
 QWidget *WorkspaceUI::createMasksMode()
 {
     auto *layersPage = new QWidget;
@@ -502,7 +553,10 @@ QWidget *WorkspaceUI::createMasksMode()
 
 }
 
-
+/**
+ * Crée l'interface pour le mode d'alignement.
+ * @return Un QWidget contenant l'interface du mode d'alignement.
+ */
 QWidget *WorkspaceUI::createAlignmentMode()
 {
     auto *infoPage = new QWidget;
@@ -556,6 +610,10 @@ QWidget *WorkspaceUI::createAlignmentMode()
 }
 
 
+/**
+ * Crée l'interface pour le mode assemblage.
+ * @return Un QWidget contenant l'interface du mode assemblage.
+ */
 QWidget *WorkspaceUI::createAssemblyMode()
 {
     auto *chainPage = new QWidget;
@@ -591,7 +649,10 @@ QWidget *WorkspaceUI::createAssemblyMode()
 }
 
 
-
+/**
+ * Crée la barre d'outils principale de l'espace de travail avec le titre et le bouton d'enregistrement.
+ * @return Un QWidget contenant la barre d'outils.
+ */
 QWidget* WorkspaceUI::createToolbar()
 { 
     // creation du widget 
@@ -612,6 +673,10 @@ QWidget* WorkspaceUI::createToolbar()
     return toolbar;
 }
 
+/**
+ * Crée la barre de modes de l'espace de travail avec les boutons pour chaque mode et les actions associées.
+ * @return Un QWidget contenant la barre de modes.
+ */
 QWidget* WorkspaceUI::createModesBar()
 {
     QWidget *stages = new QWidget;
@@ -639,6 +704,10 @@ QWidget* WorkspaceUI::createModesBar()
     return stages;
 }
 
+/**
+ * Crée la barre d'options de l'espace de travail avec les contrôles pour l'arrangement des tuiles et les informations associées.
+ * @return Un QWidget contenant la barre d'options.
+ */
 QWidget* WorkspaceUI::createOptionsBar()
 {
     QWidget *modeOptions = new QWidget;
@@ -665,6 +734,10 @@ QWidget* WorkspaceUI::createOptionsBar()
     return modeOptions;
 }
 
+/**
+ * Crée la barre d'outils à gauche de l'espace de travail avec les boutons pour chaque outil et les actions associées. (pinceau, gomme, sélection, etc.)
+ * @return Un QWidget contenant la barre d'outils.
+ */
 QWidget *WorkspaceUI::createLeftToolbar()
 {
     QWidget *tools = new QWidget;
@@ -695,6 +768,10 @@ QWidget *WorkspaceUI::createLeftToolbar()
     return tools;
 }
 
+/**
+ * Crée la zone centrale de l'espace de travail avec le canevas d'artwork et les contrôles de zoom.
+ * @return Un QWidget contenant la zone centrale.
+ */
 QWidget* WorkspaceUI::createCenterArea()
 {
     QWidget *center = new QWidget;
@@ -750,6 +827,10 @@ QWidget* WorkspaceUI::createCenterArea()
     return center;
 }
 
+/**
+ * Crée les onglets à droite de l'espace de travail avec les modes de calques, chaîne et informations.
+ * @return Un QTabWidget contenant les onglets.
+ */
 QTabWidget *WorkspaceUI::createRightTabs()
 {
     QTabWidget *rightTabs = new QTabWidget;
@@ -763,6 +844,10 @@ QTabWidget *WorkspaceUI::createRightTabs()
     return rightTabs;
 }
 
+/**
+ * Crée les onglets en bas de l'espace de travail avec les paires, le journal et les positions.
+ * @return Un QTabWidget contenant les onglets.
+ */
 QTabWidget *WorkspaceUI::createBottomTabs()
 {
     QTabWidget *bottomTabs = new QTabWidget;
@@ -807,6 +892,10 @@ QTabWidget *WorkspaceUI::createBottomTabs()
     return bottomTabs;
 }
 
+/**
+ * Crée la barre d'état de l'espace de travail avec les informations sur le zoom, le statut et la progression.
+ * @return Un QWidget contenant la barre d'état.
+ */
 QWidget *WorkspaceUI::createStatusBar()
 {
     QWidget *status = new QWidget;

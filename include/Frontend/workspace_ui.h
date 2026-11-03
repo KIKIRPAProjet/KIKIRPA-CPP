@@ -70,11 +70,31 @@ public:
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
 
 private:
+    /**
+     * Met à jour l'interface utilisateur en fonction de l'état de la grille du projet.
+     * @param projectName Le nom du projet.
+     * @param gridState L'état de la grille.
+     */
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
+
+    /**
+     * Met à jour les paramètres de la grille dans l'interface utilisateur.
+     * @param gridState L'état de la grille.
+     */
     void updateGridParameters(const ProjectGrid::State &gridState);
+
+    /**
+     * Met à jour le résumé de la grille dans l'interface utilisateur.
+     * @param gridState L'état de la grille.
+     */
     void updateGridSummary(const ProjectGrid::State &gridState);
 
+    /** 
+     * Crée l'espace de travail principal avec les barres d'outils, les onglets et les panneaux.
+     */
     void createWorkspace();
+
+
     QWidget *createToolbar();
     QWidget *createModesBar();
     QWidget *createOptionsBar();
@@ -83,12 +103,18 @@ private:
     QTabWidget *createRightTabs();
     QTabWidget *createBottomTabs();
     QWidget *createStatusBar();
-
+ 
     void createProjectMode(QWidget *center);
     QWidget *createTilesMode();
     QWidget *createMasksMode();
     QWidget *createAlignmentMode();
     QWidget *createAssemblyMode();
+
+    QWidget *createGridDimensionsGroup();
+    QWidget *createGridCaptureGroup();
+    void connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
+                                 QPushButton *importReference, QPushButton *compareReference,
+                                 QPushButton *validateGridButton);
 
     MainWindow *m_mainWindow = nullptr;
     ProjectGrid *m_projectGrid = nullptr;
