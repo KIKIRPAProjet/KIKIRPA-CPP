@@ -11,6 +11,7 @@
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
 | Qt 6 (Widgets, Concurrent) | oui | GUI (`stitching_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
+| Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
 | ONNX Runtime + module `dnn` d'OpenCV | non | LightGlue seulement (`-DONNXRUNTIME_ROOT=<dossier>`) |
 
 ## Windows (MSVC)
@@ -71,3 +72,28 @@ ctest --preset linux
 ```
 
 C'est la configuration de la CI (`.github/workflows/build-test.yml`).
+
+### Vérifications clang-tidy
+
+Installer Clang et `clang-tidy`, puis configurer et compiler avec le preset
+dédié (qui sélectionne `clang++`) :
+
+```bash
+sudo apt-get install clang-tidy
+cmake --preset linux-clang-tidy
+cmake --build --preset linux-clang-tidy
+```
+
+Le fichier `.clang-tidy` active les contrôles `bugprone`, `clang-analyzer` et
+`performance`, ainsi que les vérifications de conventions de nommage, de
+longueur et d'imbrication des fonctions, de nombres magiques, de casts C et
+d'includes inutilisés. Il vérifie aussi quelques pratiques C++ (`std::make_unique`,
+`override`, `nullptr`, retours anticipés et absence de `catch` vide). Les seuils
+de longueur, d'imbrication et de paramètres reprennent les repères de
+[`CONVENTIONS.md`](CONVENTIONS.md); les règles qui ne peuvent pas être contrôlées
+automatiquement restent à vérifier en revue de code. Les parties du code qui ne
+sont pas encore migrées peuvent aussi produire des diagnostics. Ceux-ci sont
+affichés pendant la compilation et ne font pas échouer le build par défaut.
+Pour activer cette vérification dans un autre build CMake Clang, ajouter
+`-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
+ce preset sur chaque push et pull request.

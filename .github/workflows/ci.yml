@@ -14,3 +14,29 @@ jobs:
     with:
       build-type: Release
       test-labels: "unit|integration"
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build and lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang \
+            clang-tidy \
+            cmake \
+            libgtest-dev \
+            libopencv-dev \
+            libtiff-dev \
+            ninja-build \
+            nlohmann-json3-dev \
+            qt6-base-dev
+
+      - name: Configure with clang-tidy
+        run: cmake --preset linux-clang-tidy
+
+      - name: Build and run clang-tidy
+        run: cmake --build --preset linux-clang-tidy --parallel 2
