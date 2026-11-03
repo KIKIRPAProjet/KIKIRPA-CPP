@@ -1,12 +1,15 @@
 // src/backend/core/io/pyramidal_tiff_reader.cpp
 #include "core/io/pyramidal_tiff_reader.h"
 
+#include <opencv2/core/hal/interface.h>
+#include <tiff.h>
 #include <tiffio.h>
 
-#include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <limits>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -14,10 +17,43 @@ namespace IONs {
 
     namespace {
 
-        // Sélectionne le répertoire TIFF correspondant au niveau demandé.
+        constexpr uint16_t BITS_PER_SAMPLE_8 = 8;
+        constexpr uint16_t BITS_PER_SAMPLE_16 = 16;
+        constexpr uint16_t CHANNEL_COUNT_GRAY = 1;
+        constexpr uint16_t CHANNEL_COUNT_RGB = 3;
+        constexpr uint16_t CHANNEL_COUNT_RGBA = 4;
+
+        struct ImageMetadata {
+            int width = 0;
+            int height = 0;
+            int type = 0;
+        };
+
+        struct TileMetadata {
+            uint32_t width = 0;
+            uint32_t height = 0;
+            tmsize_t size = 0;
+            size_t requiredBytes = 0;
+            size_t pixelSize = 0;
+        };
+
+        struct RegionReadContext {
+            TIFF* tiffFile = nullptr;
+            cv::Rect region;
+            TileMetadata tile;
+            cv::Mat& output;
+            std::vector<std::uint8_t>& tileBuffer;
+            std::string& errorMessage;
+        };
+
+        void copyTilePixels(
+            const RegionReadContext& context,
+            const cv::Rect& copiedRect,
+            uint32_t tileOriginX,
+            uint32_t tileOriginY
+        );
+
         bool selectLevel(TIFF* tiffFile, int level, std::string& errorMessage) {
-            // La fonction n'écrit pas la valeur de SubFID dans une variable mais modifie directement l'état interne du pointeur TIFF* tiffFile
-            // Toutes les fonctions libtiff appelées par la suite vont travailler exclusivement sur le répertoire sélectionné.
             if (!TIFFSetDirectory(tiffFile, 0)) {
                 errorMessage = "cannot select TIFF base directory";
                 return false;
@@ -35,11 +71,32 @@ namespace IONs {
             return true;
         }
 
-        // Vérifie le format du niveau et le convertit en type OpenCV.
-        bool getImageType(TIFF* tiffFile, int& width, int& height, int& type, std::string& errorMessage) {
+        bool isSupportedMetadata(
+            uint32_t tiffWidth,
+            uint32_t tiffHeight,
+            uint16_t samplesPerPixel,
+            uint16_t bitsPerSample,
+            uint16_t planarConfig,
+            uint16_t sampleFormat
+        ) {
+            const bool DIMENSIONS_VALID =
+                tiffWidth > 0 && tiffHeight > 0 &&
+                tiffWidth <= static_cast<uint32_t>(std::numeric_limits<int>::max()) &&
+                tiffHeight <= static_cast<uint32_t>(std::numeric_limits<int>::max());
+            const bool BITS_VALID =
+                bitsPerSample == BITS_PER_SAMPLE_8 || bitsPerSample == BITS_PER_SAMPLE_16;
+            const bool CHANNELS_VALID =
+                samplesPerPixel == CHANNEL_COUNT_GRAY ||
+                samplesPerPixel == CHANNEL_COUNT_RGB ||
+                samplesPerPixel == CHANNEL_COUNT_RGBA;
+            return DIMENSIONS_VALID && BITS_VALID && CHANNELS_VALID &&
+                   planarConfig == PLANARCONFIG_CONTIG && sampleFormat == SAMPLEFORMAT_UINT;
+        }
+
+        bool getImageMetadata(TIFF* tiffFile, ImageMetadata& metadata, std::string& errorMessage) {
             uint32_t tiffWidth = 0;
             uint32_t tiffHeight = 0;
-            uint16_t samplesPerPixel = 1;
+            uint16_t samplesPerPixel = CHANNEL_COUNT_GRAY;
             uint16_t bitsPerSample = 0;
             uint16_t planarConfig = PLANARCONFIG_CONTIG;
             uint16_t sampleFormat = SAMPLEFORMAT_UINT;
@@ -53,48 +110,132 @@ namespace IONs {
             }
 
             TIFFGetField(tiffFile, TIFFTAG_SAMPLEFORMAT, &sampleFormat);
-            if (tiffWidth == 0 || tiffHeight == 0 ||
-                tiffWidth > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-                tiffHeight > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-                (bitsPerSample != 8 && bitsPerSample != 16) ||
-                (samplesPerPixel != 1 && samplesPerPixel != 3 && samplesPerPixel != 4) ||
-                planarConfig != PLANARCONFIG_CONTIG ||
-                sampleFormat != SAMPLEFORMAT_UINT) {
+            if (!isSupportedMetadata(
+                    tiffWidth, tiffHeight, samplesPerPixel, bitsPerSample, planarConfig, sampleFormat)) {
                 errorMessage = "unsupported TIFF image format";
                 return false;
             }
 
-            const int depth = bitsPerSample == 8 ? CV_8U : CV_16U;
-            width = static_cast<int>(tiffWidth);
-            height = static_cast<int>(tiffHeight);
-            type = CV_MAKETYPE(depth, samplesPerPixel);
+            const int DEPTH = bitsPerSample == BITS_PER_SAMPLE_8 ? CV_8U : CV_16U;
+            metadata.width = static_cast<int>(tiffWidth);
+            metadata.height = static_cast<int>(tiffHeight);
+            metadata.type = CV_MAKETYPE(DEPTH, samplesPerPixel);
+            return true;
+        }
+
+        bool getTileMetadata(TIFF* tiffFile, int imageType, TileMetadata& metadata, std::string& errorMessage) {
+            if (!TIFFGetField(tiffFile, TIFFTAG_TILEWIDTH, &metadata.width) ||
+                !TIFFGetField(tiffFile, TIFFTAG_TILELENGTH, &metadata.height) ||
+                metadata.width == 0 || metadata.height == 0 ||
+                metadata.width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+                metadata.height > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+                errorMessage = "TIFF level is not tiled";
+                return false;
+            }
+
+            metadata.size = TIFFTileSize(tiffFile);
+            if (metadata.size <= 0) {
+                errorMessage = "cannot determine TIFF tile size";
+                return false;
+            }
+            metadata.pixelSize = CV_ELEM_SIZE(imageType);
+            metadata.requiredBytes =
+                static_cast<size_t>(metadata.width) * metadata.height * metadata.pixelSize;
+            if (metadata.requiredBytes > static_cast<size_t>(metadata.size)) {
+                errorMessage = "TIFF tile buffer is smaller than the declared tile";
+                return false;
+            }
+            return true;
+        }
+
+        bool readTile(
+            RegionReadContext& context,
+            int tileX,
+            int tileY
+        ) {
+            const uint32_t TILE_ORIGIN_X = static_cast<uint32_t>(tileX) * context.tile.width;
+            const uint32_t TILE_ORIGIN_Y = static_cast<uint32_t>(tileY) * context.tile.height;
+            const ttile_t TILE_INDEX = TIFFComputeTile(
+                context.tiffFile, TILE_ORIGIN_X, TILE_ORIGIN_Y, 0, 0);
+            const tmsize_t DECODED_BYTES = TIFFReadEncodedTile(
+                context.tiffFile, TILE_INDEX, context.tileBuffer.data(), context.tile.size);
+            if (DECODED_BYTES < static_cast<tmsize_t>(context.tile.requiredBytes)) {
+                context.errorMessage = "cannot read TIFF tile";
+                return false;
+            }
+
+            const cv::Rect TILE_RECT{
+                static_cast<int>(TILE_ORIGIN_X),
+                static_cast<int>(TILE_ORIGIN_Y),
+                static_cast<int>(context.tile.width),
+                static_cast<int>(context.tile.height)
+            };
+            const cv::Rect COPIED_RECT = TILE_RECT & context.region;
+            copyTilePixels(context, COPIED_RECT, TILE_ORIGIN_X, TILE_ORIGIN_Y);
+            return true;
+        }
+
+        void copyTilePixels(
+            const RegionReadContext& context,
+            const cv::Rect& copiedRect,
+            uint32_t tileOriginX,
+            uint32_t tileOriginY
+        ) {
+            for (int y = copiedRect.y; y < copiedRect.y + copiedRect.height; ++y) {
+                const size_t SOURCE_OFFSET =
+                    (static_cast<size_t>(y) - tileOriginY) * context.tile.width * context.tile.pixelSize +
+                    (static_cast<size_t>(copiedRect.x) - tileOriginX) * context.tile.pixelSize;
+                const size_t DESTINATION_OFFSET =
+                    static_cast<size_t>(y - context.region.y) * context.output.step +
+                    static_cast<size_t>(copiedRect.x - context.region.x) * context.tile.pixelSize;
+                std::memcpy(
+                    context.output.data + DESTINATION_OFFSET,
+                    context.tileBuffer.data() + SOURCE_OFFSET,
+                    static_cast<size_t>(copiedRect.width) * context.tile.pixelSize
+                );
+            }
+        }
+
+        bool readTiles(RegionReadContext& context) {
+            const int FIRST_TILE_X =
+                context.region.x / static_cast<int>(context.tile.width);
+            const int LAST_TILE_X =
+                (context.region.x + context.region.width - 1) / static_cast<int>(context.tile.width);
+            const int FIRST_TILE_Y =
+                context.region.y / static_cast<int>(context.tile.height);
+            const int LAST_TILE_Y =
+                (context.region.y + context.region.height - 1) / static_cast<int>(context.tile.height);
+
+            for (int tileY = FIRST_TILE_Y; tileY <= LAST_TILE_Y; ++tileY) {
+                for (int tileX = FIRST_TILE_X; tileX <= LAST_TILE_X; ++tileX) {
+                    if (!readTile(context, tileX, tileY)) return false;
+                }
+            }
             return true;
         }
 
     }
 
-    PyramidalTiffReader::PyramidalTiffReader(std::filesystem::path path) : tiffPath(std::move(path)) {}
+    PyramidalTiffReaderClass::PyramidalTiffReaderClass(std::filesystem::path path)
+        : tiffPath(std::move(path)) {}
 
-    bool PyramidalTiffReader::readRegion(
+    bool PyramidalTiffReaderClass::readRegion(
         int level,
         const cv::Rect& region,
         cv::Mat& output,
         std::string& errorMessage
     ) const {
-        // Pré-vérifications et initialisation
         errorMessage.clear();
         output.release();
         if (level < 0) {
             errorMessage = "pyramid level must be non-negative";
             return false;
         }
-        // Exclusion des régions ou dimensions négatives
         if (region.x < 0 || region.y < 0 || region.width <= 0 || region.height <= 0) {
             errorMessage = "region must have positive dimensions and non-negative coordinates";
             return false;
         }
 
-        // On tente d'ouvrir le fichier TIFF et de sélectionner le niveau demandé.
         TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
         if (tiffFile == nullptr) {
             errorMessage = "cannot open TIFF: " + tiffPath.string();
@@ -103,103 +244,24 @@ namespace IONs {
 
         bool success = false;
         do {
-            // Sélection du niveau demandé.
-            if (!selectLevel(tiffFile, level, errorMessage)) break;
-
-            int imageWidth = 0;
-            int imageHeight = 0;
-            int imageType = 0;
-            // Lecture du type d'image et des dimensions du niveau sélectionné.
-            if (!getImageType(tiffFile, imageWidth, imageHeight, imageType, errorMessage)) break;
-            // Les coordonnées de la région sont toujours celles du niveau sélectionné ! On vérifie donc qu'elles sont valides pour ce niveau.
-            if (region.x > imageWidth - region.width || region.y > imageHeight - region.height) {
+            ImageMetadata image;
+            if (!selectLevel(tiffFile, level, errorMessage) ||
+                !getImageMetadata(tiffFile, image, errorMessage)) break;
+            if (region.x > image.width - region.width || region.y > image.height - region.height) {
                 errorMessage = "region is outside the requested pyramid level";
                 break;
             }
 
-            // Vérification du tuilage
-            uint32_t tileWidth = 0;
-            uint32_t tileHeight = 0;
-            if (!TIFFGetField(tiffFile, TIFFTAG_TILEWIDTH, &tileWidth) ||
-                !TIFFGetField(tiffFile, TIFFTAG_TILELENGTH, &tileHeight) ||
-                tileWidth == 0 || tileHeight == 0 ||
-                tileWidth > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
-                tileHeight > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
-                errorMessage = "TIFF level is not tiled";
-                break;
-            }
-
-            const tmsize_t tileSize = TIFFTileSize(tiffFile);
-            if (tileSize <= 0) {
-                errorMessage = "cannot determine TIFF tile size";
-                break;
-            }
-            const size_t requiredTileBytes =
-                static_cast<size_t>(tileWidth) * tileHeight * CV_ELEM_SIZE(imageType);
-            if (requiredTileBytes > static_cast<size_t>(tileSize)) {
-                errorMessage = "TIFF tile buffer is smaller than the declared tile";
-                break;
-            }
-
-            // Allocation de la matrice de sortie et du tampon (tileBuffer) de lecture des tuiles.
-            output.create(region.height, region.width, imageType);
-            std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tileSize));
-            const int firstTileX = region.x / static_cast<int>(tileWidth);
-            const int lastTileX = (region.x + region.width - 1) / static_cast<int>(tileWidth);
-            const int firstTileY = region.y / static_cast<int>(tileHeight);
-            const int lastTileY = (region.y + region.height - 1) / static_cast<int>(tileHeight);
-            const size_t pixelSize = CV_ELEM_SIZE(imageType);
-
-            // Lit uniquement les tuiles qui recouvrent la région demandée.
-            for (int tileY = firstTileY; tileY <= lastTileY; ++tileY) {
-                for (int tileX = firstTileX; tileX <= lastTileX; ++tileX) {
-                    const uint32_t tileOriginX = static_cast<uint32_t>(tileX) * tileWidth;
-                    const uint32_t tileOriginY = static_cast<uint32_t>(tileY) * tileHeight;
-                    // Calcul de l'index de la tuile
-                    const ttile_t tileIndex = TIFFComputeTile(tiffFile, tileOriginX, tileOriginY, 0, 0);
-                    // Ajout de la lecture de la tuile dans le tampon tileBuffer
-                    const tmsize_t decodedBytes = TIFFReadEncodedTile(
-                        tiffFile, tileIndex, tileBuffer.data(), tileSize);
-                    if (decodedBytes < static_cast<tmsize_t>(requiredTileBytes)) {
-                        errorMessage = "cannot read TIFF tile";
-                        output.release();
-                        break;
-                    }
-
-                    // Calcul de l'intersection entre la tuile en cours et la région demandée
-                    const cv::Rect tileRect{
-                        static_cast<int>(tileOriginX),
-                        static_cast<int>(tileOriginY),
-                        static_cast<int>(tileWidth),
-                        static_cast<int>(tileHeight)
-                    };
-                    const cv::Rect copiedRect = tileRect & region;
-                    // Ignore les pixels de la tuile hors de la région demandée
-                    for (int y = copiedRect.y; y < copiedRect.y + copiedRect.height; ++y) {
-                        // Calcule où lire dans le tileBuffer et où écrire dans la matrice de sortie
-                        const size_t sourceOffset =
-                            (static_cast<size_t>(y) - tileOriginY) * tileWidth * pixelSize +
-                            (static_cast<size_t>(copiedRect.x) - tileOriginX) * pixelSize;
-                        const size_t destinationOffset =
-                            static_cast<size_t>(y - region.y) * output.step +
-                            static_cast<size_t>(copiedRect.x - region.x) * pixelSize;
-
-
-                        // Copie des pixels vers la matrice de sortie
-                        std::memcpy(
-                            output.data + destinationOffset,
-                            tileBuffer.data() + sourceOffset,
-                            static_cast<size_t>(copiedRect.width) * pixelSize
-                        );
-                    }
-                }
-                if (!errorMessage.empty()) break;
-            }
-            success = errorMessage.empty();
+            TileMetadata tile;
+            if (!getTileMetadata(tiffFile, image.type, tile, errorMessage)) break;
+            output.create(region.height, region.width, image.type);
+            std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
+            RegionReadContext context{tiffFile, region, tile, output, tileBuffer, errorMessage};
+            success = readTiles(context);
         } while (false);
 
-        // Fermeture propre du pointeur du fichier
         TIFFClose(tiffFile);
+        if (!success) output.release();
         return success;
     }
 

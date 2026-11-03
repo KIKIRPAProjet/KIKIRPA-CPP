@@ -67,7 +67,7 @@ accepté ou si une opération sur le fichier échoue.
 
 ## Lire une région
 
-`IONs::PyramidalTiffReader` est construit avec le chemin d'un TIFF pyramidal. `readRegion` reçoit :
+`IONs::PyramidalTiffReaderClass` est construit avec le chemin d'un TIFF pyramidal. `readRegion` reçoit :
 
 | Paramètre      | Rôle                                                   |
 | -------------- | ------------------------------------------------------ |
@@ -85,7 +85,7 @@ Exemple :
 
 #include <string>
 
-IONs::PyramidalTiffReader reader("output/input_pyramid.tif");
+IONs::PyramidalTiffReaderClass reader("output/input_pyramid.tif");
 cv::Mat region;
 std::string errorMessage;
 
@@ -145,7 +145,7 @@ dans `TileClass::getTiff()`. Un step qui possède une tuile peut ensuite créer 
 ce chemin et demander uniquement la région utile :
 
 ```cpp
-IONs::PyramidalTiffReader reader(tile.getTiff());
+IONs::PyramidalTiffReaderClass reader(tile.getTiff());
 cv::Mat region;
 std::string errorMessage;
 
