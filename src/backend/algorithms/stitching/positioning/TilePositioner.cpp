@@ -1,5 +1,5 @@
 #include "algorithms/stitching/positioning/TilePositioner.h"
-#include "algorithms/rejection/ransac/RansacRejector.h"
+#include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
 #include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
@@ -149,8 +149,7 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
     else if (settings.matcher == "lightglue") matcher = std::make_unique<matching::LightGlueMatcher>();
 #endif
     std::unique_ptr<rejection::OutlierRejector> rejector;
-    if (settings.rejector == "ransac") rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
-    else if (settings.rejector == "vote") rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
+    if (settings.rejector == "vote") rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
     if (!matcher || !rejector) {
         log << "Matcher ou rejector non disponible (" << settings.matcher << " / " << settings.rejector << ")\n";
         return false;
