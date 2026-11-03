@@ -11,12 +11,12 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
-def find_latest_qt_root(base_dir: Path) -> Path | None:
-    if not base_dir.exists():
+def findLatestQtRoot(baseDir: Path) -> Path | None:
+    if not baseDir.exists():
         return None
 
     versions = []
-    for child in base_dir.iterdir():
+    for child in baseDir.iterdir():
         if not child.is_dir():
             continue
         try:
@@ -31,78 +31,78 @@ def find_latest_qt_root(base_dir: Path) -> Path | None:
     return max(versions, key=lambda item: item[0])[1]
 
 
-def find_mingw_dir(base_dir: Path) -> Path | None:
-    if not base_dir.exists():
+def findMingwDir(baseDir: Path) -> Path | None:
+    if not baseDir.exists():
         return None
 
-    candidates = [path for path in base_dir.iterdir() if path.is_dir() and "mingw" in path.name.lower()]
+    candidates = [path for path in baseDir.iterdir() if path.is_dir() and "mingw" in path.name.lower()]
     if not candidates:
         return None
 
-    def version_key(path: Path):
+    def versionKey(path: Path):
         numbers = [int(part) for part in re.findall(r"\d+", path.name)]
         while len(numbers) < 2:
             numbers.append(0)
         return tuple(numbers)
 
-    return max(candidates, key=version_key)
+    return max(candidates, key=versionKey)
 
 
-def resolve_paths() -> tuple[Path, Path, Path, Path, Path]:
-    qt_dir_str = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
-    qt_dir = Path(qt_dir_str) if qt_dir_str else None
-    if qt_dir is None or not qt_dir.exists():
-        qt_dir = find_latest_qt_root(Path(r"C:\Qt"))
+def resolvePaths() -> tuple[Path, Path, Path, Path, Path]:
+    qtDirStr = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
+    qtDir = Path(qtDirStr) if qtDirStr else None
+    if qtDir is None or not qtDir.exists():
+        qtDir = findLatestQtRoot(Path(r"C:\Qt"))
 
-    if qt_dir is None or not qt_dir.exists():
+    if qtDir is None or not qtDir.exists():
         raise FileNotFoundError("Aucun dossier Qt n’a été trouvé sous C:\\Qt. Installez Qt 6 et réessayez.")
 
-    mingw_dir_str = os.environ.get("MINGW_DIR")
-    mingw_dir = Path(mingw_dir_str) if mingw_dir_str else None
-    if mingw_dir is None or not mingw_dir.exists():
-        mingw_dir = find_mingw_dir(Path(r"C:\Qt\Tools")) or (qt_dir.parent / "Tools" / "mingw1310_64")
+    mingwDirStr = os.environ.get("MINGW_DIR")
+    mingwDir = Path(mingwDirStr) if mingwDirStr else None
+    if mingwDir is None or not mingwDir.exists():
+        mingwDir = findMingwDir(Path(r"C:\Qt\Tools")) or (qtDir.parent / "Tools" / "mingw1310_64")
 
-    cmake_dir = Path(os.environ.get("CMAKE_DIR") or r"C:\Qt\Tools\CMake_64")
-    ninja_dir = Path(os.environ.get("NINJA_DIR") or r"C:\Qt\Tools\Ninja")
+    cmakeDir = Path(os.environ.get("CMAKE_DIR") or r"C:\Qt\Tools\CMake_64")
+    ninjaDir = Path(os.environ.get("NINJA_DIR") or r"C:\Qt\Tools\Ninja")
 
-    qt_prefix = Path(os.environ.get("QT_PREFIX") or (qt_dir / "mingw_64"))
-    return qt_dir, mingw_dir, cmake_dir, ninja_dir, qt_prefix
+    qtPrefix = Path(os.environ.get("QT_PREFIX") or (qtDir / "mingw_64"))
+    return qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix
 
 
 def main() -> int:
     try:
-        qt_dir, mingw_dir, cmake_dir, ninja_dir, qt_prefix = resolve_paths()
+        qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix = resolvePaths()
     except FileNotFoundError as error:
         print(error)
         return 1
 
-    cmake = cmake_dir / "bin" / "cmake.exe"
-    ninja = ninja_dir / "ninja.exe"
+    cmake = cmakeDir / "bin" / "cmake.exe"
+    ninja = ninjaDir / "ninja.exe"
 
-    required_files = (cmake, ninja, qt_prefix)
-    missing = [str(path) for path in required_files if not path.exists()]
+    requiredFiles = (cmake, ninja, qtPrefix)
+    missing = [str(path) for path in requiredFiles if not path.exists()]
     if missing:
         print("Outil ou dossier Qt introuvable :")
         print("\n".join(f"  - {path}" for path in missing))
-        print(f"Qt détecté : {qt_dir}")
+        print(f"Qt détecté : {qtDir}")
         return 1
 
     environment = os.environ.copy()
     environment["PATH"] = os.pathsep.join(
         [
-            str(mingw_dir / "bin"),
-            str(qt_prefix / "bin"),
-            str(cmake_dir / "bin"),
-            str(ninja_dir),
+            str(mingwDir / "bin"),
+            str(qtPrefix / "bin"),
+            str(cmakeDir / "bin"),
+            str(ninjaDir),
             environment.get("PATH", ""),
         ]
     )
 
-    temporary_dir: Path | None = None
+    temporaryDir: Path | None = None
     try:
-        temporary_dir = Path(tempfile.mkdtemp(prefix="Frontend-"))
-        print(f"Qt détecté : {qt_dir}")
-        print(f"Compilation temporaire dans : {temporary_dir}")
+        temporaryDir = Path(tempfile.mkdtemp(prefix="Frontend-"))
+        print(f"Qt détecté : {qtDir}")
+        print(f"Compilation temporaire dans : {temporaryDir}")
 
         subprocess.run(
             [
@@ -110,28 +110,28 @@ def main() -> int:
                 "-S",
                 str(PROJECT_DIR),
                 "-B",
-                str(temporary_dir),
+                str(temporaryDir),
                 "-G",
                 "Ninja",
-                f"-DCMAKE_PREFIX_PATH={qt_prefix}",
+                f"-DCMAKE_PREFIX_PATH={qtPrefix}",
             ],
             env=environment,
             check=True,
         )
 
         subprocess.run(
-            [str(cmake), "--build", str(temporary_dir), "--parallel", "4"],
+            [str(cmake), "--build", str(temporaryDir), "--parallel", "4"],
             env=environment,
             check=True,
         )
 
-        executable = temporary_dir / "Frontend.exe"
+        executable = temporaryDir / "Frontend.exe"
         if not executable.exists():
             print(f"Executable introuvable : {executable}")
             return 1
 
         print("Lancement de Frontend.exe...")
-        subprocess.run([str(executable)], cwd=temporary_dir, check=True)
+        subprocess.run([str(executable)], cwd=temporaryDir, check=True)
         return 0
     except subprocess.CalledProcessError as error:
         print(f"La commande a échoué avec le code {error.returncode}.")
@@ -140,9 +140,9 @@ def main() -> int:
         print(f"Impossible d'accéder à un fichier ou d'exécuter un outil : {error}")
         return 1
     finally:
-        if temporary_dir is not None:
+        if temporaryDir is not None:
             try:
-                shutil.rmtree(temporary_dir)
+                shutil.rmtree(temporaryDir)
                 print("Fichiers temporaires supprimés.")
             except OSError as error:
                 print(f"Impossible de supprimer les fichiers temporaires : {error}")
