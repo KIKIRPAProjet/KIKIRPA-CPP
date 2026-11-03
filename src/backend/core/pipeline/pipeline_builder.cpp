@@ -5,7 +5,7 @@
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/phase_correlation_step.h"
-
+#include "steps/FusionStep.h"
 #include <fstream>
 #include <functional>
 #include <map>
@@ -27,6 +27,7 @@ namespace PipelineNs {
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
+                {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},
             };
             return registry;
         }
