@@ -10,6 +10,7 @@ class QWidget;
 class ProjectGrid;
 class SimulationRunner;
 class WorkspaceUI;
+class MenuBarManager;
 class QJsonObject;
 class QImage;
 
@@ -58,6 +59,7 @@ private:
     ProjectGrid *projectGrid = nullptr;
     SimulationRunner *simulationRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
+    MenuBarManager *menuBarManager = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;

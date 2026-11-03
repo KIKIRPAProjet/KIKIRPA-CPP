@@ -19,6 +19,7 @@ set(PROJECT_SOURCES
         src/Frontend/projectgrid.cpp
         src/Frontend/simulationrunner.cpp
         src/Frontend/workspace_ui.cpp
+        src/Frontend/menubar_manager.cpp
         src/Frontend/frontendutils.cpp
         src/Frontend/export_mode.cpp
         include/Frontend/mainwindow.h
@@ -26,6 +27,7 @@ set(PROJECT_SOURCES
         include/Frontend/projectgrid.h
         include/Frontend/simulationrunner.h
         include/Frontend/workspace_ui.h
+        include/Frontend/menubar_manager.h
         include/Frontend/frontendutils.h
         include/Frontend/artworkcanvas.h
         include/Frontend/workspace_helpers.h

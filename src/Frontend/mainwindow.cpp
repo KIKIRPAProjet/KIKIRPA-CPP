@@ -2,11 +2,11 @@
 #include "artworkcanvas.h"
 #include "frontendutils.h"
 #include "homepage.h"
+#include "menubar_manager.h"
 #include "projectgrid.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
 
-#include <QAction>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -32,9 +32,8 @@
 #include <QLineEdit>
 #include <QLineF>
 #include <QListWidget>
-#include <QMouseEvent>
-#include <QMenu>
 #include <QMenuBar>
+#include <QMouseEvent>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
@@ -99,6 +98,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     projectGrid = new ProjectGrid(this);
     simulationRunner = new SimulationRunner(this);
     workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
+    menuBarManager = new MenuBarManager(this);
+    menuBarManager->setupMenus(menuBar());
     refreshGrid();
     refreshProjectInfo();
     connect(projectGrid, &ProjectGrid::gridUpdated,
@@ -149,83 +150,59 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(workspaceUI->homePage(), &HomePage::currentProjectRequested,
             this, &MainWindow::openCurrentProjectFromHome);
 
-    auto *fileMenu = menuBar()->addMenu(tr("Fichier"));
-    auto *newAction = fileMenu->addAction(tr("Nouveau projet…"));
-    newAction->setShortcut(QKeySequence::New);
-    connect(newAction, &QAction::triggered, workspaceUI->homePage(), &HomePage::createProject);
-    auto *openAction = fileMenu->addAction(tr("Ouvrir un projet…"));
-    openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, workspaceUI->homePage(), &HomePage::openProject);
-    auto *importAction = fileMenu->addAction(tr("Importer un dossier de photos…"));
-    importAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
-    connect(importAction, &QAction::triggered, this, &MainWindow::chooseTilesDirectory);
-    auto *saveAction = fileMenu->addAction(tr("Enregistrer le projet"));
-    saveAction->setShortcut(QKeySequence::Save);
-    connect(saveAction, &QAction::triggered, this, &MainWindow::saveProject);
-    fileMenu->addSeparator();
-    auto *exportAction = fileMenu->addAction(tr("Exporter / rapport…"));
-    exportAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+E")));
-    connect(exportAction, &QAction::triggered, this, &MainWindow::showExportDialog);
-    fileMenu->addSeparator();
-    fileMenu->addAction(tr("Retour à l’accueil"), this, [this]() {
+    connect(menuBarManager, &MenuBarManager::newProjectRequested,
+            workspaceUI->homePage(), &HomePage::createProject);
+    connect(menuBarManager, &MenuBarManager::openProjectRequested,
+            workspaceUI->homePage(), &HomePage::openProject);
+    connect(menuBarManager, &MenuBarManager::importTilesRequested,
+            this, &MainWindow::chooseTilesDirectory);
+    connect(menuBarManager, &MenuBarManager::saveProjectRequested,
+            this, &MainWindow::saveProject);
+    connect(menuBarManager, &MenuBarManager::exportRequested,
+            this, &MainWindow::showExportDialog);
+    connect(menuBarManager, &MenuBarManager::homeRequested, this, [this]() {
         workspaceUI->pages()->setCurrentIndex(0);
     });
-    fileMenu->addAction(tr("Quitter"), QKeySequence::Quit, qApp, &QApplication::quit);
-
-    auto *editMenu = menuBar()->addMenu(tr("Édition"));
-    editMenu->addAction(tr("Annuler"), QKeySequence::Undo, this,
-                        [this]() { updateStatus(tr("Dernière action annulée.")); });
-    editMenu->addAction(tr("Rétablir"), QKeySequence::Redo, this,
-                        [this]() { updateStatus(tr("Action rétablie.")); });
-    auto *viewMenu = menuBar()->addMenu(tr("Affichage"));
-    auto *togglePanels = viewMenu->addAction(tr("Afficher / masquer les panneaux"));
-    connect(togglePanels, &QAction::triggered, this, [this]() {
+    connect(menuBarManager, &MenuBarManager::quitRequested,
+            qApp, &QApplication::quit);
+    connect(menuBarManager, &MenuBarManager::undoRequested,
+            this, [this]() { updateStatus(tr("Dernière action annulée.")); });
+    connect(menuBarManager, &MenuBarManager::redoRequested,
+            this, [this]() { updateStatus(tr("Action rétablie.")); });
+    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
         workspaceUI->bottomTabs()->setVisible(panelsVisible);
     });
-    auto *zoomIn = viewMenu->addAction(tr("Zoom avant"));
-    zoomIn->setShortcut(QKeySequence::ZoomIn);
-    connect(zoomIn, &QAction::triggered, this, [this]() {
+    connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
         workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
-    auto *zoomOut = viewMenu->addAction(tr("Zoom arrière"));
-    zoomOut->setShortcut(QKeySequence::ZoomOut);
-    connect(zoomOut, &QAction::triggered, this, [this]() {
+    connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
         zoomPercent = qMax(5, zoomPercent - 10);
         workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
-    auto *fit = viewMenu->addAction(tr("Ajuster à la fenêtre"));
-    fit->setShortcut(QKeySequence(QStringLiteral("Ctrl+0")));
-    connect(fit, &QAction::triggered, this, [this]() {
+    connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
         zoomPercent = 100;
         workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
-    auto *toolsMenu = menuBar()->addMenu(tr("Tuiles"));
-    toolsMenu->addAction(tr("Importer un dossier de photos…"),
-                         this, &MainWindow::chooseTilesDirectory);
-    toolsMenu->addAction(tr("Organiser la grille"), this, [this]() {
-        setMode(1);
-        updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
+    connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
+        setMode(mode);
+        if (mode == 1) {
+            updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
+        } else if (mode == 2) {
+            static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
+            updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
+        }
     });
-    auto *masksMenu = menuBar()->addMenu(tr("Masques"));
-    masksMenu->addAction(tr("Détecter les bords noirs"), this, [this]() {
-        setMode(2);
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-        updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
-    });
-    auto *assemblyMenu = menuBar()->addMenu(tr("Assemblage"));
-    assemblyMenu->addAction(tr("Tout lancer"), QKeySequence(Qt::Key_F5), this,
-                            [this]() { requestRun(1); });
-    assemblyMenu->addAction(tr("Relancer à partir de…"), this, [this]() { requestRun(6); });
-    assemblyMenu->addAction(tr("Comparer deux exécutions…"),
-                            simulationRunner, &SimulationRunner::showComparison);
-    auto *helpMenu = menuBar()->addMenu(tr("Aide"));
-    helpMenu->addAction(tr("À propos"), this, [this]() {
+    connect(menuBarManager, &MenuBarManager::runRequested,
+            this, &MainWindow::requestRun);
+    connect(menuBarManager, &MenuBarManager::comparisonRequested,
+            simulationRunner, &SimulationRunner::showComparison);
+    connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage — prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
