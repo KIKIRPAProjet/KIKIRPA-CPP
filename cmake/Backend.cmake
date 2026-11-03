@@ -1,6 +1,6 @@
 # Sources du backend. LightGlue est ajouté uniquement si ses dépendances optionnelles sont disponibles.
 file(GLOB_RECURSE backend_sources CONFIGURE_DEPENDS
-    "${PROJECT_SOURCE_DIR}/src/Backend/*.cpp"
+    "${PROJECT_SOURCE_DIR}/src/backend/*.cpp"
 )
 set(lightglue_sources ${backend_sources})
 list(FILTER lightglue_sources INCLUDE REGEX "/algorithms/stitching/lightglue/")
@@ -28,7 +28,7 @@ add_library(stitching_backend STATIC ${backend_sources})
 target_compile_features(stitching_backend PUBLIC cxx_std_17)
 target_include_directories(stitching_backend PUBLIC
     "${PROJECT_SOURCE_DIR}/include"
-    "${PROJECT_SOURCE_DIR}/include/Backend"
+    "${PROJECT_SOURCE_DIR}/include/backend"
     ${OpenCV_INCLUDE_DIRS}
 )
 target_link_libraries(stitching_backend PUBLIC

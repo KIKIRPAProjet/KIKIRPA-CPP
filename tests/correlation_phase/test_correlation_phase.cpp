@@ -124,8 +124,8 @@ double mediane(std::vector<double> v) {
 // Écarts |pointsA − pointsB − attendu| de chaque paire de points
 std::vector<double> ecartsPoints(const Matches& m, cv::Point2d attendu) {
     std::vector<double> ecarts;
-    for (size_t i = 0; i < m.pointsA.size(); ++i) {
-        const cv::Point2d d = cv::Point2d(m.pointsA[i] - m.pointsB[i]) - attendu;
+    for (size_t i = 0; i < m.pointsInA.size(); ++i) {
+        const cv::Point2d d = cv::Point2d(m.pointsInA[i] - m.pointsInB[i]) - attendu;
         ecarts.push_back(std::hypot(d.x, d.y));
     }
     return ecarts;
@@ -144,13 +144,13 @@ void testerPaire(const std::string& nom, const cv::Mat& source, cv::Point coinA,
 
     verifier(ok, format("match renvoie true (%.0f ms)", ms));
     if (!ok) return;
-    const double ex = m.dx - vrai.x, ey = m.dy - vrai.y;
+    const double ex = m.translationX - vrai.x, ey = m.translationY - vrai.y;
     verifier(std::abs(ex) <= TOLERANCE_TRANSLATION && std::abs(ey) <= TOLERANCE_TRANSLATION,
-             format("translation dx = %.4f, dy = %.4f (écart %+.4f, %+.4f px)", m.dx, m.dy, ex, ey));
+             format("translation dx = %.4f, dy = %.4f (écart %+.4f, %+.4f px)", m.translationX, m.translationY, ex, ey));
 
-    const bool taillesCoherentes = m.pointsA.size() == m.pointsB.size() && m.pointsA.size() == m.scores.size();
-    verifier(taillesCoherentes && !m.pointsA.empty(), format("%.0f points", static_cast<double>(m.pointsA.size())));
-    if (!taillesCoherentes || m.pointsA.empty()) return;
+    const bool taillesCoherentes = m.pointsInA.size() == m.pointsInB.size() && m.pointsInA.size() == m.confidenceScores.size();
+    verifier(taillesCoherentes && !m.pointsInA.empty(), format("%.0f points", static_cast<double>(m.pointsInA.size())));
+    if (!taillesCoherentes || m.pointsInA.empty()) return;
 
     const auto ecarts = ecartsPoints(m, vrai);
     const double pire = *std::max_element(ecarts.begin(), ecarts.end());
@@ -159,12 +159,12 @@ void testerPaire(const std::string& nom, const cv::Mat& source, cv::Point coinA,
 
     const cv::Rect tuile(0, 0, COTE_TUILE, COTE_TUILE);
     bool dansLesTuiles = true, confiancesValides = true;
-    for (size_t i = 0; i < m.pointsA.size(); ++i) {
-        dansLesTuiles &= tuile.contains(cv::Point(m.pointsA[i])) && tuile.contains(cv::Point(m.pointsB[i]));
-        confiancesValides &= m.scores[i] >= 0.f && m.scores[i] <= 1.f;
+    for (size_t i = 0; i < m.pointsInA.size(); ++i) {
+        dansLesTuiles &= tuile.contains(cv::Point(m.pointsInA[i])) && tuile.contains(cv::Point(m.pointsInB[i]));
+        confiancesValides &= m.confidenceScores[i] >= 0.f && m.confidenceScores[i] <= 1.f;
     }
     verifier(dansLesTuiles, "points dans les tuiles");
-    verifier(confiancesValides && std::is_sorted(m.scores.rbegin(), m.scores.rend()),
+    verifier(confiancesValides && std::is_sorted(m.confidenceScores.rbegin(), m.confidenceScores.rend()),
              "scores dans [0, 1], triés par ordre décroissant");
 }
 
@@ -209,49 +209,49 @@ void testerDeuxPasses(const cv::Mat& source) {
         verifier(r.has_value(), "première passe : estimer renvoie un résultat " + estimation.raisonEchec());
         if (!r) continue;
         const double recouvrementAttendu = (COTE_TUILE - vrai.y) / COTE_TUILE;
-        verifier(std::abs(r->translation.x - vrai.x) <= ERREUR_PREMIERE_PASSE &&
-                     std::abs(r->translation.y - vrai.y) <= ERREUR_PREMIERE_PASSE &&
-                     r->translation.x == std::round(r->translation.x) && r->translation.y == std::round(r->translation.y),
-                 format("première passe : translation entière (%.0f, %.0f)", r->translation.x, r->translation.y));
-        verifier(std::abs(r->overlap - recouvrementAttendu) <= ERREUR_PREMIERE_PASSE / COTE_TUILE,
-                 format("première passe : recouvrement réel %.2f %% (vérité %.2f %%)", r->overlap * 100.0,
+        verifier(std::abs(r->translationBInA.x - vrai.x) <= ERREUR_PREMIERE_PASSE &&
+                     std::abs(r->translationBInA.y - vrai.y) <= ERREUR_PREMIERE_PASSE &&
+                     r->translationBInA.x == std::round(r->translationBInA.x) && r->translationBInA.y == std::round(r->translationBInA.y),
+                 format("première passe : translation entière (%.0f, %.0f)", r->translationBInA.x, r->translationBInA.y));
+        verifier(std::abs(r->overlapFraction - recouvrementAttendu) <= ERREUR_PREMIERE_PASSE / COTE_TUILE,
+                 format("première passe : recouvrement réel %.2f %% (vérité %.2f %%)", r->overlapFraction * 100.0,
                         recouvrementAttendu * 100));
         const auto rInverse = estimation.estimer(B, A, haut);
-        verifier(rInverse && rInverse->translation == -r->translation && rInverse->overlap == r->overlap,
+        verifier(rInverse && rInverse->translationBInA == -r->translationBInA && rInverse->overlapFraction == r->overlapFraction,
                  "première passe : Top(B, A) = -Bottom(A, B), même recouvrement");
 
         // Zone commune réelle : toute la hauteur du recouvrement réel, pas les 20 % nominaux
-        const auto [za, zb] = EstimationRecouvrement::zonesCommunes(A.size(), B.size(), r->translation);
-        verifier(za.size() == zb.size() && za.height == COTE_TUILE - static_cast<int>(r->translation.y) &&
-                     za.width == COTE_TUILE - static_cast<int>(std::abs(r->translation.x)),
+        const auto [za, zb] = EstimationRecouvrement::zonesCommunes(A.size(), B.size(), r->translationBInA);
+        verifier(za.size() == zb.size() && za.height == COTE_TUILE - static_cast<int>(r->translationBInA.y) &&
+                     za.width == COTE_TUILE - static_cast<int>(std::abs(r->translationBInA.x)),
                  format("zone commune : %.0f x %.0f px (bande nominale : %.0f px de haut)", za.width, za.height,
                         COTE_TUILE * RECOUVREMENT));
 
         // Les deux passes dans match()
         Matches m;
         const bool ok = cp.match(A, B, bas, m);
-        verifier(ok && std::abs(m.dx - vrai.x) <= TOLERANCE_TRANSLATION && std::abs(m.dy - vrai.y) <= TOLERANCE_TRANSLATION,
-                 format("match : dx = %.4f, dy = %.4f (écart %+.4f, %+.4f px)", m.dx, m.dy, m.dx - vrai.x, m.dy - vrai.y));
+        verifier(ok && std::abs(m.translationX - vrai.x) <= TOLERANCE_TRANSLATION && std::abs(m.translationY - vrai.y) <= TOLERANCE_TRANSLATION,
+                 format("match : dx = %.4f, dy = %.4f (écart %+.4f, %+.4f px)", m.translationX, m.translationY, m.translationX - vrai.x, m.translationY - vrai.y));
 
         // Première passe faite par le pipeline : même résultat, au bit près
-        PairContext pipeline{Direction::Bottom, r->overlap, r->translation};
+        PairContext pipeline{Direction::Bottom, r->overlapFraction, r->translationBInA};
         Matches mp;
-        verifier(cp.match(A, B, pipeline, mp) && mp.dx == m.dx && mp.dy == m.dy && mp.pointsA == m.pointsA &&
-                     mp.pointsB == m.pointsB,
+        verifier(cp.match(A, B, pipeline, mp) && mp.translationX == m.translationX && mp.translationY == m.translationY && mp.pointsInA == m.pointsInA &&
+                     mp.pointsInB == m.pointsInB,
                  "ctx.translation du pipeline : même translation et mêmes points que match() seul");
 
         // Translation du pipeline un peu fausse : la deuxième passe la rattrape
-        pipeline.translation = r->translation + ERREUR_PIPELINE;
-        verifier(cp.match(A, B, pipeline, mp) && std::abs(mp.dx - vrai.x) <= TOLERANCE_TRANSLATION &&
-                     std::abs(mp.dy - vrai.y) <= TOLERANCE_TRANSLATION,
+        pipeline.estimatedTranslation = r->translationBInA + ERREUR_PIPELINE;
+        verifier(cp.match(A, B, pipeline, mp) && std::abs(mp.translationX - vrai.x) <= TOLERANCE_TRANSLATION &&
+                     std::abs(mp.translationY - vrai.y) <= TOLERANCE_TRANSLATION,
                  format("ctx.translation fausse de (%+.0f, %+.0f) px : dx = %.4f, dy = %.4f", ERREUR_PIPELINE.x,
-                        ERREUR_PIPELINE.y, mp.dx, mp.dy));
+                        ERREUR_PIPELINE.y, mp.translationX, mp.translationY));
 
         // Trop fausse : false plutôt qu'une translation tronquée au bord de la marge
-        pipeline.translation = r->translation + ERREUR_HORS_MARGE;
+        pipeline.estimatedTranslation = r->translationBInA + ERREUR_HORS_MARGE;
         const bool okHorsMarge = cp.match(A, B, pipeline, mp);
         verifier(!okHorsMarge && cp.raisonEchec().find("deuxième passe") != std::string::npos,
-                 format("ctx.translation fausse de 10 px -> false (dx = %.4f, dy = %.4f) : ", mp.dx, mp.dy) +
+                 format("ctx.translation fausse de 10 px -> false (dx = %.4f, dy = %.4f) : ", mp.translationX, mp.translationY) +
                      cp.raisonEchec());
     }
 
@@ -276,9 +276,9 @@ void testerCasLimites(const cv::Mat& source) {
     // Échanger A et B en inversant la direction : même calcul, résultat opposé, points échangés
     const bool ok1 = cp.match(A, B, bas, m);
     const bool ok2 = cp.match(B, A, {Direction::Top, static_cast<float>(RECOUVREMENT)}, inverse);
-    verifier(ok1 && ok2 && std::abs(m.dx + inverse.dx) < 1e-6 && std::abs(m.dy + inverse.dy) < 1e-6
-                 && m.pointsA == inverse.pointsB && m.pointsB == inverse.pointsA,
-             format("Bottom(A, B) = -Top(B, A) : (%.3f, %.3f) / (%.3f, %.3f)", m.dx, m.dy, inverse.dx, inverse.dy));
+    verifier(ok1 && ok2 && std::abs(m.translationX + inverse.translationX) < 1e-6 && std::abs(m.translationY + inverse.translationY) < 1e-6
+                 && m.pointsInA == inverse.pointsInB && m.pointsInB == inverse.pointsInA,
+             format("Bottom(A, B) = -Top(B, A) : (%.3f, %.3f) / (%.3f, %.3f)", m.translationX, m.translationY, inverse.translationX, inverse.translationY));
 
     // Bandes noires reliées au bord : hors de l'œuvre, rien à mesurer
     cv::Mat Anoire = A.clone(), Bnoire = B.clone();
@@ -295,8 +295,8 @@ void testerCasLimites(const cv::Mat& source) {
     cv::Mat Atache = A.clone();
     cv::circle(Atache, {COTE_TUILE / 2, COTE_TUILE - 100}, 40, cv::Scalar::all(0), cv::FILLED);
     const bool okTache = cp.match(Atache, B, bas, m);
-    verifier(okTache && std::abs(m.dx - vrai.x) < TOLERANCE_TRANSLATION * 2 && std::abs(m.dy - vrai.y) < TOLERANCE_TRANSLATION * 2,
-             format("tache noire isolée dans A : dx = %.3f, dy = %.3f", m.dx, m.dy));
+    verifier(okTache && std::abs(m.translationX - vrai.x) < TOLERANCE_TRANSLATION * 2 && std::abs(m.translationY - vrai.y) < TOLERANCE_TRANSLATION * 2,
+             format("tache noire isolée dans A : dx = %.3f, dy = %.3f", m.translationX, m.translationY));
 
     // Entrées impossibles : false, pas d'exception
     const cv::Mat uniforme(COTE_TUILE, COTE_TUILE, A.type(), cv::Scalar::all(20000));
@@ -319,16 +319,16 @@ void testerCasLimites(const cv::Mat& source) {
     margeLarge.marge = MARGE_ELARGIE;
     CorrelationPhase cpMargeLarge(margeLarge);
     const bool okMargeLarge = cpMargeLarge.match(Ah, Bh, bas, m);
-    verifier(okMargeLarge && cpMargeLarge.raisonEchec().empty() && std::abs(m.dx - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
-                 std::abs(m.dy - vraiHorsMarge.y) < TOLERANCE_TRANSLATION,
-             format("même paire, marge = 100 px : dx = %.3f, dy = %.3f (vérité %.3f, %.3f)", m.dx, m.dy,
+    verifier(okMargeLarge && cpMargeLarge.raisonEchec().empty() && std::abs(m.translationX - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
+                 std::abs(m.translationY - vraiHorsMarge.y) < TOLERANCE_TRANSLATION,
+             format("même paire, marge = 100 px : dx = %.3f, dy = %.3f (vérité %.3f, %.3f)", m.translationX, m.translationY,
                     vraiHorsMarge.x, vraiHorsMarge.y));
 
     // nbPoints = 0 : translation seule
     CorrelationPhase::Parametres translationSeule;
     translationSeule.nbPoints = 0;
     CorrelationPhase sansPoints(translationSeule);
-    verifier(sansPoints.match(A, B, bas, m) && m.pointsA.empty() && std::abs(m.dy - vrai.y) < TOLERANCE_TRANSLATION,
+    verifier(sansPoints.match(A, B, bas, m) && m.pointsInA.empty() && std::abs(m.translationY - vrai.y) < TOLERANCE_TRANSLATION,
              "nbPoints = 0 -> translation seule, aucun point");
 
     // Paramètres invalides : erreur de configuration, à la construction
@@ -349,8 +349,8 @@ void testerCasLimites(const cv::Mat& source) {
     const cv::Point2d vraiPeriodique(5.0, pas + 20.0);
     const auto [Ap, Bp] = decouperPaire(periodique, coinA, vraiPeriodique);
     const bool okPeriodique = cp.match(Ap, Bp, bas, m);
-    verifier(okPeriodique && std::abs(m.dx - vraiPeriodique.x) < 0.5 && std::abs(m.dy - vraiPeriodique.y) < 0.5,
-             format("motif de période 75 px, vérité (5, 820) : dx = %.2f, dy = %.2f", m.dx, m.dy));
+    verifier(okPeriodique && std::abs(m.translationX - vraiPeriodique.x) < 0.5 && std::abs(m.translationY - vraiPeriodique.y) < 0.5,
+             format("motif de période 75 px, vérité (5, 820) : dx = %.2f, dy = %.2f", m.translationX, m.translationY));
 }
 
 TEST(CorrelationPhase, QuatreDirections) { testerDirections("texture générée", textureGeneree({2400, 2400}, 1)); }

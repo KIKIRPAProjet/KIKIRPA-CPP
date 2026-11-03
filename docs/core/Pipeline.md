@@ -113,5 +113,5 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 
 1. La classe hérite de `Step`. Son **constructeur par défaut** remplit `config` : `name`, `options` avec leurs valeurs par défaut, `pipelineOptions` (entrées) et `signature.pipelineOptions` (sorties). Prendre `PhaseCorrelationStep` pour modèle.
 2. `execute()` relit ses options avec `option("clé")`, lit ses entrées avec `data->get<T>("clé")` et écrit ses sorties avec `data->set("clé", …)`. En cas d'échec, il renvoie `false` avec la raison dans `outputData["error"]`.
-3. Ajouter une ligne dans `registry()` (`src/Backend/core/PipelineBuilder.cpp`).
+3. Ajouter une ligne dans `registry()` (`src/backend/core/PipelineBuilder.cpp`).
 4. **Le type C++ derrière une clé doit être le même pour tous les steps** : `tiles` est toujours un `Tiles`, `matches` toujours un `std::vector<PairMatches>`. Sinon, `get<T>` lève `std::bad_any_cast` à l'exécution.
