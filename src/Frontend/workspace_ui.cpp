@@ -238,17 +238,7 @@ void WorkspaceUI::createWorkspace()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    auto *toolbar = new QWidget;
-    auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 5, 8, 5);
-    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
-    title->setObjectName(QStringLiteral("workspaceTitle"));
-    toolbarLayout->addWidget(title);
-    toolbarLayout->addStretch();
-    auto *save = makeWorkspaceButton(tr("Enregistrer"), toolbar);
-    toolbarLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
-    root->addWidget(toolbar);
+    root->addWidget(createToolbar());
 
     auto *stages = new QWidget;
     auto *stageLayout = new QHBoxLayout(stages);
@@ -757,4 +747,24 @@ QWidget *WorkspaceUI::createAssemblyMode()
     });
     m_rightTabs->addTab(chainPage, tr("Chaîne"));
     return chainPage;
+}
+
+QWidget* WorkspaceUI::createToolbar()
+{ 
+    // creation du widget 
+    auto *toolbar = new QWidget;
+    auto *toolbarLayout = new QHBoxLayout(toolbar);
+    toolbarLayout->setContentsMargins(8, 5, 8, 5);
+    
+    // creation du titre et du bouton enregistrer
+    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
+    title->setObjectName(QStringLiteral("workspaceTitle"));
+    toolbarLayout->addWidget(title);
+    toolbarLayout->addStretch();
+    
+    auto *save = makeWorkspaceButton(tr("Enregistrer"), toolbar);
+    toolbarLayout->addWidget(save);
+    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
+    
+    return toolbar;
 }
