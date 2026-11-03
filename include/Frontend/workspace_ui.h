@@ -110,8 +110,8 @@ private:
     QWidget *createAlignmentMode();
     QWidget *createAssemblyMode();
 
-    QWidget *createGridDimensionsGroup();
-    QWidget *createGridCaptureGroup();
+    QWidget *createGridDimensionsGroup(QWidget *parent);
+    QWidget *createGridCaptureGroup(QWidget *parent);
     void connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
                                  QPushButton *importReference, QPushButton *compareReference,
                                  QPushButton *validateGridButton);

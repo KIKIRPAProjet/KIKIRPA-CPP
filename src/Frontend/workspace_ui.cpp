@@ -404,23 +404,23 @@ QWidget *WorkspaceUI::createTilesMode()
 QWidget *WorkspaceUI::createGridDimensionsGroup(QWidget *parent)
 {
     QWidget *container = new QWidget(parent);
-    auto *layout = new QBoxLayout(container);
+    auto *layout = new QVBoxLayout(container);
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto *dimensions = new QFormLayout;
-    m_gridRowsSpin = new QSpinBox(m_gridTabPage);
+    m_gridRowsSpin = new QSpinBox(container);
     m_gridRowsSpin->setRange(1, 20);
     m_gridRowsSpin->setValue(m_projectGrid->state().gridRows);
    
-    m_gridColumnsSpin = new QSpinBox(m_gridTabPage);
+    m_gridColumnsSpin = new QSpinBox(container);
     m_gridColumnsSpin->setRange(1, 20);
     m_gridColumnsSpin->setValue(m_projectGrid->state().gridColumns);
 
     dimensions->addRow(tr("Lignes"), m_gridRowsSpin);
     dimensions->addRow(tr("Colonnes"), m_gridColumnsSpin);
-    gridLayout->addLayout(dimensions);
+    layout->addLayout(dimensions);
 
-    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), m_gridTabPage);
+    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), container);
     auto *orderLayout = new QVBoxLayout(orderGroup);
     m_captureOrderCombo = new QComboBox(orderGroup);
     m_captureOrderCombo->addItems({
@@ -432,7 +432,7 @@ QWidget *WorkspaceUI::createGridDimensionsGroup(QWidget *parent)
         tr("Par colonnes")
     });
     orderLayout->addWidget(m_captureOrderCombo);
-    gridLayout->addWidget(orderGroup);
+    layout->addWidget(orderGroup);
 
     return container;
 }
@@ -442,7 +442,7 @@ QWidget *WorkspaceUI::createGridDimensionsGroup(QWidget *parent)
  */
 QWidget *WorkspaceUI::createGridCaptureGroup(QWidget *parent)
 {
-    auto *captureGroup = new QGroupBox(tr("Prise de vue"), m_gridTabPage);
+    auto *captureGroup = new QGroupBox(tr("Prise de vue"), parent);
     auto *captureForm = new QFormLayout(captureGroup);
 
     m_horizontalOverlapSpin = new QSpinBox(captureGroup);
