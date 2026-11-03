@@ -1,0 +1,13 @@
+{
+  "pipeline": {
+    "steps": [
+      {"name":"import","parameters":[{"valueType":"string","name":"path","value":"images/2x2"},{"valueType":"string","name":"format","value":"img_r(\\d+)_c(\\d+)\\.tif"}]},
+      {"name":"phase-correlation"},
+      {"name":"position"},
+      {"name":"equalization"},
+      {"name":"graphcut","parameters":[{"valueType":"float","name":"scale","value":0.25}]},
+      {"name":"assemble"},
+      {"name":"export","parameters":[{"valueType":"string","name":"path","value":"output/mosaic.tif"}]}
+    ]
+  }
+}
