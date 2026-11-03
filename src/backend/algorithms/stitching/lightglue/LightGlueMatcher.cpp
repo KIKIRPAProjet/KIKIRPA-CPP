@@ -191,11 +191,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     auto start_time = std::chrono::steady_clock::now();
 
     // On supprime les anciens résultats si la sortie est réutilisée.
-    out.pointsA.clear();
-    out.pointsB.clear();
-    out.scores.clear();
-    out.dx = 0.0f;
-    out.dy = 0.0f;
+    out.pointsInA.clear();
+    out.pointsInB.clear();
+    out.confidenceScores.clear();
+    out.translationX = 0.0f;
+    out.translationY = 0.0f;
 
     if (a.empty() || b.empty()) {
         return false;
@@ -322,23 +322,23 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             const size_t point_a = static_cast<size_t>(index_a) * 2;
             const size_t point_b = (keypoint_count +
                                     static_cast<size_t>(index_b)) * 2;
-            out.pointsA.emplace_back(
+            out.pointsInA.emplace_back(
                 keypoints[point_a] / scaleX1,
                 keypoints[point_a + 1] / scaleY1);
-            out.pointsB.emplace_back(
+            out.pointsInB.emplace_back(
                 keypoints[point_b] / scaleX2,
                 keypoints[point_b + 1] / scaleY2);
-            out.scores.push_back(scores[i]);
+            out.confidenceScores.push_back(scores[i]);
         }
 
-        if (out.pointsA.empty()) {
+        if (out.pointsInA.empty()) {
             return false;
         }
 
         std::vector<float> dx_list, dy_list;
-        for (size_t i = 0; i < out.pointsA.size(); ++i) {
-            dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
-            dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
+        for (size_t i = 0; i < out.pointsInA.size(); ++i) {
+            dx_list.push_back(out.pointsInA[i].x - out.pointsInB[i].x);
+            dy_list.push_back(out.pointsInA[i].y - out.pointsInB[i].y);
         }
         const auto median = [](std::vector<float>& values) {
             const size_t mid = values.size() / 2;
@@ -350,8 +350,8 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
             }
             return values[mid];
         };
-        out.dx = median(dx_list);
-        out.dy = median(dy_list);
+        out.translationX = median(dx_list);
+        out.translationY = median(dy_list);
 
         std::cout << "[DEBUG] Modèle RACO/ALIKED+LightGlue exécuté\n";
         const auto end_time = std::chrono::steady_clock::now();
@@ -495,7 +495,7 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     // On associe maintenant toutes les coordonnées :
     //  - match_idx > -1 : Confirme que le point i de img1 a bien été matché.
     //  - Extraction $(x, y)$  : Les données des points sont stockées à plat en mémoire (ex: x0, y0, x1, y1...). Pour obtenir le point i, on lit les indices i * 2 (pour X) et i * 2 + 1 (pour Y). On fait la même chose pour img2 en utilisant match_idx.
-    //  - Stockage : Les coordonnées sont converties en objets cv::Point2f et poussées dans out.pointsA et out.pointsB. À ce stade, pointsA[k] et pointsB[k] représentent les coordonnées exactes du k-ème match valide.
+    //  - Stockage : Les coordonnées sont converties en objets cv::Point2f et poussées dans out.pointsInA et out.pointsInB. À ce stade, pointsA[k] et pointsB[k] représentent les coordonnées exactes du k-ème match valide.
 
     std::cout << "[DEBUG] match LightGlue : association des coordonnées\n";
     
@@ -523,11 +523,11 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
                 y1 = static_cast<float>(kpts1_i[match_idx * 2 + 1]);
             }
             
-            out.pointsA.push_back(cv::Point2f(x0 / scaleX1, y0 / scaleY1));
-            out.pointsB.push_back(cv::Point2f(x1 / scaleX2, y1 / scaleY2));
+            out.pointsInA.push_back(cv::Point2f(x0 / scaleX1, y0 / scaleY1));
+            out.pointsInB.push_back(cv::Point2f(x1 / scaleX2, y1 / scaleY2));
 
             // On enregistre le score correspondant
-            out.scores.push_back(confidence_score);
+            out.confidenceScores.push_back(confidence_score);
         } else if (match_idx >= 0) {
             throw std::runtime_error(
                 "LightGlueMatcher: matches0 contient un indice hors limites dans kpts1.");
@@ -535,12 +535,12 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     }
 
     // Les trois vecteurs doivent toujours contenir le même nombre de résultats.
-    if (out.pointsA.size() != out.pointsB.size() ||
-        out.pointsA.size() != out.scores.size()) {
+    if (out.pointsInA.size() != out.pointsInB.size() ||
+        out.pointsInA.size() != out.confidenceScores.size()) {
         throw std::runtime_error("LightGlueMatcher: les vecteurs de sortie ont des tailles incohérentes.");
     }
 
-    if (out.pointsA.empty()) {
+    if (out.pointsInA.empty()) {
         return false;
     }
 
@@ -551,9 +551,9 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
     std::vector<float> dy_list;
     
     // Calculer la différence pour chaque paire de points
-    for (size_t i = 0; i < out.pointsA.size(); ++i) {
-        dx_list.push_back(out.pointsA[i].x - out.pointsB[i].x);
-        dy_list.push_back(out.pointsA[i].y - out.pointsB[i].y);
+    for (size_t i = 0; i < out.pointsInA.size(); ++i) {
+        dx_list.push_back(out.pointsInA[i].x - out.pointsInB[i].x);
+        dy_list.push_back(out.pointsInA[i].y - out.pointsInB[i].y);
     }
 
     // La médiane limite l'effet des mauvaises correspondances.
@@ -568,10 +568,10 @@ bool LightGlueMatcher::match(const cv::Mat& a, const cv::Mat& b, const PairConte
         return values[mid_idx];
     };
 
-    out.dx = median(dx_list);
-    out.dy = median(dy_list);
+    out.translationX = median(dx_list);
+    out.translationY = median(dy_list);
 
-    std::cout << "Dx : " << out.dx << ", Dy : " << out.dy << '\n';
+    std::cout << "Dx : " << out.translationX << ", Dy : " << out.translationY << '\n';
 
     auto end_time = std::chrono::steady_clock::now();
     std::chrono::duration<double> elapsed = end_time - start_time;

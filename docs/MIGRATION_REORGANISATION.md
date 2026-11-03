@@ -123,9 +123,8 @@ Hors renommages :
 ## 9. Ce qui reste à faire
 
 - Les algorithmes (`algorithms/`) utilisent encore `namespace stitching`, des noms français (`Parametres`, `raisonEchec`, `Algorithme`, `Preparation`, `Sortie`, `lissage`…) et `legacy_type_aliases.h`, qui est un fichier temporaire à supprimer.
-- `LightGlueMatcher.cpp` utilise encore les anciens champs (non compilé sans ONNX Runtime).
 - Les tests contiennent encore des noms français (`verifier`, `LARGEUR_TUILE`…).
-- La documentation (`docs/`) cite encore plusieurs anciens noms.
+- Les pages des algorithmes (`docs/algorithms/`) citent encore plusieurs anciens noms. `docs/core/Pipeline.md`, `docs/steps/PhaseCorrelationStep.md` et `docs/CARTE_ARCHITECTURE.md` sont à jour.
 - À vérifier : `TileClass` calcule les dimensions des niveaux par décalage (`>>`, arrondi à l'inférieur), alors que le TIFF est écrit avec `cv::resize` ; pour une dimension impaire, les deux peuvent différer d'un pixel.
 
 ## 10. Adapter une branche existante
