@@ -24,11 +24,24 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Apple Clang + Homebrew)",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     }
   ],
   "buildPresets": [
     { "name": "windows-msvc", "configurePreset": "windows-msvc" },
-    { "name": "linux", "configurePreset": "linux" }
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos", "configurePreset": "macos" }
   ],
   "testPresets": [
     {
@@ -40,6 +53,11 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
       "output": { "outputOnFailure": true }
     }
   ]
