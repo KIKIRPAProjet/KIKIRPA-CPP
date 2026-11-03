@@ -183,7 +183,7 @@ void testerCasLimites() {
     std::vector<ReducedTile> reduites;
     for (const auto& t : jeu.tuiles) reduites.push_back(eg.reduceTile(t));
 
-    // estimer() d'abord, puis le message : dans une même expression, l'ordre d'évaluation n'est pas garanti
+    // estimate() d'abord, puis le message : dans une même expression, l'ordre d'évaluation n'est pas garanti
     auto echec = [&](const std::vector<ReducedTile>& t, const std::vector<NeighbourPair>& p, const std::string& cas) {
         const bool vide = !eg.estimate(t, p);
         verifier(vide && !eg.getFailureReason().empty(), cas + " : échec expliqué (" + eg.getFailureReason() + ")");

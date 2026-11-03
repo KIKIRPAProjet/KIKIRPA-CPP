@@ -21,7 +21,7 @@
 
 namespace fs = std::filesystem;
 
-namespace stitching::tests {
+namespace {
 
 using Json = nlohmann::json;
 
@@ -227,4 +227,4 @@ TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
 TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
-} // namespace stitching::tests
+}

@@ -34,7 +34,7 @@ namespace PositioningNs {
     //             référence en (0, 0). Une paire dont SIFT ou RANSAC échoue est ignorée (la grille reste connectée par
     //             les autres paires si possible).
     // positions : une entrée par tuile reliée à la référence ; identifiant "rLL_cCC" (le même que
-    //             ImagePretreatment). Si positions.size() != tilePaths.size(), certaines tuiles ne sont pas reliées :
+    //             ImagePretreatmentClass). Si positions.size() != tilePaths.size(), certaines tuiles ne sont pas reliées :
     //             voir le journal.
     // log       : messages de progression et diagnostics (résidus par paire).
     // Retourne false en cas d'erreur (nom invalide, doublon, lecture impossible, aucune paire exploitable).

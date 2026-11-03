@@ -22,7 +22,7 @@
 
 namespace fs = std::filesystem;
 
-namespace stitching::tests {
+namespace {
 
 using Json = nlohmann::json;
 
@@ -285,4 +285,4 @@ TEST_F(Reprise, Pause) { testerPause(dossier); }
 TEST_F(Reprise, Script) { testerScript(dossier); }
 TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
 
-} // namespace stitching::tests
+}

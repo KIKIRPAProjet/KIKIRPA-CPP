@@ -212,7 +212,7 @@ void testerDeuxPasses(const cv::Mat& source) {
 
         // Première passe : position au pixel près et recouvrement réel
         const auto r = estimation.estimate(A, B, bas);
-        verifier(r.has_value(), "première passe : estimer renvoie un résultat " + estimation.getFailureReason());
+        verifier(r.has_value(), "première passe : estimate renvoie un résultat " + estimation.getFailureReason());
         if (!r) continue;
         const double recouvrementAttendu = (COTE_TUILE - vrai.y) / COTE_TUILE;
         verifier(std::abs(r->translationBInA.x - vrai.x) <= ERREUR_PREMIERE_PASSE &&
