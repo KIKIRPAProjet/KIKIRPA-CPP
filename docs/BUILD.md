@@ -45,7 +45,7 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
    cmake --build --preset windows-aqt
    ctest --preset windows-aqt
    ```
-   Lancez ces commandes depuis la racine du dépôt (le dossier qui contient `CMakePresets.json`). Le build est dans `build/windows-aqt/`. Le preset de test ajoute au `PATH` les DLL de Qt, OpenCV et libtiff.
+   Lancez ces commandes depuis la racine du dépôt (le dossier qui contient `CMakePresets.json`). Le build est dans `build/windows-aqt/`. Les DLL de libtiff et GoogleTest sont copiées à côté des exécutables par vcpkg. Celle d'OpenCV doit être dans le `PATH` (`%OpenCV_DIR%\x64\vc16\bin`) ; `ctest --preset` l'ajoute tout seul.
 
 **CLion** : *Settings → Build, Execution, Deployment → Toolchains*, choisir **Visual Studio** (pas MinGW). Les presets apparaissent ensuite dans *CMake → Profiles*.
 

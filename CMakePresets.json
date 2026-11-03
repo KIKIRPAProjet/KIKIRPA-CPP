@@ -3,20 +3,6 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
   "configurePresets": [
     {
-      "name": "windows-msvc",
-      "displayName": "Windows (MSVC + Ninja, libtiff, GoogleTest et Qt via vcpkg)",
-      "description": "Variables d'environnement requises : VCPKG_ROOT (ex. C:/vcpkg) et OpenCV_DIR (ex. C:/opencv/build). Voir docs/BUILD.md.",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "OpenCV_DIR": "$env{OpenCV_DIR}"
-      },
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
-    },
-    {
       "name": "windows-aqt",
       "displayName": "Windows (MSVC + Ninja, Qt binaire via aqt)",
       "description": "Variables requises : KIKIRPA_VCPKG_ROOT, OpenCV_DIR et QT_ROOT. Voir docs/BUILD.md.",
@@ -27,7 +13,7 @@
         "CMAKE_BUILD_TYPE": "Release",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "OpenCV_DIR": "$env{OpenCV_DIR}",
-        "Qt6_DIR": "$env{QT_ROOT}/lib/cmake/Qt6"
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT}"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -54,25 +40,16 @@
     }
   ],
   "buildPresets": [
-    { "name": "windows-msvc", "configurePreset": "windows-msvc" },
     { "name": "windows-aqt", "configurePreset": "windows-aqt" },
     { "name": "linux", "configurePreset": "linux" },
     { "name": "macos", "configurePreset": "macos" }
   ],
   "testPresets": [
     {
-      "name": "windows-msvc",
-      "configurePreset": "windows-msvc",
-      "output": { "outputOnFailure": true },
-      "environment": { "PATH": "$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}" }
-    },
-    {
       "name": "windows-aqt",
       "configurePreset": "windows-aqt",
       "output": { "outputOnFailure": true },
-      "environment": {
-        "PATH": "$env{QT_ROOT}/bin;$env{OpenCV_DIR}/x64/vc16/bin;$env{KIKIRPA_VCPKG_ROOT}/installed/x64-windows/bin;$penv{PATH}"
-      }
+      "environment": { "PATH": "$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}" }
     },
     {
       "name": "linux",
