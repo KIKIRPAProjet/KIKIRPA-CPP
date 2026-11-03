@@ -31,6 +31,7 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
+          PUSH_COMMITS: ${{ toJSON(github.event.commits) }}
         run: |
           set -euo pipefail
 
@@ -41,8 +42,10 @@ jobs:
             push)
               if [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
                 changed_files=$(git ls-tree -r --name-only "$PUSH_AFTER_SHA")
-              else
+              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
                 changed_files=$(git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA")
+              else
+                changed_files=$(jq -r '.[] | (.added[]?, .modified[]?, .removed[]?)' <<< "$PUSH_COMMITS")
               fi
               ;;
             workflow_dispatch)
