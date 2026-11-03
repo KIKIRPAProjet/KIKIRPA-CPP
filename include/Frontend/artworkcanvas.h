@@ -31,39 +31,39 @@ public:
         setMouseTracking(true);
     }
 
-    void setMode(int mode) { m_mode = mode; update(); }
-    void setZoom(int zoom) { m_zoom = zoom; update(); }
-    void setImagePaths(const QStringList &paths) { m_imagePaths = paths; update(); }
+    void setMode(int mode) { modeValue = mode; update(); }
+    void setZoom(int zoom) { zoomPercent = zoom; update(); }
+    void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell)
     {
-        m_gridRows = rows;
-        m_gridColumns = columns;
-        m_captureOrder = order;
-        m_gridTiles = tiles;
-        m_selectedGridCell = selectedCell;
+        gridRows = rows;
+        gridColumns = columns;
+        captureOrder = order;
+        gridTiles = tiles;
+        selectedGridCell = selectedCell;
         update();
     }
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped)
     {
-        m_selectionChanged = std::move(selectionChanged);
-        m_cellsSwapped = std::move(cellsSwapped);
+        selectionChangedCallback = std::move(selectionChanged);
+        cellsSwappedCallback = std::move(cellsSwapped);
     }
-    void toggleComparison() { m_comparison = !m_comparison; update(); }
-    void setComparisonVisible(bool visible) { m_comparison = visible; update(); }
-    void toggleMask() { m_mask = !m_mask; update(); }
-    void setMaskVisible(bool visible) { m_mask = visible; update(); }
+    void toggleComparison() { comparison = !comparison; update(); }
+    void setComparisonVisible(bool visible) { comparison = visible; update(); }
+    void toggleMask() { maskVisible = !maskVisible; update(); }
+    void setMaskVisible(bool visible) { maskVisible = visible; update(); }
 
 protected:
     void mousePressEvent(QMouseEvent *event) override
     {
-        if (m_mode == 1 && event->button() == Qt::LeftButton) {
-            m_dragStartCell = gridCellAt(event->pos());
-            if (m_dragStartCell >= 0) {
-                m_selectedGridCell = m_dragStartCell;
-                if (m_selectionChanged)
-                    m_selectionChanged(m_selectedGridCell);
+        if (modeValue == 1 && event->button() == Qt::LeftButton) {
+            dragStartCell = gridCellAt(event->pos());
+            if (dragStartCell >= 0) {
+                selectedGridCell = dragStartCell;
+                if (selectionChangedCallback)
+                    selectionChangedCallback(selectedGridCell);
                 update();
                 event->accept();
                 return;
@@ -74,13 +74,13 @@ protected:
 
     void mouseReleaseEvent(QMouseEvent *event) override
     {
-        if (m_mode == 1 && event->button() == Qt::LeftButton) {
+        if (modeValue == 1 && event->button() == Qt::LeftButton) {
             const int targetCell = gridCellAt(event->pos());
-            if (m_dragStartCell >= 0 && targetCell >= 0 && targetCell != m_dragStartCell) {
-                if (m_cellsSwapped)
-                    m_cellsSwapped(m_dragStartCell, targetCell);
+            if (dragStartCell >= 0 && targetCell >= 0 && targetCell != dragStartCell) {
+                if (cellsSwappedCallback)
+                    cellsSwappedCallback(dragStartCell, targetCell);
             }
-            m_dragStartCell = -1;
+            dragStartCell = -1;
             event->accept();
             return;
         }
@@ -93,12 +93,12 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         p.fillRect(rect(), QColor("#484848"));
 
-        if (m_mode == 1) {
+        if (modeValue == 1) {
             drawGrid(p);
             return;
         }
 
-        const bool pair = m_mode == 3;
+        const bool pair = modeValue == 3;
         const int gutter = pair ? 22 : 0;
         const int maxW = pair ? (width() - 90) / 2 : width() - 130;
         const int maxH = height() - 80;
@@ -116,14 +116,14 @@ protected:
         const int y0 = (height() - imageH) / 2;
 
         const QRect firstImageRect(x0, y0, imageW, imageH);
-        if (!m_imagePaths.isEmpty())
-            drawPhoto(p, firstImageRect, m_imagePaths.first());
+        if (!imagePaths.isEmpty())
+            drawPhoto(p, firstImageRect, imagePaths.first());
         else
             drawPainting(p, firstImageRect);
         if (pair) {
             const QRect secondImageRect(x0 + imageW + gutter, y0, imageW, imageH);
-            if (m_imagePaths.size() > 1)
-                drawPhoto(p, secondImageRect, m_imagePaths.at(1));
+            if (imagePaths.size() > 1)
+                drawPhoto(p, secondImageRect, imagePaths.at(1));
             else
                 drawPainting(p, secondImageRect);
             p.setPen(QPen(QColor("#39b9e8"), 2));
@@ -143,20 +143,20 @@ protected:
             return;
         }
 
-        if (m_mode == 2 && m_mask) {
-            QPainterPath mask;
-            mask.moveTo(x0 + imageW * 0.10, y0);
-            mask.lineTo(x0 + imageW * 0.98, y0);
-            mask.lineTo(x0 + imageW * 0.98, y0 + imageH * 0.06);
-            mask.lineTo(x0 + imageW * 0.12, y0 + imageH * 0.10);
-            mask.closeSubpath();
-            p.fillPath(mask, QColor(185, 39, 36, 150));
+        if (modeValue == 2 && maskVisible) {
+            QPainterPath maskPath;
+            maskPath.moveTo(x0 + imageW * 0.10, y0);
+            maskPath.lineTo(x0 + imageW * 0.98, y0);
+            maskPath.lineTo(x0 + imageW * 0.98, y0 + imageH * 0.06);
+            maskPath.lineTo(x0 + imageW * 0.12, y0 + imageH * 0.10);
+            maskPath.closeSubpath();
+            p.fillPath(maskPath, QColor(185, 39, 36, 150));
             p.setPen(QPen(QColor("#ef5149"), 2));
-            p.drawPath(mask);
+            p.drawPath(maskPath);
             p.setPen(QColor("#eeeeee"));
             p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
                        tr("Masque d'exclusion — proposition"));
-        } else if (m_mode == 4 || m_mode == 5) {
+        } else if (modeValue == 4 || modeValue == 5) {
             p.setPen(QPen(QColor("#df4038"), 2));
             QPainterPath seam;
             seam.moveTo(x0 + imageW * 0.72, y0);
@@ -167,7 +167,7 @@ protected:
                          x0 + imageW * .76, y0 + imageH * .76,
                          x0 + imageW * .69, y0 + imageH);
             p.drawPath(seam);
-            if (m_comparison) {
+            if (comparison) {
                 p.setPen(QPen(QColor("#f0cf36"), 2));
                 p.drawLine(x0 + imageW / 2, y0, x0 + imageW / 2, y0 + imageH);
                 p.fillRect(QRect(x0, y0, imageW / 2, imageH), QColor(225, 188, 40, 30));
@@ -180,14 +180,14 @@ protected:
 
         p.setPen(QColor("#dddddd"));
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
-                   QString::number(m_zoom) + QStringLiteral(" %"));
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
     }
 
 private:
     void drawGrid(QPainter &p)
     {
-        const int rows = qMax(1, m_gridRows);
-        const int columns = qMax(1, m_gridColumns);
+        const int rows = qMax(1, gridRows);
+        const int columns = qMax(1, gridColumns);
         const int cellCount = rows * columns;
         const int gapX = 18;
         const int gapY = 20;
@@ -198,17 +198,17 @@ private:
         const int gridH = rows * cellH + (rows - 1) * gapY;
         const int left = area.left() + (area.width() - gridW) / 2;
         const int top = area.top() + (area.height() - gridH) / 2;
-        m_gridCellRects.clear();
-        m_gridCellRects.reserve(cellCount);
+        gridCellRects.clear();
+        gridCellRects.reserve(cellCount);
 
-        const QVector<int> orderCells = captureOrderCells(rows, columns, m_captureOrder);
+        const QVector<int> orderCells = captureOrderCells(rows, columns, captureOrder);
         QVector<int> captureNumbers(cellCount, 0);
         QVector<QPointF> routePoints;
         int sequence = 0;
         for (const int cellIndex : orderCells) {
-            if (cellIndex >= m_gridTiles.size())
+            if (cellIndex >= gridTiles.size())
                 continue;
-            const GridTile &tile = m_gridTiles.at(cellIndex);
+            const GridTile &tile = gridTiles.at(cellIndex);
             if (tile.path.isEmpty() || tile.empty)
                 continue;
             captureNumbers[cellIndex] = ++sequence;
@@ -219,8 +219,8 @@ private:
         }
 
         int activeTileCount = 0;
-        for (int index = 0; index < qMin(cellCount, static_cast<int>(m_gridTiles.size())); ++index) {
-            const GridTile &tile = m_gridTiles.at(index);
+        for (int index = 0; index < qMin(cellCount, static_cast<int>(gridTiles.size())); ++index) {
+            const GridTile &tile = gridTiles.at(index);
             if (!tile.path.isEmpty() && !tile.empty)
                 ++activeTileCount;
         }
@@ -230,11 +230,11 @@ private:
             const int column = index % columns;
             const QRect cell(left + column * (cellW + gapX),
                              top + row * (cellH + gapY), cellW, cellH);
-            m_gridCellRects.append(cell);
-            const GridTile tile = index < m_gridTiles.size() ? m_gridTiles.at(index) : GridTile{};
+            gridCellRects.append(cell);
+            const GridTile tile = index < gridTiles.size() ? gridTiles.at(index) : GridTile{};
 
             if (tile.path.isEmpty() && !tile.empty) {
-                if (index == m_selectedGridCell) {
+                if (index == selectedGridCell) {
                     p.setPen(QPen(QColor("#4b9bea"), 2, Qt::DashLine));
                     p.setBrush(Qt::NoBrush);
                     p.drawRect(cell.adjusted(1, 1, -2, -2));
@@ -269,8 +269,8 @@ private:
                            tile.empty ? tr("CASE VIDE") : tr("Déposer une tuile ici"));
             }
 
-            p.setPen(QPen(index == m_selectedGridCell ? QColor("#4b9bea") : QColor("#e8c638"),
-                          index == m_selectedGridCell ? 3 : 1, Qt::DashLine));
+            p.setPen(QPen(index == selectedGridCell ? QColor("#4b9bea") : QColor("#e8c638"),
+                          index == selectedGridCell ? 3 : 1, Qt::DashLine));
             p.setBrush(Qt::NoBrush);
             p.drawRect(cell.adjusted(1, 1, -2, -2));
             p.setPen(Qt::NoPen);
@@ -313,8 +313,8 @@ private:
 
     int gridCellAt(const QPoint &point) const
     {
-        for (int index = 0; index < m_gridCellRects.size(); ++index)
-            if (m_gridCellRects.at(index).contains(point))
+        for (int index = 0; index < gridCellRects.size(); ++index)
+            if (gridCellRects.at(index).contains(point))
                 return index;
         return -1;
     }
@@ -407,20 +407,20 @@ private:
         p.drawRect(r);
     }
 
-    int m_mode = 4;
-    int m_zoom = 12;
-    QStringList m_imagePaths;
-    QVector<GridTile> m_gridTiles;
-    QVector<QRect> m_gridCellRects;
-    std::function<void(int)> m_selectionChanged;
-    std::function<void(int, int)> m_cellsSwapped;
-    int m_gridRows = 3;
-    int m_gridColumns = 2;
-    int m_captureOrder = 0;
-    int m_selectedGridCell = 0;
-    int m_dragStartCell = -1;
-    bool m_mask = true;
-    bool m_comparison = false;
+    int modeValue = 4;
+    int zoomPercent = 12;
+    QStringList imagePaths;
+    QVector<GridTile> gridTiles;
+    QVector<QRect> gridCellRects;
+    std::function<void(int)> selectionChangedCallback;
+    std::function<void(int, int)> cellsSwappedCallback;
+    int gridRows = 3;
+    int gridColumns = 2;
+    int captureOrder = 0;
+    int selectedGridCell = 0;
+    int dragStartCell = -1;
+    bool maskVisible = true;
+    bool comparison = false;
 };
 
 #endif

@@ -55,30 +55,30 @@
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
                          ProjectGrid *projectGrid, SimulationRunner *simulationRunner)
     : QObject(mainWindow),
-      m_mainWindow(mainWindow),
-      m_projectGrid(projectGrid),
-      m_simulationRunner(simulationRunner),
-      m_homePage(homePage),
-      m_pages(new QStackedWidget(mainWindow))
+      mainWindow(mainWindow),
+      projectGrid(projectGrid),
+      simulationRunner(simulationRunner),
+      homePage(homePage),
+      pages(new QStackedWidget(mainWindow))
 {
-    m_pages->addWidget(m_homePage);
+    pages->addWidget(homePage);
     createWorkspace();
-    m_mainWindow->setCentralWidget(m_pages);
+    mainWindow->setCentralWidget(pages);
 }
 
 void WorkspaceUI::updateFromGridState(const QString &projectName,
                                       const ProjectGrid::State &gridState)
 {
-    if (m_projectNameLabel)
-        m_projectNameLabel->setText(projectName);
-    if (m_projectNameEdit)
-        m_projectNameEdit->setText(projectName);
-    if (m_projectFolderLabel) {
-        m_projectFolderLabel->setText(gridState.tileDirectory.isEmpty()
+    if (projectNameLabel)
+        projectNameLabel->setText(projectName);
+    if (projectNameEdit)
+        projectNameEdit->setText(projectName);
+    if (projectFolderLabel) {
+        projectFolderLabel->setText(gridState.tileDirectory.isEmpty()
             ? tr("Dossier sélectionné : aucun dossier")
             : tr("Dossier sélectionné :\n%1").arg(gridState.tileDirectory));
     }
-    if (m_projectFormatLabel) {
+    if (projectFormatLabel) {
         const QFileInfoList folderFiles = gridState.tileDirectory.isEmpty()
             ? QFileInfoList()
             : QDir(gridState.tileDirectory).entryInfoList(
@@ -90,88 +90,88 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
                 ++validFiles;
         }
         const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
-        m_projectFormatLabel->setText(allFilesValid
+        projectFormatLabel->setText(allFilesValid
             ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
                   .arg(validFiles)
             : tr("Format : %1 fichier(s) TIFF compatible(s) sur %2 ; certains éléments "
                 "ne sont pas au bon format.")
                   .arg(validFiles).arg(folderFiles.size()));
-        m_projectFormatLabel->setStyleSheet(allFilesValid
+        projectFormatLabel->setStyleSheet(allFilesValid
             ? QStringLiteral("color:#66c98a;")
             : QStringLiteral("color:#e0a45f;"));
     }
-    if (m_tileCountLabel) {
-        m_tileCountLabel->setText(
+    if (tileCountLabel) {
+        tileCountLabel->setText(
             tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
     }
 
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(m_canvas)) {
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(canvas)) {
         canvasView->setImagePaths(gridState.tilePaths);
         canvasView->setGridState(gridState.gridRows, gridState.gridColumns,
                                  gridState.captureOrder, gridState.gridTiles,
                                  gridState.selectedGridCell);
     }
 
-    if (m_gridRowsSpin) {
-        const QSignalBlocker blocker(m_gridRowsSpin);
-        m_gridRowsSpin->setValue(gridState.gridRows);
+    if (gridRowsSpin) {
+        const QSignalBlocker blocker(gridRowsSpin);
+        gridRowsSpin->setValue(gridState.gridRows);
     }
-    if (m_gridColumnsSpin) {
-        const QSignalBlocker blocker(m_gridColumnsSpin);
-        m_gridColumnsSpin->setValue(gridState.gridColumns);
+    if (gridColumnsSpin) {
+        const QSignalBlocker blocker(gridColumnsSpin);
+        gridColumnsSpin->setValue(gridState.gridColumns);
     }
-    if (m_captureOrderCombo) {
-        const QSignalBlocker blocker(m_captureOrderCombo);
-        m_captureOrderCombo->setCurrentIndex(gridState.captureOrder);
+    if (captureOrderCombo) {
+        const QSignalBlocker blocker(captureOrderCombo);
+        captureOrderCombo->setCurrentIndex(gridState.captureOrder);
     }
-    if (m_arrangementCombo) {
-        const QSignalBlocker blocker(m_arrangementCombo);
-        m_arrangementCombo->setCurrentIndex(gridState.captureOrder);
+    if (arrangementCombo) {
+        const QSignalBlocker blocker(arrangementCombo);
+        arrangementCombo->setCurrentIndex(gridState.captureOrder);
     }
-    if (m_horizontalOverlapSpin) {
-        const QSignalBlocker blocker(m_horizontalOverlapSpin);
-        m_horizontalOverlapSpin->setValue(gridState.horizontalOverlap);
+    if (horizontalOverlapSpin) {
+        const QSignalBlocker blocker(horizontalOverlapSpin);
+        horizontalOverlapSpin->setValue(gridState.horizontalOverlap);
     }
-    if (m_verticalOverlapSpin) {
-        const QSignalBlocker blocker(m_verticalOverlapSpin);
-        m_verticalOverlapSpin->setValue(gridState.verticalOverlap);
+    if (verticalOverlapSpin) {
+        const QSignalBlocker blocker(verticalOverlapSpin);
+        verticalOverlapSpin->setValue(gridState.verticalOverlap);
     }
-    if (m_linkedOverlapCheck) {
-        const QSignalBlocker blocker(m_linkedOverlapCheck);
-        m_linkedOverlapCheck->setChecked(gridState.overlapsLinked);
+    if (linkedOverlapCheck) {
+        const QSignalBlocker blocker(linkedOverlapCheck);
+        linkedOverlapCheck->setChecked(gridState.overlapsLinked);
     }
-    if (m_modalityCombo) {
-        const QSignalBlocker blocker(m_modalityCombo);
-        const int index = m_modalityCombo->findText(gridState.modality);
-        m_modalityCombo->setCurrentIndex(
-            index >= 0 ? index : m_modalityCombo->findText(tr("Autre")));
+    if (modalityCombo) {
+        const QSignalBlocker blocker(modalityCombo);
+        const int index = modalityCombo->findText(gridState.modality);
+        modalityCombo->setCurrentIndex(
+            index >= 0 ? index : modalityCombo->findText(tr("Autre")));
         if (index < 0)
-            m_projectGrid->setModality(m_modalityCombo->currentText());
+            projectGrid->setModality(modalityCombo->currentText());
     }
-    if (m_scaleSpin) {
-        const QSignalBlocker blocker(m_scaleSpin);
-        m_scaleSpin->setValue(gridState.scaleMmPerPixel);
+    if (scaleSpin) {
+        const QSignalBlocker blocker(scaleSpin);
+        scaleSpin->setValue(gridState.scaleMmPerPixel);
     }
-    if (m_automaticUncertaintyCheck) {
-        const QSignalBlocker blocker(m_automaticUncertaintyCheck);
-        m_automaticUncertaintyCheck->setChecked(gridState.automaticUncertainty);
+    if (automaticUncertaintyCheck) {
+        const QSignalBlocker blocker(automaticUncertaintyCheck);
+        automaticUncertaintyCheck->setChecked(gridState.automaticUncertainty);
     }
-    if (m_uncertaintySpin) {
-        const QSignalBlocker blocker(m_uncertaintySpin);
-        m_uncertaintySpin->setValue(gridState.uncertaintyMargin);
-        m_uncertaintySpin->setEnabled(!gridState.automaticUncertainty);
+    if (uncertaintySpin) {
+        const QSignalBlocker blocker(uncertaintySpin);
+        uncertaintySpin->setValue(gridState.uncertaintyMargin);
+        uncertaintySpin->setEnabled(!gridState.automaticUncertainty);
     }
 
     const QString scaleText = gridState.scaleMmPerPixel > 0.0
         ? tr("%1 mm/pixel").arg(gridState.scaleMmPerPixel, 0, 'g', 8)
         : tr("à renseigner");
-    if (auto *metadata = m_workspace->findChild<QLabel *>(
+    if (auto *metadata = workspace->findChild<QLabel *>(
             QStringLiteral("projectMetadataLabel"))) {
         metadata->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
                               .arg(gridState.modality, scaleText)
                               .arg(gridState.horizontalOverlap).arg(gridState.verticalOverlap));
     }
-    if (auto *title = m_workspace->findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
+    if (auto *title = workspace->findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
         title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
                            .arg(projectName, gridState.modality));
     }
@@ -184,15 +184,15 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         if (!tile.path.isEmpty() && !tile.empty)
             ++activeTiles;
     }
-    if (m_gridSummaryLabel) {
+    if (gridSummaryLabel) {
         const QString validationStatus =
             gridState.gridValidated ? tr(" · grille validée") : QString();
-        m_gridSummaryLabel->setText(
+        gridSummaryLabel->setText(
             tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
                 .arg(activeTiles).arg(gridState.gridRows).arg(gridState.gridColumns)
                 .arg(validationStatus));
     }
-    if (m_selectedGridTileLabel) {
+    if (selectedGridTileLabel) {
         const int row = gridState.selectedGridCell / qMax(1, gridState.gridColumns);
         const int column = gridState.selectedGridCell % qMax(1, gridState.gridColumns);
         const GridTile tile = gridState.selectedGridCell >= 0 &&
@@ -201,11 +201,11 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         const QString label = QStringLiteral("r%1_c%2")
             .arg(row, 2, 10, QLatin1Char('0')).arg(column, 2, 10, QLatin1Char('0'));
         if (tile.path.isEmpty()) {
-            m_selectedGridTileLabel->setText(tile.empty
+            selectedGridTileLabel->setText(tile.empty
                 ? tr("Case sélectionnée : %1 (vide)").arg(label)
                 : tr("Case sélectionnée : %1").arg(label));
         } else {
-            m_selectedGridTileLabel->setText(
+            selectedGridTileLabel->setText(
                 tr("Sélection : %1 · %2 · %3° · %4")
                     .arg(label, QFileInfo(tile.path).fileName())
                     .arg(tile.rotation)
@@ -213,28 +213,28 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
                                     : (tile.flipped ? tr("retournée") : tr("normale"))));
         }
     }
-    if (m_emptyCellButton) {
+    if (emptyCellButton) {
         const bool canRestore = gridState.selectedGridCell >= 0 &&
                 gridState.selectedGridCell < gridState.gridTiles.size()
             && gridState.gridTiles.at(gridState.selectedGridCell).empty;
-        m_emptyCellButton->setText(canRestore ? tr("Restaurer la tuile")
+        emptyCellButton->setText(canRestore ? tr("Restaurer la tuile")
                                               : tr("Marquer une case vide"));
     }
-    if (m_referencePathLabel) {
-        m_referencePathLabel->setText(gridState.referenceImagePath.isEmpty()
+    if (referencePathLabel) {
+        referencePathLabel->setText(gridState.referenceImagePath.isEmpty()
             ? tr("Aucune image de référence")
             : tr("Référence : %1")
                   .arg(QFileInfo(gridState.referenceImagePath).fileName()));
-        m_referencePathLabel->setToolTip(gridState.referenceImagePath);
+        referencePathLabel->setToolTip(gridState.referenceImagePath);
     }
-    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+    mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
 
 
 void WorkspaceUI::createWorkspace()
 {
-    m_workspace = new QWidget;
-    auto *root = new QVBoxLayout(m_workspace);
+    workspace = new QWidget;
+    auto *root = new QVBoxLayout(workspace);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
@@ -247,7 +247,7 @@ void WorkspaceUI::createWorkspace()
     toolbarLayout->addStretch();
     auto *save = makeWorkspaceButton(tr("Enregistrer"), toolbar);
     toolbarLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
+    connect(save, &QPushButton::clicked, mainWindow, &MainWindow::saveProject);
     root->addWidget(toolbar);
 
     auto *stages = new QWidget;
@@ -262,15 +262,15 @@ void WorkspaceUI::createWorkspace()
         button->setObjectName(QStringLiteral("mode%1").arg(i));
         modeGroup->addButton(button, i);
         stageLayout->addWidget(button);
-        connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
+        connect(button, &QPushButton::clicked, this, [this, i]() { mainWindow->setMode(i); });
     }
     auto *run = makeWorkspaceButton(tr("▶ Tout lancer"), stages, true);
     stageLayout->addWidget(run);
-    connect(run, &QPushButton::clicked, this, [this]() { m_mainWindow->requestRun(1); });
+    connect(run, &QPushButton::clicked, this, [this]() { mainWindow->requestRun(1); });
     auto *compare = makeWorkspaceButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
     connect(compare, &QPushButton::clicked,
-            m_simulationRunner, &SimulationRunner::showComparison);
+            simulationRunner, &SimulationRunner::showComparison);
     root->addWidget(stages);
 
     auto *modeOptions = new QWidget;
@@ -280,16 +280,16 @@ void WorkspaceUI::createWorkspace()
     modeLabel->setObjectName(QStringLiteral("modeDescription"));
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
-    m_arrangementCombo = new QComboBox;
-    m_arrangementCombo->addItems({tr("Automatique (par lignes)"),
+    arrangementCombo = new QComboBox;
+    arrangementCombo->addItems({tr("Automatique (par lignes)"),
                                 tr("Serpentin vertical, bas gauche"),
                                 tr("Serpentin vertical, haut droite"),
                                 tr("Serpentin horizontal"), tr("Par lignes"), tr("Par colonnes")});
-    m_arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
-    optionsLayout->addWidget(m_arrangementCombo);
-    connect(m_arrangementCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int value) {
-        m_projectGrid->setCaptureOrder(value);
-        m_mainWindow->updateStatus(tr("Ordre de prise de vue : %1").arg(m_arrangementCombo->currentText()));
+    arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
+    optionsLayout->addWidget(arrangementCombo);
+    connect(arrangementCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int value) {
+        projectGrid->setCaptureOrder(value);
+        mainWindow->updateStatus(tr("Ordre de prise de vue : %1").arg(arrangementCombo->currentText()));
     });
     root->addWidget(modeOptions);
 
@@ -312,9 +312,9 @@ void WorkspaceUI::createWorkspace()
         tool->setFixedSize(32, 32);
         toolLayout->addWidget(tool);
         connect(tool, &QToolButton::clicked, this, [this, toolNames, i]() {
-            m_mainWindow->updateStatus(tr("Outil actif : %1").arg(toolNames.at(i)));
-            if (m_mainWindow->currentMode == 2 && i >= 3 && i <= 6) {
-                static_cast<ArtworkCanvas *>(m_canvas)->toggleMask();
+            mainWindow->updateStatus(tr("Outil actif : %1").arg(toolNames.at(i)));
+            if (mainWindow->currentMode == 2 && i >= 3 && i <= 6) {
+                static_cast<ArtworkCanvas *>(canvas)->toggleMask();
             }
         });
     }
@@ -325,63 +325,63 @@ void WorkspaceUI::createWorkspace()
     auto *centerLayout = new QVBoxLayout(center);
     centerLayout->setContentsMargins(0, 0, 0, 0);
     createProjectMode(center);
-    m_canvas = new ArtworkCanvas(center);
-    centerLayout->addWidget(m_canvas, 1);
+    canvas = new ArtworkCanvas(center);
+    centerLayout->addWidget(canvas, 1);
     auto *canvasControls = new QWidget;
     canvasControls->setObjectName(QStringLiteral("canvasControls"));
     auto *canvasControlsLayout = new QHBoxLayout(canvasControls);
     canvasControlsLayout->setContentsMargins(8, 3, 8, 3);
     auto *minus = makeWorkspaceButton(QStringLiteral("−"), canvasControls);
     auto *plus = makeWorkspaceButton(QStringLiteral("+"), canvasControls);
-    m_zoomLabel = new QLabel(QStringLiteral("12,4 %"));
+    zoomLabel = new QLabel(QStringLiteral("12,4 %"));
     auto *fit = makeWorkspaceButton(tr("Ajuster"), canvasControls);
     auto *oneToOne = makeWorkspaceButton(QStringLiteral("100 %"), canvasControls);
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
-    canvasControlsLayout->addWidget(m_zoomLabel);
+    canvasControlsLayout->addWidget(zoomLabel);
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
     canvasControlsLayout->addStretch();
     centerLayout->addWidget(canvasControls);
-    m_projectInfoPanel->setVisible(false);
+    projectInfoPanel->setVisible(false);
     connect(minus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = qMax(5, m_mainWindow->zoomPercent - 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(m_canvas)->setZoom(m_mainWindow->zoomPercent);
+        mainWindow->zoomPercent = qMax(5, mainWindow->zoomPercent - 5);
+        zoomLabel->setText(QString::number(mainWindow->zoomPercent) + "%");
+        static_cast<ArtworkCanvas *>(canvas)->setZoom(mainWindow->zoomPercent);
     });
     connect(plus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = qMin(1600, m_mainWindow->zoomPercent + 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(m_canvas)->setZoom(m_mainWindow->zoomPercent);
+        mainWindow->zoomPercent = qMin(1600, mainWindow->zoomPercent + 5);
+        zoomLabel->setText(QString::number(mainWindow->zoomPercent) + "%");
+        static_cast<ArtworkCanvas *>(canvas)->setZoom(mainWindow->zoomPercent);
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
-        m_zoomLabel->setText(tr("Ajuster"));
-        static_cast<ArtworkCanvas *>(m_canvas)->setZoom(100);
+        zoomLabel->setText(tr("Ajuster"));
+        static_cast<ArtworkCanvas *>(canvas)->setZoom(100);
     });
     connect(oneToOne, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        static_cast<ArtworkCanvas *>(m_canvas)->setZoom(m_mainWindow->zoomPercent);
+        mainWindow->zoomPercent = 100;
+        zoomLabel->setText(QStringLiteral("100 %"));
+        static_cast<ArtworkCanvas *>(canvas)->setZoom(mainWindow->zoomPercent);
     });
     body->addWidget(center);
 
-    m_rightTabs = new QTabWidget;
-    m_rightTabs->setMinimumWidth(218);
+    rightTabs = new QTabWidget;
+    rightTabs->setMinimumWidth(218);
 
-    m_gridTabPage = createTilesMode();
-    m_rightTabs->addTab(createMasksMode(), tr("Calques"));
-    m_rightTabs->addTab(createAssemblyMode(), tr("Chaîne"));
-    m_rightTabs->addTab(createAlignmentMode(), tr("Infos"));
-    body->addWidget(m_rightTabs);
+    gridTabPage = createTilesMode();
+    rightTabs->addTab(createMasksMode(), tr("Calques"));
+    rightTabs->addTab(createAssemblyMode(), tr("Chaîne"));
+    rightTabs->addTab(createAlignmentMode(), tr("Infos"));
+    body->addWidget(rightTabs);
     body->setStretchFactor(0, 0);
     body->setStretchFactor(1, 1);
     body->setStretchFactor(2, 0);
     body->setSizes({42, 760, 280});
 
-    m_bottomTabs = new QTabWidget;
-    m_bottomTabs->setMinimumHeight(80);
-    m_pairsTable = new QTableWidget(4, 8, m_bottomTabs);
-    m_pairsTable->setHorizontalHeaderLabels({tr("Paire"), tr("Sens"), tr("Statut"), tr("Confiance"),
+    bottomTabs = new QTabWidget;
+    bottomTabs->setMinimumHeight(80);
+    pairsTable = new QTableWidget(4, 8, bottomTabs);
+    pairsTable->setHorizontalHeaderLabels({tr("Paire"), tr("Sens"), tr("Statut"), tr("Confiance"),
         tr("Contrôle NCC"), tr("dx (px)"), tr("dy (px)"), tr("Erreur")});
     const QStringList pairRows[] = {
         {QStringLiteral("r00_c00 → r00_c01"), tr("horizontal"), tr("douteuse"), QStringLiteral("0,91"), QStringLiteral("0,37"), QStringLiteral("4 065,5"), QStringLiteral("-20,7"), QStringLiteral("3,95 px")},
@@ -391,17 +391,17 @@ void WorkspaceUI::createWorkspace()
     };
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 8; ++col)
-            m_pairsTable->setItem(row, col, new QTableWidgetItem(pairRows[row].at(col)));
+            pairsTable->setItem(row, col, new QTableWidgetItem(pairRows[row].at(col)));
     }
-    m_pairsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    m_pairsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_bottomTabs->addTab(m_pairsTable, tr("Paires (4)"));
+    pairsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    pairsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    bottomTabs->addTab(pairsTable, tr("Paires (4)"));
     auto *journal = new QListWidget;
     journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
                        tr("14:10  4 tuiles importées"),
                        tr("14:02  Projet ouvert")});
-    m_bottomTabs->addTab(journal, tr("Journal"));
+    bottomTabs->addTab(journal, tr("Journal"));
     auto *positions = new QTableWidget(4, 3);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
     for (int i = 0; i < 4; ++i) {
@@ -409,13 +409,13 @@ void WorkspaceUI::createWorkspace()
         positions->setItem(i, 1, new QTableWidgetItem(QString::number((i % 2) * 4065)));
         positions->setItem(i, 2, new QTableWidgetItem(QString::number((i / 2) * 4080)));
     }
-    m_bottomTabs->addTab(positions, tr("Positions"));
-    connect(m_pairsTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) { m_mainWindow->setMode(3); });
+    bottomTabs->addTab(positions, tr("Positions"));
+    connect(pairsTable, &QTableWidget::cellDoubleClicked, this, [this](int, int) { mainWindow->setMode(3); });
     auto *contentSplitter = new QSplitter(Qt::Vertical);
     contentSplitter->setHandleWidth(5);
     contentSplitter->setChildrenCollapsible(false);
     contentSplitter->addWidget(body);
-    contentSplitter->addWidget(m_bottomTabs);
+    contentSplitter->addWidget(bottomTabs);
     contentSplitter->setStretchFactor(0, 1);
     contentSplitter->setStretchFactor(1, 0);
     contentSplitter->setSizes({560, 165});
@@ -424,68 +424,68 @@ void WorkspaceUI::createWorkspace()
     auto *status = new QWidget;
     auto *statusLayout = new QHBoxLayout(status);
     statusLayout->setContentsMargins(10, 3, 10, 3);
-    m_zoomLabel->setMinimumWidth(48);
+    zoomLabel->setMinimumWidth(48);
     statusLayout->addWidget(makeMutedLabel(tr("x 1 812  y 2 310 px    Tuile r00_c01"), status));
     statusLayout->addStretch();
-    m_statusLabel = new QLabel(tr("Affichage ajusté (contraste)"));
-    statusLayout->addWidget(m_statusLabel);
+    statusLabel = new QLabel(tr("Affichage ajusté (contraste)"));
+    statusLayout->addWidget(statusLabel);
     root->addWidget(status);
 
-    m_currentStepLabel = new QLabel(tr("Aucune étape"), m_mainWindow->statusBar());
-    m_progressBar = new QProgressBar(m_mainWindow->statusBar());
-    m_progressBar->setRange(0, 100);
-    m_progressBar->setValue(0);
-    m_progressBar->setFixedWidth(160);
-    m_mainWindow->statusBar()->addPermanentWidget(m_currentStepLabel);
-    m_mainWindow->statusBar()->addPermanentWidget(m_progressBar);
+    currentStepLabel = new QLabel(tr("Aucune étape"), mainWindow->statusBar());
+    progressBar = new QProgressBar(mainWindow->statusBar());
+    progressBar->setRange(0, 100);
+    progressBar->setValue(0);
+    progressBar->setFixedWidth(160);
+    mainWindow->statusBar()->addPermanentWidget(currentStepLabel);
+    mainWindow->statusBar()->addPermanentWidget(progressBar);
 
-    m_pages->addWidget(m_workspace);
-    connect(m_pairsTable, &QTableWidget::cellClicked, this, [this](int row, int) {
-        m_mainWindow->updateStatus(tr("Paire sélectionnée : %1").arg(m_pairsTable->item(row, 0)->text()));
+    pages->addWidget(workspace);
+    connect(pairsTable, &QTableWidget::cellClicked, this, [this](int row, int) {
+        mainWindow->updateStatus(tr("Paire sélectionnée : %1").arg(pairsTable->item(row, 0)->text()));
     });
 }
 
 
 void WorkspaceUI::createProjectMode(QWidget *center)
 {
-    m_projectInfoPanel = new QWidget(center);
-    auto *projectInfoLayout = new QVBoxLayout(m_projectInfoPanel);
+    projectInfoPanel = new QWidget(center);
+    auto *projectInfoLayout = new QVBoxLayout(projectInfoPanel);
     projectInfoLayout->setContentsMargins(32, 32, 32, 32);
     projectInfoLayout->setSpacing(14);
-    auto *projectInfoTitle = new QLabel(tr("Informations du projet"), m_projectInfoPanel);
+    auto *projectInfoTitle = new QLabel(tr("Informations du projet"), projectInfoPanel);
     projectInfoTitle->setStyleSheet(QStringLiteral("font-size:18px;font-weight:600;"));
     projectInfoLayout->addWidget(projectInfoTitle);
 
     auto *projectNameForm = new QFormLayout;
-    m_projectNameEdit = new QLineEdit(m_projectInfoPanel);
-    m_projectNameEdit->setObjectName(QStringLiteral("projectNameEdit"));
-    auto *renameProject = makeWorkspaceButton(tr("Renommer"), m_projectInfoPanel);
+    projectNameEdit = new QLineEdit(projectInfoPanel);
+    projectNameEdit->setObjectName(QStringLiteral("projectNameEdit"));
+    auto *renameProject = makeWorkspaceButton(tr("Renommer"), projectInfoPanel);
     auto *projectNameRow = new QHBoxLayout;
-    projectNameRow->addWidget(m_projectNameEdit, 1);
+    projectNameRow->addWidget(projectNameEdit, 1);
     projectNameRow->addWidget(renameProject);
     projectNameForm->addRow(tr("Nom du projet"), projectNameRow);
     connect(renameProject, &QPushButton::clicked, this, [this]() {
-        const QString newName = m_projectNameEdit->text().trimmed();
+        const QString newName = projectNameEdit->text().trimmed();
         if (newName.isEmpty()) {
-            QMessageBox::warning(m_mainWindow, tr("Nom invalide"),
+            QMessageBox::warning(mainWindow, tr("Nom invalide"),
                 tr("Le nom du projet ne peut pas être vide."));
             return;
         }
-        m_mainWindow->projectName = newName;
-        m_mainWindow->refreshProjectInfo();
-        m_mainWindow->updateStatus(
-            tr("Projet renommé : %1").arg(m_mainWindow->projectName));
+        mainWindow->projectName = newName;
+        mainWindow->refreshProjectInfo();
+        mainWindow->updateStatus(
+            tr("Projet renommé : %1").arg(mainWindow->projectName));
     });
     projectInfoLayout->addLayout(projectNameForm);
 
-    m_projectFolderLabel = makeMutedLabel(QString(), m_projectInfoPanel);
-    m_projectFolderLabel->setWordWrap(true);
-    projectInfoLayout->addWidget(m_projectFolderLabel);
-    m_projectFormatLabel = new QLabel(m_projectInfoPanel);
-    m_projectFormatLabel->setWordWrap(true);
-    projectInfoLayout->addWidget(m_projectFormatLabel);
+    projectFolderLabel = makeMutedLabel(QString(), projectInfoPanel);
+    projectFolderLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(projectFolderLabel);
+    projectFormatLabel = new QLabel(projectInfoPanel);
+    projectFormatLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(projectFormatLabel);
     projectInfoLayout->addStretch();
-    static_cast<QVBoxLayout *>(center->layout())->addWidget(m_projectInfoPanel, 1);
+    static_cast<QVBoxLayout *>(center->layout())->addWidget(projectInfoPanel, 1);
 
 }
 
@@ -495,29 +495,29 @@ QWidget *WorkspaceUI::createTilesMode()
     auto *gridScroll = new QScrollArea;
     gridScroll->setWidgetResizable(true);
     gridScroll->setFrameShape(QFrame::NoFrame);
-    m_gridTabPage = new QWidget;
-    auto *gridLayout = new QVBoxLayout(m_gridTabPage);
+    gridTabPage = new QWidget;
+    auto *gridLayout = new QVBoxLayout(gridTabPage);
     gridLayout->setContentsMargins(7, 8, 7, 8);
-    m_gridSummaryLabel = new QLabel;
-    gridLayout->addWidget(m_gridSummaryLabel);
+    gridSummaryLabel = new QLabel;
+    gridLayout->addWidget(gridSummaryLabel);
 
     auto *dimensions = new QFormLayout;
-    m_gridRowsSpin = new QSpinBox(m_gridTabPage);
-    m_gridRowsSpin->setRange(1, 20);
-    m_gridRowsSpin->setValue(m_projectGrid->state().gridRows);
-    m_gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
-    m_gridColumnsSpin = new QSpinBox(m_gridTabPage);
-    m_gridColumnsSpin->setRange(1, 20);
-    m_gridColumnsSpin->setValue(m_projectGrid->state().gridColumns);
-    m_gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
-    dimensions->addRow(tr("Lignes"), m_gridRowsSpin);
-    dimensions->addRow(tr("Colonnes"), m_gridColumnsSpin);
+    gridRowsSpin = new QSpinBox(gridTabPage);
+    gridRowsSpin->setRange(1, 20);
+    gridRowsSpin->setValue(projectGrid->state().gridRows);
+    gridRowsSpin->setObjectName(QStringLiteral("gridRowsSpin"));
+    gridColumnsSpin = new QSpinBox(gridTabPage);
+    gridColumnsSpin->setRange(1, 20);
+    gridColumnsSpin->setValue(projectGrid->state().gridColumns);
+    gridColumnsSpin->setObjectName(QStringLiteral("gridColumnsSpin"));
+    dimensions->addRow(tr("Lignes"), gridRowsSpin);
+    dimensions->addRow(tr("Colonnes"), gridColumnsSpin);
     gridLayout->addLayout(dimensions);
 
-    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), m_gridTabPage);
+    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), gridTabPage);
     auto *orderLayout = new QVBoxLayout(orderGroup);
-    m_captureOrderCombo = new QComboBox(orderGroup);
-    m_captureOrderCombo->addItems({
+    captureOrderCombo = new QComboBox(orderGroup);
+    captureOrderCombo->addItems({
         tr("Automatique (par lignes)"),
         tr("Serpentin vertical, bas gauche"),
         tr("Serpentin vertical, haut droite"),
@@ -525,122 +525,122 @@ QWidget *WorkspaceUI::createTilesMode()
         tr("Par lignes"),
         tr("Par colonnes")
     });
-    orderLayout->addWidget(m_captureOrderCombo);
+    orderLayout->addWidget(captureOrderCombo);
     gridLayout->addWidget(orderGroup);
 
-    m_selectedGridTileLabel = makeMutedLabel(QString(), m_gridTabPage);
-    m_selectedGridTileLabel->setWordWrap(true);
-    gridLayout->addWidget(m_selectedGridTileLabel);
+    selectedGridTileLabel = makeMutedLabel(QString(), gridTabPage);
+    selectedGridTileLabel->setWordWrap(true);
+    gridLayout->addWidget(selectedGridTileLabel);
     auto *tileActions = new QHBoxLayout;
-    auto *rotateTile = makeWorkspaceButton(tr("Pivoter 90°"), m_gridTabPage);
-    auto *flipTile = makeWorkspaceButton(tr("Retourner"), m_gridTabPage);
+    auto *rotateTile = makeWorkspaceButton(tr("Pivoter 90°"), gridTabPage);
+    auto *flipTile = makeWorkspaceButton(tr("Retourner"), gridTabPage);
     tileActions->addWidget(rotateTile);
     tileActions->addWidget(flipTile);
     gridLayout->addLayout(tileActions);
-    m_emptyCellButton = makeWorkspaceButton(tr("Marquer une case vide"), m_gridTabPage);
-    gridLayout->addWidget(m_emptyCellButton);
+    emptyCellButton = makeWorkspaceButton(tr("Marquer une case vide"), gridTabPage);
+    gridLayout->addWidget(emptyCellButton);
 
-    auto *captureGroup = new QGroupBox(tr("Prise de vue"), m_gridTabPage);
+    auto *captureGroup = new QGroupBox(tr("Prise de vue"), gridTabPage);
     auto *captureForm = new QFormLayout(captureGroup);
-    m_horizontalOverlapSpin = new QSpinBox(captureGroup);
-    m_horizontalOverlapSpin->setRange(0, 90);
-    m_horizontalOverlapSpin->setSuffix(QStringLiteral(" %"));
-    m_verticalOverlapSpin = new QSpinBox(captureGroup);
-    m_verticalOverlapSpin->setRange(0, 90);
-    m_verticalOverlapSpin->setSuffix(QStringLiteral(" %"));
-    m_horizontalOverlapSpin->setValue(m_projectGrid->state().horizontalOverlap);
-    m_verticalOverlapSpin->setValue(m_projectGrid->state().verticalOverlap);
-    m_linkedOverlapCheck = new QCheckBox(tr("Lier les deux valeurs"), captureGroup);
-    m_linkedOverlapCheck->setChecked(m_projectGrid->state().overlapsLinked);
-    captureForm->addRow(tr("Recouvrement horizontal"), m_horizontalOverlapSpin);
-    captureForm->addRow(tr("Recouvrement vertical"), m_verticalOverlapSpin);
-    captureForm->addRow(QString(), m_linkedOverlapCheck);
-    m_modalityCombo = new QComboBox(captureGroup);
-    m_modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
+    horizontalOverlapSpin = new QSpinBox(captureGroup);
+    horizontalOverlapSpin->setRange(0, 90);
+    horizontalOverlapSpin->setSuffix(QStringLiteral(" %"));
+    verticalOverlapSpin = new QSpinBox(captureGroup);
+    verticalOverlapSpin->setRange(0, 90);
+    verticalOverlapSpin->setSuffix(QStringLiteral(" %"));
+    horizontalOverlapSpin->setValue(projectGrid->state().horizontalOverlap);
+    verticalOverlapSpin->setValue(projectGrid->state().verticalOverlap);
+    linkedOverlapCheck = new QCheckBox(tr("Lier les deux valeurs"), captureGroup);
+    linkedOverlapCheck->setChecked(projectGrid->state().overlapsLinked);
+    captureForm->addRow(tr("Recouvrement horizontal"), horizontalOverlapSpin);
+    captureForm->addRow(tr("Recouvrement vertical"), verticalOverlapSpin);
+    captureForm->addRow(QString(), linkedOverlapCheck);
+    modalityCombo = new QComboBox(captureGroup);
+    modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
                              tr("Radiographie"), tr("Autre")});
-    captureForm->addRow(tr("Modalité"), m_modalityCombo);
-    m_scaleSpin = new QDoubleSpinBox(captureGroup);
-    m_scaleSpin->setRange(0.0, 1000000.0);
-    m_scaleSpin->setDecimals(6);
-    m_scaleSpin->setSingleStep(0.01);
-    m_scaleSpin->setSpecialValueText(tr("À renseigner"));
-    m_scaleSpin->setSuffix(tr(" mm / pixel"));
-    captureForm->addRow(tr("Échelle"), m_scaleSpin);
-    m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
-    m_automaticUncertaintyCheck->setChecked(m_projectGrid->state().automaticUncertainty);
-    m_uncertaintySpin = new QDoubleSpinBox(captureGroup);
-    m_uncertaintySpin->setRange(0.0, 1000000.0);
-    m_uncertaintySpin->setDecimals(3);
-    m_uncertaintySpin->setSuffix(tr(" px"));
-    m_uncertaintySpin->setEnabled(!m_projectGrid->state().automaticUncertainty);
-    captureForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
-    captureForm->addRow(QString(), m_automaticUncertaintyCheck);
+    captureForm->addRow(tr("Modalité"), modalityCombo);
+    scaleSpin = new QDoubleSpinBox(captureGroup);
+    scaleSpin->setRange(0.0, 1000000.0);
+    scaleSpin->setDecimals(6);
+    scaleSpin->setSingleStep(0.01);
+    scaleSpin->setSpecialValueText(tr("À renseigner"));
+    scaleSpin->setSuffix(tr(" mm / pixel"));
+    captureForm->addRow(tr("Échelle"), scaleSpin);
+    automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
+    automaticUncertaintyCheck->setChecked(projectGrid->state().automaticUncertainty);
+    uncertaintySpin = new QDoubleSpinBox(captureGroup);
+    uncertaintySpin->setRange(0.0, 1000000.0);
+    uncertaintySpin->setDecimals(3);
+    uncertaintySpin->setSuffix(tr(" px"));
+    uncertaintySpin->setEnabled(!projectGrid->state().automaticUncertainty);
+    captureForm->addRow(tr("Marge d'incertitude"), uncertaintySpin);
+    captureForm->addRow(QString(), automaticUncertaintyCheck);
     gridLayout->addWidget(captureGroup);
 
-    m_referencePathLabel = makeMutedLabel(tr("Aucune image de référence"), m_gridTabPage);
-    m_referencePathLabel->setWordWrap(true);
-    gridLayout->addWidget(m_referencePathLabel);
-    auto *importReference = makeWorkspaceButton(tr("Importer une image de référence…"), m_gridTabPage);
-    auto *compareReference = makeWorkspaceButton(tr("Comparer à l'image de référence"), m_gridTabPage);
+    referencePathLabel = makeMutedLabel(tr("Aucune image de référence"), gridTabPage);
+    referencePathLabel->setWordWrap(true);
+    gridLayout->addWidget(referencePathLabel);
+    auto *importReference = makeWorkspaceButton(tr("Importer une image de référence…"), gridTabPage);
+    auto *compareReference = makeWorkspaceButton(tr("Comparer à l'image de référence"), gridTabPage);
     gridLayout->addWidget(importReference);
     gridLayout->addWidget(compareReference);
-    auto *validateGridButton = makeWorkspaceButton(tr("Valider la grille ✓"), m_gridTabPage, true);
+    auto *validateGridButton = makeWorkspaceButton(tr("Valider la grille ✓"), gridTabPage, true);
     gridLayout->addWidget(validateGridButton);
     gridLayout->addStretch();
-    gridScroll->setWidget(m_gridTabPage);
+    gridScroll->setWidget(gridTabPage);
     gridScroll->setObjectName(QStringLiteral("gridTabScrollArea"));
 
-    connect(m_gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        m_projectGrid->setGridRows(value);
+    connect(gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        projectGrid->setGridRows(value);
     });
-    connect(m_gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
-        m_projectGrid->setGridColumns(value);
+    connect(gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {
+        projectGrid->setGridColumns(value);
     });
-    connect(m_captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),
+    connect(captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),
             this, [this](int value) {
-        m_projectGrid->setCaptureOrder(value);
+        projectGrid->setCaptureOrder(value);
     });
-    connect(m_horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
+    connect(horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, [this](int value) {
-        m_projectGrid->setHorizontalOverlap(value);
+        projectGrid->setHorizontalOverlap(value);
     });
-    connect(m_verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
+    connect(verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, [this](int value) {
-        m_projectGrid->setVerticalOverlap(value);
+        projectGrid->setVerticalOverlap(value);
     });
-    connect(m_linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {
-        m_projectGrid->setOverlapsLinked(linked);
+    connect(linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {
+        projectGrid->setOverlapsLinked(linked);
     });
-    connect(m_modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
-        m_projectGrid->setModality(value);
+    connect(modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {
+        projectGrid->setModality(value);
     });
-    connect(m_scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+    connect(scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
             this, [this](double value) {
-        m_projectGrid->setScaleMmPerPixel(value);
+        projectGrid->setScaleMmPerPixel(value);
     });
-    connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {
-        m_projectGrid->setAutomaticUncertainty(automatic);
+    connect(automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {
+        projectGrid->setAutomaticUncertainty(automatic);
     });
-    connect(m_uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+    connect(uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged),
             this, [this](double value) {
-        m_projectGrid->setUncertaintyMargin(value);
+        projectGrid->setUncertaintyMargin(value);
     });
-    connect(rotateTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::rotateSelectedTile);
-    connect(flipTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::flipSelectedTile);
-    connect(m_emptyCellButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
+    connect(rotateTile, &QPushButton::clicked, projectGrid, &ProjectGrid::rotateSelectedTile);
+    connect(flipTile, &QPushButton::clicked, projectGrid, &ProjectGrid::flipSelectedTile);
+    connect(emptyCellButton, &QPushButton::clicked,
+            projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
     connect(importReference, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->chooseReferenceImage();
+        mainWindow->chooseReferenceImage();
     });
     connect(compareReference, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::compareReferenceImage);
+            projectGrid, &ProjectGrid::compareReferenceImage);
     connect(validateGridButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::validateGrid);
-    static_cast<ArtworkCanvas *>(m_canvas)->setGridCallbacks(
+            projectGrid, &ProjectGrid::validateGrid);
+    static_cast<ArtworkCanvas *>(canvas)->setGridCallbacks(
         [this](int cell) {
-            m_projectGrid->setSelectedGridCell(cell);
+            projectGrid->setSelectedGridCell(cell);
         },
-        [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
+        [this](int first, int second) { projectGrid->swapGridTiles(first, second); });
 
     return gridScroll;
 }
@@ -658,10 +658,10 @@ QWidget *WorkspaceUI::createMasksMode()
         check->setChecked(true);
         layersLayout->addWidget(check);
         connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
-            m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
+            mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
             if (name == tr("Masques")) {
-                m_mainWindow->maskVisible = checked;
-                static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(checked);
+                mainWindow->maskVisible = checked;
+                static_cast<ArtworkCanvas *>(canvas)->setMaskVisible(checked);
             }
         });
     }
@@ -676,33 +676,33 @@ QWidget *WorkspaceUI::createAlignmentMode()
     auto *infoPage = new QWidget;
     auto *infoLayout = new QVBoxLayout(infoPage);
     infoLayout->addWidget(new QLabel(tr("Projet sélectionné")));
-    m_projectNameLabel = new QLabel;
-    m_projectNameLabel->setWordWrap(true);
-    infoLayout->addWidget(m_projectNameLabel);
-    m_tileCountLabel = new QLabel;
-    infoLayout->addWidget(m_tileCountLabel);
+    projectNameLabel = new QLabel;
+    projectNameLabel->setWordWrap(true);
+    infoLayout->addWidget(projectNameLabel);
+    tileCountLabel = new QLabel;
+    infoLayout->addWidget(tileCountLabel);
     auto *projectMetadata = makeMutedLabel(QString(), infoPage);
     projectMetadata->setObjectName(QStringLiteral("projectMetadataLabel"));
     infoLayout->addWidget(projectMetadata);
     auto *maskButton = makeWorkspaceButton(tr("Détecter les bords noirs"), infoPage);
     infoLayout->addWidget(maskButton);
     connect(maskButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->setMode(2);
-        static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(true);
-        m_mainWindow->updateStatus(tr("Masque proposé. Vérifiez-le avant validation."));
+        mainWindow->setMode(2);
+        static_cast<ArtworkCanvas *>(canvas)->setMaskVisible(true);
+        mainWindow->updateStatus(tr("Masque proposé. Vérifiez-le avant validation."));
     });
     auto *pairButton = makeWorkspaceButton(tr("Ouvrir la vue Paire"), infoPage);
     infoLayout->addWidget(pairButton);
-    connect(pairButton, &QPushButton::clicked, this, [this]() { m_mainWindow->setMode(3); });
+    connect(pairButton, &QPushButton::clicked, this, [this]() { mainWindow->setMode(3); });
     auto *validateButton = makeWorkspaceButton(tr("Valider la paire"), infoPage, true);
     infoLayout->addWidget(validateButton);
     connect(validateButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->updateStatus(tr("Paire validée par l'opérateur; les étapes suivantes sont à refaire."));
+        mainWindow->updateStatus(tr("Paire validée par l'opérateur; les étapes suivantes sont à refaire."));
     });
     auto *adjustButton = makeWorkspaceButton(tr("Saisir un décalage…"), infoPage);
     infoLayout->addWidget(adjustButton);
     connect(adjustButton, &QPushButton::clicked, this, [this]() {
-        QDialog dialog(m_mainWindow);
+        QDialog dialog(mainWindow);
         dialog.setWindowTitle(tr("Correction manuelle"));
         QFormLayout form(&dialog);
         auto *dx = new QDoubleSpinBox(&dialog);
@@ -716,7 +716,7 @@ QWidget *WorkspaceUI::createAlignmentMode()
         connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
         connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
         if (dialog.exec() == QDialog::Accepted)
-            m_mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
+            mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
                          .arg(dx->value()).arg(dy->value()));
     });
     infoLayout->addStretch();
@@ -741,20 +741,20 @@ QWidget *WorkspaceUI::createAssemblyMode()
     }
     chainLayout->addWidget(stepList);
     connect(stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
-        m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
+        mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
     auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), chainPage);
     chainLayout->addWidget(relaunch);
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
         const int row = qMax(0, stepList->currentRow());
-        m_mainWindow->requestRun(row + 1);
+        mainWindow->requestRun(row + 1);
     });
     auto *selectAlgo = new QComboBox(chainPage);
     selectAlgo->addItems({tr("Coupe de graphe"), tr("Programmation dynamique"), tr("Dijkstra")});
     chainLayout->addWidget(selectAlgo);
     connect(selectAlgo, &QComboBox::currentTextChanged, this, [this](const QString &algorithm) {
-        m_mainWindow->updateStatus(tr("Algorithme sélectionné : %1 — étapes suivantes à refaire.").arg(algorithm));
+        mainWindow->updateStatus(tr("Algorithme sélectionné : %1 — étapes suivantes à refaire.").arg(algorithm));
     });
-    m_rightTabs->addTab(chainPage, tr("Chaîne"));
+    rightTabs->addTab(chainPage, tr("Chaîne"));
     return chainPage;
 }

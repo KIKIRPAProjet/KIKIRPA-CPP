@@ -37,11 +37,11 @@ signals:
 private:
     void finishRun();
 
-    QTimer *m_timer = nullptr;
-    int m_firstStep = 1;
-    int m_progress = 0;
-    bool m_running = false;
-    bool m_comparisonVisible = false;
+    QTimer *timer = nullptr;
+    int firstStepNumber = 1;
+    int progress = 0;
+    bool running = false;
+    bool comparisonVisible = false;
 };
 
 #endif

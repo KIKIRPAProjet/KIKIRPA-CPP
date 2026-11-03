@@ -148,8 +148,10 @@ void HomePage::refreshRecentProjects()
             const QJsonDocument document = QJsonDocument::fromJson(file.readAll());
             if (document.isObject()) {
                 const QJsonObject project = document.object();
-                recentName = project.value(QStringLiteral("project_name"))
-                                 .toString(recentName);
+                recentName = project.contains(QStringLiteral("projectName"))
+                                 ? project.value(QStringLiteral("projectName")).toString(recentName)
+                                 : project.value(QStringLiteral("project_name"))
+                                       .toString(recentName);
                 const QJsonArray paths = project.value(QStringLiteral("tiles")).toArray();
                 recentTileCount = paths.size();
             }

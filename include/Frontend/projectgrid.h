@@ -81,7 +81,7 @@ signals:
                          const QImage &referenceImage, const QImage &tileImage);
 
 private:
-    State m_state;
+    State gridState;
 };
 
 #endif
