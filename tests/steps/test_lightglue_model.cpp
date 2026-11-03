@@ -1,5 +1,6 @@
-#include "steps/LightGlueStep.h"
-#include "core/Tuile.h"
+// tests/steps/test_lightglue_model.cpp
+#include "steps/lightglue_step.h"
+#include "core/data/tile.h"
 #include <opencv2/imgcodecs.hpp>
 #include <filesystem>
 #include <chrono>
@@ -28,8 +29,8 @@ int main(int argc, char** argv) {
         std::filesystem::path path;
         ~Cleanup() { std::error_code ec; std::filesystem::remove_all(path, ec); }
     } cleanup{dir};
-    stitching::DataStore data;
-    stitching::steps::LightGlueStep step({argv[1], 4, 205.f / 333.f});
+    StepNs::DataStoreClass data;
+    StepsNs::LightGlueStepClass step({argv[1], 4, 205.f / 333.f});
     step.setDataStore(data);
     for (int depth : {CV_8U, CV_16U}) {
         cv::Mat source;
@@ -38,27 +39,27 @@ int main(int argc, char** argv) {
         const cv::Mat imageB = source(cv::Rect(128, 0, 333, 321)).clone();
         const auto pathA = dir / "a.tif", pathB = dir / "b.tif";
         if (!cv::imwrite(pathA.string(), imageA) || !cv::imwrite(pathB.string(), imageB)) return 1;
-        auto a = std::make_shared<stitching::Tuile>(0, pathA, "", imageA.cols, imageA.rows, imageA.type());
-        auto b = std::make_shared<stitching::Tuile>(1, pathB, "", imageB.cols, imageB.rows, imageB.type());
-        a->setVoisins(nullptr, b.get(), nullptr, nullptr);
-        data.set("tiles", stitching::Tiles{a, b});
+        auto a = std::make_shared<DataNs::TileClass>(0, pathA, "", imageA.cols, imageA.rows, imageA.type());
+        auto b = std::make_shared<DataNs::TileClass>(1, pathB, "", imageB.cols, imageB.rows, imageB.type());
+        a->setNeighbours(nullptr, b.get(), nullptr, nullptr);
+        data.replace("tiles", DataNs::TileList{a, b});
         if (!step.execute()) {
-            std::cerr << step.exportData().dump(2) << '\n';
+            std::cerr << step.getResult().dump(2) << '\n';
             return 1;
         }
-        const auto& matches = step.getOutput().value.at(0).matches;
+        const auto& matches = step.getOutput().value.at(0).featureMatches;
         size_t correct = 0;
-        for (size_t i = 0; i < matches.pointsA.size(); ++i) {
-            const auto delta = matches.pointsA[i] - matches.pointsB[i];
+        for (size_t i = 0; i < matches.pointsInA.size(); ++i) {
+            const auto delta = matches.pointsInA[i] - matches.pointsInB[i];
             if (std::abs(delta.x - 128.f) <= 3.f && std::abs(delta.y) <= 3.f) ++correct;
         }
-        if (std::abs(matches.dx - 128.f) > 3.f || std::abs(matches.dy) > 3.f ||
-            correct < 4 || correct * 5 < matches.pointsA.size() * 4) {
+        if (std::abs(matches.translationX - 128.f) > 3.f || std::abs(matches.translationY) > 3.f ||
+            correct < 4 || correct * 5 < matches.pointsInA.size() * 4) {
             std::cerr << "Unexpected translation or fewer than 80% geometrically correct correspondences\n";
             return 1;
         }
-        std::cout << "PASS real model (depth=" << depth << "): " << matches.pointsA.size() << " correspondences, dx="
-                  << matches.dx << ", dy=" << matches.dy << '\n';
+        std::cout << "PASS real model (depth=" << depth << "): " << matches.pointsInA.size() << " correspondences, dx="
+                  << matches.translationX << ", dy=" << matches.translationY << '\n';
     }
     return 0;
 }

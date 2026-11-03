@@ -4,7 +4,7 @@
   "configurePresets": [
     {
       "name": "windows-msvc",
-      "displayName": "Windows (MSVC + Ninja, libtiff via vcpkg)",
+      "displayName": "Windows (MSVC + Ninja, libtiff, GoogleTest et Qt via vcpkg)",
       "description": "Variables d'environnement requises : VCPKG_ROOT (ex. C:/vcpkg) et OpenCV_DIR (ex. C:/opencv/build). Voir docs/BUILD.md.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
@@ -19,16 +19,29 @@
     {
       "name": "linux",
       "displayName": "Linux (paquets du système)",
-      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev (qt6-base-dev pour la GUI).",
+      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Apple Clang + Homebrew)",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     }
   ],
   "buildPresets": [
     { "name": "windows-msvc", "configurePreset": "windows-msvc" },
-    { "name": "linux", "configurePreset": "linux" }
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos", "configurePreset": "macos" }
   ],
   "testPresets": [
     {
@@ -40,6 +53,11 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
       "output": { "outputOnFailure": true }
     }
   ]
