@@ -50,7 +50,7 @@ void ProjectGrid::setState(const State &state)
 
 void ProjectGrid::createNewProject(const QString &tileDirectory, const QStringList &tilePaths)
 {
-    state = State{};
+    gridState = State{};
     gridState.tileDirectory = tileDirectory;
     gridState.tilePaths = tilePaths;
     const int tileCount = static_cast<int>(tilePaths.size());

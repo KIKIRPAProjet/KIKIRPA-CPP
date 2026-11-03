@@ -70,6 +70,10 @@ public:
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
 
 private:
+    void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
+    void updateGridParameters(const ProjectGrid::State &gridState);
+    void updateGridSummary(const ProjectGrid::State &gridState);
+
     void createWorkspace();
     QWidget *createToolbar();
     QWidget *createModesBar();
@@ -79,7 +83,7 @@ private:
     QTabWidget *createRightTabs();
     QTabWidget *createBottomTabs();
     QWidget *createStatusBar();
-    
+
     void createProjectMode(QWidget *center);
     QWidget *createTilesMode();
     QWidget *createMasksMode();
