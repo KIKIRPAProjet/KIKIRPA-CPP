@@ -4,6 +4,7 @@
 #include "steps/GraphCutStep.h"
 #include "steps/ImportStep.h"
 #include "steps/PhaseCorrelationStep.h"
+#include "steps/FusionStep.h"
 #include <fstream>
 #include <functional>
 #include <map>
@@ -20,6 +21,7 @@ const std::map<std::string, StepCreator>& registry() {
     static const std::map<std::string, StepCreator> r = {
         {"import", [] { return std::make_unique<steps::ImportStep>(); }},
         {"phase-correlation", [] { return std::make_unique<steps::PhaseCorrelationStep>(); }},
+        {"fusion", [] { return std::make_unique<steps::FusionStep>(); }},
         {"graphcut", [] { return std::make_unique<steps::GraphCutStep>(); }},
     };
     return r;
@@ -100,3 +102,4 @@ Pipeline buildPipelineFromFile(const std::filesystem::path& file) {
 }
 
 } // namespace stitching
+
