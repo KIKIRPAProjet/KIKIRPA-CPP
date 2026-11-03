@@ -24,11 +24,36 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Apple Clang + Homebrew)",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+	},
+	{
+      "name": "linux-clang-tidy",
+      "displayName": "Linux (clang-tidy)",
+      "description": "Linux build with Clang and clang-tidy checks enabled. Install both before configuring.",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "ENABLE_CLANG_TIDY": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "windows-msvc", "configurePreset": "windows-msvc" },
-    { "name": "linux", "configurePreset": "linux" }
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "linux-clang-tidy", "configurePreset": "linux-clang-tidy" }
   ],
   "testPresets": [
     {
@@ -40,6 +65,11 @@
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
       "output": { "outputOnFailure": true }
     }
   ]
