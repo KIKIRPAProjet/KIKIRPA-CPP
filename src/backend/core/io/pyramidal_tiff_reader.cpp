@@ -2,6 +2,8 @@
 #include "core/io/pyramidal_tiff_reader.h"
 
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -27,6 +29,15 @@ namespace IONs {
             int width = 0;
             int height = 0;
             int type = 0;
+        };
+
+        struct TiffMetadata {
+            uint32_t width = 0;
+            uint32_t height = 0;
+            uint16_t samplesPerPixel = CHANNEL_COUNT_GRAY;
+            uint16_t bitsPerSample = 0;
+            uint16_t planarConfig = PLANARCONFIG_CONTIG;
+            uint16_t sampleFormat = SAMPLEFORMAT_UINT;
         };
 
         struct TileMetadata {
@@ -71,55 +82,45 @@ namespace IONs {
             return true;
         }
 
-        bool isSupportedMetadata(
-            uint32_t tiffWidth,
-            uint32_t tiffHeight,
-            uint16_t samplesPerPixel,
-            uint16_t bitsPerSample,
-            uint16_t planarConfig,
-            uint16_t sampleFormat
-        ) {
+        bool isSupportedMetadata(const TiffMetadata& metadata) {
             const bool DIMENSIONS_VALID =
-                tiffWidth > 0 && tiffHeight > 0 &&
-                tiffWidth <= static_cast<uint32_t>(std::numeric_limits<int>::max()) &&
-                tiffHeight <= static_cast<uint32_t>(std::numeric_limits<int>::max());
+                metadata.width > 0 && metadata.height > 0 &&
+                metadata.width <= static_cast<uint32_t>(std::numeric_limits<int>::max()) &&
+                metadata.height <= static_cast<uint32_t>(std::numeric_limits<int>::max());
             const bool BITS_VALID =
-                bitsPerSample == BITS_PER_SAMPLE_8 || bitsPerSample == BITS_PER_SAMPLE_16;
+                metadata.bitsPerSample == BITS_PER_SAMPLE_8 ||
+                metadata.bitsPerSample == BITS_PER_SAMPLE_16;
             const bool CHANNELS_VALID =
-                samplesPerPixel == CHANNEL_COUNT_GRAY ||
-                samplesPerPixel == CHANNEL_COUNT_RGB ||
-                samplesPerPixel == CHANNEL_COUNT_RGBA;
+                metadata.samplesPerPixel == CHANNEL_COUNT_GRAY ||
+                metadata.samplesPerPixel == CHANNEL_COUNT_RGB ||
+                metadata.samplesPerPixel == CHANNEL_COUNT_RGBA;
             return DIMENSIONS_VALID && BITS_VALID && CHANNELS_VALID &&
-                   planarConfig == PLANARCONFIG_CONTIG && sampleFormat == SAMPLEFORMAT_UINT;
+                   metadata.planarConfig == PLANARCONFIG_CONTIG &&
+                   metadata.sampleFormat == SAMPLEFORMAT_UINT;
         }
 
         bool getImageMetadata(TIFF* tiffFile, ImageMetadata& metadata, std::string& errorMessage) {
-            uint32_t tiffWidth = 0;
-            uint32_t tiffHeight = 0;
-            uint16_t samplesPerPixel = CHANNEL_COUNT_GRAY;
-            uint16_t bitsPerSample = 0;
-            uint16_t planarConfig = PLANARCONFIG_CONTIG;
-            uint16_t sampleFormat = SAMPLEFORMAT_UINT;
-            if (!TIFFGetField(tiffFile, TIFFTAG_IMAGEWIDTH, &tiffWidth) ||
-                !TIFFGetField(tiffFile, TIFFTAG_IMAGELENGTH, &tiffHeight) ||
-                !TIFFGetField(tiffFile, TIFFTAG_SAMPLESPERPIXEL, &samplesPerPixel) ||
-                !TIFFGetField(tiffFile, TIFFTAG_BITSPERSAMPLE, &bitsPerSample) ||
-                !TIFFGetField(tiffFile, TIFFTAG_PLANARCONFIG, &planarConfig)) {
+            TiffMetadata tiffMetadata;
+            if (!TIFFGetField(tiffFile, TIFFTAG_IMAGEWIDTH, &tiffMetadata.width) ||
+                !TIFFGetField(tiffFile, TIFFTAG_IMAGELENGTH, &tiffMetadata.height) ||
+                !TIFFGetField(tiffFile, TIFFTAG_SAMPLESPERPIXEL, &tiffMetadata.samplesPerPixel) ||
+                !TIFFGetField(tiffFile, TIFFTAG_BITSPERSAMPLE, &tiffMetadata.bitsPerSample) ||
+                !TIFFGetField(tiffFile, TIFFTAG_PLANARCONFIG, &tiffMetadata.planarConfig)) {
                 errorMessage = "cannot read TIFF image metadata";
                 return false;
             }
 
-            TIFFGetField(tiffFile, TIFFTAG_SAMPLEFORMAT, &sampleFormat);
-            if (!isSupportedMetadata(
-                    tiffWidth, tiffHeight, samplesPerPixel, bitsPerSample, planarConfig, sampleFormat)) {
+            TIFFGetField(tiffFile, TIFFTAG_SAMPLEFORMAT, &tiffMetadata.sampleFormat);
+            if (!isSupportedMetadata(tiffMetadata)) {
                 errorMessage = "unsupported TIFF image format";
                 return false;
             }
 
-            const int DEPTH = bitsPerSample == BITS_PER_SAMPLE_8 ? CV_8U : CV_16U;
-            metadata.width = static_cast<int>(tiffWidth);
-            metadata.height = static_cast<int>(tiffHeight);
-            metadata.type = CV_MAKETYPE(DEPTH, samplesPerPixel);
+            const int DEPTH =
+                tiffMetadata.bitsPerSample == BITS_PER_SAMPLE_8 ? CV_8U : CV_16U;
+            metadata.width = static_cast<int>(tiffMetadata.width);
+            metadata.height = static_cast<int>(tiffMetadata.height);
+            metadata.type = CV_MAKETYPE(DEPTH, tiffMetadata.samplesPerPixel);
             return true;
         }
 
@@ -214,6 +215,30 @@ namespace IONs {
             return true;
         }
 
+        bool readOpenedRegion(
+            TIFF* tiffFile,
+            int level,
+            const cv::Rect& region,
+            cv::Mat& output,
+            std::string& errorMessage
+        ) {
+            if (!selectLevel(tiffFile, level, errorMessage)) return false;
+
+            ImageMetadata image;
+            if (!getImageMetadata(tiffFile, image, errorMessage)) return false;
+            if (region.x > image.width - region.width || region.y > image.height - region.height) {
+                errorMessage = "region is outside the requested pyramid level";
+                return false;
+            }
+
+            TileMetadata tile;
+            if (!getTileMetadata(tiffFile, image.type, tile, errorMessage)) return false;
+            output.create(region.height, region.width, image.type);
+            std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
+            RegionReadContext context{tiffFile, region, tile, output, tileBuffer, errorMessage};
+            return readTiles(context);
+        }
+
     }
 
     PyramidalTiffReaderClass::PyramidalTiffReaderClass(std::filesystem::path path)
@@ -242,24 +267,7 @@ namespace IONs {
             return false;
         }
 
-        bool success = false;
-        do {
-            ImageMetadata image;
-            if (!selectLevel(tiffFile, level, errorMessage) ||
-                !getImageMetadata(tiffFile, image, errorMessage)) break;
-            if (region.x > image.width - region.width || region.y > image.height - region.height) {
-                errorMessage = "region is outside the requested pyramid level";
-                break;
-            }
-
-            TileMetadata tile;
-            if (!getTileMetadata(tiffFile, image.type, tile, errorMessage)) break;
-            output.create(region.height, region.width, image.type);
-            std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
-            RegionReadContext context{tiffFile, region, tile, output, tileBuffer, errorMessage};
-            success = readTiles(context);
-        } while (false);
-
+        const bool success = readOpenedRegion(tiffFile, level, region, output, errorMessage);
         TIFFClose(tiffFile);
         if (!success) output.release();
         return success;
