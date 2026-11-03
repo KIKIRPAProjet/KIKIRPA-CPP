@@ -2,6 +2,7 @@
 #include "core/Step.h"
 #include "core/Tuile.h"
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,9 +24,36 @@ struct PhaseCorrelationInput {
     ControleConfiance confiance;
 };
 
+// État de confiance d'une paire
+enum class EtatConfiance {
+    Fiable,       // gardée, contrôles passés
+    NonVerifie,   // gardée sans point local (zone commune trop étroite pour un patch, ou nbPoints = 0)
+    Ambigu,       // rejetée : motif répété (auto-similarité >= autosimMax), plusieurs positions possibles
+    Rejete        // rejetée : mesure impossible, NCC trop basse, points en désaccord, ou aucun point fiable
+};
+
+// Point de correspondance d'une paire et son score
+struct PointConfiance {
+    cv::Point2f a, b;   // dans la tuile A et dans la tuile B (px pleine résolution)
+    float ncc = 0.f;    // ressemblance des deux patchs recalés (0 à 1)
+};
+
+// Indicateurs de confiance d'une paire (exportData()["confidence"]). Indicateur absent : non mesurable.
+struct ConfiancePaire {
+    int idA = 0, idB = 0;
+    Direction dir = Direction::Right;
+    EtatConfiance etat = EtatConfiance::Fiable;
+    std::string raison;                  // pourquoi la paire est rejetée (vide si gardée)
+    std::optional<double> ncc;           // NCC médiane des points (0 à 1) : le score de la paire
+    std::optional<double> dispersion;    // écart médian (px pleine résolution) entre pointsA − pointsB et (dx, dy)
+    std::optional<double> autosim;       // auto-similarité de la bande de A (0 à 1 ; 1 = motif répété)
+    std::vector<PointConfiance> points;  // paires de points avec leur score
+};
+
 // Sortie du step = sa signature
 struct PhaseCorrelationOutput {
-    std::vector<PairMatches> pairs;   // toujours en px de pleine résolution, quel que soit le niveau analysé
+    std::vector<PairMatches> pairs;          // toujours en px de pleine résolution, quel que soit le niveau analysé
+    std::vector<ConfiancePaire> confiance;   // une par paire mesurée ou rejetée, dans l'ordre de parcours
 };
 
 // Translation au sous-pixel entre chaque paire de tuiles voisines, par corrélation de phase
@@ -51,8 +79,8 @@ struct PhaseCorrelationOutput {
 //   Les longueurs des paramètres (marge, fenetre, ecartMax...) et les messages d'échec sont en px du niveau analysé.
 //
 // Une paire qui échoue (mesure impossible, ou contrôle de confiance) est ignorée et listée dans
-// exportData()["failures"] ({idA, idB, reason}). Une paire gardée sans point local pour la vérifier est listée
-// dans exportData()["unverified"] ({idA, idB}) ;
+// exportData()["failures"] ({idA, idB, reason}). Chaque paire, gardée ou non, a ses indicateurs de confiance
+// (ConfiancePaire) dans getOutput().confiance et dans exportData()["confidence"] (voir versJson) ;
 // le step échoue (exportData()["error"]) si aucune paire ne réussit, si une option est invalide,
 // s'il n'y a pas de tuiles ou si une tuile est illisible.
 class PhaseCorrelationStep : public Step {
@@ -77,13 +105,19 @@ public:
     // marge : Parametres::marge (0 = automatique, même règle que l'algorithme).
     static double autoSimilarite(const cv::Mat& a, Direction dir, float overlap, double marge);
 
-    // Raison du rejet de la paire par les contrôles de confiance (vide si elle les passe). Mesure m et image a
-    // au niveau analysé. Sans point local, la paire est rejetée si la zone commune permettait d'en placer (bruit) ;
-    // sinon (zone trop étroite pour un patch, ou nbPoints = 0) les contrôles sur les points sont sautés et
-    // pointsVerifies vaut false.
-    static std::string controlerConfiance(const Matches& m, const cv::Mat& a, Direction dir, float overlap,
-                                          const matching::CorrelationPhase::Parametres& p, const ControleConfiance& c,
-                                          bool& pointsVerifies);
+    // Indicateurs et état de confiance d'une paire mesurée (mesure m et image a au niveau analysé ; idA, idB, dir
+    // et points ne sont pas remplis). Tous les indicateurs mesurables sont calculés, puis la décision est prise :
+    // Rejete (NCC < nccMin, dispersion > dispersionMax, aucun point alors que la zone commune en permettait),
+    // Ambigu (auto-similarité >= autosimMax), sinon NonVerifie (sans point) ou Fiable.
+    // Ici, dispersion est en px du niveau analysé (comparée à dispersionMax) ; execute() la ramène en pleine résolution.
+    static ConfiancePaire controlerConfiance(const Matches& m, const cv::Mat& a, Direction dir, float overlap,
+                                             const matching::CorrelationPhase::Parametres& p, const ControleConfiance& c);
+
+    static const char* nomEtat(EtatConfiance e);   // "fiable", "non_verifie", "ambigu", "rejete"
+
+    // Une paire en JSON : { idA, idB, dir, etat, ncc, dispersion, autosim, points: [{ a, b, ncc }] }
+    // (indicateur absent : null ; valeurs arrondies au millième)
+    static Json versJson(const ConfiancePaire& c);
 };
 
 } // namespace stitching::steps

@@ -9,7 +9,7 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 | `name` | `"phase-correlation"` |
 | entrée | `{ "type": "Tiles", "key": "tiles" }` |
 | sortie | `{ "type": "PairMatches", "key": "matches" }` |
-| `exportData()` | `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `unverified` (`{idA, idB}`), `error` |
+| `exportData()` | `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error` |
 
 **Options** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de `CorrelationPhase` : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Une option absente du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
 
@@ -44,7 +44,27 @@ Chaque paire mesurée passe 3 contrôles. Une paire qui en échoue un est rejet�
 
 Sans point local, deux cas :
 - la zone commune est **assez grande** pour un patch, mais aucun point n'a été jugé fiable : la paire est **rejetée** (bruit) ;
-- elle est **trop petite** pour un patch (moins de `2·fenetre + 2·⌈ecartMax⌉ + 2` px), ou `nbPoints = 0` : la paire est **gardée** mais listée dans `unverified`.
+- elle est **trop petite** pour un patch (moins de `2·fenetre + 2·⌈ecartMax⌉ + 2` px), ou `nbPoints = 0` : la paire est **gardée** avec l'état `non_verifie`.
+
+### Indicateurs exportés
+
+Chaque paire, gardée ou rejetée, a une entrée `ConfiancePaire` dans `getOutput().confiance` et dans `exportData()["confidence"]` :
+
+```json
+{ "idA": 0, "idB": 1, "dir": "Right", "etat": "fiable",
+  "ncc": 0.999, "dispersion": 0.01, "autosim": 0.075,
+  "points": [ { "a": [863.0, 798.0], "b": [63.01, 798.0], "ncc": 1.0 }, ... ] }
+```
+
+| Champ | Contenu |
+|---|---|
+| `etat` | `fiable`, `non_verifie` (gardées) ; `ambigu`, `rejete` (rejetées, raison dans `failures`) |
+| `ncc` | Score de la paire : NCC médiane des points (0 à 1). `null` sans point |
+| `dispersion` | Écart médian (px pleine résolution) entre `a − b` et `(dx, dy)`. `null` sans point |
+| `autosim` | Auto-similarité de la bande de A (0 à 1). `null` si la bande est trop vide ou trop étroite |
+| `points` | Paires de points `a` (tuile A) ↔ `b` (tuile B), px pleine résolution, avec la NCC de chacune |
+
+Pour une paire que l'algorithme n'a pas pu mesurer, tous les indicateurs sont `null` et `points` est vide.
 
 ## Échecs
 

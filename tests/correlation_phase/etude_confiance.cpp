@@ -163,11 +163,9 @@ Resultat mesurer1(const std::string& famille, const std::string& cas, const Scen
     r.accepte = defaut.match(a, b, ctx, m);
     r.raison = defaut.raisonEchec();
     if (r.accepte) {
-        bool pointsVerifies;
-        const std::string rejet = steps::PhaseCorrelationStep::controlerConfiance(m, a, Direction::Bottom, RECOUVREMENT,
-                                                                                   {}, {}, pointsVerifies);
-        r.pipeline = rejet.empty();
-        if (!rejet.empty()) r.raison = rejet;
+        const auto v = steps::PhaseCorrelationStep::controlerConfiance(m, a, Direction::Bottom, RECOUVREMENT, {}, {});
+        r.pipeline = v.raison.empty();
+        if (!v.raison.empty()) r.raison = v.raison;
     }
 
     // Même mesure, seuil désactivé : ce que l'on obtiendrait en faisant confiance au pic

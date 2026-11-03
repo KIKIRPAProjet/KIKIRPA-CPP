@@ -98,7 +98,7 @@ Pour `autosim`, les seuils 0,6 et 0,8 donnent exactement les mêmes résultats :
 1. **Translation réelle hors de la marge + motif répété : indétectable.** Si le rail s'écarte du nominal de plus que la marge (ici 60 et 70 px pour ±50) et que le motif a une période un peu plus grande que l'écart, une copie tombe dans la marge. La mesure est fausse de 75 px avec rapport 19 à 60, NCC 0,99, dispersion 0,01 et `autosim` 0,30 : **tous les indicateurs disent « fiable »**. Le même écart sur une texture normale est bien rejeté (rapport 1,1). Ce cas ne se détecte qu'avec une information extérieure à la paire (§6).
 2. **`autosim` est prudente : elle rejette les motifs imparfaits.** Grille + 5 à 30 % de texture : la texture suffit à la corrélation de phase pour trouver la bonne copie (9 mesures justes sur 9), mais `autosim` reste à 0,99–1,00 et les signale comme ambiguës. Elle détecte la *présence* d'un motif répété, pas le fait que la mesure se soit trompée.
 3. **`autosim` ne voit que les périodes inférieures à la marge.** Une période > 50 px n'est pas cherchée (0,19 à 0,30). C'est voulu : seule une copie qui tombe dans la marge peut tromper la mesure. Mais c'est aussi pour cela que la limite 1 lui échappe.
-4. **NCC et dispersion demandent des points.** Sans point local (zone commune trop étroite, `nbPoints = 0`), ces deux contrôles ne peuvent pas être évalués. Le step garde alors la paire et la signale dans `unverified` : sur une petite bande, une mesure fausse sur fond sombre peut donc passer (§6).
+4. **NCC et dispersion demandent des points.** Sans point local (zone commune trop étroite, `nbPoints = 0`), ces deux contrôles ne peuvent pas être évalués. Le step garde alors la paire avec l'état `non_verifie` : sur une petite bande, une mesure fausse sur fond sombre peut donc passer (§6).
 5. **Seuils réglés sur ce banc.** Les données sont synthétiques (textures générées, bruit gaussien, motifs parfaits, direction `Bottom` seule). Les valeurs 0,3 (NCC), 0,5 px (dispersion) et 0,6 (`autosim`) sont à confirmer sur de vraies tuiles, en particulier des toiles visibles et des cadres.
 6. **Pistes écartées.**
    - Monter le seuil du rapport à 2 ou 3 : on passe de 20 à 12–14 faux acceptés, mais 6 à 9 mesures justes sont rejetées (contre 2), et le motif à 30 px (rapport 7,96) passe toujours.
@@ -108,7 +108,7 @@ Pour `autosim`, les seuils 0,6 et 0,8 donnent exactement les mêmes résultats :
 
 ## 6. Intégration dans le pipeline
 
-La règle est appliquée par `PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance), avec des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0.5) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Le format de `PairMatches` ne change pas.
+La règle est appliquée par `PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance), avec des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0.5) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Chaque paire a ses indicateurs (NCC, dispersion, auto-similarité, points et état) dans `exportData()["confidence"]`. Le format de `PairMatches` ne change pas.
 
 Le banc mesure la décision réelle du step (ligne `PIPELINE` de sa sortie) : **6 faux acceptés, comme la règle étudiée**.
 
@@ -117,7 +117,7 @@ Le banc mesure la décision réelle du step (ligne `PIPELINE` de sa sortie) : **
 | Avant (rapport ≥ 1,5) | 62 | 20 | 27 | 2 |
 | **PhaseCorrelationStep** | 45 | **6** | 41 | 19 |
 
-Une précision par rapport à l'étude : sans point local, la paire est rejetée seulement si la zone commune permettait d'en placer. Sinon, elle est gardée et signalée dans `unverified`. Rejeter toute paire sans point aurait fait échouer les petits recouvrements (bande plus étroite qu'un patch), et le test du pipeline.
+Une précision par rapport à l'étude : sans point local, la paire est rejetée seulement si la zone commune permettait d'en placer. Sinon, elle est gardée avec l'état `non_verifie`. Rejeter toute paire sans point aurait fait échouer les petits recouvrements (bande plus étroite qu'un patch), et le test du pipeline.
 
 **Suites possibles** (à décider avec l'équipe) :
 1. Exporter les indicateurs (`rapport`, `ncc`, `dispersion`, `autosim`) dans `PairMatches`, pour que le placement global pondère les paires au lieu d'un tri accepté / rejeté. Cela change le contrat commun.

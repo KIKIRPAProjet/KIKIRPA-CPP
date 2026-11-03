@@ -96,23 +96,67 @@ double PhaseCorrelationStep::autoSimilarite(const cv::Mat& a, Direction dir, flo
     return max;
 }
 
-std::string PhaseCorrelationStep::controlerConfiance(const Matches& m, const cv::Mat& a, Direction dir, float overlap,
-                                                     const matching::CorrelationPhase::Parametres& p,
-                                                     const ControleConfiance& c, bool& pointsVerifies) {
-    auto nombre = [](double v) {
+const char* PhaseCorrelationStep::nomEtat(EtatConfiance e) {
+    switch (e) {
+        case EtatConfiance::Fiable:     return "fiable";
+        case EtatConfiance::NonVerifie: return "non_verifie";
+        case EtatConfiance::Ambigu:     return "ambigu";
+        case EtatConfiance::Rejete:     return "rejete";
+    }
+    return "";
+}
+
+Json PhaseCorrelationStep::versJson(const ConfiancePaire& c) {
+    auto arrondi = [](double x) { return std::round(x * 1000) / 1000; };
+    auto valeur = [&](const std::optional<double>& x) { return x && std::isfinite(*x) ? Json(arrondi(*x)) : Json(); };
+    Json points = Json::array();
+    for (const PointConfiance& pt : c.points)
+        points.push_back({{"a", {arrondi(pt.a.x), arrondi(pt.a.y)}},
+                          {"b", {arrondi(pt.b.x), arrondi(pt.b.y)}},
+                          {"ncc", arrondi(pt.ncc)}});
+    return {{"idA", c.idA}, {"idB", c.idB}, {"dir", c.dir == Direction::Bottom ? "Bottom" : "Right"},
+            {"etat", nomEtat(c.etat)}, {"ncc", valeur(c.ncc)}, {"dispersion", valeur(c.dispersion)},
+            {"autosim", valeur(c.autosim)}, {"points", points}};
+}
+
+ConfiancePaire PhaseCorrelationStep::controlerConfiance(const Matches& m, const cv::Mat& a, Direction dir, float overlap,
+                                                        const matching::CorrelationPhase::Parametres& p,
+                                                        const ControleConfiance& c) {
+    auto nombre = [](double x) {
         char t[32];
-        std::snprintf(t, sizeof t, "%.2f", v);
+        std::snprintf(t, sizeof t, "%.2f", x);
         return std::string(t);
     };
-    auto mediane = [](std::vector<double> v) {
-        std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
-        return v[v.size() / 2];
+    auto mediane = [](std::vector<double> x) {
+        std::nth_element(x.begin(), x.begin() + x.size() / 2, x.end());
+        return x[x.size() / 2];
     };
 
-    // 1. Points locaux (fond sombre, bruit) : le pic peut être franc mais décalé, les patchs le révèlent.
-    pointsVerifies = !m.pointsA.empty();
+    // 1. Tous les indicateurs mesurables
+    ConfiancePaire r;
+    r.dir = dir;
+    const bool avecPoints = !m.pointsA.empty();
+    if (avecPoints) {
+        std::vector<double> ecarts;
+        for (size_t i = 0; i < m.pointsA.size(); ++i) {
+            const cv::Point2f d = m.pointsA[i] - m.pointsB[i] - cv::Point2f(m.dx, m.dy);
+            ecarts.push_back(std::hypot(d.x, d.y));
+        }
+        r.ncc = mediane(std::vector<double>(m.scores.begin(), m.scores.end()));
+        r.dispersion = mediane(ecarts);
+    }
+    const double autosim = autoSimilarite(a, dir, overlap, p.marge);
+    if (!std::isnan(autosim)) r.autosim = autosim;
+
+    // 2. Décision
+    auto rejet = [&r](EtatConfiance e, std::string raison) {
+        r.etat = e;
+        r.raison = std::move(raison);
+        return r;
+    };
+    // Points locaux (fond sombre, bruit) : le pic peut être franc mais décalé, les patchs le révèlent
     const bool controlePoints = c.nccMin > 0 || c.dispersionMax > 0;
-    if (!pointsVerifies && controlePoints && p.nbPoints > 0) {
+    if (!avecPoints && controlePoints && p.nbPoints > 0) {
         // Pas de point : soit la zone commune est trop petite pour un patch (rien à vérifier, la paire est gardée),
         // soit elle est assez grande mais aucun point n'a été jugé fiable (bruit, zone sans texture) : rejet.
         // Taille minimale : celle qu'exige Preparation::recouvrement pour chercher des points.
@@ -121,31 +165,25 @@ std::string PhaseCorrelationStep::controlerConfiance(const Matches& m, const cv:
         const int largeur = a.cols - static_cast<int>(std::lround(std::abs(m.dx)));
         const int hauteur = a.rows - static_cast<int>(std::lround(std::abs(m.dy)));
         if (largeur >= minimum && hauteur >= minimum)
-            return "confiance : aucun point local fiable alors que la zone commune (" + std::to_string(largeur) + " x " +
-                   std::to_string(hauteur) + " px) permet d'en placer : bruit ou zone sans texture, translation non vérifiable";
+            return rejet(EtatConfiance::Rejete, "confiance : aucun point local fiable alors que la zone commune (" +
+                         std::to_string(largeur) + " x " + std::to_string(hauteur) +
+                         " px) permet d'en placer : bruit ou zone sans texture, translation non vérifiable");
     }
-    if (pointsVerifies && controlePoints) {
-        std::vector<double> ncc(m.scores.begin(), m.scores.end()), ecarts;
-        for (size_t i = 0; i < m.pointsA.size(); ++i) {
-            const cv::Point2f d = m.pointsA[i] - m.pointsB[i] - cv::Point2f(m.dx, m.dy);
-            ecarts.push_back(std::hypot(d.x, d.y));
-        }
-        if (c.nccMin > 0 && mediane(ncc) < c.nccMin)
-            return "confiance : patchs locaux peu ressemblants (NCC médiane " + nombre(mediane(ncc)) + " < nccMin " +
-                   nombre(c.nccMin) + ") : fond sombre ou bruit, la translation peut être décalée de plusieurs px";
-        if (c.dispersionMax > 0 && mediane(ecarts) > c.dispersionMax)
-            return "confiance : points locaux en désaccord avec la translation (écart médian " + nombre(mediane(ecarts)) +
-                   " px > dispersionMax " + nombre(c.dispersionMax) + " px) : fond sombre ou bruit dans une partie de la bande";
-    }
-
-    // 2. Motif répété de période inférieure à la marge : plusieurs positions de B sont possibles
-    if (c.autosimMax < 1) {
-        const double autosim = autoSimilarite(a, dir, overlap, p.marge);
-        if (autosim >= c.autosimMax)
-            return "confiance : motif répété dans la bande de recouvrement (auto-similarité " + nombre(autosim) +
-                   " >= autosimMax " + nombre(c.autosimMax) + ") : mesure ambiguë, elle peut être fausse d'une période";
-    }
-    return {};
+    if (avecPoints && c.nccMin > 0 && *r.ncc < c.nccMin)
+        return rejet(EtatConfiance::Rejete, "confiance : patchs locaux peu ressemblants (NCC médiane " + nombre(*r.ncc) +
+                     " < nccMin " + nombre(c.nccMin) +
+                     ") : fond sombre ou bruit, la translation peut être décalée de plusieurs px");
+    if (avecPoints && c.dispersionMax > 0 && *r.dispersion > c.dispersionMax)
+        return rejet(EtatConfiance::Rejete, "confiance : points locaux en désaccord avec la translation (écart médian " +
+                     nombre(*r.dispersion) + " px > dispersionMax " + nombre(c.dispersionMax) +
+                     " px) : fond sombre ou bruit dans une partie de la bande");
+    // Motif répété de période inférieure à la marge : plusieurs positions de B sont possibles
+    if (c.autosimMax < 1 && r.autosim && *r.autosim >= c.autosimMax)
+        return rejet(EtatConfiance::Ambigu, "confiance : motif répété dans la bande de recouvrement (auto-similarité " +
+                     nombre(*r.autosim) + " >= autosimMax " + nombre(c.autosimMax) +
+                     ") : mesure ambiguë, elle peut être fausse d'une période");
+    r.etat = avecPoints ? EtatConfiance::Fiable : EtatConfiance::NonVerifie;
+    return r;
 }
 
 bool PhaseCorrelationStep::execute() {
@@ -205,7 +243,8 @@ bool PhaseCorrelationStep::execute() {
     }
 
     // Deux images en RAM au plus
-    Json failures = Json::array(), nonVerifiees = Json::array();
+    Json failures = Json::array(), confiance = Json::array();
+    const float echelle = static_cast<float>(1 << input.niveau);
     for (const auto& tuile : data->get<Tiles>("tiles")) {
         const std::pair<Tuile*, Direction> voisins[] = {{tuile->getRight(), Direction::Right},
                                                         {tuile->getBottom(), Direction::Bottom}};
@@ -220,27 +259,31 @@ bool PhaseCorrelationStep::execute() {
             }
 
             PairMatches pair{tuile->getId(), voisin->getId(), dir, {}};
-            std::string raison;
-            bool pointsVerifies = true;
-            if (!matcher->match(a, b, PairContext{dir, input.overlap}, pair.matches))
-                raison = matcher->raisonEchec();
-            else
-                raison = controlerConfiance(pair.matches, a, dir, input.overlap, input.parametres, input.confiance,
-                                            pointsVerifies);
-            if (raison.empty()) {
-                if (!pointsVerifies) nonVerifiees.push_back({{"idA", pair.idA}, {"idB", pair.idB}});
-                versPleineResolution(pair.matches, input.niveau);
-                output.pairs.push_back(std::move(pair));
+            ConfiancePaire c;
+            if (matcher->match(a, b, PairContext{dir, input.overlap}, pair.matches)) {
+                c = controlerConfiance(pair.matches, a, dir, input.overlap, input.parametres, input.confiance);
+                versPleineResolution(pair.matches, input.niveau);   // points et dispersion en pleine résolution
+                if (c.dispersion) *c.dispersion *= echelle;
+                for (size_t i = 0; i < pair.matches.pointsA.size(); ++i)
+                    c.points.push_back({pair.matches.pointsA[i], pair.matches.pointsB[i], pair.matches.scores[i]});
             } else {
-                failures.push_back({{"idA", pair.idA}, {"idB", pair.idB}, {"reason", raison}});
+                c.etat = EtatConfiance::Rejete;
+                c.raison = matcher->raisonEchec();
             }
+            c.idA = pair.idA;
+            c.idB = pair.idB;
+            c.dir = dir;
+            confiance.push_back(versJson(c));
+            if (c.raison.empty()) output.pairs.push_back(std::move(pair));
+            else failures.push_back({{"idA", pair.idA}, {"idB", pair.idB}, {"reason", c.raison}});
+            output.confiance.push_back(std::move(c));
         }
     }
 
     outputData["niveau"] = input.niveau;
     outputData["pairs"] = output.pairs.size();
     if (!failures.empty()) outputData["failures"] = failures;
-    if (!nonVerifiees.empty()) outputData["unverified"] = nonVerifiees;
+    outputData["confidence"] = confiance;
     if (output.pairs.empty()) {
         outputData["error"] = "no pair could be measured";
         return false;
