@@ -69,8 +69,8 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 
 | Je veux… | Fichier(s) |
 |---|---|
-| **Compiler le projet** (Windows ou Linux) | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires, via vcpkg sous Windows) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-msvc`) |
-| **Lancer les tests** | `ctest --preset windows-msvc` (ou `linux`) : 87 tests GoogleTest, tous `unit` |
+| **Compiler le projet** (Windows, Linux ou macOS) | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires ; sous Windows, Qt binaire via aqt, libtiff et GoogleTest via vcpkg) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-aqt`) |
+| **Lancer les tests** | `ctest --preset windows-aqt` (ou `linux`, `macos`) : 87 tests GoogleTest, tous `unit` |
 | **Lancer un pipeline** | depuis le code : `buildPipelineFromFile()` puis `run()`, voir [Pipeline.md](core/Pipeline.md#lancer-un-pipeline). Exemple qui tourne : `testerPipelineReel()` dans [test_pipeline.cpp](../tests/core/test_pipeline.cpp) |
 | **Comprendre le pipeline en une page** | [Pipeline.md](core/Pipeline.md) : format du script, contrôles, reprise, steps enregistrés, ajout d'un step |
 | Voir comment un script JSON devient un pipeline | [pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp) : `stepRegistry()`, `buildPipeline()` |
@@ -168,7 +168,7 @@ cmake/               un fichier par partie du build
 | [cmake/Frontend.cmake](../cmake/Frontend.cmake) | Cible `stitching_frontend` (Qt). |
 | [cmake/Tests.cmake](../cmake/Tests.cmake) | GoogleTest **obligatoire** (sauf `-DBUILD_TESTING=OFF`), un `add_subdirectory` par dossier de `tests/`. Liste des tests lue au lancement de `ctest` (sous Windows, les DLL d'OpenCV ne sont dans le PATH qu'à ce moment-là). |
 | [cmake/Install.cmake](../cmake/Install.cmake) | Installe `stitching` dans `bin/`. |
-| [CMakePresets.json](../CMakePresets.json) | Presets `windows-msvc` (vcpkg, variables `VCPKG_ROOT` et `OpenCV_DIR`) et `linux`. Build dans `build/<preset>/`. |
+| [CMakePresets.json](../CMakePresets.json) | Presets `windows-aqt` (Qt via aqt, libtiff et GoogleTest via vcpkg ; variables `KIKIRPA_VCPKG_ROOT`, `OpenCV_DIR` et `QT_ROOT`), `linux` et `macos` (Homebrew). Build dans `build/<preset>/`. |
 | [README.md](../README.md) | Présentation, build générique, renvoi vers [BUILD.md](BUILD.md) pour Windows. |
 | [.github/workflows/](../.github/workflows/) | `ci.yml` (chaque push et PR), `release.yml` (tag `v*`), `build-test.yml` (job commun Ubuntu, installe Qt et GoogleTest). |
 | [src/main.cpp](../src/main.cpp) | Réservé au frontend : **vide** (`TODO`). |
@@ -295,7 +295,7 @@ Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` 
 | [Egalisation.md](algorithms/egalisation/Egalisation.md) | Modèle, méthodes A et B, paramètres, vérification. |
 | [Pipeline.md](core/Pipeline.md) | Le pipeline : format du script, contrôles, exécution, reprise et checkpoints, steps enregistrés, ajout d'un step. |
 | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) | Contrat du step `phase-correlation` : paramètres, conventions d'axes et de signe, résolution réduite, échecs. |
-| [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg) et Linux. |
+| [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg + Qt via aqt), macOS (Homebrew) et Linux. |
 | [CONVENTIONS.md](CONVENTIONS.md) 🆕 | Règles de code (noms, mise en forme, includes, erreurs, classes et fonctions, tests), principes de code propre, Git et pull requests. |
 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) 🆕 | Ce que la réorganisation de `core/` et `steps/` a renommé, et comment adapter une branche. |
 | cette carte | Se repérer dans le code. |
@@ -378,7 +378,7 @@ L'**égalisation** suit exactement le même schéma (Egalisation → Preparation
 | Les tuiles sont en RGB | OpenCV donne du **BGR**. seamlib attend du **RGB**. |
 | Le TIFF pyramidal est la sortie du pipeline | C'est un cache d'import, par tuile. Il n'y a pas encore d'export. |
 | Il existe un exemple de la chaîne complète (import → couture → mosaïque) | Plus sur `main` : `test_chaine_paire` a été supprimé avec les tests d'intégration (#43). Il reste dans l'historique : `git show c383a38:tests/algorithms/integration/test_chaine_paire.cpp`. |
-| Qt est facultatif | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, les installer avec vcpkg ([BUILD.md](BUILD.md)). |
+| Qt est facultatif | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, Qt s'installe avec aqt et GoogleTest avec vcpkg ([BUILD.md](BUILD.md)). |
 | Tout le code suit déjà les conventions | Non 🆕 : seuls `core/`, `steps/` et `frontend/` ont été migrés. Les algorithmes gardent leurs noms français, leurs namespaces (`stitching::…`, `seamlib`, `Seamline`) et passent par `algorithms/legacy_type_aliases.h` (temporaire). Les tests gardent aussi des noms français. |
 | `docs/` couvre tous les algorithmes | Seulement la corrélation de phase, le recouvrement et l'égalisation, plus le pipeline, le step `phase-correlation` et le build. |
 
