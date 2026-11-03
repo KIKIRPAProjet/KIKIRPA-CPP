@@ -36,12 +36,24 @@
         "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+	},
+	{
+      "name": "linux-clang-tidy",
+      "displayName": "Linux (clang-tidy)",
+      "description": "Linux build with Clang and clang-tidy checks enabled. Install both before configuring.",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "ENABLE_CLANG_TIDY": "ON"
+      }
     }
   ],
   "buildPresets": [
     { "name": "windows-msvc", "configurePreset": "windows-msvc" },
     { "name": "linux", "configurePreset": "linux" },
-    { "name": "macos", "configurePreset": "macos" }
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "linux-clang-tidy", "configurePreset": "linux-clang-tidy" }
   ],
   "testPresets": [
     {
