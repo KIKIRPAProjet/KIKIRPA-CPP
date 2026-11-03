@@ -296,7 +296,7 @@ Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` 
 | [Pipeline.md](core/Pipeline.md) | Le pipeline : format du script, contrôles, exécution, reprise et checkpoints, steps enregistrés, ajout d'un step. |
 | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) | Contrat du step `phase-correlation` : paramètres, conventions d'axes et de signe, résolution réduite, échecs. |
 | [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg) et Linux. |
-| [CONVENTIONS.md](CONVENTIONS.md) 🆕 | Règles de nommage et de mise en forme du code. |
+| [CONVENTIONS.md](CONVENTIONS.md) 🆕 | Règles de code (noms, mise en forme, includes, erreurs, classes et fonctions, tests), principes de code propre, Git et pull requests. |
 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) 🆕 | Ce que la réorganisation de `core/` et `steps/` a renommé, et comment adapter une branche. |
 | cette carte | Se repérer dans le code. |
 
