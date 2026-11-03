@@ -79,41 +79,41 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 
 ## 2. Où aller pour…
 
-| Je veux…                                                                    | Fichier(s)                                                                                                                                                                                                                                |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Compiler le projet** (Windows, Linux ou macOS)                            | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires ; sous Windows, Qt binaire via aqt, libtiff et GoogleTest via vcpkg) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-aqt`)                                     |
-| **Lancer les tests**                                                        | `ctest --preset windows-aqt` (ou `linux`, `macos`) : 87 tests GoogleTest, tous `unit`                                                                                                                                                     |
-| **Lancer un pipeline**                                                      | depuis le code : `buildPipelineFromFile()` puis `run()`, voir [Pipeline.md](core/Pipeline.md#lancer-un-pipeline). Exemple qui tourne : `testerPipelineReel()` dans [test_pipeline.cpp](../tests/core/test_pipeline.cpp)                   |
-| **Comprendre le pipeline en une page**                                      | [Pipeline.md](core/Pipeline.md) : format du script, contrôles, reprise, steps enregistrés, ajout d'un step                                                                                                                                |
-| Voir comment un script JSON devient un pipeline                             | [pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp) : `stepRegistry()`, `buildPipeline()`                                                                                                                           |
-| **Ajouter un step au pipeline**                                             | une ligne dans `stepRegistry()` ([pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp)) ; marche à suivre dans [Pipeline.md](core/Pipeline.md#ajouter-un-step)                                                        |
-| **Comprendre comment le pipeline exécute les étapes**                       | [pipeline.h](../include/backend/core/pipeline/pipeline.h) → [pipeline.cpp](../src/backend/core/pipeline/pipeline.cpp) (`run()`, avec la reprise)                                                                                          |
-| Voir comment un paramètre du JSON est validé et appliqué                    | [step.cpp](../src/backend/core/step/step.cpp) : `importConfig()`                                                                                                                                                                          |
-| Reprendre un pipeline après un échec ou une pause                           | [run_state.h](../include/backend/core/pipeline/run_state.h) (champ `"run"`), [pipeline.cpp](../src/backend/core/pipeline/pipeline.cpp) (`resolveStart`, `run`)                                                                            |
-| Voir ce qui est sauvegardé dans un checkpoint                               | [checkpoint.cpp](../src/backend/core/checkpoint/checkpoint.cpp) (manifest, validité) + [checkpoint_types.cpp](../src/backend/core/checkpoint/checkpoint_types.cpp) (un sérialiseur par type)                                              |
-| Voir ce qu'une étape doit implémenter                                       | [step.h](../include/backend/core/step/step.h) (`execute()`, `getParameter()`, `result`, `externalInputsFingerprint()`) 🆕                                                                                                                 |
-| Voir comment les données passent d'une étape à l'autre                      | [data_store.h](../include/backend/core/step/data_store.h) (`add` / `replace` / `get<T>("clé")`) 🆕                                                                                                                                        |
-| Voir le format du script JSON du pipeline                                   | [pipeline_config.h](../include/backend/core/config/pipeline_config.h)                                                                                                                                                                     |
-| **Voir tous les types partagés** (paires, matches, positions, territoires…) | [algorithm_types.h](../include/backend/core/data/algorithm_types.h) ← le fichier le plus important à connaître                                                                                                                            |
-| Voir comment une tuile est représentée                                      | [tile.h](../include/backend/core/data/tile.h) (fiche sans pixels, pyramide, voisins)                                                                                                                                                      |
-| Voir comment les images sont chargées                                       | [import_step.cpp](../src/backend/steps/import_step.cpp)                                                                                                                                                                                   |
-| Voir le cache TIFF pyramidal créé à l'import                                | [PyramidalTiff.md](core/PyramidalTiff.md), [pyramidal_tiff_writer.cpp](../src/backend/core/io/pyramidal_tiff_writer.cpp) et [pyramidal_tiff_reader.cpp](../src/backend/core/io/pyramidal_tiff_reader.cpp)                                 |
-| **Écrire un nouveau step** : modèle à copier                                | [phase_correlation_step.h](../include/backend/steps/phase_correlation_step.h) / [.cpp](../src/backend/steps/phase_correlation_step.cpp) et sa doc [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) (contrat, conventions, échecs) |
-| Mesurer le décalage entre deux tuiles (corrélation de phase)                | [CorrelationPhase.h](../include/backend/algorithms/stitching/correlation_phase/CorrelationPhase.h) + sa [doc](algorithms/stitching/correlation_phase/CorrelationPhase.md)                                                                 |
-| Estimer le recouvrement réel d'une paire (1re passe)                        | [EstimationRecouvrement.h](../include/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h) + sa [doc](algorithms/stitching/recouvrement/EstimationRecouvrement.md)                                                         |
-| Voir l'appariement SIFT                                                     | [SiftMatcherAlgorithm.cpp](../src/backend/algorithms/stitching/sift/SiftMatcherAlgorithm.cpp) (le calcul) ; [SiftMatcher.cpp](../src/backend/algorithms/stitching/sift/SiftMatcher.cpp) (l'emballage)                                     |
-| Voir l'appariement LightGlue (ONNX)                                         | [LightGlueMatcher.cpp](../src/backend/algorithms/stitching/lightglue/LightGlueMatcher.cpp)                                                                                                                                                |
-| Voir le rejet des mauvais points (RANSAC, vote de Hough)                    | [RansacRejector.cpp](../src/backend/algorithms/rejection/ransac/RansacRejector.cpp) (contient aussi `VoteRejector`)                                                                                                                       |
-| **Voir l'alignement global** (moindres carrés)                              | [TilePositioner.cpp](../src/backend/algorithms/stitching/positioning/TilePositioner.cpp) → `solvePositions()` (l. 48)                                                                                                                     |
-| **Égaliser la luminosité entre tuiles**                                     | [Egalisation.h](../include/backend/algorithms/egalisation/Egalisation.h) + sa [doc](algorithms/egalisation/Egalisation.md)                                                                                                                |
-| Voir le calcul des coutures, méthode DP/Dijkstra                            | [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) (point d'entrée) puis [solver.hpp](../include/backend/algorithms/seamline/dp_dijkstra/solver.hpp)                                                   |
-| Voir le calcul des coutures, méthode GraphCut                               | [GraphCutSeamFinder.cpp](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) (commenté ligne à ligne) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp)                                                     |
-| Voir un vrai pipeline tourner depuis un script JSON                         | [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()`                                                                                                     |
-| Générer le JSON du pipeline depuis la GUI                                   | [PipelineJson.h](../include/frontend/PipelineJson.h)                                                                                                                                                                                      |
-| Voir comment le projet est compilé                                          | [CMakeLists.txt](../CMakeLists.txt) + [cmake/](../cmake/) (`Dependencies`, `Backend`, `Frontend`, `Tests`, `Install`)                                                                                                                     |
-| **Nommer un fichier, une classe, une variable** 🆕                          | [CONVENTIONS.md](CONVENTIONS.md)                                                                                                                                                                                                          |
-| Adapter une branche écrite avant la réorganisation 🆕                       | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§10)                                                                                                                                                                          |
-| Voir ce que fait la CI                                                      | [build-test.yml](../.github/workflows/build-test.yml) (appelé par `ci.yml` et `release.yml`)                                                                                                                                              |
+| Je veux… | Fichier(s) |
+|---|---|
+| **Compiler le projet** (Windows, Linux ou macOS) | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires ; sous Windows, Qt binaire via aqt, libtiff et GoogleTest via vcpkg) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-aqt`) |
+| **Lancer les tests** | `ctest --preset windows-aqt` (ou `linux`, `macos`) : 87 tests GoogleTest, tous `unit` |
+| **Lancer un pipeline** | depuis le code : `buildPipelineFromFile()` puis `run()`, voir [Pipeline.md](core/Pipeline.md#lancer-un-pipeline). Exemple qui tourne : `testerPipelineReel()` dans [test_pipeline.cpp](../tests/core/test_pipeline.cpp) |
+| **Comprendre le pipeline en une page** | [Pipeline.md](core/Pipeline.md) : format du script, contrôles, reprise, steps enregistrés, ajout d'un step |
+| Voir comment un script JSON devient un pipeline | [pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp) : `stepRegistry()`, `buildPipeline()` |
+| **Ajouter un step au pipeline** | une ligne dans `stepRegistry()` ([pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp)) ; marche à suivre dans [Pipeline.md](core/Pipeline.md#ajouter-un-step) |
+| **Comprendre comment le pipeline exécute les étapes** | [pipeline.h](../include/backend/core/pipeline/pipeline.h) → [pipeline.cpp](../src/backend/core/pipeline/pipeline.cpp) (`run()`, avec la reprise) |
+| Voir comment un paramètre du JSON est validé et appliqué | [step.cpp](../src/backend/core/step/step.cpp) : `importConfig()` |
+| Reprendre un pipeline après un échec ou une pause | [run_state.h](../include/backend/core/pipeline/run_state.h) (champ `"run"`), [pipeline.cpp](../src/backend/core/pipeline/pipeline.cpp) (`resolveStart`, `run`) |
+| Voir ce qui est sauvegardé dans un checkpoint | [checkpoint.cpp](../src/backend/core/checkpoint/checkpoint.cpp) (manifest, validité) + [checkpoint_types.cpp](../src/backend/core/checkpoint/checkpoint_types.cpp) (un sérialiseur par type) |
+| Voir ce qu'une étape doit implémenter | [step.h](../include/backend/core/step/step.h) (`execute()`, `getParameter()`, `result`, `externalInputsFingerprint()`) 🆕 |
+| Voir comment les données passent d'une étape à l'autre | [data_store.h](../include/backend/core/step/data_store.h) (`add` / `replace` / `get<T>("clé")`) 🆕 |
+| Voir le format du script JSON du pipeline | [pipeline_config.h](../include/backend/core/config/pipeline_config.h) |
+| **Voir tous les types partagés** (paires, matches, positions, territoires…) | [algorithm_types.h](../include/backend/core/data/algorithm_types.h) ← le fichier le plus important à connaître |
+| Voir comment une tuile est représentée | [tile.h](../include/backend/core/data/tile.h) (fiche sans pixels, pyramide, voisins) |
+| Voir comment les images sont chargées | [import_step.cpp](../src/backend/steps/import_step.cpp) |
+| Voir le cache TIFF pyramidal créé à l'import | [PyramidalTiff.md](core/PyramidalTiff.md), [pyramidal_tiff_writer.cpp](../src/backend/core/io/pyramidal_tiff_writer.cpp) et [pyramidal_tiff_reader.cpp](../src/backend/core/io/pyramidal_tiff_reader.cpp) |
+| **Écrire un nouveau step** : modèle à copier | [phase_correlation_step.h](../include/backend/steps/phase_correlation_step.h) / [.cpp](../src/backend/steps/phase_correlation_step.cpp) et sa doc [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) (contrat, conventions, échecs) |
+| Mesurer le décalage entre deux tuiles (corrélation de phase) | [CorrelationPhase.h](../include/backend/algorithms/stitching/correlation_phase/CorrelationPhase.h) + sa [doc](algorithms/stitching/correlation_phase/CorrelationPhase.md) |
+| Estimer le recouvrement réel d'une paire (1re passe) | [EstimationRecouvrement.h](../include/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h) + sa [doc](algorithms/stitching/recouvrement/EstimationRecouvrement.md) |
+| Voir l'appariement SIFT | [SiftMatcherAlgorithm.cpp](../src/backend/algorithms/stitching/sift/SiftMatcherAlgorithm.cpp) (le calcul) ; [SiftMatcher.cpp](../src/backend/algorithms/stitching/sift/SiftMatcher.cpp) (l'emballage) |
+| Voir l'appariement LightGlue (ONNX) | [LightGlueMatcher.cpp](../src/backend/algorithms/stitching/lightglue/LightGlueMatcher.cpp) |
+| Voir le rejet des mauvais points (RANSAC, vote de Hough) | [RansacRejector.cpp](../src/backend/algorithms/rejection/ransac/RansacRejector.cpp) (contient aussi `VoteRejector`) |
+| **Voir l'alignement global** (moindres carrés) | [TilePositioner.cpp](../src/backend/algorithms/stitching/positioning/TilePositioner.cpp) → `solvePositions()` (l. 48) |
+| **Égaliser la luminosité entre tuiles** | [Egalisation.h](../include/backend/algorithms/egalisation/Egalisation.h) + sa [doc](algorithms/egalisation/Egalisation.md) |
+| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) (point d'entrée) puis [solver.hpp](../include/backend/algorithms/seamline/dp_dijkstra/solver.hpp) |
+| Voir le calcul des coutures, méthode GraphCut | [GraphCutSeamFinder.cpp](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) (commenté ligne à ligne) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) |
+| Voir un vrai pipeline tourner depuis un script JSON | [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()` |
+| Générer le JSON du pipeline depuis la GUI | [PipelineJson.h](../include/frontend/PipelineJson.h) |
+| Voir comment le projet est compilé | [CMakeLists.txt](../CMakeLists.txt) + [cmake/](../cmake/) (`clang_tidy`, `dependencies_manager`, `backend`, `frontend`, `tests_runner`, `install`) |
+| **Nommer un fichier, une classe, une variable** 🆕 | [CONVENTIONS.md](CONVENTIONS.md) |
+| Adapter une branche écrite avant la réorganisation 🆕 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§10) |
+| Voir ce que fait la CI | [build-test.yml](../.github/workflows/build-test.yml) (appelé par `ci.yml` et `release.yml`) |
 
 ---
 
@@ -164,7 +164,7 @@ cmake/               un fichier par partie du build
 | `algorithms/seamline/dp_dijkstra/`  | **`seamlib`** (fichiers en `.hpp`, style `snake_case`)              |
 | `algorithms/seamline/graphcut/`     | **`Seamline`**                                                      |
 
-**Le build compile tout seul tout ce qui est dans `src/backend/`.** Il le fait par `GLOB_RECURSE` ([cmake/Backend.cmake](../cmake/Backend.cmake)), sans liste de fichiers. Un `.cpp` posé ailleurs, par exemple dans `include/`, n'est **pas** compilé. Seule exception : les sources LightGlue sont retirées si ONNX Runtime ou le module `dnn` d'OpenCV manquent.
+**Le build compile tout seul tout ce qui est dans `src/backend/`.** Il le fait par `GLOB_RECURSE` ([cmake/backend.cmake](../cmake/backend.cmake)), sans liste de fichiers. Un `.cpp` posé ailleurs, par exemple dans `include/`, n'est **pas** compilé. Seule exception : les sources LightGlue sont retirées si ONNX Runtime ou le module `dnn` d'OpenCV manquent.
 
 ---
 
@@ -172,18 +172,19 @@ cmake/               un fichier par partie du build
 
 ### Racine et build
 
-| Fichier                                                 | Rôle                                                                                                                                                                                                                         |
-| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [CMakeLists.txt](../CMakeLists.txt)                     | Inclut les fichiers de `cmake/` et déclare la cible `stitching` (vide).                                                                                                                                                      |
-| [cmake/Dependencies.cmake](../cmake/Dependencies.cmake) | OpenCV, libtiff et **Qt 6 obligatoires** ; nlohmann_json téléchargé s'il manque.                                                                                                                                             |
-| [cmake/Backend.cmake](../cmake/Backend.cmake)           | Cible `stitching_backend` (lib statique de tout `src/backend`), détection d'ONNX Runtime (LightGlue facultatif), option `/utf-8` pour MSVC.                                                                                  |
-| [cmake/Frontend.cmake](../cmake/Frontend.cmake)         | Cible `stitching_frontend` (Qt).                                                                                                                                                                                             |
-| [cmake/Tests.cmake](../cmake/Tests.cmake)               | GoogleTest **obligatoire** (sauf `-DBUILD_TESTING=OFF`), un `add_subdirectory` par dossier de `tests/`. Liste des tests lue au lancement de `ctest` (sous Windows, les DLL d'OpenCV ne sont dans le PATH qu'à ce moment-là). |
-| [cmake/Install.cmake](../cmake/Install.cmake)           | Installe `stitching` dans `bin/`.                                                                                                                                                                                            |
-| [CMakePresets.json](../CMakePresets.json)               | Presets `windows-aqt` (Qt via aqt, libtiff et GoogleTest via vcpkg ; variables `KIKIRPA_VCPKG_ROOT`, `OpenCV_DIR` et `QT_ROOT`), `linux` et `macos` (Homebrew). Build dans `build/<preset>/`.                                |
-| [README.md](../README.md)                               | Présentation, build générique, renvoi vers [BUILD.md](BUILD.md) pour Windows.                                                                                                                                                |
-| [.github/workflows/](../.github/workflows/)             | `ci.yml` (chaque push et PR), `release.yml` (tag `v*`), `build-test.yml` (job commun Ubuntu, installe Qt et GoogleTest).                                                                                                     |
-| [src/main.cpp](../src/main.cpp)                         | Réservé au frontend : **vide** (`TODO`).                                                                                                                                                                                     |
+| Fichier | Rôle |
+|---|---|
+| [CMakeLists.txt](../CMakeLists.txt) | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (vide, nom provisoire). |
+| [cmake/clang_tidy.cmake](../cmake/clang_tidy.cmake) | Option `ENABLE_CLANG_TIDY` (désactivée par défaut) : passe chaque fichier dans clang-tidy à la compilation. Règles dans [.clang-tidy](../.clang-tidy). |
+| [cmake/dependencies_manager.cmake](../cmake/dependencies_manager.cmake) | OpenCV, libtiff et **Qt 6 obligatoires** ; nlohmann_json téléchargé s'il manque. |
+| [cmake/backend.cmake](../cmake/backend.cmake) | Cible `kikirpa_backend` (lib statique de tout `src/backend`), détection d'ONNX Runtime (LightGlue facultatif), option `/utf-8` pour MSVC. |
+| [cmake/frontend.cmake](../cmake/frontend.cmake) | Cible `kikirpa_frontend` (Qt). |
+| [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) | GoogleTest **obligatoire** (sauf `-DBUILD_TESTING=OFF`), un `add_subdirectory` par dossier de `tests/`. Liste des tests lue au lancement de `ctest` (sous Windows, les DLL d'OpenCV ne sont dans le PATH qu'à ce moment-là). |
+| [cmake/install.cmake](../cmake/install.cmake) | Installe `stitching` dans `bin/`. |
+| [CMakePresets.json](../CMakePresets.json) | Presets `windows-aqt` (Qt via aqt, libtiff et GoogleTest via vcpkg ; variables `KIKIRPA_VCPKG_ROOT`, `OpenCV_DIR` et `QT_ROOT`), `linux`, `macos` (Homebrew) et `linux-clang-tidy`. Build dans `build/<preset>/`. |
+| [README.md](../README.md) | Présentation, build générique, renvoi vers [BUILD.md](BUILD.md) pour Windows. |
+| [.github/workflows/](../.github/workflows/) | `ci.yml` (build et tests à chaque push et PR, plus clang-tidy sur les fichiers C++ modifiés d'une PR), `release.yml` (tag `v*`), `build-test.yml` (job commun Ubuntu, installe Qt et GoogleTest). |
+| [src/main.cpp](../src/main.cpp) | Réservé au frontend : **vide** (`TODO`). |
 
 ### `core/` : le moteur
 
@@ -298,7 +299,7 @@ Tous en GoogleTest, avec le label `unit`, et lancés par `ctest`. Il n'y a plus 
 | [egalisation/](../tests/egalisation/)             | `Egalisation.*` (3)                      | 6 tuiles générées avec gains et champ connus, gris et couleur, 8 et 16 bits ; cas limites.                                                                                                                                                                                                                                         |
 | [seamline/](../tests/seamline/)                   | 71 tests                                 | seamlib : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook.                                                                                                                                                                                                                                     |
 
-Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/egalisation/CMakeLists.txt](../tests/egalisation/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/Tests.cmake](../cmake/Tests.cmake).
+Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/egalisation/CMakeLists.txt](../tests/egalisation/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) ; l'exécutable de test se lie à `kikirpa_backend`.
 
 ### `docs/`
 

@@ -53,9 +53,6 @@ jobs:
         run: |
           mkdir -p release
           cp build/stitching release/
-          if [ -x build/stitching_frontend ]; then
-            cp build/stitching_frontend release/
-          fi
           tar -C release -czf "stitching-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" .
 
       - name: Upload release archive
