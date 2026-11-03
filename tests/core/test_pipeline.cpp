@@ -5,12 +5,21 @@
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
+#include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
-#include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/step/step.h"
+#include "core/pipeline/run_state.h"
 #include "steps/import_step.h"
 #include <gtest/gtest.h>
+#include <nlohmann/json_fwd.hpp>
+#include <memory>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
@@ -18,10 +27,20 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
-namespace stitching::tests {
+namespace StitchingNs::TestsNs {
+
+constexpr double FRACTIONAL_POINT_COUNT = 2.5;
+constexpr int PHASE_PARAMETER_COUNT = 12;
+constexpr int TEXTURE_SEED = 12345;
+constexpr double PIXEL_MINIMUM = 2000.0;
+constexpr double PIXEL_MAXIMUM = 60000.0;
+constexpr int PATCH_SIZE = 10;
+constexpr int MODIFIED_PIXEL = 1000;
 
 using Json = nlohmann::json;
 
@@ -59,21 +78,40 @@ Json script(const std::vector<Json>& etapes) {
 }
 
 // Step de test qui lève une exception à l'exécution
-class StepQuiLeve : public StepNs::StepClass {
+class StepQuiLeveClass : public StepNs::StepClass {
 public:
-    StepQuiLeve() : StepNs::StepClass(Json{{"name", "leve"}, {"parameters", Json::array()}}) {}
+    StepQuiLeveClass() : StepNs::StepClass(Json{{"name", "leve"}, {"parameters", Json::array()}}) {}
     bool execute() override { throw std::runtime_error("boum"); }
 };
 
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == 3, "3 steps enregistrés");
+    verifier(noms.size() == 4, "4 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
     }
     verifier(leveInvalidArgument([] { PipelineNs::createStep("inconnu"); }, "unknown step 'inconnu'"), "step inconnu refusé");
+}
+
+void testerDefaults() {
+    std::cout << "Fusion des options\n";
+    const PipelineNs::PipelineClass p = PipelineNs::buildPipeline(script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", "ailleurs/"}}}),
+                                             etape("phase-correlation", {{{"valueType", "float"}, {"name", "overlap"}, {"value", 0}}})}));
+    const Json& importCfg = p.getSteps()[0]->getConfigJson();
+    std::string path, format;
+    for (const Json& o : importCfg.at("parameters")) {
+        if (o.at("name") == "path") path = o.at("value").get<std::string>();
+        if (o.at("name") == "format") format = o.at("value").get<std::string>();
+    }
+    verifier(path == "ailleurs/", "option fournie : valeur remplacée");
+    verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 12 options");
+
+    std::cout << "Aller-retour exportConfig -> buildPipeline\n";
+    const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());
+    verifier(copie.exportConfig() == p.exportConfig(), "même script après relecture");
 }
 
 void testerValidation() {
@@ -89,7 +127,7 @@ void testerValidation() {
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import", {{{"valueType", "int"}, {"name", "path"}, {"value", 3}}})})); },
                                  "has type 'string', got 'int'"),
              "type d'option différent du type déclaré");
-    verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("phase-correlation", {{{"valueType", "int"}, {"name", "nbPoints"}, {"value", 2.5}}})})); },
+    verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("phase-correlation", {{{"valueType", "int"}, {"name", "nbPoints"}, {"value", FRACTIONAL_POINT_COUNT}}})})); },
                                  "expects a value of type 'int'"),
              "valeur réelle pour une option entière");
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", "a"}}, {{"valueType", "string"}, {"name", "path"}, {"value", "b"}}})})); },
@@ -102,28 +140,13 @@ void testerValidation() {
                                  "input 'positions' is not produced"),
              "graphcut sans step qui produit les positions");
 
-    std::cout << "Fusion des options\n";
-    const PipelineNs::PipelineClass p = PipelineNs::buildPipeline(script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", "ailleurs/"}}}),
-                                             etape("phase-correlation", {{{"valueType", "float"}, {"name", "overlap"}, {"value", 0}}})}));
-    const Json& importCfg = p.getSteps()[0]->getConfigJson();
-    std::string path, format;
-    for (const Json& o : importCfg.at("parameters")) {
-        if (o.at("name") == "path") path = o.at("value").get<std::string>();
-        if (o.at("name") == "format") format = o.at("value").get<std::string>();
-    }
-    verifier(path == "ailleurs/", "option fournie : valeur remplacée");
-    verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == 12, "phase-correlation garde ses 12 options");
-
-    std::cout << "Aller-retour exportConfig -> buildPipeline\n";
-    const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());
-    verifier(copie.exportConfig() == p.exportConfig(), "même script après relecture");
+    testerDefaults();
 }
 
 void testerExceptionDansUnStep() {
     std::cout << "Step qui lève une exception\n";
     PipelineNs::PipelineClass p;
-    p.addStep(std::make_unique<StepQuiLeve>());
+    p.addStep(std::make_unique<StepQuiLeveClass>());
     std::string message;
     const bool ok = p.run([&](const std::string& m) { message = m; });
     verifier(!ok, "run() renvoie false");
@@ -136,10 +159,10 @@ void creerTuiles(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     cv::Mat source(HAUTEUR_TUILE, DECALAGE_B + LARGEUR_TUILE, CV_32F);
-    cv::RNG rng(12345);
+    cv::RNG rng(TEXTURE_SEED);
     rng.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
     cv::GaussianBlur(source, source, cv::Size(), SIGMA_TEXTURE);
-    cv::normalize(source, source, 2000.0, 60000.0, cv::NORM_MINMAX);
+    cv::normalize(source, source, PIXEL_MINIMUM, PIXEL_MAXIMUM, cv::NORM_MINMAX);
     cv::Mat source16;
     source.convertTo(source16, CV_16U);
     cv::imwrite((dossier / "img_C00_R00.tif").string(), source16(cv::Rect(0, 0, LARGEUR_TUILE, HAUTEUR_TUILE)));
@@ -180,6 +203,20 @@ void testerPipelineReel() {
     fs::remove_all(dossier);
 }
 
+void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float dx1) {
+    const auto log = [&](const std::string& message) { journal += message + "\n"; };
+    journal.clear();
+    verifier(p.run(log), "run 2 réussi");
+    verifier(journal.find("nothing to do") != std::string::npos, "run 2 : aucun step refait");
+    const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
+    verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get() && tuiles[1]->getLeft() == tuiles[0].get(),
+             "tuiles et voisins restaurés");
+    const auto& paires = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    verifier(paires.size() == 1 && paires[0].featureMatches.translationX == dx1 && paires[0].direction == DataNs::Direction::Right,
+             "matches restaurés à l'identique");
+
+}
+
 void testerRepriseReelle() {
     std::cout << "Reprise du pipeline réel sur checkpoints\n";
     const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
@@ -197,20 +234,12 @@ void testerRepriseReelle() {
              "sorties des deux steps écrites");
     const float dx1 = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches").at(0).featureMatches.translationX;
 
-    journal.clear();
-    verifier(p.run(log), "run 2 réussi");
-    verifier(journal.find("nothing to do") != std::string::npos, "run 2 : aucun step refait");
-    const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
-    verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get() && tuiles[1]->getLeft() == tuiles[0].get(),
-             "tuiles et voisins restaurés");
-    const auto& paires = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
-    verifier(paires.size() == 1 && paires[0].featureMatches.translationX == dx1 && paires[0].direction == DataNs::Direction::Right,
-             "matches restaurés à l'identique");
+    verifierReprise(p, journal, dx1);
 
     // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
     {
         cv::Mat a = cv::imread((dossier / "img_C00_R00.tif").string(), cv::IMREAD_UNCHANGED);
-        a(cv::Rect(0, 0, 10, 10)).setTo(cv::Scalar(1000));
+        a(cv::Rect(0, 0, PATCH_SIZE, PATCH_SIZE)).setTo(cv::Scalar(MODIFIED_PIXEL));
         cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
     }
     journal.clear();

@@ -1,0 +1,4 @@
+add_executable(test_absolute_pos_step test_absolute_pos_step.cpp)
+target_link_libraries(test_absolute_pos_step PRIVATE kikirpa_backend GTest::gtest_main)
+include(GoogleTest)
+gtest_discover_tests(test_absolute_pos_step PROPERTIES LABELS "unit")

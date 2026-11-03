@@ -2,12 +2,20 @@
 #include "core/pipeline/pipeline_builder.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/step/step.h"
+#include "core/pipeline/pipeline.h"
+#include "core/pipeline/run_state.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
+#include "steps/absolute_pos_step.h"
 #include "steps/phase_correlation_step.h"
 
+#include <cstddef>
+#include <exception>
+#include <filesystem>
 #include <fstream>
 #include <functional>
+#include <ios>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -24,6 +32,7 @@ namespace PipelineNs {
         // Registre des steps : une ligne par step. Le nom doit être celui que le step écrit dans sa config (stepConfig.name).
         const std::map<std::string, StepCreator>& stepRegistry() {
             static const std::map<std::string, StepCreator> registry = {
+                {"absolute-pos", [] { return std::make_unique<StepsNs::AbsolutePosStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
@@ -46,11 +55,24 @@ namespace PipelineNs {
             for (const ConfigNs::DataSlot& inputSlot : stepConfig.inputs) {
                 const auto producedEntry = producedDataTypeByKey.find(inputSlot.key);
                 if (producedEntry == producedDataTypeByKey.end())
-                    throw std::invalid_argument(stepPath + " ('" + stepName + "'): input '" + inputSlot.key +
-                                                "' is not produced by a previous step");
+                    throw std::invalid_argument(std::string(stepPath).append(" ('").append(stepName).append("'): input '")
+                                                .append(inputSlot.key).append("' is not produced by a previous step"));
                 if (producedEntry->second != inputSlot.dataType)
-                    throw std::invalid_argument(stepPath + " ('" + stepName + "'): input '" + inputSlot.key + "' expects type '" +
-                                                inputSlot.dataType + "', got '" + producedEntry->second + "'");
+                    throw std::invalid_argument(std::string(stepPath).append(" ('").append(stepName).append("'): input '")
+                                                .append(inputSlot.key).append("' expects type '").append(inputSlot.dataType)
+                                                .append("', got '").append(producedEntry->second).append("'"));
+            }
+        }
+
+        std::unique_ptr<StepNs::StepClass> createConfiguredStep(const Json& stepJson, const std::string& stepPath) {
+            if (!stepJson.is_object() || !stepJson.contains("name") || !stepJson.at("name").is_string())
+                throw std::invalid_argument(stepPath + ": a step must be an object with a string 'name'");
+            try {
+                auto step = createStep(stepJson.at("name").get<std::string>());
+                step->importConfig(stepJson);
+                return step;
+            } catch (const std::exception& exception) {
+                throw std::invalid_argument(stepPath + ": " + exception.what());
             }
         }
 
@@ -81,23 +103,11 @@ namespace PipelineNs {
         for (size_t stepIndex = 0; stepIndex < stepsJson.size(); ++stepIndex) {
             const Json& stepJson = stepsJson.at(stepIndex);
             const std::string stepPath = "pipeline.steps[" + std::to_string(stepIndex) + "]";   // préfixe des messages d'erreur
-            if (!stepJson.is_object() || !stepJson.contains("name") || !stepJson.at("name").is_string())
-                throw std::invalid_argument(stepPath + ": a step must be an object with a string 'name'");
-            const std::string stepName = stepJson.at("name").get<std::string>();
-
-            // Création puis configuration du step ; toute erreur est préfixée du chemin du step dans le script.
-            std::unique_ptr<StepNs::StepClass> step;
-            try {
-                step = createStep(stepName);
-                step->importConfig(stepJson);
-            } catch (const std::exception& exception) {
-                throw std::invalid_argument(stepPath + ": " + exception.what());
-            }
-
+            auto step = createConfiguredStep(stepJson, stepPath);
             // Contrôle des entrées de ce step, puis enregistrement de ses sorties pour les steps suivants.
             // Une même clé produite deux fois garde le type du dernier producteur.
             const ConfigNs::StepConfig stepConfig = step->getConfigJson().get<ConfigNs::StepConfig>();
-            checkStepInputs(stepConfig, stepPath, stepName, producedDataTypeByKey);
+            checkStepInputs(stepConfig, stepPath, stepConfig.name, producedDataTypeByKey);
             for (const ConfigNs::DataSlot& outputSlot : stepConfig.outputs) producedDataTypeByKey[outputSlot.key] = outputSlot.dataType;
 
             pipeline.addStep(std::move(step));

@@ -35,6 +35,7 @@ if(BUILD_TESTING)
     # - correlation_phase: tests de la corrélation de phase.
     # - egalisation      : tests des fonctionnalités d'égalisation.
     # - seamline         : tests liés à la génération des seamlines.
+    add_subdirectory(tests/steps)
     add_subdirectory(tests/core)
     add_subdirectory(tests/correlation_phase)
     add_subdirectory(tests/egalisation)

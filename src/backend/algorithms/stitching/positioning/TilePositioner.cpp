@@ -1,250 +1,219 @@
+// src/backend/algorithms/stitching/positioning/TilePositioner.cpp
 #include "algorithms/stitching/positioning/TilePositioner.h"
+
+#include "algorithms/legacy_type_aliases.h"
+#include "algorithms/rejection/OutlierRejector.h"
 #include "algorithms/rejection/ransac/RansacRejector.h"
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/stitching/FeatureMatcher.h"
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/stitching/positioning/position_solver.h"
 #include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include "algorithms/stitching/sift/SiftMatcher.h"
 #ifdef STITCHING_PROJECT_ROOT
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #endif
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <exception>
 #include <iomanip>
+#include <ios>
 #include <map>
 #include <memory>
-#include <opencv2/core.hpp>
+#include <optional>
 #include <ostream>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace stitching::positioning {
-namespace {
 
-struct TileInfo {
-    std::string path;
-    std::string id;
-    int row = 0, col = 0;
-};
+    namespace {
 
-// Décalage mesuré entre deux tuiles voisines : positionB - positionA
-struct TileOffset {
-    std::size_t tileA, tileB;
-    cv::Point2d delta;
-    // [AD 21/10/2026 20:41] Angle de rotation relatif (en radians) mesuré entre la tuile B et la tuile A.
-    double rotation = 0.0;
-};
+        constexpr double MEDIAN_WEIGHT = 0.5;
 
-double median(std::vector<double> values) {
-    const std::size_t n = values.size();
-    const auto middle = values.begin() + n / 2;
-    std::nth_element(values.begin(), middle, values.end());
-    double m = *middle;
-    if (n % 2 == 0) m = 0.5 * (m + *std::max_element(values.begin(), middle));
-    return m;
-}
+        struct TileInfo {
+            std::string path;
+            std::string id;
+            int row = 0;
+            int column = 0;
+        };
 
-// Moindres carrés : positionB - positionA = delta pour toutes les paires. Tuile 0 = référence (0, 0).
-// Seules les tuiles reliées à la référence sont résolues (connected[i] = true).
-// [AD 21/10/2026 20:41] solvePositions prend en argument supplémentaire `solvedRot`
-// pour résoudre simultanément les angles de rotation absolus de chaque tuile par SVD.
-bool solvePositions(std::size_t tileCount, const std::vector<TileOffset>& offsets,
-                    std::vector<bool>& connected, std::vector<cv::Point2d>& solved,
-                    std::vector<double>& solvedRot) {
-    connected.assign(tileCount, false);
-    connected[0] = true;
-    for (bool changed = true; changed;) {
-        changed = false;
-        for (const TileOffset& o : offsets) {
-            if (connected[o.tileA] && !connected[o.tileB]) { connected[o.tileB] = true; changed = true; }
-            else if (connected[o.tileB] && !connected[o.tileA]) { connected[o.tileA] = true; changed = true; }
-        }
-    }
+        struct PairIndices {
+            std::size_t first = 0;
+            std::size_t second = 0;
+            Direction direction = Direction::Right;
+        };
 
-    std::vector<int> variableIndex(tileCount, -1);
-    int variableCount = 0;
-    for (std::size_t i = 1; i < tileCount; ++i)
-        if (connected[i]) variableIndex[i] = variableCount++;
+        struct MatchingEngine {
+            PositioningSettings settings;
+            std::unique_ptr<matching::FeatureMatcher> matcher;
+            std::unique_ptr<rejection::OutlierRejector> rejector;
+        };
 
-    std::vector<const TileOffset*> usable;
-    for (const TileOffset& o : offsets)
-        if (connected[o.tileA] && connected[o.tileB]) usable.push_back(&o);
+        using GridIndex = std::map<std::pair<int, int>, std::size_t>;
+        using Offsets = std::vector<PositioningNs::RelativeTilePosition>;
 
-    solved.assign(tileCount, cv::Point2d(0.0, 0.0));
-    // [AD 21/10/2026 20:41] Initialisation du vecteur des angles de rotation à 0.0 rad
-    solvedRot.assign(tileCount, 0.0);
-    if (variableCount == 0) return true;
-
-    const int rows = static_cast<int>(usable.size());
-    cv::Mat coefficients(rows, variableCount, CV_64F, cv::Scalar(0));
-    // [AD 21/10/2026 20:41] Ajout de rhsR : second membre pour la résolution des angles de rotation
-    cv::Mat rhsX(rows, 1, CV_64F), rhsY(rows, 1, CV_64F), rhsR(rows, 1, CV_64F);
-    for (int r = 0; r < rows; ++r) {
-        const TileOffset& o = *usable[r];
-        if (o.tileB != 0) coefficients.at<double>(r, variableIndex[o.tileB]) += 1.0;
-        if (o.tileA != 0) coefficients.at<double>(r, variableIndex[o.tileA]) -= 1.0;
-        rhsX.at<double>(r, 0) = o.delta.x;
-        rhsY.at<double>(r, 0) = o.delta.y;
-        // [AD 21/10/2026 20:41] rhsR : équation theta_B - theta_A = rotation_AB résolue sur le même graphe
-        rhsR.at<double>(r, 0) = o.rotation;
-    }
-
-    cv::Mat solX, solY, solR;
-    // [AD 21/10/2026 20:41] Résolution simultanée des positions X, Y et des angles de rotation par SVD
-    if (!cv::solve(coefficients, rhsX, solX, cv::DECOMP_SVD) ||
-        !cv::solve(coefficients, rhsY, solY, cv::DECOMP_SVD) ||
-        !cv::solve(coefficients, rhsR, solR, cv::DECOMP_SVD))
-        return false;
-    for (std::size_t i = 1; i < tileCount; ++i)
-        if (connected[i]) {
-            solved[i] = cv::Point2d(solX.at<double>(variableIndex[i], 0), solY.at<double>(variableIndex[i], 0));
-            // [AD 21/10/2026 20:41] Affectation de l'angle résolu par SVD pour la tuile i
-            solvedRot[i] = solR.at<double>(variableIndex[i], 0);
-        }
-    return true;
-}
-
-} // namespace
-
-bool computeTilePositions(const std::vector<std::string>& tile_paths,
-                          const PositioningSettings& settings,
-                          std::vector<TilePositionData>& positions,
-                          std::ostream& log) {
-    positions.clear();
-    using Seamline::ImagePretreatment;
-
-    // ---- tuiles : nom -> (ligne, colonne, identifiant)
-    std::vector<TileInfo> tiles;
-    for (const std::string& path : tile_paths) {
-        TileInfo t;
-        t.path = path;
-        if (!ImagePretreatment::parseTileName(path, t.row, t.col, t.id)) {
-            log << "wrong tile name: " << path << '\n';
-            return false;
-        }
-        tiles.push_back(std::move(t));
-    }
-    if (tiles.empty()) { log << "No tiles\n"; return false; }
-
-    std::sort(tiles.begin(), tiles.end(), [](const TileInfo& l, const TileInfo& r) {
-        return l.row != r.row ? l.row < r.row : l.col < r.col;
-    });
-    std::map<std::pair<int, int>, std::size_t> byGrid;
-    for (std::size_t i = 0; i < tiles.size(); ++i)
-        if (!byGrid.emplace(std::make_pair(tiles[i].row, tiles[i].col), i).second) {
-            log << "Duplicate tile grid position " << tiles[i].id << '\n';
-            return false;
+        double computeMedian(std::vector<double> values) {
+            auto count = values.size();
+            auto middle = values.begin() + static_cast<std::ptrdiff_t>(count / 2);
+            std::nth_element(values.begin(), middle, values.end());
+            auto median = *middle;
+            if (count % 2 == 0) median = MEDIAN_WEIGHT * (median + *std::max_element(values.begin(), middle));
+            return median;
         }
 
-    if (tiles.size() == 1) {
-        positions.push_back({tiles[0].id, cv::Point2d(0.0, 0.0), 0.0});
-        return true;
-    }
+        std::vector<TileInfo> readTiles(const std::vector<std::string>& tilePaths) {
+            std::vector<TileInfo> tiles;
+            tiles.reserve(tilePaths.size());
+            for (auto& path : tilePaths) {
+                TileInfo tile;
+                tile.path = path;
+                if (!Seamline::ImagePretreatment::parseTileName(path, tile.row, tile.column, tile.id))
+                    throw std::invalid_argument("wrong tile name: " + path);
+                tiles.push_back(std::move(tile));
+            }
+            if (tiles.empty()) throw std::invalid_argument("No tiles");
+            std::sort(tiles.begin(), tiles.end(), [](const TileInfo& first, const TileInfo& second) {
+                return first.row != second.row ? first.row < second.row : first.column < second.column;
+            });
+            return tiles;
+        }
 
-    // ---- paires de voisins directs : 1ère passe EstimationRecouvrement -> Matcher -> Rejector
-    // [AD 21/10/2026 20:41] Sélection polymorphe du matcher et du rejector :
-    // - Matchers autorisés : "sift", "correlation_phase", "lightglue" (si STITCHING_PROJECT_ROOT défini)
-    // - Rejectors autorisés : "vote" (par défaut, Hough 2D) et "ransac" (estimateAffinePartial2D)
-    std::unique_ptr<matching::FeatureMatcher> matcher;
-    if (settings.matcher == "sift") matcher = std::make_unique<matching::SiftMatcher>(settings.matcherParams);
-    else if (settings.matcher == "correlation_phase") matcher = std::make_unique<matching::CorrelationPhase>();
+        GridIndex buildGrid(const std::vector<TileInfo>& tiles) {
+            GridIndex grid;
+            for (std::size_t index = 0; index < tiles.size(); ++index)
+                if (!grid.emplace(std::make_pair(tiles[index].row, tiles[index].column), index).second)
+                    throw std::invalid_argument("Duplicate tile grid position " + tiles[index].id);
+            return grid;
+        }
+
+        MatchingEngine createEngine(const PositioningSettings& settings) {
+            MatchingEngine engine;
+            engine.settings = settings;
+            if (settings.matcher == "sift") engine.matcher = std::make_unique<matching::SiftMatcher>(settings.matcherParams);
+            else if (settings.matcher == "correlation_phase") engine.matcher = std::make_unique<matching::CorrelationPhase>();
 #ifdef STITCHING_PROJECT_ROOT
-    else if (settings.matcher == "lightglue") matcher = std::make_unique<matching::LightGlueMatcher>();
+            else if (settings.matcher == "lightglue") engine.matcher = std::make_unique<matching::LightGlueMatcher>();
 #endif
-    std::unique_ptr<rejection::OutlierRejector> rejector;
-    if (settings.rejector == "ransac") rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
-    else if (settings.rejector == "vote") rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
-    if (!matcher || !rejector) {
-        log << "Matcher ou rejector non disponible (" << settings.matcher << " / " << settings.rejector << ")\n";
-        return false;
-    }
-    matching::EstimationRecouvrement estimation;
-
-    std::vector<TileOffset> offsets;
-    std::size_t attempted = 0;
-    const auto processPair = [&](std::size_t a, std::size_t b, Direction direction) {
-        ++attempted;
-        log << tiles[a].id << " -> " << tiles[b].id << (direction == Direction::Right ? " (H) : " : " (V) : ");
-
-        const cv::Mat imgA = ImagePretreatment::read16(tiles[a].path);   // 16 bits sans perte, 2 tuiles à la fois
-        const cv::Mat imgB = ImagePretreatment::read16(tiles[b].path);
-        if (imgA.empty() || imgB.empty()) {
-            log << "lecture impossible (" << (imgA.empty() ? tiles[a].path : tiles[b].path) << ")\n";
-            return false;
+            if (settings.rejector == "ransac") engine.rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
+            else if (settings.rejector == "vote") engine.rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
+            if (!engine.matcher || !engine.rejector) throw std::invalid_argument("Matcher or rejector unavailable");
+            return engine;
         }
 
-        // [AD 21/10/2026 20:41] 1ère passe : Estimation rapide du recouvrement réel au pixel près
-        const auto reel = estimation.estimer(imgA, imgB, {direction, settings.overlap});
-        if (!reel) { log << estimation.raisonEchec() << ", paire ignoree\n"; return true; }
-        const PairContext ctx{direction, reel->overlapFraction, reel->translationBInA};
-
-        Matches matches;
-        if (settings.matcher == "correlation_phase") {
-            if (!matcher->match(imgA, imgB, ctx, matches)) { log << "CorrelationPhase : echec, paire ignoree\n"; return true; }
-        } else {
-            // [AD 21/10/2026 20:41] Découpe des seules bandes de chevauchement effectif (za dans A, zb dans B)
-            // au lieu d'envoyer les tuiles entières, puis translation des points détectés par za.tl() et zb.tl()
-            // pour les réexprimer dans le repère global des tuiles entières avant le rejet des aberrants.
-            const auto [za, zb] = matching::EstimationRecouvrement::zonesCommunes(imgA.size(), imgB.size(), reel->translationBInA);
-            if (za.empty() || !matcher->match(imgA(za), imgB(zb), ctx, matches)) { log << settings.matcher << " : pas assez de correspondances, paire ignoree\n"; return true; }
-            for (auto& p : matches.pointsInA) p += cv::Point2f(za.tl());
-            for (auto& p : matches.pointsInB) p += cv::Point2f(zb.tl());
-        }
-
-        Alignment alignment;
-        if (!rejector->estimate(matches, alignment) || alignment.inlierMask.size() != matches.pointsInA.size()) {
-            log << matches.pointsInA.size() << " matches, RANSAC a echoue, paire ignoree\n";
+        bool findMatches(MatchingEngine& engine, const std::array<cv::Mat, 2>& images, Direction direction, Matches& matches) {
+            matching::EstimationRecouvrement estimation;
+            auto overlap = estimation.estimer(images[0], images[1], {direction, engine.settings.overlap});
+            if (!overlap) return false;
+            PairContext context{direction, overlap->overlapFraction, overlap->translationBInA};
+            if (engine.settings.matcher == "correlation_phase")
+                return engine.matcher->match(images[0], images[1], context, matches);
+            auto [zoneA, zoneB] = matching::EstimationRecouvrement::zonesCommunes(images[0].size(), images[1].size(), overlap->translationBInA);
+            if (zoneA.empty() || zoneB.empty() || !engine.matcher->match(images[0](zoneA), images[1](zoneB), context, matches)) return false;
+            // Replacer les points dans les repères des tuiles avant le rejet.
+            for (auto& point : matches.pointsInA) point += cv::Point2f(zoneA.tl());
+            for (auto& point : matches.pointsInB) point += cv::Point2f(zoneB.tl());
             return true;
         }
 
-        std::vector<double> dxs, dys;
-        for (std::size_t i = 0; i < matches.pointsInA.size(); ++i) {
-            if (!alignment.inlierMask[i]) continue;
-            dxs.push_back(static_cast<double>(matches.pointsInA[i].x) - matches.pointsInB[i].x);
-            dys.push_back(static_cast<double>(matches.pointsInA[i].y) - matches.pointsInB[i].y);
+        std::optional<PositioningNs::RelativeTilePosition> rejectMatches(MatchingEngine& engine, const Matches& matches,
+                                                                        const PairIndices& pair) {
+            Alignment alignment;
+            if (matches.pointsInA.size() != matches.pointsInB.size() || !engine.rejector->estimate(matches, alignment) ||
+                alignment.inlierMask.size() != matches.pointsInA.size()) return std::nullopt;
+            std::vector<double> translationsX, translationsY;
+            for (std::size_t index = 0; index < matches.pointsInA.size(); ++index) {
+                if (!alignment.inlierMask[index]) continue;
+                translationsX.push_back(static_cast<double>(matches.pointsInA[index].x) - matches.pointsInB[index].x);
+                translationsY.push_back(static_cast<double>(matches.pointsInA[index].y) - matches.pointsInB[index].y);
+            }
+            if (translationsX.empty()) return std::nullopt;
+            auto rotation = alignment.transformBToA.empty() ? 0.0
+                : std::atan2(alignment.transformBToA.at<double>(1, 0), alignment.transformBToA.at<double>(0, 0));
+            return PositioningNs::RelativeTilePosition{pair.first, pair.second,
+                {computeMedian(translationsX), computeMedian(translationsY)}, rotation};
         }
-        if (dxs.empty()) { log << "aucun inlier, paire ignoree\n"; return true; }
 
-        const cv::Point2d delta(median(dxs), median(dys));
-        // [AD 21/10/2026 20:41] Extraction de l'angle relatif theta = atan2(m10, m00) depuis la matrice 3x3 d'alignement
-        const double rot = alignment.transformBToA.empty() ? 0.0
-            : std::atan2(alignment.transformBToA.at<double>(1, 0), alignment.transformBToA.at<double>(0, 0));
-        offsets.push_back({a, b, delta, rot});
-        log << matches.pointsInA.size() << " matches, " << dxs.size() << " inliers, offset = ("
-            << std::fixed << std::setprecision(2) << delta.x << ", " << delta.y << "), rot = "
-            << std::setprecision(4) << rot << " rad\n";
-        return true;
-    };
+        void measurePair(MatchingEngine& engine, const std::vector<TileInfo>& tiles, const PairIndices& pair,
+                         std::pair<Offsets&, std::ostream&> output) {
+            output.second << tiles[pair.first].id << " -> " << tiles[pair.second].id << ": ";
+            std::array<cv::Mat, 2> images = {Seamline::ImagePretreatment::read16(tiles[pair.first].path),
+                                           Seamline::ImagePretreatment::read16(tiles[pair.second].path)};
+            if (images[0].empty() || images[1].empty()) throw std::runtime_error("Could not read tile images");
+            Matches matches;
+            if (!findMatches(engine, images, pair.direction, matches)) {
+                output.second << "matching failed, pair ignored\n";
+                return;
+            }
+            auto offset = rejectMatches(engine, matches, pair);
+            if (!offset) { output.second << "rejection failed, pair ignored\n"; return; }
+            output.first.push_back(*offset);
+            output.second << matches.pointsInA.size() << " matches, offset = (" << offset->translation.x << ", "
+                          << offset->translation.y << "), rotation = " << offset->rotationRadians << " rad\n";
+        }
 
-    for (std::size_t i = 0; i < tiles.size(); ++i) {
-        const auto right = byGrid.find({tiles[i].row, tiles[i].col + 1});
-        const auto below = byGrid.find({tiles[i].row + 1, tiles[i].col});
-        if (right != byGrid.end() && !processPair(i, right->second, Direction::Right)) return false;
-        if (below != byGrid.end() && !processPair(i, below->second, Direction::Bottom)) return false;
+        Offsets collectOffsets(const std::vector<TileInfo>& tiles, const GridIndex& grid, MatchingEngine& engine, std::ostream& log) {
+            Offsets offsets;
+            for (std::size_t index = 0; index < tiles.size(); ++index) {
+                auto right = grid.find({tiles[index].row, tiles[index].column + 1});
+                auto below = grid.find({tiles[index].row + 1, tiles[index].column});
+                if (right != grid.end()) measurePair(engine, tiles, {index, right->second, Direction::Right}, {offsets, log});
+                if (below != grid.end()) measurePair(engine, tiles, {index, below->second, Direction::Bottom}, {offsets, log});
+            }
+            if (offsets.empty()) throw std::runtime_error("No usable offset for any neighboring pair");
+            return offsets;
+        }
+
+        void logResiduals(const std::vector<TileInfo>& tiles, const Offsets& offsets,
+                          const PositioningNs::PositionSolution& solution, std::ostream& log) {
+            log << "Residuals (measured offset - adjusted offset):\n";
+            for (auto& offset : offsets) {
+                if (!solution.connected[offset.tileIndexA] || !solution.connected[offset.tileIndexB]) continue;
+                auto residual = offset.translation - (solution.positions[offset.tileIndexB] - solution.positions[offset.tileIndexA]);
+                log << tiles[offset.tileIndexA].id << " -> " << tiles[offset.tileIndexB].id << ": (" << std::fixed
+                    << std::setprecision(2) << residual.x << ", " << residual.y << ")\n";
+            }
+        }
+
+        void publishPositions(const std::vector<TileInfo>& tiles, const PositioningNs::PositionSolution& solution,
+                              std::vector<TilePositionData>& positions, std::ostream& log) {
+            for (std::size_t index = 0; index < tiles.size(); ++index) {
+                if (solution.connected[index]) positions.push_back({tiles[index].id, solution.positions[index], solution.rotations[index]});
+                else log << "Disconnected tile: " << tiles[index].id << '\n';
+            }
+        }
+
     }
 
-    if (attempted == 0) { log << "No horizontally or vertically adjacent tile pairs were found\n"; return false; }
-    if (offsets.empty()) { log << "SIFT + RANSAC did not give a usable offset for any neighboring pair\n"; return false; }
-
-    // ---- ajustement global
-    std::vector<bool> connected;
-    std::vector<cv::Point2d> solved;
-    // [AD 21/10/2026 20:41] Vecteur stockant l'angle de rotation global calculé pour chaque tuile
-    std::vector<double> solvedRot;
-    if (!solvePositions(tiles.size(), offsets, connected, solved, solvedRot)) { log << "Could not solve tile positions\n"; return false; }
-
-    // résidu par paire : écart entre l'offset mesuré et celui de la solution globale (contrôle de cohérence)
-    log << "Residus de l'ajustement (offset mesure - offset ajuste) :\n";
-    for (const TileOffset& o : offsets) {
-        if (!connected[o.tileA] || !connected[o.tileB]) continue;
-        const cv::Point2d r = o.delta - (solved[o.tileB] - solved[o.tileA]);
-        log << "  " << tiles[o.tileA].id << " -> " << tiles[o.tileB].id << " : (" << std::fixed << std::setprecision(2)
-            << r.x << ", " << r.y << ")\n";
+    bool computeTilePositions(const std::vector<std::string>& tilePaths, const PositioningSettings& settings,
+                              std::vector<TilePositionData>& positions, std::ostream& log) {
+        positions.clear();
+        try {
+            auto tiles = readTiles(tilePaths);
+            auto grid = buildGrid(tiles);
+            if (tiles.size() == 1) {
+                positions.push_back({tiles[0].id, cv::Point2d(0.0, 0.0), 0.0});
+                return true;
+            }
+            auto engine = createEngine(settings);
+            auto offsets = collectOffsets(tiles, grid, engine, log);
+            auto solution = PositioningNs::solveRelativePositions(tiles.size(), offsets);
+            logResiduals(tiles, offsets, solution, log);
+            publishPositions(tiles, solution, positions, log);
+            return !positions.empty();
+        } catch (const std::exception& exception) {
+            log << exception.what() << '\n';
+            positions.clear();
+            return false;
+        }
     }
 
-    for (std::size_t i = 0; i < tiles.size(); ++i) {
-        // [AD 21/10/2026 20:41] Enregistrement de la solution globale incluant l'angle de rotation
-        if (connected[i]) positions.push_back({tiles[i].id, solved[i], solvedRot[i]});
-        else log << "ATTENTION : la tuile " << tiles[i].id << " n'est reliee a la tuile de reference par aucune paire valide\n";
-    }
-    return !positions.empty();
 }
-
-} // namespace stitching::positioning
