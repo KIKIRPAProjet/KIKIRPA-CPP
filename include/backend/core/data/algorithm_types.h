@@ -67,7 +67,7 @@ namespace DataNs {
         std::vector<uchar> inlierMask;   // 1 = inlier ; même taille que les points de Matches
     };
 
-    // Position finale d'une tuile, calculée par le placement global (TilePositioner).
+    // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
         std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
