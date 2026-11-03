@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : isoler la barre de menus réduit le couplage avec la fenêtre principale ;
+ * - cas limite : chaque action doit rester utilisable même si une page différente est affichée ;
+ * - unité ou repère : les raccourcis suivent les conventions clavier de Qt ;
+ * - raison non évidente : les signaux permettent à MainWindow de décider du traitement de chaque action.
+ */
+/*
  * Header : le QUOI
  * Construit la barre de menus et ses actions.
  * - ce que ça fait : crée les menus, associe les raccourcis et connecte les actions aux signaux ;

@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : filtrer les niveaux dans l'interface évite de modifier les messages reçus ;
+ * - cas limite : plusieurs filtres peuvent être désactivés simultanément ;
+ * - unité ou repère : chaque message est affiché avec son niveau et son heure locale ;
+ * - raison non évidente : le journal reste en lecture seule pour empêcher la modification des diagnostics.
+ */
+/*
  * Header : le QUOI
  * Affiche et filtre les messages du journal backend.
  * - ce que ça fait : présente les messages et permet de les filtrer par niveau ;

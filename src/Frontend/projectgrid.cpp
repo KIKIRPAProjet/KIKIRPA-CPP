@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : centraliser l'état de la grille garantit une organisation cohérente des tuiles ;
+ * - cas limite : les dimensions et la cellule sélectionnée sont bornées avant utilisation ;
+ * - unité ou repère : les lignes et colonnes commencent à l'index zéro ;
+ * - raison non évidente : compléter la grille avec des cellules vides permet de conserver une taille stable.
+ */
+/*
  * Header : le QUOI
  * Gère les tuiles et leur organisation dans la grille.
  * - ce que ça fait : maintient l'état de la grille, ses dimensions et les tuiles sélectionnées ;

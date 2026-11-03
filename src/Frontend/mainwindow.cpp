@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : la fenêtre principale coordonne les composants sans déplacer leur logique dédiée ;
+ * - cas limite : les actions doivent rester cohérentes lorsque le projet ou la page active change ;
+ * - unité ou repère : les index de page correspondent aux étapes affichées dans le workspace ;
+ * - raison non évidente : les connexions Qt maintiennent l'interface synchronisée avec les signaux métier.
+ */
+/*
  * Header : le QUOI
  * Implémente la fenêtre principale de l'application.
  * - ce que ça fait : assemble les pages, les menus, les contrôles et les actions de l'application ;

@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : regrouper les composants graphiques communs évite de dupliquer leur style ;
+ * - cas limite : le bouton peut être primaire ou secondaire selon le contexte de l'interface ;
+ * - unité ou repère : les dimensions et propriétés suivent les règles visuelles du frontend ;
+ * - raison non évidente : les propriétés Qt permettent au style global de personnaliser les widgets.
+ */
+/*
  * Header : le QUOI
  * Fournit les outils communs de l'interface frontend.
  * - ce que ça fait : crée les boutons, les libellés et les éléments graphiques réutilisables ;

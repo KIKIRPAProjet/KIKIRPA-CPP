@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : utiliser JSON rend les projets lisibles et transportables entre environnements ;
+ * - cas limite : un fichier absent, invalide ou partiellement écrit doit produire une erreur explicite ;
+ * - unité ou repère : les chemins sont stockés comme chaînes compatibles avec le système de fichiers ;
+ * - raison non évidente : QSaveFile évite de laisser un projet corrompu si l'écriture est interrompue.
+ */
+/*
  * Header : le QUOI
  * Charge et enregistre les projets au format JSON.
  * - ce que ça fait : lit les données d'un fichier JSON ou écrit les données du projet dans un fichier ;

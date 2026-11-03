@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : centraliser les options d'export dans une boîte de dialogue ;
+ * - cas limite : le backend d'export peut ne pas être connecté dans le prototype ;
+ * - unité ou repère : les formats et profils sont ceux du projet courant ;
+ * - raison non évidente : le rapport est proposé séparément pour permettre un export sans rapport.
+ */
+/*
  * Header : le QUOI
  * Gère l'export du projet et la création du rapport d'assemblage.
  * - ce que ça fait : affiche les options d'export et prépare la génération du fichier de sortie ;

@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : conserver les projets récents simplifie le retour vers un projet existant ;
+ * - cas limite : un fichier récent peut avoir été déplacé ou supprimé depuis sa dernière utilisation ;
+ * - unité ou repère : les chemins sont interprétés selon le système de fichiers de la machine ;
+ * - raison non évidente : les signaux séparent la présentation de l'accueil de la logique de la fenêtre principale.
+ */
+/*
  * Header : le QUOI
  * Implémente la page d'accueil et la gestion des projets récents.
  * - ce que ça fait : construit l'écran d'accueil et permet de créer, ouvrir ou sélectionner un projet ;

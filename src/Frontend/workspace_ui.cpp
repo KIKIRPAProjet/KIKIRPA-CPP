@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : regrouper la construction des pages facilite la navigation entre les étapes ;
+ * - cas limite : les contrôles doivent rester synchronisés avec l'état courant du projet ;
+ * - unité ou repère : les pages suivent l'ordre des étapes du workflow frontend ;
+ * - raison non évidente : bloquer temporairement certains signaux évite les mises à jour récursives.
+ */
+/*
  * Header : le QUOI
  * Gère les pages et les contrôles de l'espace de travail.
  * - ce que ça fait : construit les vues de travail et relie les contrôles aux données du projet ;

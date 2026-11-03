@@ -1,4 +1,11 @@
 /*
+ * .cpp : le POURQUOI
+ * - choix de conception : un QTimer simule l'avancement sans bloquer la boucle d'événements ;
+ * - cas limite : un second lancement est refusé tant que le premier n'est pas terminé ;
+ * - unité ou repère : la progression est exprimée en pourcentage de 0 à 100 ;
+ * - raison non évidente : les signaux permettent à l'interface de rester réactive pendant l'exécution.
+ */
+/*
  * Header : le QUOI
  * Simule le lancement et le suivi d'une exécution.
  * - ce que ça fait : démarre une progression temporisée et informe l'interface de son avancement ;
