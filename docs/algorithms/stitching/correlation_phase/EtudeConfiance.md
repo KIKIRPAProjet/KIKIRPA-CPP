@@ -18,7 +18,7 @@
 | `rapport` | Première passe (`RecouvrementReel::rapport`) | Pic / second pic. Proche de 1 : deux positions se valent. Seuil actuel : 1,5 |
 | `ncc` | Médiane de `Matches::scores` | Ressemblance des patchs locaux une fois recalés (0 à 1) |
 | `disp` | Médiane de \|`pointsA − pointsB − (dx, dy)`\| | Les points locaux sont-ils d'accord avec la translation globale ? (px) |
-| `autosim` | **Nouveau** : `PhaseCorrelationStep::autoSimilarite` | La bande de A ressemble-t-elle à elle-même à un décalage non nul dans la marge ? 1 = motif répété, 0 = aucune répétition |
+| `autosim` | **Nouveau** : `PhaseCorrelationStepClass::selfSimilarity` | La bande de A ressemble-t-elle à elle-même à un décalage non nul dans la marge ? 1 = motif répété, 0 = aucune répétition |
 
 `autosim` : bande de A en passe-haut (image − flou gaussien σ = 4 px), écrêtée à ±3 écarts robustes pour qu'un bord net ne domine pas, puis corrélation normalisée de sa partie centrale avec la bande entière sur les décalages de la marge (±50 px), hors du voisinage ±10 px du décalage nul.
 
@@ -108,7 +108,7 @@ Pour `autosim`, les seuils 0,6 et 0,8 donnent exactement les mêmes résultats :
 
 ## 6. Intégration dans le pipeline
 
-La règle est appliquée par `PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance), avec des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0.5) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Chaque paire a ses indicateurs (NCC, dispersion, auto-similarité, points et état) dans `exportData()["confidence"]`. Le format de `PairMatches` ne change pas.
+La règle est appliquée par `PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance), avec des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0.5) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Chaque paire a ses indicateurs (NCC, dispersion, auto-similarité, points et état) dans `getResult()["confidence"]`. Le format de `PairMatches` ne change pas.
 
 Le banc mesure la décision réelle du step (ligne `PIPELINE` de sa sortie) : **6 faux acceptés, comme la règle étudiée**.
 

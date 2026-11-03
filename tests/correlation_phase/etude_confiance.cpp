@@ -10,15 +10,15 @@
 //
 // Indicateurs relevés pour chaque paire :
 //   rapport  pic / second pic de la première passe (seul critère actuel, seuil 1,5)
-//   ncc      NCC médiane des points locaux (Matches::scores)
+//   ncc      NCC médiane des points locaux (Matches::confidenceScores)
 //   disp     écart médian (px) entre pointsA − pointsB et la translation globale
-//   autosim  auto-similarité de la bande de A (PhaseCorrelationStep::autoSimilarite)
+//   autosim  auto-similarité de la bande de A (PhaseCorrelationStepClass::selfSimilarity)
 //
-// La ligne PIPELINE de la comparaison est la décision réelle du step (match + controlerConfiance).
+// La ligne PIPELINE de la comparaison est la décision réelle du step (match + checkConfidence).
 
 #include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
 #include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
-#include "steps/PhaseCorrelationStep.h"
+#include "steps/phase_correlation_step.h"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <cmath>
@@ -141,7 +141,7 @@ struct Resultat {
     double ncc = NAN;            // NCC médiane des points
     double dispersion = NAN;     // px : écart médian des points à la translation globale
     double autoSim = NAN;        // auto-similarité de la bande de A (0 à 1)
-    bool pipeline = false;       // acceptée par PhaseCorrelationStep (match + controlerConfiance, réglages par défaut)
+    bool pipeline = false;       // acceptée par PhaseCorrelationStepClass (match + checkConfidence, réglages par défaut)
 };
 
 
@@ -156,16 +156,16 @@ Resultat mesurer1(const std::string& famille, const std::string& cas, const Scen
     const PairContext ctx{Direction::Bottom, RECOUVREMENT};
     const cv::Point2d attendu(vrai.x, PAS + vrai.y);
     Resultat r{famille, cas, vrai};
-    r.autoSim = steps::PhaseCorrelationStep::autoSimilarite(a, Direction::Bottom, RECOUVREMENT, 0);
+    r.autoSim = StepsNs::PhaseCorrelationStepClass::selfSimilarity(a, Direction::Bottom, RECOUVREMENT, 0);
 
     CorrelationPhase defaut;
     Matches m;
     r.accepte = defaut.match(a, b, ctx, m);
     r.raison = defaut.raisonEchec();
     if (r.accepte) {
-        const auto v = steps::PhaseCorrelationStep::controlerConfiance(m, a, Direction::Bottom, RECOUVREMENT, {}, {});
-        r.pipeline = v.raison.empty();
-        if (!v.raison.empty()) r.raison = v.raison;
+        const auto v = StepsNs::PhaseCorrelationStepClass::checkConfidence(m, a, Direction::Bottom, RECOUVREMENT, {}, {});
+        r.pipeline = v.reason.empty();
+        if (!v.reason.empty()) r.raison = v.reason;
     }
 
     // Même mesure, seuil désactivé : ce que l'on obtiendrait en faisant confiance au pic
@@ -174,24 +174,24 @@ Resultat mesurer1(const std::string& famille, const std::string& cas, const Scen
     EstimationRecouvrement premiere(sans);
     const auto reel = premiere.estimer(a, b, ctx);
     if (!reel) return r;
-    r.rapport = reel->rapport;
+    r.rapport = reel->peakRatio;
     PairContext ctx2 = ctx;
-    ctx2.translation = reel->translation;
+    ctx2.estimatedTranslation = reel->translationBInA;
     CorrelationPhase seconde(sans);
     Matches m2;
     if (seconde.match(a, b, ctx2, m2)) {
         r.mesure = true;
-        r.t = {m2.dx, m2.dy};
+        r.t = {m2.translationX, m2.translationY};
     } else {
         r.mesure = true;   // deuxième passe en échec : on garde la position entière de la première
-        r.t = reel->translation;
+        r.t = reel->translationBInA;
     }
     r.erreur = std::hypot(r.t.x - attendu.x, r.t.y - attendu.y);
-    r.nbPoints = static_cast<int>(m2.pointsA.size());
+    r.nbPoints = static_cast<int>(m2.pointsInA.size());
     std::vector<double> ncc, disp;
-    for (size_t i = 0; i < m2.pointsA.size(); ++i) {
-        ncc.push_back(m2.scores[i]);
-        const cv::Point2d d = cv::Point2d(m2.pointsA[i] - m2.pointsB[i]) - r.t;
+    for (size_t i = 0; i < m2.pointsInA.size(); ++i) {
+        ncc.push_back(m2.confidenceScores[i]);
+        const cv::Point2d d = cv::Point2d(m2.pointsInA[i] - m2.pointsInB[i]) - r.t;
         disp.push_back(std::hypot(d.x, d.y));
     }
     r.ncc = mediane(ncc);
