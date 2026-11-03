@@ -4,6 +4,7 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/core.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -46,6 +47,11 @@ namespace IONs {
             tmsize_t size = 0;
             size_t requiredBytes = 0;
             size_t pixelSize = 0;
+        };
+
+        struct ReadRequest {
+            int level = 0;
+            cv::Rect region;
         };
 
         struct RegionReadContext {
@@ -217,25 +223,26 @@ namespace IONs {
 
         bool readOpenedRegion(
             TIFF* tiffFile,
-            int level,
-            const cv::Rect& region,
+            const ReadRequest& request,
             cv::Mat& output,
             std::string& errorMessage
         ) {
-            if (!selectLevel(tiffFile, level, errorMessage)) return false;
+            if (!selectLevel(tiffFile, request.level, errorMessage)) return false;
 
             ImageMetadata image;
             if (!getImageMetadata(tiffFile, image, errorMessage)) return false;
-            if (region.x > image.width - region.width || region.y > image.height - region.height) {
+            if (request.region.x > image.width - request.region.width ||
+                request.region.y > image.height - request.region.height) {
                 errorMessage = "region is outside the requested pyramid level";
                 return false;
             }
 
             TileMetadata tile;
             if (!getTileMetadata(tiffFile, image.type, tile, errorMessage)) return false;
-            output.create(region.height, region.width, image.type);
+            output.create(request.region.height, request.region.width, image.type);
             std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
-            RegionReadContext context{tiffFile, region, tile, output, tileBuffer, errorMessage};
+            RegionReadContext context{
+                tiffFile, request.region, tile, output, tileBuffer, errorMessage};
             return readTiles(context);
         }
 
@@ -267,10 +274,11 @@ namespace IONs {
             return false;
         }
 
-        const bool success = readOpenedRegion(tiffFile, level, region, output, errorMessage);
+        const ReadRequest REQUEST{level, region};
+        const bool SUCCESS = readOpenedRegion(tiffFile, REQUEST, output, errorMessage);
         TIFFClose(tiffFile);
-        if (!success) output.release();
-        return success;
+        if (!SUCCESS) output.release();
+        return SUCCESS;
     }
 
 }
