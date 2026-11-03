@@ -1,9 +1,10 @@
 #pragma once
-#include "algorithms/stitching/FeatureMatcher.h"
+#include "algorithms/legacy_type_aliases.h"
+#include "algorithms/stitching/feature_matcher.h"
 
 namespace stitching::matching {
 
-class SiftMatcher : public FeatureMatcher {
+class SiftMatcher : public StitchingNs::FeatureMatcherClass {
     Json params;
 public:
     explicit SiftMatcher(const Json& params = {});

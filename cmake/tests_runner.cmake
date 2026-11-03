@@ -32,12 +32,12 @@ if(BUILD_TESTING)
     # les exécutables de tests associés.
     #
     # - core             : tests des fonctionnalités fondamentales du backend.
-    # - correlation_phase: tests de la corrélation de phase.
     # - egalisation      : tests des fonctionnalités d'égalisation.
+    # - phase_correlation: tests de la corrélation de phase.
     # - seamline         : tests liés à la génération des seamlines.
     add_subdirectory(tests/core)
-    add_subdirectory(tests/correlation_phase)
     add_subdirectory(tests/egalisation)
+    add_subdirectory(tests/phase_correlation)
     add_subdirectory(tests/seamline)
 
 endif()

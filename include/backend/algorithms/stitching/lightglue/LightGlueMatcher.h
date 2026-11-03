@@ -1,5 +1,6 @@
 #pragma once
-#include "algorithms/stitching/FeatureMatcher.h"
+#include "algorithms/legacy_type_aliases.h"
+#include "algorithms/stitching/feature_matcher.h"
 
 #include <onnxruntime_cxx_api.h>
 #include <memory>
@@ -7,7 +8,7 @@
 
 namespace stitching::matching {
 
-class LightGlueMatcher : public FeatureMatcher {
+class LightGlueMatcher : public StitchingNs::FeatureMatcherClass {
 private:
     Json params;
     // Permet de ne pas recharger le modèle à chaque paire d'images

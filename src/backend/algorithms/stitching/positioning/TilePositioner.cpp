@@ -1,8 +1,8 @@
 #include "algorithms/stitching/positioning/TilePositioner.h"
 #include "algorithms/rejection/ransac/RansacRejector.h"
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
-#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
-#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "algorithms/stitching/sift/SiftMatcher.h"
 #ifdef STITCHING_PROJECT_ROOT
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
@@ -142,9 +142,9 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
     // [AD 21/10/2026 20:41] Sélection polymorphe du matcher et du rejector :
     // - Matchers autorisés : "sift", "correlation_phase", "lightglue" (si STITCHING_PROJECT_ROOT défini)
     // - Rejectors autorisés : "vote" (par défaut, Hough 2D) et "ransac" (estimateAffinePartial2D)
-    std::unique_ptr<matching::FeatureMatcher> matcher;
+    std::unique_ptr<StitchingNs::FeatureMatcherClass> matcher;
     if (settings.matcher == "sift") matcher = std::make_unique<matching::SiftMatcher>(settings.matcherParams);
-    else if (settings.matcher == "correlation_phase") matcher = std::make_unique<matching::CorrelationPhase>();
+    else if (settings.matcher == "correlation_phase") matcher = std::make_unique<PhaseCorrelationNs::PhaseCorrelationMatcherClass>();
 #ifdef STITCHING_PROJECT_ROOT
     else if (settings.matcher == "lightglue") matcher = std::make_unique<matching::LightGlueMatcher>();
 #endif
@@ -155,7 +155,7 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
         log << "Matcher ou rejector non disponible (" << settings.matcher << " / " << settings.rejector << ")\n";
         return false;
     }
-    matching::EstimationRecouvrement estimation;
+    OverlapEstimationNs::OverlapEstimatorClass estimation;
 
     std::vector<TileOffset> offsets;
     std::size_t attempted = 0;
@@ -171,8 +171,8 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
         }
 
         // [AD 21/10/2026 20:41] 1ère passe : Estimation rapide du recouvrement réel au pixel près
-        const auto reel = estimation.estimer(imgA, imgB, {direction, settings.overlap});
-        if (!reel) { log << estimation.raisonEchec() << ", paire ignoree\n"; return true; }
+        const auto reel = estimation.estimate(imgA, imgB, {direction, settings.overlap});
+        if (!reel) { log << estimation.getFailureReason() << ", paire ignoree\n"; return true; }
         const PairContext ctx{direction, reel->overlapFraction, reel->translationBInA};
 
         Matches matches;
@@ -182,7 +182,7 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
             // [AD 21/10/2026 20:41] Découpe des seules bandes de chevauchement effectif (za dans A, zb dans B)
             // au lieu d'envoyer les tuiles entières, puis translation des points détectés par za.tl() et zb.tl()
             // pour les réexprimer dans le repère global des tuiles entières avant le rejet des aberrants.
-            const auto [za, zb] = matching::EstimationRecouvrement::zonesCommunes(imgA.size(), imgB.size(), reel->translationBInA);
+            const auto [za, zb] = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(imgA.size(), imgB.size(), reel->translationBInA);
             if (za.empty() || !matcher->match(imgA(za), imgB(zb), ctx, matches)) { log << settings.matcher << " : pas assez de correspondances, paire ignoree\n"; return true; }
             for (auto& p : matches.pointsInA) p += cv::Point2f(za.tl());
             for (auto& p : matches.pointsInB) p += cv::Point2f(zb.tl());

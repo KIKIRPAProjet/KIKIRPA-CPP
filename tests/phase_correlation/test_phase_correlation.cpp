@@ -1,14 +1,17 @@
-// test_correlation_phase.cpp
-// Vérification de CorrelationPhase (voir docs/algorithms/stitching/correlation_phase/CorrelationPhase.md §7).
+// tests/phase_correlation/test_phase_correlation.cpp
+// Vérification de PhaseCorrelationMatcherClass (voir docs/algorithms/stitching/phase_correlation/PhaseCorrelation.md §7).
 //
 // Tests à vérité exacte (GoogleTest, ctest -L unit) : deux tuiles découpées dans une texture générée à des
 // positions non entières connues, dans les 4 directions, puis les deux passes (recouvrement réel différent du
-// nominal, première passe faite par le pipeline : EstimationRecouvrement) et les cas limites.
+// nominal, première passe faite par le pipeline : OverlapEstimatorClass) et les cas limites.
 
-#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
-#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
+#include "core/data/algorithm_types.h"
+
 #include <gtest/gtest.h>
 #include <opencv2/imgproc.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -19,10 +22,13 @@
 #include <tuple>
 #include <vector>
 
-namespace stitching::tests {
+namespace {
 
-using matching::CorrelationPhase;
-using matching::EstimationRecouvrement;
+using DataNs::Direction;
+using DataNs::Matches;
+using DataNs::PairContext;
+using OverlapEstimationNs::OverlapEstimatorClass;
+using PhaseCorrelationNs::PhaseCorrelationMatcherClass;
 
 constexpr double TOLERANCE_TRANSLATION = 0.05;  // px : écart maximal à la vérité pour la translation globale
 constexpr double TOLERANCE_POINTS      = 0.5;   // px : écart maximal de pointsA − pointsB à la vérité
@@ -136,7 +142,7 @@ void testerPaire(const std::string& nom, const cv::Mat& source, cv::Point coinA,
     std::cout << nom << "  (vérité x = " << format("%.4f, y = %.4f)", vrai.x, vrai.y) << '\n';
     const auto [A, B] = decouperPaire(source, coinA, vrai);
 
-    CorrelationPhase cp;
+    PhaseCorrelationMatcherClass cp;
     Matches m;
     const auto debut = std::chrono::steady_clock::now();
     const bool ok = cp.match(A, B, {dir, static_cast<float>(RECOUVREMENT)}, m);
@@ -188,16 +194,16 @@ void testerDirections(const std::string& nomSource, const cv::Mat& source) {
         testerPaire(nom, source, cv::Point(centre - vrai / 2), vrai, dir);
 }
 
-// Recouvrement réel différent du nominal (20 % annoncés) : la première passe (EstimationRecouvrement) retrouve
+// Recouvrement réel différent du nominal (20 % annoncés) : la première passe (OverlapEstimatorClass) retrouve
 // la position au pixel et le recouvrement réel ; la deuxième mesure la translation sur toute la zone commune
-// réelle, que la première passe soit faite par match() ou fournie par le pipeline (ctx.translation)
+// réelle, que la première passe soit faite par match() ou fournie par le pipeline (estimatedTranslation)
 void testerDeuxPasses(const cv::Mat& source) {
     std::cout << "\n=== Première et deuxième passe ===\n";
     const cv::Point coinA(300, 400);
     const PairContext bas{Direction::Bottom, static_cast<float>(RECOUVREMENT)};
     const PairContext haut{Direction::Top, static_cast<float>(RECOUVREMENT)};
-    EstimationRecouvrement estimation;
-    CorrelationPhase cp;
+    OverlapEstimatorClass estimation;
+    PhaseCorrelationMatcherClass cp;
 
     for (const double reel : RECOUVREMENTS_REELS) {
         const cv::Point2d vrai(-6.4187, COTE_TUILE * (1 - reel) + 0.2913);
@@ -205,8 +211,8 @@ void testerDeuxPasses(const cv::Mat& source) {
         const auto [A, B] = decouperPaire(source, coinA, vrai);
 
         // Première passe : position au pixel près et recouvrement réel
-        const auto r = estimation.estimer(A, B, bas);
-        verifier(r.has_value(), "première passe : estimer renvoie un résultat " + estimation.raisonEchec());
+        const auto r = estimation.estimate(A, B, bas);
+        verifier(r.has_value(), "première passe : estimer renvoie un résultat " + estimation.getFailureReason());
         if (!r) continue;
         const double recouvrementAttendu = (COTE_TUILE - vrai.y) / COTE_TUILE;
         verifier(std::abs(r->translationBInA.x - vrai.x) <= ERREUR_PREMIERE_PASSE &&
@@ -216,12 +222,12 @@ void testerDeuxPasses(const cv::Mat& source) {
         verifier(std::abs(r->overlapFraction - recouvrementAttendu) <= ERREUR_PREMIERE_PASSE / COTE_TUILE,
                  format("première passe : recouvrement réel %.2f %% (vérité %.2f %%)", r->overlapFraction * 100.0,
                         recouvrementAttendu * 100));
-        const auto rInverse = estimation.estimer(B, A, haut);
+        const auto rInverse = estimation.estimate(B, A, haut);
         verifier(rInverse && rInverse->translationBInA == -r->translationBInA && rInverse->overlapFraction == r->overlapFraction,
                  "première passe : Top(B, A) = -Bottom(A, B), même recouvrement");
 
         // Zone commune réelle : toute la hauteur du recouvrement réel, pas les 20 % nominaux
-        const auto [za, zb] = EstimationRecouvrement::zonesCommunes(A.size(), B.size(), r->translationBInA);
+        const auto [za, zb] = OverlapEstimatorClass::computeCommonAreas(A.size(), B.size(), r->translationBInA);
         verifier(za.size() == zb.size() && za.height == COTE_TUILE - static_cast<int>(r->translationBInA.y) &&
                      za.width == COTE_TUILE - static_cast<int>(std::abs(r->translationBInA.x)),
                  format("zone commune : %.0f x %.0f px (bande nominale : %.0f px de haut)", za.width, za.height,
@@ -238,29 +244,29 @@ void testerDeuxPasses(const cv::Mat& source) {
         Matches mp;
         verifier(cp.match(A, B, pipeline, mp) && mp.translationX == m.translationX && mp.translationY == m.translationY && mp.pointsInA == m.pointsInA &&
                      mp.pointsInB == m.pointsInB,
-                 "ctx.translation du pipeline : même translation et mêmes points que match() seul");
+                 "estimatedTranslation du pipeline : même translation et mêmes points que match() seul");
 
         // Translation du pipeline un peu fausse : la deuxième passe la rattrape
         pipeline.estimatedTranslation = r->translationBInA + ERREUR_PIPELINE;
         verifier(cp.match(A, B, pipeline, mp) && std::abs(mp.translationX - vrai.x) <= TOLERANCE_TRANSLATION &&
                      std::abs(mp.translationY - vrai.y) <= TOLERANCE_TRANSLATION,
-                 format("ctx.translation fausse de (%+.0f, %+.0f) px : dx = %.4f, dy = %.4f", ERREUR_PIPELINE.x,
+                 format("estimatedTranslation fausse de (%+.0f, %+.0f) px : dx = %.4f, dy = %.4f", ERREUR_PIPELINE.x,
                         ERREUR_PIPELINE.y, mp.translationX, mp.translationY));
 
         // Trop fausse : false plutôt qu'une translation tronquée au bord de la marge
         pipeline.estimatedTranslation = r->translationBInA + ERREUR_HORS_MARGE;
         const bool okHorsMarge = cp.match(A, B, pipeline, mp);
-        verifier(!okHorsMarge && cp.raisonEchec().find("deuxième passe") != std::string::npos,
-                 format("ctx.translation fausse de 10 px -> false (dx = %.4f, dy = %.4f) : ", mp.translationX, mp.translationY) +
-                     cp.raisonEchec());
+        verifier(!okHorsMarge && cp.getFailureReason().find("second pass") != std::string::npos,
+                 format("estimatedTranslation fausse de 10 px -> false (dx = %.4f, dy = %.4f) : ", mp.translationX, mp.translationY) +
+                     cp.getFailureReason());
     }
 
     // Translation du pipeline qui ne fait pas se superposer les tuiles
     const auto [A, B] = decouperPaire(source, coinA, {0.3, COTE_TUILE * (1 - RECOUVREMENT) + 0.6});
     Matches m;
     const bool okSansRecouvrement = cp.match(A, B, {Direction::Bottom, static_cast<float>(RECOUVREMENT), SANS_RECOUVREMENT}, m);
-    verifier(!okSansRecouvrement && cp.raisonEchec().find("zone commune réelle") != std::string::npos,
-             "ctx.translation sans recouvrement -> false : " + cp.raisonEchec());
+    verifier(!okSansRecouvrement && cp.getFailureReason().find("actual common area") != std::string::npos,
+             "estimatedTranslation sans recouvrement -> false : " + cp.getFailureReason());
 }
 
 void testerCasLimites(const cv::Mat& source) {
@@ -270,7 +276,7 @@ void testerCasLimites(const cv::Mat& source) {
     const cv::Point2d vrai(7.373, pas + 12.8167);
     const auto [A, B] = decouperPaire(source, coinA, vrai);
     const PairContext bas{Direction::Bottom, static_cast<float>(RECOUVREMENT)};
-    CorrelationPhase cp;
+    PhaseCorrelationMatcherClass cp;
     Matches m, inverse;
 
     // Échanger A et B en inversant la direction : même calcul, résultat opposé, points échangés
@@ -305,42 +311,42 @@ void testerCasLimites(const cv::Mat& source) {
     verifier(!cp.match(cv::Mat(), B, bas, m), "tuile vide -> false");
     verifier(!cp.match(A, B, {Direction::Bottom, 0.f}, m), "recouvrement 0 -> false");
     verifier(!cp.match(A, B, {Direction::Bottom, 1.5f}, m), "recouvrement 1.5 -> false");
-    verifier(cp.raisonEchec().find("recouvrement nominal") != std::string::npos,
-             "raisonEchec : " + cp.raisonEchec());
+    verifier(cp.getFailureReason().find("nominal overlap") != std::string::npos,
+             "getFailureReason : " + cp.getFailureReason());
 
     // Recouvrement réel de 27 % pour 20 % annoncés : 70 px d'écart, au-delà de la marge du rail (50 px).
     // false, avec un message qui dit d'augmenter la marge ; avec une marge suffisante, la mesure est juste.
     const cv::Point2d vraiHorsMarge(4.2163, COTE_TUILE * (1 - RECOUVREMENT_HORS_MARGE) + 0.3721);
     const auto [Ah, Bh] = decouperPaire(source, coinA, vraiHorsMarge);
     const bool okHorsMarge = cp.match(Ah, Bh, bas, m);
-    verifier(!okHorsMarge && cp.raisonEchec().find("Augmenter la marge") != std::string::npos,
-             "recouvrement réel 27 % hors marge -> false : " + cp.raisonEchec());
-    CorrelationPhase::Parametres margeLarge;
-    margeLarge.marge = MARGE_ELARGIE;
-    CorrelationPhase cpMargeLarge(margeLarge);
+    verifier(!okHorsMarge && cp.getFailureReason().find("Increase the rail margin") != std::string::npos,
+             "recouvrement réel 27 % hors marge -> false : " + cp.getFailureReason());
+    PhaseCorrelationNs::Parameters margeLarge;
+    margeLarge.railMargin = MARGE_ELARGIE;
+    PhaseCorrelationMatcherClass cpMargeLarge(margeLarge);
     const bool okMargeLarge = cpMargeLarge.match(Ah, Bh, bas, m);
-    verifier(okMargeLarge && cpMargeLarge.raisonEchec().empty() && std::abs(m.translationX - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
+    verifier(okMargeLarge && cpMargeLarge.getFailureReason().empty() && std::abs(m.translationX - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
                  std::abs(m.translationY - vraiHorsMarge.y) < TOLERANCE_TRANSLATION,
              format("même paire, marge = 100 px : dx = %.3f, dy = %.3f (vérité %.3f, %.3f)", m.translationX, m.translationY,
                     vraiHorsMarge.x, vraiHorsMarge.y));
 
     // nbPoints = 0 : translation seule
-    CorrelationPhase::Parametres translationSeule;
-    translationSeule.nbPoints = 0;
-    CorrelationPhase sansPoints(translationSeule);
+    PhaseCorrelationNs::Parameters translationSeule;
+    translationSeule.maximumPointCount = 0;
+    PhaseCorrelationMatcherClass sansPoints(translationSeule);
     verifier(sansPoints.match(A, B, bas, m) && m.pointsInA.empty() && std::abs(m.translationY - vrai.y) < TOLERANCE_TRANSLATION,
              "nbPoints = 0 -> translation seule, aucun point");
 
     // Paramètres invalides : erreur de configuration, à la construction
-    CorrelationPhase::Parametres fenetreTropPetite;
-    fenetreTropPetite.fenetre = 4;
+    PhaseCorrelationNs::Parameters fenetreTropPetite;
+    fenetreTropPetite.patchSize = 4;
     bool leve = false;
-    try { CorrelationPhase invalide(fenetreTropPetite); } catch (const std::invalid_argument&) { leve = true; }
+    try { PhaseCorrelationMatcherClass invalide(fenetreTropPetite); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "fenetre = 4 -> std::invalid_argument");
-    CorrelationPhase::Parametres fractionHorsDomaine;
-    fractionHorsDomaine.fractionValideMin = 1.5;
+    PhaseCorrelationNs::Parameters fractionHorsDomaine;
+    fractionHorsDomaine.minimumValidFraction = 1.5;
     leve = false;
-    try { CorrelationPhase invalide(fractionHorsDomaine); } catch (const std::invalid_argument&) { leve = true; }
+    try { PhaseCorrelationMatcherClass invalide(fractionHorsDomaine); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "fractionValideMin = 1.5 -> std::invalid_argument");
 
     // Motif périodique : ses copies (tous les 75 px) sont hors de la marge du rail (50 px),
@@ -353,8 +359,8 @@ void testerCasLimites(const cv::Mat& source) {
              format("motif de période 75 px, vérité (5, 820) : dx = %.2f, dy = %.2f", m.translationX, m.translationY));
 }
 
-TEST(CorrelationPhase, QuatreDirections) { testerDirections("texture générée", textureGeneree({2400, 2400}, 1)); }
-TEST(CorrelationPhase, DeuxPasses) { testerDeuxPasses(textureGeneree({2400, 2400}, 3)); }
-TEST(CorrelationPhase, CasLimites) { testerCasLimites(textureGeneree({2400, 2400}, 2)); }
+TEST(PhaseCorrelation, QuatreDirections) { testerDirections("texture générée", textureGeneree({2400, 2400}, 1)); }
+TEST(PhaseCorrelation, DeuxPasses) { testerDeuxPasses(textureGeneree({2400, 2400}, 3)); }
+TEST(PhaseCorrelation, CasLimites) { testerCasLimites(textureGeneree({2400, 2400}, 2)); }
 
-} // namespace stitching::tests
+}
