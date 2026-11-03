@@ -20,7 +20,8 @@ Un TIFF pyramidal contient plusieurs versions de la même image :
 
 Le nombre de niveaux est défini par `DataNs::LEVEL_COUNT`. Chaque niveau est stocké en tuiles
 de `DataNs::BLOCK_SIZE` pixels de côté. Le writer utilise actuellement une taille de 512 × 512
-pixels et une compression LZW.
+pixels et une compression LZW. Les dimensions des niveaux réduits sont calculées par division
+entière : elles peuvent donc être arrondies vers le bas.
 
 Les niveaux réduits sont créés successivement avec `cv::INTER_AREA`. Les dimensions sont donc
 arrondies vers le bas, comme dans `TileClass`.
@@ -104,7 +105,7 @@ Les coordonnées de `region` sont toujours exprimées dans le niveau demandé. D
 `cv::Rect(100, 50, 400, 300)` désigne une région de 400 × 300 pixels du niveau `1`, et non
 de la résolution originale.
 
-La région doit avoir des coordonnées positives et une largeur et une hauteur strictement
+La région doit avoir des coordonnées non négatives et une largeur et une hauteur strictement
 positives. Elle doit être entièrement contenue dans le niveau demandé : le reader ne la
 tronque pas automatiquement. En cas de succès, `output` a exactement la taille de `region`
 et le type du niveau lu.
