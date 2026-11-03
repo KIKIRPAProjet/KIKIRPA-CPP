@@ -1,15 +1,17 @@
-// test_egalisation.cpp
-// Vérification de Egalisation (voir docs/algorithms/egalisation/Egalisation.md §6).
+// tests/brightness_equalization/test_brightness_equalization.cpp
+// Vérification de BrightnessEqualizerClass (voir docs/algorithms/brightness_equalization/BrightnessEqualization.md §6).
 //
 // Tests à vérité exacte (GoogleTest, ctest -L unit) : 6 tuiles (grille 2 × 3) découpées dans une texture
 // générée, à des positions connues (décalages perpendiculaires compris), puis multipliées par des gains et un
 // champ d'éclairage connus. Tuiles 8 et 16 bits mélangées, gris puis couleur, une tuile plus haute que les autres.
 // On vérifie les gains et le champ retrouvés, la tuile corrigée, puis les cas limites.
 
-#include "algorithms/egalisation/Egalisation.h"
-#include "algorithms/egalisation/Sortie.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
+#include "algorithms/brightness_equalization/output.h"
+
 #include <gtest/gtest.h>
 #include <opencv2/imgproc.hpp>
+
 #include <cmath>
 #include <cstdio>
 #include <iostream>
@@ -17,13 +19,13 @@
 #include <string>
 #include <vector>
 
-namespace stitching::tests {
+namespace {
 
-using egalisation::Egalisation;
-using egalisation::Methode;
-using egalisation::PaireVoisine;
-using egalisation::Resultat;
-using egalisation::TuileReduite;
+using BrightnessEqualizationNs::BrightnessEqualizerClass;
+using BrightnessEqualizationNs::CorrectionMethod;
+using BrightnessEqualizationNs::EqualizationResult;
+using BrightnessEqualizationNs::NeighbourPair;
+using BrightnessEqualizationNs::ReducedTile;
 
 constexpr int    LIGNES = 2, COLONNES = 3;
 constexpr int    COTE = 1600;              // px : tuiles carrées (sauf une, plus haute)
@@ -125,14 +127,14 @@ std::vector<double> gainsVrais() {
 void testerJeu(const std::string& nom, int canaux) {
     std::cout << "\n=== " << nom << " ===\n";
     const Jeu jeu = genererJeu(canaux, canaux == 1 ? 7 : 11);
-    Egalisation eg;
-    std::vector<TuileReduite> reduites;
-    for (const auto& t : jeu.tuiles) reduites.push_back(eg.reduire(t));
-    const auto paires = Egalisation::pairesDepuisPositions(jeu.positions, jeu.voisins);
-    const auto r = eg.estimer(reduites, paires);
-    verifier(r.has_value(), "estimation réussie" + (r ? std::string() : " : " + eg.raisonEchec()));
+    BrightnessEqualizerClass eg;
+    std::vector<ReducedTile> reduites;
+    for (const auto& t : jeu.tuiles) reduites.push_back(eg.reduceTile(t));
+    const auto paires = BrightnessEqualizerClass::buildPairsFromPositions(jeu.positions, jeu.voisins);
+    const auto r = eg.estimate(reduites, paires);
+    verifier(r.has_value(), "estimation réussie" + (r ? std::string() : " : " + eg.getFailureReason()));
     if (!r) return;
-    std::cout << egalisation::Sortie::rapport(*r);
+    std::cout << BrightnessEqualizationNs::OutputClass::buildReport(*r);
 
     const auto vrais = gainsVrais();
     double pireA = 0, pireB = 0;
@@ -142,15 +144,15 @@ void testerJeu(const std::string& nom, int canaux) {
     }
     verifier(pireB < TOLERANCE_GAIN_B, format("gains B à %.2f %% près de la vérité (tolérance %.1f %%)", 100 * pireB, 100 * TOLERANCE_GAIN_B));
     verifier(pireA < TOLERANCE_GAIN_A, format("gains A à %.2f %% près de la vérité (tolérance %.1f %%)", 100 * pireA, 100 * TOLERANCE_GAIN_A));
-    verifier(std::abs(r->c - CHAMP) < TOLERANCE_CHAMP, format("champ c = %.4f (vrai %.4f)", r->c, CHAMP));
-    verifier(r->apresB.ecartMoyen < ECART_MAX_APRES && r->apresB.ecartMoyen < r->apresA.ecartMoyen
-             && r->apresA.ecartMoyen < r->avant.ecartMoyen,
-             format("écart moyen : avant %.2f %% > A %.2f %% > B %.2f %%", r->avant.ecartMoyen, r->apresA.ecartMoyen, r->apresB.ecartMoyen));
-    verifier(r->tuilesIsolees.empty() && r->pairesVides.empty(), "toutes les tuiles et paires sont utilisées");
+    verifier(std::abs(r->fieldStrength - CHAMP) < TOLERANCE_CHAMP, format("champ c = %.4f (vrai %.4f)", r->fieldStrength, CHAMP));
+    verifier(r->afterB.meanDifference < ECART_MAX_APRES && r->afterB.meanDifference < r->afterA.meanDifference
+             && r->afterA.meanDifference < r->before.meanDifference,
+             format("écart moyen : avant %.2f %% > A %.2f %% > B %.2f %%", r->before.meanDifference, r->afterA.meanDifference, r->afterB.meanDifference));
+    verifier(r->isolatedTiles.empty() && r->emptyPairs.empty(), "toutes les tuiles et paires sont utilisées");
 
     // Tuile corrigée : type, taille, teinte conservée, et même luminosité que sa voisine dans le recouvrement
-    const cv::Mat c0 = Egalisation::corriger(jeu.tuiles[0], *r, 0, Methode::GainEtChamp);
-    const cv::Mat c1 = Egalisation::corriger(jeu.tuiles[1], *r, 1, Methode::GainEtChamp);
+    const cv::Mat c0 = BrightnessEqualizerClass::correctTile(jeu.tuiles[0], *r, 0, CorrectionMethod::GainAndField);
+    const cv::Mat c1 = BrightnessEqualizerClass::correctTile(jeu.tuiles[1], *r, 1, CorrectionMethod::GainAndField);
     verifier(c0.depth() == CV_16U && c0.channels() == canaux && c0.size() == jeu.tuiles[0].size(),
              "tuile corrigée en 16 bits, même taille et mêmes canaux (entrée 8 bits)");
     const cv::Point t = jeu.positions[1] - jeu.positions[0];
@@ -169,49 +171,49 @@ void testerCasLimites() {
     std::cout << "\n=== Cas limites ===\n";
     bool leve = false;
     try {
-        Egalisation::Parametres p;
-        p.seuilBas = 0.9;
-        p.seuilHaut = 0.5;
-        Egalisation eg(p);
+        BrightnessEqualizationNs::Parameters p;
+        p.lowThreshold = 0.9;
+        p.highThreshold = 0.5;
+        BrightnessEqualizerClass eg(p);
     } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "paramètre invalide (seuilBas >= seuilHaut) : std::invalid_argument");
 
-    Egalisation eg;
+    BrightnessEqualizerClass eg;
     const Jeu jeu = genererJeu(1, 3);
-    std::vector<TuileReduite> reduites;
-    for (const auto& t : jeu.tuiles) reduites.push_back(eg.reduire(t));
+    std::vector<ReducedTile> reduites;
+    for (const auto& t : jeu.tuiles) reduites.push_back(eg.reduceTile(t));
 
     // estimer() d'abord, puis le message : dans une même expression, l'ordre d'évaluation n'est pas garanti
-    auto echec = [&](const std::vector<TuileReduite>& t, const std::vector<PaireVoisine>& p, const std::string& cas) {
-        const bool vide = !eg.estimer(t, p);
-        verifier(vide && !eg.raisonEchec().empty(), cas + " : échec expliqué (" + eg.raisonEchec() + ")");
+    auto echec = [&](const std::vector<ReducedTile>& t, const std::vector<NeighbourPair>& p, const std::string& cas) {
+        const bool vide = !eg.estimate(t, p);
+        verifier(vide && !eg.getFailureReason().empty(), cas + " : échec expliqué (" + eg.getFailureReason() + ")");
     };
     echec({reduites[0]}, {}, "une seule tuile");
     echec(reduites, {{0, 9, {0, 0}}}, "indice de paire hors limites");
     echec(reduites, {{0, 1, {50000, 0}}}, "aucun recouvrement");
 
     // Tuile 5 retirée de toutes les paires : gain exactement 1, signalée
-    auto paires = Egalisation::pairesDepuisPositions(jeu.positions, jeu.voisins);
-    std::vector<PaireVoisine> sans5;
+    auto paires = BrightnessEqualizerClass::buildPairsFromPositions(jeu.positions, jeu.voisins);
+    std::vector<NeighbourPair> sans5;
     for (const auto& p : paires)
-        if (p.a != 5 && p.b != 5) sans5.push_back(p);
+        if (p.tileIndexA != 5 && p.tileIndexB != 5) sans5.push_back(p);
     sans5.push_back({0, 1, {50000, 0}});   // paire sans recouvrement : ignorée, signalée
-    const auto r = eg.estimer(reduites, sans5);
-    verifier(r && r->tuilesIsolees == std::vector<int>{5} && r->gainsB[5] == 1.0 && r->gainsA[5] == 1.0,
-             "tuile sans paire : gain 1, signalée dans tuilesIsolees");
-    verifier(r && r->pairesVides == std::vector<int>{static_cast<int>(sans5.size()) - 1},
-             "paire sans recouvrement : ignorée, signalée dans pairesVides");
+    const auto r = eg.estimate(reduites, sans5);
+    verifier(r && r->isolatedTiles == std::vector<int>{5} && r->gainsB[5] == 1.0 && r->gainsA[5] == 1.0,
+             "tuile sans paire : gain 1, signalée dans isolatedTiles");
+    verifier(r && r->emptyPairs == std::vector<int>{static_cast<int>(sans5.size()) - 1},
+             "paire sans recouvrement : ignorée, signalée dans emptyPairs");
 
     // Réduction depuis un niveau de pyramide : même résultat que depuis la pleine résolution
     cv::Mat petite;
     cv::resize(jeu.tuiles[1], petite, cv::Size(), 1.0 / 8, 1.0 / 8, cv::INTER_AREA);
-    const TuileReduite a = eg.reduire(jeu.tuiles[1]), b = eg.reduire(petite, jeu.tuiles[1].size());
-    double ecart = cv::norm(a.lum, b.lum, cv::NORM_INF);
-    verifier(a.lum.size() == b.lum.size() && ecart < 1e-3, format("réduction depuis un niveau 1/8 : écart max %.1e", ecart));
+    const ReducedTile a = eg.reduceTile(jeu.tuiles[1]), b = eg.reduceTile(petite, jeu.tuiles[1].size());
+    double ecart = cv::norm(a.luminance, b.luminance, cv::NORM_INF);
+    verifier(a.luminance.size() == b.luminance.size() && ecart < 1e-3, format("réduction depuis un niveau 1/8 : écart max %.1e", ecart));
 }
 
-TEST(Egalisation, TuilesEnNiveauxDeGris) { testerJeu("Tuiles en niveaux de gris (8 et 16 bits)", 1); }
-TEST(Egalisation, TuilesCouleur) { testerJeu("Tuiles couleur BGR (8 et 16 bits)", 3); }
-TEST(Egalisation, CasLimites) { testerCasLimites(); }
+TEST(BrightnessEqualization, TuilesEnNiveauxDeGris) { testerJeu("Tuiles en niveaux de gris (8 et 16 bits)", 1); }
+TEST(BrightnessEqualization, TuilesCouleur) { testerJeu("Tuiles couleur BGR (8 et 16 bits)", 3); }
+TEST(BrightnessEqualization, CasLimites) { testerCasLimites(); }
 
-} // namespace stitching::tests
+}

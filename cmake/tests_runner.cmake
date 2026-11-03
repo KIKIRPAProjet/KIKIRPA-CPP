@@ -31,12 +31,12 @@ if(BUILD_TESTING)
     # Chaque sous-répertoire possède son propre CMakeLists.txt et définit
     # les exécutables de tests associés.
     #
-    # - core             : tests des fonctionnalités fondamentales du backend.
-    # - egalisation      : tests des fonctionnalités d'égalisation.
-    # - phase_correlation: tests de la corrélation de phase.
-    # - seamline         : tests liés à la génération des seamlines.
+    # - brightness_equalization : tests de l'égalisation de luminosité.
+    # - core                    : tests des fonctionnalités fondamentales du backend.
+    # - phase_correlation       : tests de la corrélation de phase.
+    # - seamline                : tests liés à la génération des seamlines.
+    add_subdirectory(tests/brightness_equalization)
     add_subdirectory(tests/core)
-    add_subdirectory(tests/egalisation)
     add_subdirectory(tests/phase_correlation)
     add_subdirectory(tests/seamline)
 
