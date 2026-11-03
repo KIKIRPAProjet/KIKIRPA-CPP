@@ -97,11 +97,12 @@ def main() -> int:
         ]
     )
 
-    temporary_dir = Path(tempfile.mkdtemp(prefix="Frontend-"))
-    print(f"Qt détecté : {qt_dir}")
-    print(f"Compilation temporaire dans : {temporary_dir}")
-
+    temporary_dir: Path | None = None
     try:
+        temporary_dir = Path(tempfile.mkdtemp(prefix="Frontend-"))
+        print(f"Qt détecté : {qt_dir}")
+        print(f"Compilation temporaire dans : {temporary_dir}")
+
         subprocess.run(
             [
                 str(cmake),
@@ -134,9 +135,16 @@ def main() -> int:
     except subprocess.CalledProcessError as error:
         print(f"La commande a échoué avec le code {error.returncode}.")
         return error.returncode or 1
+    except OSError as error:
+        print(f"Impossible d'accéder à un fichier ou d'exécuter un outil : {error}")
+        return 1
     finally:
-        shutil.rmtree(temporary_dir, ignore_errors=True)
-        print("Fichiers temporaires supprimés.")
+        if temporary_dir is not None:
+            try:
+                shutil.rmtree(temporary_dir)
+                print("Fichiers temporaires supprimés.")
+            except OSError as error:
+                print(f"Impossible de supprimer les fichiers temporaires : {error}")
 
 
 if __name__ == "__main__":
