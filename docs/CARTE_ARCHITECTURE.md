@@ -2,7 +2,7 @@
 
 Guide pour se repérer dans le code de **`main`**, à jour du 03/11/2026 après la réorganisation de `core/` et `steps/` (PR #50). Les éléments marqués **🆕** ont changé avec cette réorganisation : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. Correspondance complète entre anciens et nouveaux noms : [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md). Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
 
-> **Cette carte doit rester à jour.** Toute PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test met à jour la section concernée dans la même PR.
+> **Cette carte doit rester à jour.** Elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
 Les liens ouvrent les fichiers.
 
