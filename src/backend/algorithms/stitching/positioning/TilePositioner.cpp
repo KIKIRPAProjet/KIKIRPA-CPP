@@ -5,7 +5,7 @@
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "algorithms/stitching/sift/sift_matcher.h"
 #ifdef STITCHING_PROJECT_ROOT
-#include "algorithms/stitching/lightglue/LightGlueMatcher.h"
+#include "algorithms/stitching/lightglue/lightglue_matcher.h"
 #endif
 #include <algorithm>
 #include <cmath>
@@ -146,7 +146,7 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
     if (settings.matcher == "sift") matcher = std::make_unique<SiftNs::SiftMatcherClass>(settings.matcherParams);
     else if (settings.matcher == "correlation_phase") matcher = std::make_unique<PhaseCorrelationNs::PhaseCorrelationMatcherClass>();
 #ifdef STITCHING_PROJECT_ROOT
-    else if (settings.matcher == "lightglue") matcher = std::make_unique<matching::LightGlueMatcher>();
+    else if (settings.matcher == "lightglue") matcher = std::make_unique<LightGlueNs::LightGlueMatcherClass>();
 #endif
     std::unique_ptr<rejection::OutlierRejector> rejector;
     if (settings.rejector == "ransac") rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
