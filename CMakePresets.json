@@ -3,16 +3,17 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
   "configurePresets": [
     {
-      "name": "windows-msvc",
-      "displayName": "Windows (MSVC + Ninja, libtiff, GoogleTest et Qt via vcpkg)",
-      "description": "Variables d'environnement requises : VCPKG_ROOT (ex. C:/vcpkg) et OpenCV_DIR (ex. C:/opencv/build). Voir docs/BUILD.md.",
+      "name": "windows-aqt",
+      "displayName": "Windows (MSVC + Ninja, Qt binaire via aqt)",
+      "description": "Variables requises : KIKIRPA_VCPKG_ROOT, OpenCV_DIR et QT_ROOT. Voir docs/BUILD.md.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{KIKIRPA_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
-        "OpenCV_DIR": "$env{OpenCV_DIR}"
+        "OpenCV_DIR": "$env{OpenCV_DIR}",
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT}"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
     },
@@ -24,22 +25,52 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Apple Clang + Homebrew)",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+	},
+	{
+      "name": "linux-clang-tidy",
+      "displayName": "Linux (clang-tidy)",
+      "description": "Linux build with Clang and clang-tidy checks enabled. Install both before configuring.",
+      "inherits": "linux",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "ENABLE_CLANG_TIDY": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "windows-msvc", "configurePreset": "windows-msvc" },
-    { "name": "linux", "configurePreset": "linux" }
+    { "name": "windows-aqt", "configurePreset": "windows-aqt" },
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "linux-clang-tidy", "configurePreset": "linux-clang-tidy" }
   ],
   "testPresets": [
     {
-      "name": "windows-msvc",
-      "configurePreset": "windows-msvc",
+      "name": "windows-aqt",
+      "configurePreset": "windows-aqt",
       "output": { "outputOnFailure": true },
       "environment": { "PATH": "$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}" }
     },
     {
       "name": "linux",
       "configurePreset": "linux",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "macos",
+      "configurePreset": "macos",
       "output": { "outputOnFailure": true }
     }
   ]

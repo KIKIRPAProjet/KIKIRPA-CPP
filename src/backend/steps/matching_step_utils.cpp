@@ -1,13 +1,24 @@
 // src/backend/steps/matching_step_utils.cpp
 #include "steps/matching_step_utils.h"
+#include "core/data/tile.h"
+#include "core/data/algorithm_types.h"
 
+#include <cstddef>
+#include <nlohmann/json.hpp>
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
+#include <nlohmann/json_fwd.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <string>
 #include <utility>
+#include <vector>
 
 namespace StepsNs {
 
@@ -56,7 +67,7 @@ namespace StepsNs {
             throw std::runtime_error("insufficient or inconsistent correspondences");
         const auto isValidPoint = [](cv::Point2f point, cv::Size imageSize) {
             return std::isfinite(point.x) && std::isfinite(point.y) && point.x >= 0.f && point.y >= 0.f &&
-                   point.x < imageSize.width && point.y < imageSize.height;
+                   point.x < static_cast<float>(imageSize.width) && point.y < static_cast<float>(imageSize.height);
         };
         for (size_t i = 0; i < matchCount; ++i)
             if (!isValidPoint(matches.pointsInA[i], imageSizeA) || !isValidPoint(matches.pointsInB[i], imageSizeB) ||

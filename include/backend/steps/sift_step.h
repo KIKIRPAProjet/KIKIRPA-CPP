@@ -4,19 +4,24 @@
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
-#include <nlohmann/json.hpp>
 
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
 namespace StepsNs {
 
     struct SiftInput {
-        float overlap = 0.2f;
-        int maxFeatures = 500;
-        float loweRatio = 0.75f;
-        double contrastThreshold = 0.01;
-        double claheClipLimit = 2.0;
+        static constexpr float DEFAULT_OVERLAP = 0.2f;
+        static constexpr int DEFAULT_MAX_FEATURES = 500;
+        static constexpr float DEFAULT_LOWE_RATIO = 0.75f;
+        static constexpr double DEFAULT_CONTRAST_THRESHOLD = 0.01;
+        static constexpr double DEFAULT_CLAHE_CLIP_LIMIT = 2.0;
+        float overlap = DEFAULT_OVERLAP;
+        int maxFeatures = DEFAULT_MAX_FEATURES;
+        float loweRatio = DEFAULT_LOWE_RATIO;
+        double contrastThreshold = DEFAULT_CONTRAST_THRESHOLD;
+        double claheClipLimit = DEFAULT_CLAHE_CLIP_LIMIT;
         int minMatches = 4;
     };
 
