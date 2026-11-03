@@ -24,49 +24,49 @@ SimulationRunner::SimulationRunner(QObject *parent)
 
 bool SimulationRunner::isRunning() const
 {
-    return m_running;
+    return running;
 }
 
 void SimulationRunner::startRun(int firstStep)
 {
-    if (m_running) {
+    if (running) {
         emit statusChanged(tr("Une démonstration de progression est déjà en cours."));
         return;
     }
 
-    m_firstStep = firstStep;
-    m_progress = 0;
-    m_running = true;
+    firstStepNumber = firstStep;
+    progress = 0;
+    running = true;
     emit runStarted();
     emit stepChanged(tr("Démonstration"));
     emit statusChanged(
         tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
 
-    m_timer = new QTimer(this);
-    connect(m_timer, &QTimer::timeout, this, [this]() {
-        m_progress = qMin(100, m_progress + 4);
-        emit progressAdvanced(m_progress);
-        if (m_progress >= 100)
+    timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this]() {
+        progress = qMin(100, progress + 4);
+        emit progressAdvanced(progress);
+        if (progress >= 100)
             finishRun();
     });
-    m_timer->start(100);
+    timer->start(100);
 
     QTimer::singleShot(150, this, [this]() {
-        if (m_running && m_timer && m_timer->isActive())
+        if (running && timer && timer->isActive())
             emit cancellationAvailable();
     });
 }
 
 void SimulationRunner::cancelRun()
 {
-    if (!m_running)
+    if (!running)
         return;
 
-    m_running = false;
-    if (m_timer) {
-        m_timer->stop();
-        m_timer->deleteLater();
-        m_timer = nullptr;
+    running = false;
+    if (timer) {
+        timer->stop();
+        timer->deleteLater();
+        timer = nullptr;
     }
     emit stepChanged(tr("Annulée"));
     emit statusChanged(tr("Démonstration annulée."));
@@ -80,9 +80,9 @@ void SimulationRunner::showComparison()
 
 void SimulationRunner::toggleComparison()
 {
-    m_comparisonVisible = !m_comparisonVisible;
-    emit comparisonVisibilityChanged(m_comparisonVisible);
-    emit statusChanged(m_comparisonVisible
+    comparisonVisible = !comparisonVisible;
+    emit comparisonVisibilityChanged(comparisonVisible);
+    emit statusChanged(comparisonVisible
         ? tr("Comparaison affichée — curseur de séparation actif.")
         : tr("Comparaison côte à côte affichée."));
 }
@@ -99,15 +99,15 @@ void SimulationRunner::keepComparisonB()
 
 void SimulationRunner::finishRun()
 {
-    if (m_timer) {
-        m_timer->stop();
-        m_timer->deleteLater();
-        m_timer = nullptr;
+    if (timer) {
+        timer->stop();
+        timer->deleteLater();
+        timer = nullptr;
     }
-    m_running = false;
+    running = false;
     emit stepChanged(tr("Terminé"));
     emit statusChanged(
         tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
-            .arg(m_firstStep));
+            .arg(firstStepNumber));
     emit runFinished();
 }

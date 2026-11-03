@@ -13,7 +13,7 @@ class QWidget;
 
 namespace FrontendUtils {
 
-extern const QStringList modeNames;
+extern const QStringList MODE_NAMES;
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false);
 QLabel *mutedLabel(const QString &text, QWidget *parent);

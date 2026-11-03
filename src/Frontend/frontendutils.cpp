@@ -28,7 +28,7 @@
 
 namespace FrontendUtils {
 
-const QStringList modeNames = {
+const QStringList MODE_NAMES = {
     QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
     QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
 };

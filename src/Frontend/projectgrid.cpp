@@ -32,52 +32,52 @@ ProjectGrid::ProjectGrid(QObject *parent)
 
 const ProjectGrid::State &ProjectGrid::state() const
 {
-    return m_state;
+    return gridState;
 }
 
 void ProjectGrid::setState(const State &state)
 {
-    m_state = state;
-    m_state.gridRows = qBound(1, m_state.gridRows, 20);
-    m_state.gridColumns = qBound(1, m_state.gridColumns, 20);
-    m_state.captureOrder = qBound(0, m_state.captureOrder, 5);
-    m_state.selectedGridCell = qBound(0, m_state.selectedGridCell,
-                                      m_state.gridRows * m_state.gridColumns - 1);
-    while (m_state.gridTiles.size() < m_state.gridRows * m_state.gridColumns)
-        m_state.gridTiles.append(GridTile{});
+    gridState = state;
+    gridState.gridRows = qBound(1, gridState.gridRows, 20);
+    gridState.gridColumns = qBound(1, gridState.gridColumns, 20);
+    gridState.captureOrder = qBound(0, gridState.captureOrder, 5);
+    gridState.selectedGridCell = qBound(0, gridState.selectedGridCell,
+                                      gridState.gridRows * gridState.gridColumns - 1);
+    while (gridState.gridTiles.size() < gridState.gridRows * gridState.gridColumns)
+        gridState.gridTiles.append(GridTile{});
     emit gridUpdated();
 }
 
 void ProjectGrid::createNewProject(const QString &tileDirectory, const QStringList &tilePaths)
 {
-    m_state = State{};
-    m_state.tileDirectory = tileDirectory;
-    m_state.tilePaths = tilePaths;
+    state = State{};
+    gridState.tileDirectory = tileDirectory;
+    gridState.tilePaths = tilePaths;
     const int tileCount = static_cast<int>(tilePaths.size());
-    m_state.gridRows = qMax(1, qMin(20, (tileCount + m_state.gridColumns - 1)
-                                          / m_state.gridColumns));
+    gridState.gridRows = qMax(1, qMin(20, (tileCount + gridState.gridColumns - 1)
+                                          / gridState.gridColumns));
     initializeGridFromPaths();
 }
 
 void ProjectGrid::initializeGridFromPaths()
 {
-    if (m_state.tilePaths.size() > m_state.gridRows * m_state.gridColumns) {
-        const int tileCount = static_cast<int>(m_state.tilePaths.size());
-        m_state.gridRows = qMin(20, (tileCount + m_state.gridColumns - 1)
-                                      / m_state.gridColumns);
+    if (gridState.tilePaths.size() > gridState.gridRows * gridState.gridColumns) {
+        const int tileCount = static_cast<int>(gridState.tilePaths.size());
+        gridState.gridRows = qMin(20, (tileCount + gridState.gridColumns - 1)
+                                      / gridState.gridColumns);
     }
 
-    const int cellCount = qMax(m_state.gridRows * m_state.gridColumns,
-                               static_cast<int>(m_state.tilePaths.size()));
-    m_state.gridTiles = QVector<GridTile>(cellCount);
+    const int cellCount = qMax(gridState.gridRows * gridState.gridColumns,
+                               static_cast<int>(gridState.tilePaths.size()));
+    gridState.gridTiles = QVector<GridTile>(cellCount);
     const QVector<int> positions = captureOrderCells(
-        m_state.gridRows, m_state.gridColumns, m_state.captureOrder);
-    for (int index = 0; index < m_state.tilePaths.size(); ++index) {
+        gridState.gridRows, gridState.gridColumns, gridState.captureOrder);
+    for (int index = 0; index < gridState.tilePaths.size(); ++index) {
         const int cell = index < positions.size() ? positions.at(index) : index;
-        m_state.gridTiles[cell].path = m_state.tilePaths.at(index);
+        gridState.gridTiles[cell].path = gridState.tilePaths.at(index);
     }
-    m_state.selectedGridCell = 0;
-    m_state.gridValidated = false;
+    gridState.selectedGridCell = 0;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
@@ -98,7 +98,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     paths.reserve(imageFiles.size());
     for (const QFileInfo &imageFile : imageFiles) {
         const QString path = imageFile.absoluteFilePath();
-        if (!m_state.tilePaths.contains(path))
+        if (!gridState.tilePaths.contains(path))
             paths.append(path);
     }
 
@@ -108,34 +108,34 @@ void ProjectGrid::importTiles(const QString &directoryPath)
         return;
     }
 
-    m_state.tilePaths.append(paths);
-    m_state.tileDirectory = directoryPath;
-    const int requiredRows = (static_cast<int>(m_state.tilePaths.size())
-                              + m_state.gridColumns - 1)
-                             / m_state.gridColumns;
-    m_state.gridRows = qMax(m_state.gridRows, qMin(20, requiredRows));
-    while (m_state.gridTiles.size() < m_state.gridRows * m_state.gridColumns)
-        m_state.gridTiles.append(GridTile{});
+    gridState.tilePaths.append(paths);
+    gridState.tileDirectory = directoryPath;
+    const int requiredRows = (static_cast<int>(gridState.tilePaths.size())
+                              + gridState.gridColumns - 1)
+                             / gridState.gridColumns;
+    gridState.gridRows = qMax(gridState.gridRows, qMin(20, requiredRows));
+    while (gridState.gridTiles.size() < gridState.gridRows * gridState.gridColumns)
+        gridState.gridTiles.append(GridTile{});
 
     const QVector<int> positions = captureOrderCells(
-        m_state.gridRows, m_state.gridColumns, m_state.captureOrder);
+        gridState.gridRows, gridState.gridColumns, gridState.captureOrder);
     int positionIndex = 0;
     for (const QString &path : paths) {
         while (positionIndex < positions.size() &&
-               !m_state.gridTiles.at(positions.at(positionIndex)).path.isEmpty()) {
+               !gridState.gridTiles.at(positions.at(positionIndex)).path.isEmpty()) {
             ++positionIndex;
         }
         if (positionIndex >= positions.size()) {
             GridTile overflowTile;
             overflowTile.path = path;
-            m_state.gridTiles.append(overflowTile);
+            gridState.gridTiles.append(overflowTile);
             continue;
         }
-        m_state.gridTiles[positions.at(positionIndex)].path = path;
+        gridState.gridTiles[positions.at(positionIndex)].path = path;
         ++positionIndex;
     }
 
-    m_state.gridValidated = false;
+    gridState.gridValidated = false;
     emit gridUpdated();
     emit tilesImported(directoryPath, paths.size());
 }
@@ -150,29 +150,29 @@ void ProjectGrid::importReferenceImage(const QString &path)
         return;
     }
 
-    m_state.referenceImagePath = QFileInfo(path).absoluteFilePath();
-    m_state.gridValidated = false;
-    emit referenceImageLoaded(m_state.referenceImagePath);
+    gridState.referenceImagePath = QFileInfo(path).absoluteFilePath();
+    gridState.gridValidated = false;
+    emit referenceImageLoaded(gridState.referenceImagePath);
     emit statusRequested(tr("Image de référence importée : %1").arg(QFileInfo(path).fileName()));
 }
 
 void ProjectGrid::compareReferenceImage()
 {
-    if (m_state.referenceImagePath.isEmpty()) {
+    if (gridState.referenceImagePath.isEmpty()) {
         emit referenceImageImportRequested();
         return;
     }
-    if (m_state.selectedGridCell < 0 ||
-        m_state.selectedGridCell >= m_state.gridTiles.size() ||
-        m_state.gridTiles.at(m_state.selectedGridCell).path.isEmpty() ||
-        m_state.gridTiles.at(m_state.selectedGridCell).empty) {
+    if (gridState.selectedGridCell < 0 ||
+        gridState.selectedGridCell >= gridState.gridTiles.size() ||
+        gridState.gridTiles.at(gridState.selectedGridCell).path.isEmpty() ||
+        gridState.gridTiles.at(gridState.selectedGridCell).empty) {
         emit messageRequested(tr("Aucune tuile sélectionnée"),
             tr("Sélectionnez une tuile non vide dans la grille avant de la comparer."), false);
         return;
     }
 
-    const QString tilePath = m_state.gridTiles.at(m_state.selectedGridCell).path;
-    const QImage reference = readPreviewImage(m_state.referenceImagePath, QSize(420, 400));
+    const QString tilePath = gridState.gridTiles.at(gridState.selectedGridCell).path;
+    const QImage reference = readPreviewImage(gridState.referenceImagePath, QSize(420, 400));
     QImage tile = readPreviewImage(tilePath, QSize(420, 400));
     if (reference.isNull() || tile.isNull()) {
         emit messageRequested(tr("Comparaison impossible"),
@@ -180,31 +180,31 @@ void ProjectGrid::compareReferenceImage()
         return;
     }
 
-    const GridTile selectedTile = m_state.gridTiles.at(m_state.selectedGridCell);
+    const GridTile selectedTile = gridState.gridTiles.at(gridState.selectedGridCell);
     if (selectedTile.flipped)
         tile = tile.mirrored(true, false);
     if (selectedTile.rotation != 0)
         tile = tile.transformed(QTransform().rotate(selectedTile.rotation),
                                 Qt::SmoothTransformation);
-    emit comparisonReady(m_state.referenceImagePath, tilePath, reference, tile);
+    emit comparisonReady(gridState.referenceImagePath, tilePath, reference, tile);
 }
 
 void ProjectGrid::validateGrid()
 {
     QStringList errors;
-    const int cellCount = m_state.gridRows * m_state.gridColumns;
+    const int cellCount = gridState.gridRows * gridState.gridColumns;
     QSet<QString> assignedPaths;
     int activeTiles = 0;
-    for (int index = cellCount; index < m_state.gridTiles.size(); ++index) {
-        if (!m_state.gridTiles.at(index).path.isEmpty()) {
+    for (int index = cellCount; index < gridState.gridTiles.size(); ++index) {
+        if (!gridState.gridTiles.at(index).path.isEmpty()) {
             errors.append(tr("La tuile %1 est hors de la grille.")
-                              .arg(QFileInfo(m_state.gridTiles.at(index).path).fileName()));
+                              .arg(QFileInfo(gridState.gridTiles.at(index).path).fileName()));
         }
     }
 
     for (int index = 0;
-         index < qMin(cellCount, static_cast<int>(m_state.gridTiles.size())); ++index) {
-        const GridTile &tile = m_state.gridTiles.at(index);
+         index < qMin(cellCount, static_cast<int>(gridState.gridTiles.size())); ++index) {
+        const GridTile &tile = gridState.gridTiles.at(index);
         if (tile.path.isEmpty())
             continue;
         const QString absolutePath = QFileInfo(tile.path).absoluteFilePath();
@@ -221,7 +221,7 @@ void ProjectGrid::validateGrid()
             ++activeTiles;
     }
 
-    for (const QString &path : m_state.tilePaths) {
+    for (const QString &path : gridState.tilePaths) {
         if (!assignedPaths.contains(QFileInfo(path).absoluteFilePath())) {
             errors.append(tr("Image non placée dans la grille : %1")
                               .arg(QFileInfo(path).fileName()));
@@ -230,152 +230,152 @@ void ProjectGrid::validateGrid()
     if (activeTiles == 0)
         errors.append(tr("La grille doit contenir au moins une tuile active."));
 
-    m_state.gridValidated = errors.isEmpty();
-    emit gridValidated(m_state.gridValidated);
-    emit gridValidationCompleted(m_state.gridValidated, activeTiles, errors);
+    gridState.gridValidated = errors.isEmpty();
+    emit gridValidated(gridState.gridValidated);
+    emit gridValidationCompleted(gridState.gridValidated, activeTiles, errors);
 }
 
 void ProjectGrid::swapGridTiles(int first, int second)
 {
-    const int cellCount = m_state.gridRows * m_state.gridColumns;
+    const int cellCount = gridState.gridRows * gridState.gridColumns;
     if (first < 0 || second < 0 || first >= cellCount || second >= cellCount)
         return;
-    while (m_state.gridTiles.size() <= qMax(first, second))
-        m_state.gridTiles.append(GridTile{});
-    std::swap(m_state.gridTiles[first], m_state.gridTiles[second]);
-    m_state.selectedGridCell = second;
-    m_state.gridValidated = false;
+    while (gridState.gridTiles.size() <= qMax(first, second))
+        gridState.gridTiles.append(GridTile{});
+    std::swap(gridState.gridTiles[first], gridState.gridTiles[second]);
+    gridState.selectedGridCell = second;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setSelectedGridCell(int cell)
 {
-    m_state.selectedGridCell = qBound(0, cell, m_state.gridRows * m_state.gridColumns - 1);
+    gridState.selectedGridCell = qBound(0, cell, gridState.gridRows * gridState.gridColumns - 1);
     emit gridUpdated();
 }
 
 void ProjectGrid::setGridRows(int rows)
 {
-    m_state.gridRows = qBound(1, rows, 20);
-    while (m_state.gridTiles.size() < m_state.gridRows * m_state.gridColumns)
-        m_state.gridTiles.append(GridTile{});
-    m_state.selectedGridCell = qMin(m_state.selectedGridCell,
-                                    m_state.gridRows * m_state.gridColumns - 1);
-    m_state.gridValidated = false;
+    gridState.gridRows = qBound(1, rows, 20);
+    while (gridState.gridTiles.size() < gridState.gridRows * gridState.gridColumns)
+        gridState.gridTiles.append(GridTile{});
+    gridState.selectedGridCell = qMin(gridState.selectedGridCell,
+                                    gridState.gridRows * gridState.gridColumns - 1);
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setGridColumns(int columns)
 {
-    m_state.gridColumns = qBound(1, columns, 20);
-    while (m_state.gridTiles.size() < m_state.gridRows * m_state.gridColumns)
-        m_state.gridTiles.append(GridTile{});
-    m_state.selectedGridCell = qMin(m_state.selectedGridCell,
-                                    m_state.gridRows * m_state.gridColumns - 1);
-    m_state.gridValidated = false;
+    gridState.gridColumns = qBound(1, columns, 20);
+    while (gridState.gridTiles.size() < gridState.gridRows * gridState.gridColumns)
+        gridState.gridTiles.append(GridTile{});
+    gridState.selectedGridCell = qMin(gridState.selectedGridCell,
+                                    gridState.gridRows * gridState.gridColumns - 1);
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setCaptureOrder(int order)
 {
-    m_state.captureOrder = qBound(0, order, 5);
-    m_state.gridValidated = false;
+    gridState.captureOrder = qBound(0, order, 5);
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setHorizontalOverlap(int overlap)
 {
-    m_state.horizontalOverlap = qBound(0, overlap, 90);
-    if (m_state.overlapsLinked)
-        m_state.verticalOverlap = m_state.horizontalOverlap;
-    m_state.gridValidated = false;
+    gridState.horizontalOverlap = qBound(0, overlap, 90);
+    if (gridState.overlapsLinked)
+        gridState.verticalOverlap = gridState.horizontalOverlap;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setVerticalOverlap(int overlap)
 {
-    m_state.verticalOverlap = qBound(0, overlap, 90);
-    if (m_state.overlapsLinked)
-        m_state.horizontalOverlap = m_state.verticalOverlap;
-    m_state.gridValidated = false;
+    gridState.verticalOverlap = qBound(0, overlap, 90);
+    if (gridState.overlapsLinked)
+        gridState.horizontalOverlap = gridState.verticalOverlap;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setOverlapsLinked(bool linked)
 {
-    m_state.overlapsLinked = linked;
+    gridState.overlapsLinked = linked;
     if (linked)
-        m_state.verticalOverlap = m_state.horizontalOverlap;
-    m_state.gridValidated = false;
+        gridState.verticalOverlap = gridState.horizontalOverlap;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setModality(const QString &modality)
 {
-    if (m_state.modality == modality)
+    if (gridState.modality == modality)
         return;
-    m_state.modality = modality;
-    m_state.gridValidated = false;
+    gridState.modality = modality;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setScaleMmPerPixel(double scale)
 {
-    m_state.scaleMmPerPixel = scale;
-    m_state.gridValidated = false;
+    gridState.scaleMmPerPixel = scale;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setAutomaticUncertainty(bool automatic)
 {
-    m_state.automaticUncertainty = automatic;
-    m_state.gridValidated = false;
+    gridState.automaticUncertainty = automatic;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::setUncertaintyMargin(double margin)
 {
-    m_state.uncertaintyMargin = margin;
-    m_state.gridValidated = false;
+    gridState.uncertaintyMargin = margin;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::rotateSelectedTile()
 {
-    const int cell = m_state.selectedGridCell;
-    if (cell < 0 || cell >= m_state.gridTiles.size() ||
-        m_state.gridTiles.at(cell).path.isEmpty() || m_state.gridTiles.at(cell).empty) {
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridTiles.size() ||
+        gridState.gridTiles.at(cell).path.isEmpty() || gridState.gridTiles.at(cell).empty) {
         emit statusRequested(tr("Sélectionnez d'abord une tuile non vide."));
         return;
     }
-    m_state.gridTiles[cell].rotation = (m_state.gridTiles.at(cell).rotation + 90) % 360;
-    m_state.gridValidated = false;
+    gridState.gridTiles[cell].rotation = (gridState.gridTiles.at(cell).rotation + 90) % 360;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::flipSelectedTile()
 {
-    const int cell = m_state.selectedGridCell;
-    if (cell < 0 || cell >= m_state.gridTiles.size() ||
-        m_state.gridTiles.at(cell).path.isEmpty() || m_state.gridTiles.at(cell).empty) {
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridTiles.size() ||
+        gridState.gridTiles.at(cell).path.isEmpty() || gridState.gridTiles.at(cell).empty) {
         emit statusRequested(tr("Sélectionnez d'abord une tuile non vide."));
         return;
     }
-    m_state.gridTiles[cell].flipped = !m_state.gridTiles.at(cell).flipped;
-    m_state.gridValidated = false;
+    gridState.gridTiles[cell].flipped = !gridState.gridTiles.at(cell).flipped;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
 
 void ProjectGrid::toggleSelectedCellEmpty()
 {
-    const int cell = m_state.selectedGridCell;
-    if (cell < 0 || cell >= m_state.gridRows * m_state.gridColumns) {
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridRows * gridState.gridColumns) {
         emit statusRequested(tr("Sélectionnez une case de la grille."));
         return;
     }
-    while (m_state.gridTiles.size() <= cell)
-        m_state.gridTiles.append(GridTile{});
-    m_state.gridTiles[cell].empty = !m_state.gridTiles.at(cell).empty;
-    m_state.gridValidated = false;
+    while (gridState.gridTiles.size() <= cell)
+        gridState.gridTiles.append(GridTile{});
+    gridState.gridTiles[cell].empty = !gridState.gridTiles.at(cell).empty;
+    gridState.gridValidated = false;
     emit gridUpdated();
 }
