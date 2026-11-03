@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Implémente la page d'accueil et la gestion des projets récents.
+ * - ce que ça fait : construit l'écran d'accueil et permet de créer, ouvrir ou sélectionner un projet ;
+ * - ce que ça renvoie : aucune valeur directement, les actions sont transmises par des signaux ;
+ * - quand ça lève une exception : si la lecture, l'écriture ou la création d'un projet échoue.
+ */
 //  implemente la page daccueil et les projets recents
 /**
  * @brief Implémentation de la page d'accueil de l'application

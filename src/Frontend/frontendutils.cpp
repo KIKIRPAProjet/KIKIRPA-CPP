@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Fournit les outils communs de l'interface frontend.
+ * - ce que ça fait : crée les boutons, les libellés et les éléments graphiques réutilisables ;
+ * - ce que ça renvoie : les widgets Qt configurés pour être utilisés par l'interface ;
+ * - quand ça lève une exception : si la création ou la configuration d'un widget échoue.
+ */
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 

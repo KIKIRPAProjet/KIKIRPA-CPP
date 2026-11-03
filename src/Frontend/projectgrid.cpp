@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Gère les tuiles et leur organisation dans la grille.
+ * - ce que ça fait : maintient l'état de la grille, ses dimensions et les tuiles sélectionnées ;
+ * - ce que ça renvoie : l'état courant de la grille ou un signal après sa modification ;
+ * - quand ça lève une exception : si la création ou la manipulation d'une tuile échoue.
+ */
 //  gere les tuiles et leur organisation dans la grille
 #include "projectgrid.h"
 

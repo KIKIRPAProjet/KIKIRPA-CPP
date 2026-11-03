@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Gère l'export du projet et la création du rapport d'assemblage.
+ * - ce que ça fait : affiche les options d'export et prépare la génération du fichier de sortie ;
+ * - ce que ça renvoie : aucune valeur directement, les résultats sont transmis à l'interface ;
+ * - quand ça lève une exception : si la boîte de dialogue ou l'enregistrement du fichier échoue.
+ */
 //  gere l'export du projet et la creation du rapport
 #include "mainwindow.h"
 #include "projectgrid.h"

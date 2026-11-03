@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Implémente la fenêtre principale de l'application.
+ * - ce que ça fait : assemble les pages, les menus, les contrôles et les actions de l'application ;
+ * - ce que ça renvoie : aucune valeur directement, les interactions sont transmises par des signaux ;
+ * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
+ */
 //  implemente la fenetre principale de lapplication
 #include "mainwindow.h"
 #include "artworkcanvas.h"

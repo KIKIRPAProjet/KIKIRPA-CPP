@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Charge et enregistre les projets au format JSON.
+ * - ce que ça fait : lit les données d'un fichier JSON ou écrit les données du projet dans un fichier ;
+ * - ce que ça renvoie : true ou false selon la réussite de l'opération, avec un message d'erreur si besoin ;
+ * - quand ça lève une exception : si l'accès au fichier ou la conversion des données échoue.
+ */
 //  charge et enregistre les projets au format JSON
 #include "project_serializer.h"
 

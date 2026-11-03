@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Simule le lancement et le suivi d'une exécution.
+ * - ce que ça fait : démarre une progression temporisée et informe l'interface de son avancement ;
+ * - ce que ça renvoie : true ou false selon l'état de l'exécution, avec des signaux de progression ;
+ * - quand ça lève une exception : si la création ou le démarrage du minuteur échoue.
+ */
 //  simule le lancement et le suivi dune execution
 #include "simulationrunner.h"
 

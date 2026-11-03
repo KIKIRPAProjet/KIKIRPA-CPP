@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Affiche et filtre les messages du journal backend.
+ * - ce que ça fait : présente les messages et permet de les filtrer par niveau ;
+ * - ce que ça renvoie : aucune valeur directement, le journal est mis à jour dans le panneau ;
+ * - quand ça lève une exception : si la création ou la mise à jour des éléments graphiques échoue.
+ */
 // affiche et filtre les messages du journal backend
 /**
  * @brief Panneau de journalisation pour afficher les messages du backend

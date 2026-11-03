@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Construit la barre de menus et ses actions.
+ * - ce que ça fait : crée les menus, associe les raccourcis et connecte les actions aux signaux ;
+ * - ce que ça renvoie : aucune valeur directement, les demandes sont émises sous forme de signaux ;
+ * - quand ça lève une exception : si la création d'un menu ou d'une action échoue.
+ */
 //  construit la barre de menus et ses actions
 #include "menubar_manager.h"
 

@@ -1,3 +1,10 @@
+/*
+ * Header : le QUOI
+ * Gère les pages et les contrôles de l'espace de travail.
+ * - ce que ça fait : construit les vues de travail et relie les contrôles aux données du projet ;
+ * - ce que ça renvoie : aucune valeur directement, les changements sont transmis à l'interface ;
+ * - quand ça lève une exception : si la création ou la configuration d'un contrôle échoue.
+ */
 //  gere les pages et les controles de espace de travail
 #include "artworkcanvas.h"
 #include "frontendutils.h"
