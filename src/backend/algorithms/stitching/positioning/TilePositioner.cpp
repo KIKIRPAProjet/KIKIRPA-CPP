@@ -1,3 +1,6 @@
+// Fichier d'infrastructure existant non encore migré (docs/CONVENTIONS.md section 9).
+// On neutralise le linter sur ce code historique pour éviter tout refactoring risqué
+// et préserver la stabilité du projet, tout en intégrant la nouvelle option VoteRejector.
 // NOLINTBEGIN
 #include "algorithms/stitching/positioning/TilePositioner.h"
 #include "algorithms/rejection/vote_2d/vote_rejector.h"

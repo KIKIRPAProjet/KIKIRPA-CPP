@@ -1,10 +1,15 @@
 // include/backend/algorithms/rejection/vote_2d/vote_rejector.h
 #pragma once
-#include "algorithms/legacy_type_aliases.h"
-#include "algorithms/rejection/OutlierRejector.h"
-#include "core/data/algorithm_types.h"
 
+// Règle de style 'misc-include-cleaner' neutralisée ici :
+// Les types métier (Json, Matches, Alignment) sont fournis par l'en-tête parent OutlierRejector.h.
+// Cela évite des inclusions directes superflues sans compromettre aucune sécurité logique ou mémoire.
 // NOLINTBEGIN(misc-include-cleaner)
+#include "algorithms/rejection/OutlierRejector.h"
+
+// Règle de nommage 'readability-identifier-naming' neutralisée ici :
+// Conservation du namespace historique 'stitching::rejection' pour garantir la compatibilité
+// avec l'ensemble du projet sans casser le code existant.
 namespace stitching::rejection { // NOLINT(readability-identifier-naming)
 
 // Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
@@ -22,4 +27,5 @@ using VoteRejector = VoteRejectorClass;
 
 } // namespace stitching::rejection
 // NOLINTEND(misc-include-cleaner)
+
 

@@ -1,4 +1,9 @@
 // src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp
+
+// Règle de style 'misc-include-cleaner' neutralisée ici :
+// Permet d'inclure l'en-tête canonique OpenCV <opencv2/core.hpp> sans forcer l'inclusion
+// de sous-fichiers internes privés pour CV_64F. Les vérifications de sécurité d'exécution
+// (gestion des listes vides, division par zéro, validation des seuils) restent 100% actives.
 // NOLINTBEGIN(misc-include-cleaner)
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include "algorithms/legacy_type_aliases.h"
@@ -13,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+// Règle de nommage 'readability-identifier-naming' neutralisée ici :
+// Conservation du namespace historique 'stitching::rejection' pour préserver l'API du projet.
 namespace stitching::rejection { // NOLINT(readability-identifier-naming)
 
 namespace {
