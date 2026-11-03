@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   build-and-test:
@@ -14,3 +15,66 @@ jobs:
     with:
       build-type: Release
       test-labels: "unit|integration"
+
+  clang-tidy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find changed C++ files
+        id: changed-files
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            cpp:
+              - '**/*.cc'
+              - '**/*.cpp'
+              - '**/*.cxx'
+              - '**/*.h'
+              - '**/*.hh'
+              - '**/*.hpp'
+              - '**/*.hxx'
+          list-files: json
+
+      - name: Install build and lint dependencies
+        if: steps.changed-files.outputs.cpp == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            clang \
+            clang-tidy \
+            cmake \
+            libgtest-dev \
+            libopencv-dev \
+            libtiff-dev \
+            ninja-build \
+            nlohmann-json3-dev \
+            qt6-base-dev
+
+      - name: Configure with clang-tidy
+        if: steps.changed-files.outputs.cpp == 'true'
+        run: cmake --preset linux-clang-tidy -DENABLE_CLANG_TIDY=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy on changed C++ files
+        if: steps.changed-files.outputs.cpp == 'true'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.cpp_files }}
+        run: |
+          set -euo pipefail
+          mapfile -t changed_files < <(jq -r '.[]' <<< "$CHANGED_FILES")
+
+          status=0
+          for file in "${changed_files[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              continue
+            fi
+            echo "::group::clang-tidy $file"
+            if ! clang-tidy -p build/linux-clang-tidy \
+              --warnings-as-errors='*' --header-filter='^$' "$file"; then
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit "$status"

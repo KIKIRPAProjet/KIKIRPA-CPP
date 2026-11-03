@@ -10,6 +10,7 @@ if(APPLE)
     endforeach()
 endif()
 
+include(cmake/ClangTidy.cmake)
 include(CTest)
 include(cmake/Dependencies.cmake)
 include(cmake/Backend.cmake)
