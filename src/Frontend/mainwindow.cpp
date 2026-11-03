@@ -12,7 +12,6 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -39,7 +38,6 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSlider>
-#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -311,171 +309,17 @@ void MainWindow::setMode(int mode)
 
 void MainWindow::refreshProjectInfo()
 {
-    const ProjectGrid::State &gridState = projectGrid->state();
-    if (workspaceUI->projectNameLabel())
-        workspaceUI->projectNameLabel()->setText(projectName);
-    if (workspaceUI->projectNameEdit())
-        workspaceUI->projectNameEdit()->setText(projectName);
-    if (workspaceUI->projectFolderLabel()) {
-        workspaceUI->projectFolderLabel()->setText(gridState.tileDirectory.isEmpty()
-            ? tr("Dossier sélectionné : aucun dossier")
-            : tr("Dossier sélectionné :\n%1").arg(gridState.tileDirectory));
-    }
-    if (workspaceUI->projectFormatLabel()) {
-        const QFileInfoList folderFiles = gridState.tileDirectory.isEmpty()
-            ? QFileInfoList()
-            : QDir(gridState.tileDirectory).entryInfoList(QDir::Files | QDir::NoDotAndDotDot,
-                                                QDir::Name | QDir::IgnoreCase);
-        int validFiles = 0;
-        for (const QFileInfo &file : folderFiles) {
-            const QString suffix = file.suffix().toLower();
-            if (suffix == QStringLiteral("tif") || suffix == QStringLiteral("tiff"))
-                ++validFiles;
-        }
-        const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
-        workspaceUI->projectFormatLabel()->setText(allFilesValid
-            ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
-                  .arg(validFiles)
-            : tr("Format : %1 fichier(s) TIFF compatible(s) sur %2 ; certains éléments "
-                "ne sont pas au bon format.")
-                  .arg(validFiles).arg(folderFiles.size()));
-        workspaceUI->projectFormatLabel()->setStyleSheet(allFilesValid
-            ? QStringLiteral("color:#66c98a;")
-            : QStringLiteral("color:#e0a45f;"));
-    }
-    if (workspaceUI->tileCountLabel())
-        workspaceUI->tileCountLabel()->setText(tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
-        canvasView->setImagePaths(gridState.tilePaths);
-    refreshGrid();
-    setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+    workspaceUI->updateFromGridState(projectName, projectGrid->state());
 }
 
 void MainWindow::refreshGrid()
 {
-    const ProjectGrid::State &gridState = projectGrid->state();
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
-        canvasView->setGridState(gridState.gridRows, gridState.gridColumns,
-                                 gridState.captureOrder, gridState.gridTiles,
-                                 gridState.selectedGridCell);
-    }
-    refreshGridControls();
+    workspaceUI->updateFromGridState(projectName, projectGrid->state());
 }
 
 void MainWindow::refreshGridControls()
 {
-    const ProjectGrid::State &gridState = projectGrid->state();
-    if (workspaceUI->gridRowsSpin()) {
-        const QSignalBlocker blocker(workspaceUI->gridRowsSpin());
-        workspaceUI->gridRowsSpin()->setValue(gridState.gridRows);
-    }
-    if (workspaceUI->gridColumnsSpin()) {
-        const QSignalBlocker blocker(workspaceUI->gridColumnsSpin());
-        workspaceUI->gridColumnsSpin()->setValue(gridState.gridColumns);
-    }
-    if (workspaceUI->captureOrderCombo()) {
-        const QSignalBlocker blocker(workspaceUI->captureOrderCombo());
-        workspaceUI->captureOrderCombo()->setCurrentIndex(gridState.captureOrder);
-    }
-    if (workspaceUI->arrangementCombo()) {
-        const QSignalBlocker blocker(workspaceUI->arrangementCombo());
-        workspaceUI->arrangementCombo()->setCurrentIndex(gridState.captureOrder);
-    }
-    if (workspaceUI->horizontalOverlapSpin()) {
-        const QSignalBlocker blocker(workspaceUI->horizontalOverlapSpin());
-        workspaceUI->horizontalOverlapSpin()->setValue(gridState.horizontalOverlap);
-    }
-    if (workspaceUI->verticalOverlapSpin()) {
-        const QSignalBlocker blocker(workspaceUI->verticalOverlapSpin());
-        workspaceUI->verticalOverlapSpin()->setValue(gridState.verticalOverlap);
-    }
-    if (workspaceUI->linkedOverlapCheck()) {
-        const QSignalBlocker blocker(workspaceUI->linkedOverlapCheck());
-        workspaceUI->linkedOverlapCheck()->setChecked(gridState.overlapsLinked);
-    }
-    if (workspaceUI->modalityCombo()) {
-        const QSignalBlocker blocker(workspaceUI->modalityCombo());
-        const int index = workspaceUI->modalityCombo()->findText(gridState.modality);
-        workspaceUI->modalityCombo()->setCurrentIndex(index >= 0 ? index : workspaceUI->modalityCombo()->findText(tr("Autre")));
-        if (index < 0)
-            projectGrid->setModality(workspaceUI->modalityCombo()->currentText());
-    }
-    if (workspaceUI->scaleSpin()) {
-        const QSignalBlocker blocker(workspaceUI->scaleSpin());
-        workspaceUI->scaleSpin()->setValue(gridState.scaleMmPerPixel);
-    }
-    if (workspaceUI->automaticUncertaintyCheck()) {
-        const QSignalBlocker blocker(workspaceUI->automaticUncertaintyCheck());
-        workspaceUI->automaticUncertaintyCheck()->setChecked(gridState.automaticUncertainty);
-    }
-    if (workspaceUI->uncertaintySpin()) {
-        const QSignalBlocker blocker(workspaceUI->uncertaintySpin());
-        workspaceUI->uncertaintySpin()->setValue(gridState.uncertaintyMargin);
-        workspaceUI->uncertaintySpin()->setEnabled(!gridState.automaticUncertainty);
-    }
-    const QString scaleText = gridState.scaleMmPerPixel > 0.0
-        ? tr("%1 mm/pixel").arg(gridState.scaleMmPerPixel, 0, 'g', 8) : tr("à renseigner");
-    if (auto *metadata = workspaceUI->workspace() ? workspaceUI->workspace()->findChild<QLabel *>(
-                QStringLiteral("projectMetadataLabel")) : nullptr) {
-        metadata->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
-                              .arg(gridState.modality, scaleText)
-                              .arg(gridState.horizontalOverlap).arg(gridState.verticalOverlap));
-    }
-    if (auto *title = workspaceUI->workspace() ? workspaceUI->workspace()->findChild<QLabel *>(
-                QStringLiteral("workspaceTitle")) : nullptr) {
-        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
-                           .arg(projectName, gridState.modality));
-    }
-
-    int activeTiles = 0;
-    for (int index = 0;
-         index < qMin(gridState.gridRows * gridState.gridColumns,
-                      static_cast<int>(gridState.gridTiles.size())); ++index) {
-        const GridTile &tile = gridState.gridTiles.at(index);
-        if (!tile.path.isEmpty() && !tile.empty)
-            ++activeTiles;
-    }
-    if (workspaceUI->gridSummaryLabel()) {
-        const QString validationStatus =
-            gridState.gridValidated ? tr(" · grille validée") : QString();
-        workspaceUI->gridSummaryLabel()->setText(tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
-                                      .arg(activeTiles).arg(gridState.gridRows).arg(gridState.gridColumns)
-                                      .arg(validationStatus));
-    }
-    if (workspaceUI->selectedGridTileLabel()) {
-        const int row = gridState.selectedGridCell / qMax(1, gridState.gridColumns);
-        const int column = gridState.selectedGridCell % qMax(1, gridState.gridColumns);
-        const GridTile tile = gridState.selectedGridCell >= 0 &&
-                gridState.selectedGridCell < gridState.gridTiles.size()
-            ? gridState.gridTiles.at(gridState.selectedGridCell) : GridTile{};
-        const QString label = QStringLiteral("r%1_c%2").arg(row, 2, 10, QLatin1Char('0'))
-                                 .arg(column, 2, 10, QLatin1Char('0'));
-        if (tile.path.isEmpty()) {
-            workspaceUI->selectedGridTileLabel()->setText(tile.empty
-                ? tr("Case sélectionnée : %1 (vide)").arg(label)
-                : tr("Case sélectionnée : %1").arg(label));
-        } else {
-            workspaceUI->selectedGridTileLabel()->setText(
-                tr("Sélection : %1 · %2 · %3° · %4")
-                    .arg(label, QFileInfo(tile.path).fileName())
-                    .arg(tile.rotation)
-                    .arg(tile.empty ? tr("vide") : (tile.flipped ? tr("retournée") : tr("normale"))));
-        }
-    }
-    if (workspaceUI->emptyCellButton()) {
-        const bool canRestore = gridState.selectedGridCell >= 0 &&
-                gridState.selectedGridCell < gridState.gridTiles.size()
-            && gridState.gridTiles.at(gridState.selectedGridCell).empty;
-        workspaceUI->emptyCellButton()->setText(canRestore ? tr("Restaurer la tuile")
-                                            : tr("Marquer une case vide"));
-    }
-    if (workspaceUI->referencePathLabel()) {
-        workspaceUI->referencePathLabel()->setText(gridState.referenceImagePath.isEmpty()
-            ? tr("Aucune image de référence")
-            : tr("Référence : %1")
-                  .arg(QFileInfo(gridState.referenceImagePath).fileName()));
-        workspaceUI->referencePathLabel()->setToolTip(gridState.referenceImagePath);
-    }
+    workspaceUI->updateFromGridState(projectName, projectGrid->state());
 }
 
 void MainWindow::chooseTilesDirectory()

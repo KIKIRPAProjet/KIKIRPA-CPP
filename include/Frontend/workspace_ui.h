@@ -1,6 +1,8 @@
 #ifndef WORKSPACE_UI_H
 #define WORKSPACE_UI_H
 
+#include "projectgrid.h"
+
 #include <QObject>
 
 class QCheckBox;
@@ -18,7 +20,6 @@ class QWidget;
 class HomePage;
 class LogPanel;
 class MainWindow;
-class ProjectGrid;
 class SimulationRunner;
 
 class WorkspaceUI : public QObject
@@ -28,6 +29,9 @@ class WorkspaceUI : public QObject
 public:
     WorkspaceUI(MainWindow *mainWindow, HomePage *homePage, ProjectGrid *projectGrid,
                 SimulationRunner *simulationRunner);
+
+    void updateFromGridState(const QString &projectName,
+                             const ProjectGrid::State &gridState);
 
     HomePage *homePage() const { return m_homePage; }
     QStackedWidget *pages() const { return m_pages; }
