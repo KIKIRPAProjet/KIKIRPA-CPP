@@ -68,7 +68,8 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == 3, "3 steps enregistrés");
+    verifier(noms == std::vector<std::string>{"graphcut", "import", "phase-correlation"},
+             "noms des steps enregistrés conformes au contrat");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -76,6 +77,12 @@ void testerRegistre() {
     verifier(leveInvalidArgument([] { PipelineNs::createStep("inconnu"); }, "unknown step 'inconnu'"), "step inconnu refusé");
 }
 
+TEST(PipelineBuilder, PipelineJsonComplet) {
+    const PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(STITCHING_PIPELINE_JSON_PATH);
+    ASSERT_EQ(pipeline.getSteps().size(), 2);
+    EXPECT_EQ(pipeline.getSteps()[0]->getConfigJson().at("name"), "import");
+    EXPECT_EQ(pipeline.getSteps()[1]->getConfigJson().at("name"), "phase-correlation");
+}
 void testerValidation() {
     std::cout << "Validation du script\n";
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(Json::array()); }, "JSON object"), "script qui n'est pas un objet");
