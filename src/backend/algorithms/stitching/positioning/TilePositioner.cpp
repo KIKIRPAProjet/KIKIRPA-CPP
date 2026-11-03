@@ -1,5 +1,5 @@
 #include "algorithms/stitching/positioning/TilePositioner.h"
-#include "algorithms/rejection/ransac/RansacRejector.h"
+#include "algorithms/rejection/ransac/ransac_rejector.h"
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
@@ -148,9 +148,9 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
 #ifdef STITCHING_PROJECT_ROOT
     else if (settings.matcher == "lightglue") matcher = std::make_unique<LightGlueNs::LightGlueMatcherClass>();
 #endif
-    std::unique_ptr<rejection::OutlierRejector> rejector;
-    if (settings.rejector == "ransac") rejector = std::make_unique<rejection::RansacRejector>(settings.rejectorParams);
-    else if (settings.rejector == "vote") rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
+    std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
+    if (settings.rejector == "ransac") rejector = std::make_unique<RansacNs::RansacRejectorClass>(settings.rejectorParams);
+    else if (settings.rejector == "vote") rejector = std::make_unique<RansacNs::VoteRejectorClass>(settings.rejectorParams);
     if (!matcher || !rejector) {
         log << "Matcher ou rejector non disponible (" << settings.matcher << " / " << settings.rejector << ")\n";
         return false;
