@@ -249,7 +249,7 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     const std::pair<const char*, const char*> cles[] = {
         {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},  {"IntensityCorrection", "intensityCorrection"}};
 
-};
+
     for (const auto& [type, cle] : cles) {
         types.at(type).first(avant, cle, dossier);
         types.at(type).second(apres, cle, dossier);
