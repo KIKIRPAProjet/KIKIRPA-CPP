@@ -42,7 +42,7 @@ target_compile_options(stitching_backend PUBLIC
 
 if(lightglue_enabled)
     target_include_directories(stitching_backend PUBLIC "${ONNXRUNTIME_INCLUDE_DIR}")
-    target_link_libraries(stitching_backend PUBLIC "${ONNXRUNTIME_LIB}")
+    target_link_libraries(stitching_backend PUBLIC "${ONNXRUNTIME_LIB}" opencv_dnn)
     target_compile_definitions(stitching_backend PRIVATE
         STITCHING_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
     )

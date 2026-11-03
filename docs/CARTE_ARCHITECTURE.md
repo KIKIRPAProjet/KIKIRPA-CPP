@@ -409,6 +409,6 @@ git show origin/RansacStep:include/Backend/steps/RansacStep.h
 ### Utilitaires d’appariement et tests SIFT
 
 [matching_step_utils.h](../include/backend/steps/matching_step_utils.h) / [.cpp](../src/backend/steps/matching_step_utils.cpp)
-(`StepsNs::MatchingNs`) : voisins, lecture des images, validation des correspondances, recalage et sérialisation.
+(`StepsNs`) : voisins, lecture des images, validation des correspondances, recalage et sérialisation.
 [tests/steps/CMakeLists.txt](../tests/steps/CMakeLists.txt) enregistre
 [test_sift_step.cpp](../tests/steps/test_sift_step.cpp) : formats 8/16 bits, repères, succès partiels, JSON et paramètres.

@@ -1,4 +1,6 @@
-find_package(OpenCV REQUIRED)
+# Éviter de charger tous les modules et leurs dépendances dans chaque exécutable.
+# stitching fournit aussi les dépendances de détection et de calibration utilisées par SIFT/RANSAC.
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs stitching)
 find_package(TIFF REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
 
