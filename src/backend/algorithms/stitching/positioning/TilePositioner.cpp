@@ -3,7 +3,7 @@
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
 #include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
-#include "algorithms/stitching/sift/SiftMatcher.h"
+#include "algorithms/stitching/sift/sift_matcher.h"
 #ifdef STITCHING_PROJECT_ROOT
 #include "algorithms/stitching/lightglue/LightGlueMatcher.h"
 #endif
@@ -143,7 +143,7 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
     // - Matchers autorisés : "sift", "correlation_phase", "lightglue" (si STITCHING_PROJECT_ROOT défini)
     // - Rejectors autorisés : "vote" (par défaut, Hough 2D) et "ransac" (estimateAffinePartial2D)
     std::unique_ptr<StitchingNs::FeatureMatcherClass> matcher;
-    if (settings.matcher == "sift") matcher = std::make_unique<matching::SiftMatcher>(settings.matcherParams);
+    if (settings.matcher == "sift") matcher = std::make_unique<SiftNs::SiftMatcherClass>(settings.matcherParams);
     else if (settings.matcher == "correlation_phase") matcher = std::make_unique<PhaseCorrelationNs::PhaseCorrelationMatcherClass>();
 #ifdef STITCHING_PROJECT_ROOT
     else if (settings.matcher == "lightglue") matcher = std::make_unique<matching::LightGlueMatcher>();
