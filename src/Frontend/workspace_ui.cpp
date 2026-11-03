@@ -234,7 +234,7 @@ void WorkspaceUI::createWorkspace()
     auto *toolbar = new QWidget;
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 5, 8, 5);
-    auto *title = new QLabel(tr("VanDerVeken — Infrarouge — KIK-IRPA Assemblage"));
+    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
     title->setObjectName(QStringLiteral("workspaceTitle"));
     toolbarLayout->addWidget(title);
     toolbarLayout->addStretch();
