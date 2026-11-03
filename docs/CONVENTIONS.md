@@ -26,7 +26,7 @@ En cas de doute, prendre pour modèle `include/backend/core/step/step.h` et `src
 - Puis `#pragma once` dans un header.
 - Un `.h` et un `.cpp` par classe, avec le même nom : `PhaseCorrelationStepClass` est dans `phase_correlation_step.h` / `.cpp`.
 - Le header contient l'**interface** (déclarations), le `.cpp` l'**implémentation**.
-- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/Backend.cmake`).
+- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/backend.cmake`).
 
 ## 3. Noms
 

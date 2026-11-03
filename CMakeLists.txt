@@ -12,16 +12,16 @@ include(CTest)
 
 # Charge les dépendances externes nécessaires au projet.
 # Ce fichier centralise notamment leur découverte et leur configuration.
-include(cmake/Dependencies.cmake)
+include(cmake/dependencies_manager.cmake)
 
 # Configure la bibliothèque backend.
 # Le backend regroupe les traitements et fonctionnalités métier
 # indépendants de l'interface graphique.
-include(cmake/Backend.cmake)
+include(cmake/backend.cmake)
 
 # Configure la bibliothèque frontend.
 # Le frontend regroupe les composants liés à l'interface graphique.
-include(cmake/Frontend.cmake)
+include(cmake/frontend.cmake)
 
 # Déclare l'exécutable principal de l'application.
 # Le point d'entrée du programme est défini dans src/main.cpp.
@@ -35,8 +35,8 @@ target_link_libraries(stitching PRIVATE kikirpa_backend)
 
 # Configure les tests unitaires et leur intégration à CTest.
 # Les tests peuvent être désactivés avec -DBUILD_TESTING=OFF.
-include(cmake/Tests.cmake)
+include(cmake/tests_runner.cmake)
 
 # Configure les règles d'installation du projet.
 # Définit notamment les cibles et fichiers à installer.
-include(cmake/Install.cmake)
+include(cmake/init_setup.cmake)
