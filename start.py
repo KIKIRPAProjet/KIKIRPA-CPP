@@ -11,6 +11,8 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
+# Retourne le dossier Qt portant la version numerique la plus récente, ou None
+# si le dossier de base n'existe pas ou ne contient aucune version valide
 def findLatestQtRoot(baseDir: Path) -> Path | None:
     if not baseDir.exists():
         return None
@@ -31,6 +33,8 @@ def findLatestQtRoot(baseDir: Path) -> Path | None:
     return max(versions, key=lambda item: item[0])[1]
 
 
+# Retourne le dossier MinGW dont le nom contient la version numérique la plus
+# élevée, ou None si le dossier de base n'existe pas ou ne contient aucun candidat
 def findMingwDir(baseDir: Path) -> Path | None:
     if not baseDir.exists():
         return None
@@ -39,6 +43,7 @@ def findMingwDir(baseDir: Path) -> Path | None:
     if not candidates:
         return None
 
+    # Retourne une clé numérique permettant de comparer les versions MinGW
     def versionKey(path: Path):
         numbers = [int(part) for part in re.findall(r"\d+", path.name)]
         while len(numbers) < 2:
@@ -48,6 +53,8 @@ def findMingwDir(baseDir: Path) -> Path | None:
     return max(candidates, key=versionKey)
 
 
+# Résout les chemins nécessaires à Qt, MinGW, CMake et Ninja
+# Lève FileNotFoundError si aucun dossier Qt utilisable n'est trouvé
 def resolvePaths() -> tuple[Path, Path, Path, Path, Path]:
     qtDirStr = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
     qtDir = Path(qtDirStr) if qtDirStr else None
@@ -69,6 +76,9 @@ def resolvePaths() -> tuple[Path, Path, Path, Path, Path]:
     return qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix
 
 
+# Configure l'environnement, compile temporairement le projet Frontend et
+# lance l'exécutable
+# Retourne 0 pour succès et 1 pour echec
 def main() -> int:
     try:
         qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix = resolvePaths()
