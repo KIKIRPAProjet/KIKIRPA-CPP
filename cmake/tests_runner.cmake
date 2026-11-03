@@ -24,7 +24,7 @@ if(BUILD_TESTING)
     # PRE_TEST évite de lancer les exécutables de tests pendant la configuration
     # CMake. C'est notamment nécessaire sous Windows, où les DLL d'OpenCV
     # ne sont ajoutées au PATH qu'au moment de l'exécution via le preset :
-    # ctest --preset windows-msvc
+    # ctest --preset windows-aqt
     set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
     # Ajoute les sous-répertoires contenant les différents ensembles de tests.

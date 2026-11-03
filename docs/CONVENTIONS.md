@@ -212,7 +212,7 @@ Tout nouveau code suit les règles ci-dessus, même dans un dossier pas encore m
 ## 10. Documentation
 
 - Une page par algorithme dans `docs/algorithms/<étape>/<nom>/`, une page par step dans `docs/steps/`.
-- **La [carte de l'architecture](CARTE_ARCHITECTURE.md) reste à jour** : toute PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test met à jour la section concernée de la carte dans la même PR.
+- **La [carte de l'architecture](CARTE_ARCHITECTURE.md) reste à jour** : elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
 ## 11. Classes et fonctions
 
@@ -304,6 +304,7 @@ namespace {
 ## 12. Tests
 
 - **GoogleTest**, un dossier `tests/<module>/` avec son `CMakeLists.txt`, label `unit`, sans images externes : on construit des images synthétiques dans le test (rapide et reproductible).
+- L'exécutable de test se lie à `kikirpa_backend` et `GTest::gtest_main` ; le dossier est déclaré par un `add_subdirectory` dans `cmake/tests_runner.cmake`.
 - **Un comportement par test**, avec un nom qui le dit (`RejectsUnknownStatus`).
 - Structure **préparer, agir, vérifier**.
 - Tests **indépendants** et **déterministes**.
@@ -403,6 +404,5 @@ int tileCount = 8;   // version de main
 - [ ] Noms, commentaires et includes suivent ces conventions.
 - [ ] Pas de code mort, de `std::cout` de debug ni de fichier temporaire.
 - [ ] Tout nouveau `.cpp` est sous `src/backend/`.
-- [ ] La [carte de l'architecture](CARTE_ARCHITECTURE.md) est à jour si un fichier, un step ou un type change ([§10](#10-documentation)).
 
 En revue de code : le code est-il **lisible sans explication** ? Les noms disent-ils ce que c'est ? Les cas limites sont-ils testés ? Chaque fonction fait-elle une seule chose ? On commente le code, jamais la personne, et une remarque est une proposition d'amélioration.

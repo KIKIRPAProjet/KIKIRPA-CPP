@@ -2,7 +2,7 @@
 
 Guide pour se repérer dans le code de **`main`**, à jour du 03/11/2026 après la réorganisation de `core/` et `steps/` (PR #50). Les éléments marqués **🆕** ont changé avec cette réorganisation : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. Correspondance complète entre anciens et nouveaux noms : [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md). Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
 
-> **Cette carte doit rester à jour.** Toute PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test met à jour la section concernée dans la même PR.
+> **Cette carte doit rester à jour.** Elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
 Les liens ouvrent les fichiers.
 
@@ -69,8 +69,8 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 
 | Je veux… | Fichier(s) |
 |---|---|
-| **Compiler le projet** (Windows ou Linux) | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires, via vcpkg sous Windows) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-msvc`) |
-| **Lancer les tests** | `ctest --preset windows-msvc` (ou `linux`) : 87 tests GoogleTest, tous `unit` |
+| **Compiler le projet** (Windows, Linux ou macOS) | [BUILD.md](BUILD.md) (Qt 6 et GoogleTest obligatoires ; sous Windows, Qt binaire via aqt, libtiff et GoogleTest via vcpkg) + [CMakePresets.json](../CMakePresets.json) (`cmake --preset windows-aqt`) |
+| **Lancer les tests** | `ctest --preset windows-aqt` (ou `linux`, `macos`) : 87 tests GoogleTest, tous `unit` |
 | **Lancer un pipeline** | depuis le code : `buildPipelineFromFile()` puis `run()`, voir [Pipeline.md](core/Pipeline.md#lancer-un-pipeline). Exemple qui tourne : `testerPipelineReel()` dans [test_pipeline.cpp](../tests/core/test_pipeline.cpp) |
 | **Comprendre le pipeline en une page** | [Pipeline.md](core/Pipeline.md) : format du script, contrôles, reprise, steps enregistrés, ajout d'un step |
 | Voir comment un script JSON devient un pipeline | [pipeline_builder.cpp](../src/backend/core/pipeline/pipeline_builder.cpp) : `stepRegistry()`, `buildPipeline()` |
@@ -98,7 +98,7 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 | Voir le calcul des coutures, méthode GraphCut | [GraphCutSeamFinder.cpp](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) (commenté ligne à ligne) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) |
 | Voir un vrai pipeline tourner depuis un script JSON | [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()` |
 | Générer le JSON du pipeline depuis la GUI | [PipelineJson.h](../include/frontend/PipelineJson.h) |
-| Voir comment le projet est compilé | [CMakeLists.txt](../CMakeLists.txt) + [cmake/](../cmake/) (`Dependencies`, `Backend`, `Frontend`, `Tests`, `Install`) |
+| Voir comment le projet est compilé | [CMakeLists.txt](../CMakeLists.txt) + [cmake/](../cmake/) (`clang_tidy`, `dependencies_manager`, `backend`, `frontend`, `tests_runner`, `install`) |
 | **Nommer un fichier, une classe, une variable** 🆕 | [CONVENTIONS.md](CONVENTIONS.md) |
 | Adapter une branche écrite avant la réorganisation 🆕 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§10) |
 | Voir ce que fait la CI | [build-test.yml](../.github/workflows/build-test.yml) (appelé par `ci.yml` et `release.yml`) |
@@ -162,15 +162,16 @@ cmake/               un fichier par partie du build
 
 | Fichier | Rôle |
 |---|---|
-| [CMakeLists.txt](../CMakeLists.txt) | Inclut les fichiers de `cmake/` et déclare la cible `stitching` (vide). |
+| [CMakeLists.txt](../CMakeLists.txt) | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (vide, nom provisoire). |
+| [cmake/clang_tidy.cmake](../cmake/clang_tidy.cmake) | Option `ENABLE_CLANG_TIDY` (désactivée par défaut) : passe chaque fichier dans clang-tidy à la compilation. Règles dans [.clang-tidy](../.clang-tidy). |
 | [cmake/dependencies_manager.cmake](../cmake/dependencies_manager.cmake) | OpenCV, libtiff et **Qt 6 obligatoires** ; nlohmann_json téléchargé s'il manque. |
 | [cmake/backend.cmake](../cmake/backend.cmake) | Cible `kikirpa_backend` (lib statique de tout `src/backend`), détection d'ONNX Runtime (LightGlue facultatif), option `/utf-8` pour MSVC. |
 | [cmake/frontend.cmake](../cmake/frontend.cmake) | Cible `kikirpa_frontend` (Qt). |
 | [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) | GoogleTest **obligatoire** (sauf `-DBUILD_TESTING=OFF`), un `add_subdirectory` par dossier de `tests/`. Liste des tests lue au lancement de `ctest` (sous Windows, les DLL d'OpenCV ne sont dans le PATH qu'à ce moment-là). |
-| [cmake/init_setup.cmake](../cmake/init_setup.cmake) | Installe `stitching` dans `bin/`. |
-| [CMakePresets.json](../CMakePresets.json) | Presets `windows-msvc` (vcpkg, variables `VCPKG_ROOT` et `OpenCV_DIR`) et `linux`. Build dans `build/<preset>/`. |
+| [cmake/install.cmake](../cmake/install.cmake) | Installe `stitching` dans `bin/`. |
+| [CMakePresets.json](../CMakePresets.json) | Presets `windows-aqt` (Qt via aqt, libtiff et GoogleTest via vcpkg ; variables `KIKIRPA_VCPKG_ROOT`, `OpenCV_DIR` et `QT_ROOT`), `linux`, `macos` (Homebrew) et `linux-clang-tidy`. Build dans `build/<preset>/`. |
 | [README.md](../README.md) | Présentation, build générique, renvoi vers [BUILD.md](BUILD.md) pour Windows. |
-| [.github/workflows/](../.github/workflows/) | `ci.yml` (chaque push et PR), `release.yml` (tag `v*`), `build-test.yml` (job commun Ubuntu, installe Qt et GoogleTest). |
+| [.github/workflows/](../.github/workflows/) | `ci.yml` (build et tests à chaque push et PR, plus clang-tidy sur les fichiers C++ modifiés d'une PR), `release.yml` (tag `v*`), `build-test.yml` (job commun Ubuntu, installe Qt et GoogleTest). |
 | [src/main.cpp](../src/main.cpp) | Réservé au frontend : **vide** (`TODO`). |
 
 ### `core/` : le moteur
@@ -284,7 +285,7 @@ Tous en GoogleTest, avec le label `unit`, et lancés par `ctest`. Il n'y a plus 
 | [egalisation/](../tests/egalisation/) | `Egalisation.*` (3) | 6 tuiles générées avec gains et champ connus, gris et couleur, 8 et 16 bits ; cas limites. |
 | [seamline/](../tests/seamline/) | 71 tests | seamlib : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook. |
 
-Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/egalisation/CMakeLists.txt](../tests/egalisation/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake).
+Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/egalisation/CMakeLists.txt](../tests/egalisation/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) ; l'exécutable de test se lie à `kikirpa_backend`.
 
 ### `docs/`
 
@@ -295,7 +296,7 @@ Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` 
 | [Egalisation.md](algorithms/egalisation/Egalisation.md) | Modèle, méthodes A et B, paramètres, vérification. |
 | [Pipeline.md](core/Pipeline.md) | Le pipeline : format du script, contrôles, exécution, reprise et checkpoints, steps enregistrés, ajout d'un step. |
 | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) | Contrat du step `phase-correlation` : paramètres, conventions d'axes et de signe, résolution réduite, échecs. |
-| [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg) et Linux. |
+| [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg + Qt via aqt), macOS (Homebrew) et Linux. |
 | [CONVENTIONS.md](CONVENTIONS.md) 🆕 | Règles de code (noms, mise en forme, includes, erreurs, classes et fonctions, tests), principes de code propre, Git et pull requests. |
 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) 🆕 | Ce que la réorganisation de `core/` et `steps/` a renommé, et comment adapter une branche. |
 | cette carte | Se repérer dans le code. |
@@ -378,7 +379,7 @@ L'**égalisation** suit exactement le même schéma (Egalisation → Preparation
 | Les tuiles sont en RGB | OpenCV donne du **BGR**. seamlib attend du **RGB**. |
 | Le TIFF pyramidal est la sortie du pipeline | C'est un cache d'import, par tuile. Il n'y a pas encore d'export. |
 | Il existe un exemple de la chaîne complète (import → couture → mosaïque) | Plus sur `main` : `test_chaine_paire` a été supprimé avec les tests d'intégration (#43). Il reste dans l'historique : `git show c383a38:tests/algorithms/integration/test_chaine_paire.cpp`. |
-| Qt est facultatif | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, les installer avec vcpkg ([BUILD.md](BUILD.md)). |
+| Qt est facultatif | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, Qt s'installe avec aqt et GoogleTest avec vcpkg ([BUILD.md](BUILD.md)). |
 | Tout le code suit déjà les conventions | Non 🆕 : seuls `core/`, `steps/` et `frontend/` ont été migrés. Les algorithmes gardent leurs noms français, leurs namespaces (`stitching::…`, `seamlib`, `Seamline`) et passent par `algorithms/legacy_type_aliases.h` (temporaire). Les tests gardent aussi des noms français. |
 | `docs/` couvre tous les algorithmes | Seulement la corrélation de phase, le recouvrement et l'égalisation, plus le pipeline, le step `phase-correlation` et le build. |
 
