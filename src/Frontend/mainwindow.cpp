@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
+#include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
 #include "menubar_manager.h"
@@ -12,8 +13,6 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -27,7 +26,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QLineF>
-#include <QListWidget>
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QMessageBox>
@@ -345,36 +343,8 @@ void MainWindow::showReferenceComparison(const QString &referencePath, const QSt
                                          const QImage &referenceImage,
                                          const QImage &tileImage)
 {
-    QDialog dialog(this);
-    dialog.setWindowTitle(tr("Comparer avec l'image de référence"));
-    dialog.resize(980, 620);
-    auto *layout = new QVBoxLayout(&dialog);
-    auto *imagesLayout = new QHBoxLayout;
-    const auto addImageColumn = [&imagesLayout](const QString &title, const QString &path,
-                                                const QImage &image) {
-        auto *column = new QWidget;
-        auto *columnLayout = new QVBoxLayout(column);
-        auto *name = new QLabel(title + QStringLiteral("\n") + QFileInfo(path).fileName(), column);
-        name->setWordWrap(true);
-        auto *preview = new QLabel(column);
-        preview->setAlignment(Qt::AlignCenter);
-        preview->setMinimumSize(400, 440);
-        preview->setStyleSheet(QStringLiteral("background:#202020;"));
-        preview->setPixmap(QPixmap::fromImage(image));
-        columnLayout->addWidget(name);
-        columnLayout->addWidget(preview, 1);
-        imagesLayout->addWidget(column, 1);
-    };
-    addImageColumn(tr("Image de référence"), referencePath, referenceImage);
-    addImageColumn(tr("Tuile sélectionnée"), tilePath, tileImage);
-    layout->addLayout(imagesLayout, 1);
-    layout->addWidget(FrontendUtils::mutedLabel(
-        tr("Comparaison visuelle côte à côte ; aucune similarité automatique n'est calculée."),
-        &dialog));
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    dialog.exec();
+    DialogHelpers::showReferenceComparisonDialog(
+        this, referencePath, tilePath, referenceImage, tileImage);
     updateStatus(tr("Comparaison visuelle terminée."));
 }
 
@@ -448,28 +418,7 @@ void MainWindow::requestRun(int firstStep)
             return;
     }
     if (firstStep > 1) {
-        QDialog confirmation(this);
-        confirmation.setWindowTitle(tr("Relancer à partir de l'étape %1").arg(firstStep));
-        auto *layout = new QVBoxLayout(&confirmation);
-        layout->addWidget(new QLabel(tr("Les étapes précédentes seront réutilisées sans recalcul."), &confirmation));
-        auto *reused = new QListWidget(&confirmation);
-        for (int step = 1; step < firstStep; ++step)
-            reused->addItem(tr("✓  Étape %1 — résultat conservé").arg(step));
-        layout->addWidget(reused);
-        auto *recalculated = new QListWidget(&confirmation);
-        for (int step = firstStep; step <= 8; ++step)
-            recalculated->addItem(tr("↻  Étape %1 — résultat recalculé").arg(step));
-        layout->addWidget(recalculated);
-        layout->addWidget(FrontendUtils::mutedLabel(
-            tr("Les résultats actuels seront conservés dans l'historique. "
-               "Cette maquette ne lance pas de calcul backend."), &confirmation));
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok,
-                                             &confirmation);
-        buttons->button(QDialogButtonBox::Ok)->setText(tr("Lancer"));
-        layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, &confirmation, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, &confirmation, &QDialog::reject);
-        if (confirmation.exec() != QDialog::Accepted)
+        if (!DialogHelpers::confirmRunRestart(this, firstStep))
             return;
     }
     simulationRunner->startRun(firstStep);
@@ -477,41 +426,7 @@ void MainWindow::requestRun(int firstStep)
 
 void MainWindow::showComparisonDialog()
 {
-    QDialog dialog(this);
-    dialog.setWindowTitle(tr("Comparer deux exécutions"));
-    dialog.resize(440, 240);
-    auto *layout = new QVBoxLayout(&dialog);
-    layout->addWidget(new QLabel(tr("Comparer les sorties de deux algorithmes de couture."), &dialog));
-    auto *algorithms = new QHBoxLayout;
-    auto *a = new QComboBox(&dialog);
-    auto *b = new QComboBox(&dialog);
-    const QStringList choices = {tr("Programmation dynamique"), tr("Coupe de graphe"), tr("Dijkstra")};
-    a->addItems(choices);
-    b->addItems(choices);
-    b->setCurrentIndex(1);
-    algorithms->addWidget(a);
-    algorithms->addWidget(b);
-    layout->addLayout(algorithms);
-    layout->addWidget(new QLabel(tr("Mesures : saut à la couture · détails conservés · durée"), &dialog));
-    auto *buttons = new QDialogButtonBox(&dialog);
-    auto *show = buttons->addButton(tr("Comparer"), QDialogButtonBox::ActionRole);
-    auto *keepA = buttons->addButton(tr("Garder A"), QDialogButtonBox::ActionRole);
-    auto *keepB = buttons->addButton(tr("Garder B"), QDialogButtonBox::ActionRole);
-    buttons->addButton(QDialogButtonBox::Close);
-    layout->addWidget(buttons);
-    connect(show, &QPushButton::clicked, this, [this, &dialog]() {
-        simulationRunner->toggleComparison();
-        dialog.accept();
-    });
-    connect(keepA, &QPushButton::clicked, this, [this, &dialog]() {
-        simulationRunner->keepComparisonA();
-        dialog.accept();
-    });
-    connect(keepB, &QPushButton::clicked, this, [this, &dialog]() {
-        simulationRunner->keepComparisonB();
-        dialog.accept();
-    });
-    dialog.exec();
+    DialogHelpers::showComparisonDialog(this, simulationRunner);
 }
 
 void MainWindow::showCancelRunButton()
