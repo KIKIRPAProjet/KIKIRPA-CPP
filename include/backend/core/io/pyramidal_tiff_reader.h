@@ -6,6 +6,8 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
+#include <cstdint>
 
 namespace IONs {
 
@@ -22,6 +24,15 @@ namespace IONs {
                 int level,
                 const cv::Rect& region,
                 cv::Mat& output,
+                std::string& errorMessage
+            ) const;
+
+            // Récupère le profil ICC (si présent) et les échelles de résolution (X et Y).
+            // Laisse scaleX et scaleY à 1.0 et iccProfile vide si non trouvés, mais renvoie true.
+            bool readMetadata(
+                std::vector<uint8_t>& iccProfile,
+                double& scaleX,
+                double& scaleY,
                 std::string& errorMessage
             ) const;
 

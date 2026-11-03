@@ -281,4 +281,45 @@ namespace IONs {
         return SUCCESS;
     }
 
+    bool PyramidalTiffReaderClass::readMetadata(
+        std::vector<uint8_t>& iccProfile,
+        double& scaleX,
+        double& scaleY,
+        std::string& errorMessage
+    ) const {
+        errorMessage.clear();
+        iccProfile.clear();
+        scaleX = 1.0;
+        scaleY = 1.0;
+
+        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        if (tiffFile == nullptr) {
+            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            return false;
+        }
+
+        // Récupération de l'échelle
+        // LibTIFF utilise généralement des floats pour la résolution
+        float resX = 1.0f;
+        float resY = 1.0f;
+        if (TIFFGetField(tiffFile, TIFFTAG_XRESOLUTION, &resX)) {
+            scaleX = static_cast<double>(resX);
+        }
+        if (TIFFGetField(tiffFile, TIFFTAG_YRESOLUTION, &resY)) {
+            scaleY = static_cast<double>(resY);
+        }
+
+        // Récupération du profil ICC
+        uint32_t iccSize = 0;
+        void* iccBuffer = nullptr;
+        if (TIFFGetField(tiffFile, TIFFTAG_ICCPROFILE, &iccSize, &iccBuffer) && iccSize > 0 && iccBuffer != nullptr) {
+            iccProfile.resize(iccSize);
+            std::memcpy(iccProfile.data(), iccBuffer, iccSize);
+        }
+
+        TIFFClose(tiffFile);
+        
+    return true; // On renvoie true même si ICC/Echelle sont absents, car ils sont optionnels
+    }
+
 }

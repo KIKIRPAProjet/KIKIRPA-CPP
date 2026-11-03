@@ -92,4 +92,76 @@ namespace {
         std::filesystem::remove(PATH);
     }
 
+    TEST(PyramidalTiffReaderClass, ReadsMetadataSuccessfully) {
+        // Crée une image basique pour le test
+        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_metadata_test.tif";
+        cv::Mat source = cv::Mat::zeros(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC1);
+        std::string error;
+        
+        // Génération du TIFF
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+
+        // Instanciation du lecteur
+        IONs::PyramidalTiffReaderClass reader(PATH);
+        
+        std::vector<uint8_t> iccProfile;
+        double scaleX = 0.0;
+        double scaleY = 0.0;
+
+        // Exécution de la fonction
+        ASSERT_TRUE(reader.readMetadata(iccProfile, scaleX, scaleY, error)) << error;
+        
+        // Vérifications
+        EXPECT_TRUE(error.empty());
+        EXPECT_GT(scaleX, 0.0); // L'échelle doit être strictement positive (généralement 1.0 si non spécifiée)
+        EXPECT_GT(scaleY, 0.0);
+        // Selon comment est codé createPyramidalTiledTiff, iccProfile sera soit vide, soit contenant des octets.
+        // L'important est que la fonction n'ait pas échoué.
+        
+        // Nettoyage
+        std::filesystem::remove(PATH);
+    }
+
+    TEST(PyramidalTiffReaderClass, FailsOnMissingFile) {
+        // On donne un chemin vers un fichier qui n'existe pas
+        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_non_existent_file.tif";
+        IONs::PyramidalTiffReaderClass reader(PATH);
+        
+        cv::Mat output;
+        std::string error;
+        
+        // La lecture doit échouer et renvoyer false
+        EXPECT_FALSE(reader.readRegion(0, cv::Rect(0, 0, 100, 100), output, error));
+        // Un message d'erreur clair doit être généré
+        EXPECT_FALSE(error.empty());
+        EXPECT_EQ(output.empty(), true); // La matrice de sortie doit rester vide
+    }
+
+    TEST(PyramidalTiffReaderClass, RejectsInvalidArguments) {
+        // Setup : Création d'une image basique et valide
+        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_invalid_args_test.tif";
+        cv::Mat source = cv::Mat::zeros(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC1);
+        std::string error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+
+        IONs::PyramidalTiffReaderClass reader(PATH);
+        cv::Mat output;
+
+        // Cas 1 : Niveau de pyramide négatif
+        EXPECT_FALSE(reader.readRegion(-1, cv::Rect(0, 0, 10, 10), output, error));
+        EXPECT_FALSE(error.empty());
+
+        // Cas 2 : Coordonnée X négative
+        EXPECT_FALSE(reader.readRegion(0, cv::Rect(-5, 0, 10, 10), output, error));
+        EXPECT_FALSE(error.empty());
+
+        // Cas 3 : Largeur nulle (ou négative)
+        EXPECT_FALSE(reader.readRegion(0, cv::Rect(0, 0, 0, 10), output, error));
+        EXPECT_FALSE(error.empty());
+
+        // Nettoyage
+        std::filesystem::remove(PATH);
+    }
+
+
 }

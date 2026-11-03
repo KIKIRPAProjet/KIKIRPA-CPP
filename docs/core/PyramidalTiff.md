@@ -3,7 +3,8 @@
 Code :
 
 - `core/io/pyramidal_tiff_writer.h` / `.cpp` : création d'un TIFF pyramidal tuilé ;
-- `core/io/pyramidal_tiff_reader.h` / `.cpp` : lecture d'une région d'un niveau de la pyramide.
+- `core/io/pyramidal_tiff_reader.h` / `.cpp` : lecture d'une région d'un niveau de la pyramide
+  et récupération de métadonnées TIFF optionnelles.
 
 Tests : `tests/core/test_pyramidal_tiff_reader.cpp`.
 
@@ -125,6 +126,45 @@ Le reader n'a pas besoin de charger tout le niveau en mémoire. Il :
 Chaque appel à `readRegion` ouvre et ferme le fichier. Les appels sont donc indépendants et
 le reader ne conserve pas de descripteur TIFF ouvert entre deux lectures.
 
+## Lire les métadonnées optionnelles
+
+`readMetadata` ouvre le TIFF associé au reader et récupère, dans le répertoire principal :
+
+- le profil ICC, copié dans `iccProfile` lorsqu'il est présent ;
+- les résolutions TIFF horizontale et verticale, écrites dans `scaleX` et `scaleY`
+  lorsqu'elles sont présentes.
+
+Les métadonnées sont optionnelles. Avant la lecture, `iccProfile` est vidé et `scaleX` et
+`scaleY` sont initialisées à `1.0`. L'absence de profil ICC ou de résolution ne constitue
+donc pas une erreur : la fonction renvoie `true` et conserve ces valeurs par défaut.
+Le profil ICC est copié dans le vecteur de sortie, qui reste indépendant des données gérées
+par libtiff après la fermeture du fichier.
+
+```cpp
+#include "core/io/pyramidal_tiff_reader.h"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+IONs::PyramidalTiffReaderClass reader("output/input_pyramid.tif");
+std::vector<std::uint8_t> iccProfile;
+double scaleX = 0.0;
+double scaleY = 0.0;
+std::string errorMessage;
+
+const bool success = reader.readMetadata(
+    iccProfile,
+    scaleX,
+    scaleY,
+    errorMessage
+);
+```
+
+Cette fonction ne valide pas le contenu de l'image et ne sélectionne pas un niveau
+particulier de la pyramide. Elle renvoie `false` uniquement si le TIFF ne peut pas être
+ouvert ; dans ce cas, `errorMessage` décrit l'erreur.
+
 ## Erreurs courantes
 
 `readRegion` renvoie `false` dans les cas suivants :
@@ -138,6 +178,9 @@ le reader ne conserve pas de descripteur TIFF ouvert entre deux lectures.
 
 Dans tous ces cas, `errorMessage` contient une description en anglais, conformément aux
 conventions des messages d'erreur du code.
+
+`readMetadata` renvoie `false` si le fichier ne peut pas être ouvert. Les métadonnées
+optionnelles absentes ne provoquent pas d'échec.
 
 ## Utilisation dans un pipeline
 
