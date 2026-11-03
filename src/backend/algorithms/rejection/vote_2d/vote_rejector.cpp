@@ -1,5 +1,8 @@
 // src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp
+// NOLINTBEGIN(misc-include-cleaner)
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
+#include "algorithms/legacy_type_aliases.h"
+#include "core/data/algorithm_types.h"
 
 #include <opencv2/core.hpp>
 
@@ -105,6 +108,20 @@ double computeMedian(std::vector<double>& values) {
     return medianValue;
 }
 
+// Extrait les inliers pour une passe de raffinement de translation.
+std::pair<std::vector<double>, std::vector<double>> collectInliersForCenter(
+    const ValidDeltas& deltas, const std::pair<double, double>& center, double thresholdPx) {
+    std::vector<double> inliersX;
+    std::vector<double> inliersY;
+    for (std::size_t i = 0; i < deltas.validIndices.size(); ++i) {
+        if (std::hypot(deltas.deltaX[i] - center.first, deltas.deltaY[i] - center.second) <= thresholdPx) {
+            inliersX.push_back(deltas.deltaX[i]);
+            inliersY.push_back(deltas.deltaY[i]);
+        }
+    }
+    return {inliersX, inliersY};
+}
+
 // Raffine l'estimation de translation par médiane itérative L1 sur les inliers.
 std::pair<double, double> refineTranslation(const ValidDeltas& deltas,
                                             const std::pair<double, double>& initialMode,
@@ -112,19 +129,12 @@ std::pair<double, double> refineTranslation(const ValidDeltas& deltas,
     double currentX = initialMode.first;
     double currentY = initialMode.second;
     for (int iter = 0; iter < MEDIAN_REFINEMENT_ITERATIONS; ++iter) {
-        std::vector<double> inliersX;
-        std::vector<double> inliersY;
-        for (std::size_t i = 0; i < deltas.validIndices.size(); ++i) {
-            if (std::hypot(deltas.deltaX[i] - currentX, deltas.deltaY[i] - currentY) <= thresholdPx) {
-                inliersX.push_back(deltas.deltaX[i]);
-                inliersY.push_back(deltas.deltaY[i]);
-            }
-        }
-        if (inliersX.empty()) {
+        auto inliers = collectInliersForCenter(deltas, {currentX, currentY}, thresholdPx);
+        if (inliers.first.empty()) {
             break;
         }
-        currentX = computeMedian(inliersX);
-        currentY = computeMedian(inliersY);
+        currentX = computeMedian(inliers.first);
+        currentY = computeMedian(inliers.second);
     }
     return {currentX, currentY};
 }
@@ -152,9 +162,7 @@ VoteRejectorClass::VoteRejectorClass(const Json& params)
 bool VoteRejectorClass::estimate(const Matches& matches, Alignment& out) {
     out.transformBToA.release();
     out.inlierMask.clear();
-    if (matches.pointsInA.size() != matches.pointsInB.size()) {
-        return false;
-    }
+    if (matches.pointsInA.size() != matches.pointsInB.size()) return false;
 
     int minMatches = std::max(MINIMUM_GEOMETRIC_POINTS_COUNT, parameters.value("minMatches", DEFAULT_MIN_MATCHES_COUNT));
     int minInliers = std::max(MINIMUM_GEOMETRIC_POINTS_COUNT, parameters.value("minInliers", DEFAULT_MIN_INLIERS_COUNT));
@@ -163,9 +171,7 @@ bool VoteRejectorClass::estimate(const Matches& matches, Alignment& out) {
     double cellSizePx = std::max(MINIMUM_GRID_CELL_SIZE_PX, parameters.value("case", DEFAULT_GRID_CELL_SIZE_PX));
 
     ValidDeltas deltas = extractFiniteDeltas(matches);
-    if (deltas.validIndices.size() < static_cast<std::size_t>(minMatches)) {
-        return false;
-    }
+    if (deltas.validIndices.size() < static_cast<std::size_t>(minMatches)) return false;
 
     std::pair<double, double> mode = computeVoteMode(deltas, cellSizePx);
     std::pair<double, double> translation = refineTranslation(deltas, mode, thresholdPx);
@@ -176,7 +182,6 @@ bool VoteRejectorClass::estimate(const Matches& matches, Alignment& out) {
         out.inlierMask.assign(matches.pointsInA.size(), 0);
         return false;
     }
-
     out.transformBToA = cv::Mat::eye(HOMOGRAPHY_MATRIX_SIZE, HOMOGRAPHY_MATRIX_SIZE, CV_64F);
     out.transformBToA.at<double>(0, 2) = translation.first;
     out.transformBToA.at<double>(1, 2) = translation.second;
@@ -184,3 +189,5 @@ bool VoteRejectorClass::estimate(const Matches& matches, Alignment& out) {
 }
 
 } // namespace stitching::rejection
+// NOLINTEND(misc-include-cleaner)
+

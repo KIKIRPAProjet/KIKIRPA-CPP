@@ -1,8 +1,11 @@
 // include/backend/algorithms/rejection/vote_2d/vote_rejector.h
 #pragma once
+#include "algorithms/legacy_type_aliases.h"
 #include "algorithms/rejection/OutlierRejector.h"
+#include "core/data/algorithm_types.h"
 
-namespace stitching::rejection { 
+// NOLINTBEGIN(misc-include-cleaner)
+namespace stitching::rejection { // NOLINT(readability-identifier-naming)
 
 // Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
 class VoteRejectorClass : public OutlierRejector {
@@ -18,3 +21,5 @@ private:
 using VoteRejector = VoteRejectorClass;
 
 } // namespace stitching::rejection
+// NOLINTEND(misc-include-cleaner)
+

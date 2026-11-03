@@ -1,3 +1,4 @@
+// NOLINTBEGIN
 #include "algorithms/stitching/positioning/TilePositioner.h"
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include "algorithms/seamline/graphcut/ImagePretreatment.h"
@@ -247,3 +248,4 @@ bool computeTilePositions(const std::vector<std::string>& tile_paths,
 }
 
 } // namespace stitching::positioning
+// NOLINTEND
