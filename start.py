@@ -1,3 +1,4 @@
+"""Détecte Qt, compile le projet Frontend, puis lance l'exécutable(pour ne pas trainer des versions différentes de exe)."""
 import os
 import re
 import shutil
