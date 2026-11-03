@@ -36,6 +36,21 @@ Supprimés : `src/run_pipeline.cpp` (retiré aussi par `main`), `include/fronten
 
 Nouveau : `algorithms/legacy_type_aliases.h` (temporaire, voir §9).
 
+### Build (PR #67)
+
+Les fichiers de `cmake/` passent en `snake_case` et les bibliothèques prennent le préfixe `kikirpa_` (l'exécutable reste `stitching`, nom provisoire) :
+
+| Avant | Après |
+|---|---|
+| `cmake/Dependencies.cmake` | `cmake/dependencies_manager.cmake` |
+| `cmake/Backend.cmake` | `cmake/backend.cmake` |
+| `cmake/Frontend.cmake` | `cmake/frontend.cmake` |
+| `cmake/Tests.cmake` | `cmake/tests_runner.cmake` |
+| `cmake/Install.cmake` | `cmake/install.cmake` |
+| `cmake/ClangTidy.cmake` | `cmake/clang_tidy.cmake` |
+| cible `stitching_backend` | `kikirpa_backend` |
+| cible `stitching_frontend` | `kikirpa_frontend` |
+
 ## 2. Namespaces
 
 Le namespace `stitching` est remplacé par un namespace par dossier : `DataNs`, `ConfigNs`, `StepNs` (contrat d'un step), `PipelineNs`, `CheckpointNs`, `IONs`, `StepsNs` (steps concrets), `FrontendNs`. Les algorithmes restent pour l'instant dans `stitching::…`.
@@ -135,7 +150,8 @@ Une fois que `reformat-v3` sera fusionnée dans `main`, vous pourrez adapter vot
 2. Remplacer les anciens includes : `core/Types.h` devient `core/data/algorithm_types.h`, etc. (tableau du §1).
 3. Qualifier les types avec leur namespace (`DataNs::Matches`, `StepNs::StepClass`…) ou, en attendant, inclure `algorithms/legacy_type_aliases.h` dans un fichier d'algorithme.
 4. Renommer les champs, méthodes et clés JSON (§3 à §5).
-5. Compiler (`cmake --build --preset windows-aqt`, ou `linux`, `macos`) et lancer `ctest --preset windows-aqt`. Le preset `windows-msvc` a été remplacé par `windows-aqt` (#59) : voir [BUILD.md](BUILD.md).
+5. Dans les `CMakeLists.txt` de vos tests, lier `kikirpa_backend` au lieu de `stitching_backend`, et déclarer un nouveau dossier de tests dans `cmake/tests_runner.cmake` (et non plus `cmake/Tests.cmake` ni `cmake/algorithms.cmake`). Voir §1, « Build ».
+6. Compiler (`cmake --build --preset windows-aqt`, ou `linux`, `macos`) et lancer `ctest --preset windows-aqt`. Le preset `windows-msvc` a été remplacé par `windows-aqt` (#59) : voir [BUILD.md](BUILD.md).
 
 ## 11. Vérification effectuée
 
