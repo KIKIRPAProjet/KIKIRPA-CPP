@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 project(Stitching LANGUAGES CXX)
 
+if(APPLE)
+    foreach(homebrew_prefix IN ITEMS "/opt/homebrew/opt/qtbase" "/usr/local/opt/qtbase")
+        if(EXISTS "${homebrew_prefix}/lib/cmake/Qt6/Qt6Config.cmake")
+            list(PREPEND CMAKE_PREFIX_PATH "${homebrew_prefix}")
+            break()
+        endif()
+    endforeach()
+endif()
+
 include(CTest)
 include(cmake/Dependencies.cmake)
 include(cmake/Backend.cmake)

@@ -41,6 +41,25 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 
 **CLion** : *Settings → Build, Execution, Deployment → Toolchains*, choisir **Visual Studio** (pas MinGW). Les presets apparaissent ensuite dans *CMake → Profiles*.
 
+## macOS (Homebrew)
+
+Installer les dépendances une seule fois :
+
+```bash
+brew install cmake opencv libtiff qtbase googletest
+```
+
+Dans VS Code, choisir le preset **macos** lorsqu'il est demandé, ou utiliser :
+
+```bash
+cmake --preset macos
+cmake --build --preset macos
+ctest --preset macos
+```
+
+Le preset sélectionne Apple Clang et les chemins Homebrew Qt sur Apple Silicon
+(`/opt/homebrew`) et Intel (`/usr/local`). Le build est généré dans `build/macos/`.
+
 ## Linux (Ubuntu 24.04)
 
 ```bash
