@@ -9,7 +9,7 @@
 | OpenCV 4 | oui | images, algorithmes |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/PyramidalTiffWriter`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
-| Qt 6 (Widgets, Concurrent) | oui | GUI (`stitching_frontend`) |
+| Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | ONNX Runtime + module `dnn` d'OpenCV | non | LightGlue seulement (`-DONNXRUNTIME_ROOT=<dossier>`) |
 

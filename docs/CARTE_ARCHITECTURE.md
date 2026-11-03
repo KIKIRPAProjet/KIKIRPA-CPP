@@ -165,7 +165,7 @@ cmake/               un fichier par partie du build
 | [CMakeLists.txt](../CMakeLists.txt) | Inclut les fichiers de `cmake/` et déclare la cible `stitching` (vide). |
 | [cmake/Dependencies.cmake](../cmake/Dependencies.cmake) | OpenCV, libtiff et **Qt 6 obligatoires** ; nlohmann_json téléchargé s'il manque. |
 | [cmake/Backend.cmake](../cmake/Backend.cmake) | Cible `kikirpa_backend` (lib statique de tout `src/backend`), détection d'ONNX Runtime (LightGlue facultatif), option `/utf-8` pour MSVC. |
-| [cmake/Frontend.cmake](../cmake/Frontend.cmake) | Cible `stitching_frontend` (Qt). |
+| [cmake/Frontend.cmake](../cmake/Frontend.cmake) | Cible `kikirpa_frontend` (Qt). |
 | [cmake/Tests.cmake](../cmake/Tests.cmake) | GoogleTest **obligatoire** (sauf `-DBUILD_TESTING=OFF`), un `add_subdirectory` par dossier de `tests/`. Liste des tests lue au lancement de `ctest` (sous Windows, les DLL d'OpenCV ne sont dans le PATH qu'à ce moment-là). |
 | [cmake/Install.cmake](../cmake/Install.cmake) | Installe `stitching` dans `bin/`. |
 | [CMakePresets.json](../CMakePresets.json) | Presets `windows-msvc` (vcpkg, variables `VCPKG_ROOT` et `OpenCV_DIR`) et `linux`. Build dans `build/<preset>/`. |
