@@ -1,3 +1,4 @@
+//  gere les pages et les controles de espace de travail
 #include "artworkcanvas.h"
 #include "frontendutils.h"
 #include "homepage.h"

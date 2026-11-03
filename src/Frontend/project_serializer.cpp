@@ -1,3 +1,4 @@
+//  charge et enregistre les projets au format JSON
 #include "project_serializer.h"
 
 #include <QDateTime>

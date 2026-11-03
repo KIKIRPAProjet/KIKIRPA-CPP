@@ -1,3 +1,4 @@
+// fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
 #include <QImageReader>

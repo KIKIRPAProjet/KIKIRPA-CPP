@@ -1,3 +1,4 @@
+//  gere l'export du projet et la creation du rapport
 #include "mainwindow.h"
 #include "projectgrid.h"
 #include "workspace_helpers.h"

@@ -1,3 +1,4 @@
+//  construit la barre de menus et ses actions
 #include "menubar_manager.h"
 
 #include <QAction>

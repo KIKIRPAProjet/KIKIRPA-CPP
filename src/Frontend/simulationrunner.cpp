@@ -1,3 +1,4 @@
+//  simule le lancement et le suivi dune execution
 #include "simulationrunner.h"
 
 #include <QTimer>

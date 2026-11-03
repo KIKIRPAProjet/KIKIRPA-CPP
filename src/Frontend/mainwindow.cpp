@@ -1,3 +1,4 @@
+//  implemente la fenetre principale de lapplication
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "dialog_helpers.h"

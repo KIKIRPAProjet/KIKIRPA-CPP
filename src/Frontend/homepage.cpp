@@ -1,3 +1,4 @@
+//  implemente la page daccueil et les projets recents
 /**
  * @brief Implémentation de la page d'accueil de l'application
  */

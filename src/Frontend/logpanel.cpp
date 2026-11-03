@@ -1,3 +1,4 @@
+// affiche et filtre les messages du journal backend
 /**
  * @brief Panneau de journalisation pour afficher les messages du backend
  */

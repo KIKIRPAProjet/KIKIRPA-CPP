@@ -1,3 +1,4 @@
+// lance application graphique
 #include "mainwindow.h"
 
 #include <QApplication>

@@ -1,3 +1,4 @@
+//  gere les tuiles et leur organisation dans la grille
 #include "projectgrid.h"
 
 #include "frontendutils.h"
