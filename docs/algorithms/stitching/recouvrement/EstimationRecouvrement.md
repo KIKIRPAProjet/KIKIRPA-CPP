@@ -1,8 +1,8 @@
 # EstimationRecouvrement — première passe commune à toutes les méthodes d'appariement
 
 ```
-include/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h
-src/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.cpp
+include/Backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h
+src/Backend/algorithms/stitching/recouvrement/EstimationRecouvrement.cpp
 ```
 
 ## 1. À quoi ça sert
