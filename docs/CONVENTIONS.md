@@ -26,7 +26,7 @@ En cas de doute, prendre pour modèle `include/backend/core/step/step.h` et `src
 - Puis `#pragma once` dans un header.
 - Un `.h` et un `.cpp` par classe, avec le même nom : `PhaseCorrelationStepClass` est dans `phase_correlation_step.h` / `.cpp`.
 - Le header contient l'**interface** (déclarations), le `.cpp` l'**implémentation**.
-- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/Backend.cmake`).
+- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/backend.cmake`).
 
 ## 3. Noms
 
@@ -304,6 +304,7 @@ namespace {
 ## 12. Tests
 
 - **GoogleTest**, un dossier `tests/<module>/` avec son `CMakeLists.txt`, label `unit`, sans images externes : on construit des images synthétiques dans le test (rapide et reproductible).
+- L'exécutable de test se lie à `kikirpa_backend` et `GTest::gtest_main` ; le dossier est déclaré par un `add_subdirectory` dans `cmake/tests_runner.cmake`.
 - **Un comportement par test**, avec un nom qui le dit (`RejectsUnknownStatus`).
 - Structure **préparer, agir, vérifier**.
 - Tests **indépendants** et **déterministes**.

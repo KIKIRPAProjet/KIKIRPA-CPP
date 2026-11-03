@@ -7,9 +7,9 @@
 | CMake ≥ 3.21 (presets) et Ninja | oui | build |
 | Compilateur C++17 | oui | MSVC 2022 sous Windows, GCC ou Clang sous Linux |
 | OpenCV 4 | oui | images, algorithmes |
-| libtiff | oui | TIFF tuilés pyramidaux (`core/PyramidalTiffWriter`) |
+| libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
-| Qt 6 (Widgets, Concurrent) | oui | GUI (`stitching_frontend`) |
+| Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
 | ONNX Runtime + module `dnn` d'OpenCV | non | LightGlue seulement (`-DONNXRUNTIME_ROOT=<dossier>`) |
@@ -18,27 +18,35 @@
 
 Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas avec MinGW.
 
-1. **Build Tools Visual Studio 2022** (charge de travail « Développement Desktop en C++»).
-2. **OpenCV** : binaires officiels extraits dans `C:\opencv`.
-3. **libtiff, GoogleTest et Qt 6 via vcpkg**, une seule fois par poste :
+1. **Visual Studio 2022** (Community ou Build Tools), avec la charge de travail « Développement Desktop en C++ ».
+2. **OpenCV 4** : télécharger les binaires officiels pour Windows depuis [opencv.org](https://opencv.org/releases/) et extraire l'archive dans `C:\`. Le dossier de configuration doit être `C:\opencv\build`.
+3. **libtiff et GoogleTest via vcpkg** (pas Qt) :
    ```bat
    git clone https://github.com/microsoft/vcpkg C:\vcpkg
    C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
-   C:\vcpkg\vcpkg install tiff gtest qtbase --triplet x64-windows
+   C:\vcpkg\vcpkg install tiff gtest --triplet x64-windows
    ```
-   `qtbase` contient Widgets et Concurrent. Il est compilé depuis les sources : la première installation prend une à plusieurs heures, ensuite vcpkg le garde en cache. Si vcpkg était déjà installé pour libtiff, il suffit de relancer la dernière ligne.
-4. **Variables d'environnement** utilisateur, une seule fois, puis rouvrir le terminal ou l'IDE :
+   Si vcpkg est déjà installé, ne relancez pas `git clone` ni le bootstrap ; exécutez seulement la dernière commande.
+4. **Qt 6 binaire avec aqt**. Installer Python si nécessaire, puis exécuter :
    ```bat
-   setx VCPKG_ROOT C:\vcpkg
+   python -m pip install --user aqtinstall
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+   ```
+   Cette commande installe Qt Widgets et Concurrent sans les compiler depuis les sources.
+5. **Variables d'environnement** utilisateur, une seule fois, puis rouvrir le terminal ou l'IDE :
+   ```bat
+   setx KIKIRPA_VCPKG_ROOT C:\vcpkg
    setx OpenCV_DIR C:\opencv\build
+   setx QT_ROOT C:\Qt\6.10.3\msvc2022_64
    ```
-5. **Compiler et tester**, depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat` :
+   `KIKIRPA_VCPKG_ROOT` évite le conflit avec la variable `VCPKG_ROOT` que Visual Studio peut définir pour son propre vcpkg.
+6. **Compiler et tester**, depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat` :
    ```bat
-   cmake --preset windows-msvc
-   cmake --build --preset windows-msvc
-   ctest --preset windows-msvc
+   cmake --preset windows-aqt
+   cmake --build --preset windows-aqt
+   ctest --preset windows-aqt
    ```
-   Le build est dans `build/windows-msvc/`. Les DLL de libtiff sont copiées à côté des exécutables par vcpkg. Celle d'OpenCV doit être dans le `PATH` (`%OpenCV_DIR%\x64\vc16\bin`) ; `ctest --preset` l'ajoute tout seul.
+   Lancez ces commandes depuis la racine du dépôt (le dossier qui contient `CMakePresets.json`). Le build est dans `build/windows-aqt/`. Les DLL de libtiff et GoogleTest sont copiées à côté des exécutables par vcpkg. Celle d'OpenCV doit être dans le `PATH` (`%OpenCV_DIR%\x64\vc16\bin`) ; `ctest --preset` l'ajoute tout seul.
 
 **CLion** : *Settings → Build, Execution, Deployment → Toolchains*, choisir **Visual Studio** (pas MinGW). Les presets apparaissent ensuite dans *CMake → Profiles*.
 
@@ -98,3 +106,37 @@ Pour activer cette vérification dans un autre build CMake Clang, ajouter
 `-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
 clang-tidy uniquement sur les fichiers C++ modifiés dans une pull request et
 fait échouer le job si un diagnostic est émis.
+
+## Configuration optionnelle : LightGlue
+
+ONNX Runtime n'est nécessaire que pour LightGlue, qui demande aussi le module `dnn` d'OpenCV. Installer ONNX Runtime pour son système, puis indiquer son dossier à la configuration :
+
+```bash
+cmake --preset <preset> -DONNXRUNTIME_ROOT=<dossier>
+```
+
+Sans ONNX Runtime, le reste du projet se compile normalement (LightGlue est simplement retiré du build). La CI n'a pas ONNX Runtime : elle ne compile jamais LightGlue.
+
+## Désactiver les tests unitaires
+
+GoogleTest est obligatoire, sauf si les tests sont désactivés :
+
+```bash
+cmake --preset <preset> -DBUILD_TESTING=OFF
+```
+
+Remplacer `<preset>` par celui de son système : `windows-aqt`, `linux` ou `macos`.
+
+## Organisation du build
+
+| Fichier | Rôle |
+|---|---|
+| `CMakeLists.txt` | Point d'entrée : inclut les fichiers de `cmake/` dans l'ordre et déclare l'exécutable `stitching` (nom provisoire). |
+| `cmake/clang_tidy.cmake` | Option `ENABLE_CLANG_TIDY`. |
+| `cmake/dependencies_manager.cmake` | Recherche d'OpenCV, libtiff, Qt 6 ; téléchargement de nlohmann_json s'il manque. |
+| `cmake/backend.cmake` | Bibliothèque `kikirpa_backend` (tout `src/backend/`), LightGlue si ONNX Runtime est trouvé. |
+| `cmake/frontend.cmake` | Bibliothèque `kikirpa_frontend` (`src/frontend/`, Qt). |
+| `cmake/tests_runner.cmake` | GoogleTest et un `add_subdirectory` par dossier de `tests/`. |
+| `cmake/install.cmake` | Installation de `stitching` dans `bin/`. |
+
+Un exécutable de test se lie à `kikirpa_backend` (voir `tests/egalisation/CMakeLists.txt`).
