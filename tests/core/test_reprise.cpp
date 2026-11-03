@@ -3,16 +3,17 @@
 // "a" produit un entier, "b" lui ajoute sa valeur. Chaque step compte ses exécutions, ce qui permet de vérifier
 // lesquels sont sautés à la reprise.
 //
-//   test_reprise
-//       Sans checkpoint, échec puis reprise, options modifiées, run.from, skip=false, pause, script réécrit
-//       après chaque step, lecture du champ "run". Code de retour 0 si tous les tests passent.
+// GoogleTest, ctest -L unit : sans checkpoint, échec puis reprise, options modifiées, run.from, skip=false,
+// pause, script réécrit après chaque step, lecture du champ "run", sérialisation des types du pipeline.
 
-#include "core/Checkpoint.h"
-#include "core/CheckpointTypes.h"
-#include "core/Config.h"
-#include "core/Pipeline.h"
-#include "core/Tuile.h"
+#include "core/checkpoint/checkpoint.h"
+#include "core/checkpoint/checkpoint_types.h"
+#include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
+#include "core/pipeline/pipeline.h"
+#include "core/data/tile.h"
 #include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
+#include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -24,18 +25,18 @@ namespace fs = std::filesystem;
 
 namespace stitching::tests {
 
+using Json = nlohmann::json;
+
 constexpr int VALEUR_A = 10;
 constexpr int VALEUR_B = 5;
 
-int nbEchecs = 0;
-
+// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
-    std::cout << (ok ? "  OK    " : "  ECHEC ") << message << '\n';
-    if (!ok) ++nbEchecs;
+    EXPECT_TRUE(ok) << message;
 }
 
 // Step de test : sortie = valeur (+ entrée si elle existe). Option "echoue" : renvoie false.
-class StepCompteur : public Step {
+class StepCompteur : public StepNs::StepClass {
     int& executions;
     std::string entree, sortie;
     std::function<void()> pendant;   // appelé pendant execute() (ex. demande de pause)
@@ -43,24 +44,24 @@ public:
     StepCompteur(const std::string& nom, int valeur, const std::string& entree, const std::string& sortie,
                  int& executions, std::function<void()> pendant = {})
         : executions(executions), entree(entree), sortie(sortie), pendant(std::move(pendant)) {
-        StepConfig cfg;
+        ConfigNs::StepConfig cfg;
         cfg.name = nom;
-        cfg.options = {{"int", "valeur", valeur}, {"bool", "echoue", false}};
-        if (!entree.empty()) cfg.pipelineOptions = {{"Compteur", entree}};
-        cfg.signature.pipelineOptions = {{"Compteur", sortie}};
-        config = cfg;
+        cfg.parameters = {{"int", "valeur", valeur}, {"bool", "echoue", false}};
+        if (!entree.empty()) cfg.inputs = {{"Compteur", entree}};
+        cfg.outputs = {{"Compteur", sortie}};
+        configJson = cfg;
     }
     bool execute() override {
         ++executions;
-        outputData = Json::object();
-        if (option("echoue").get<bool>()) {
-            outputData["error"] = "échec demandé";
+        result = Json::object();
+        if (getParameter("echoue").get<bool>()) {
+            result["error"] = "échec demandé";
             return false;
         }
-        int v = option("valeur").get<int>();
-        if (!entree.empty()) v += data->get<int>(entree);
-        data->set(sortie, v);
-        outputData["valeur"] = v;
+        int v = getParameter("valeur").get<int>();
+        if (!entree.empty()) v += dataStore->get<int>(entree);
+        dataStore->replace(sortie, v);
+        result["valeur"] = v;
         if (pendant) pendant();
         return true;
     }
@@ -68,36 +69,36 @@ public:
 
 // Sérialisation du type de test "Compteur" : un entier dans <clé>.txt
 void declarerCompteur() {
-    Checkpoint::registerType(
+    CheckpointNs::CheckpointClass::registerType(
         "Compteur",
-        [](const DataStore& d, const std::string& cle, const fs::path& dossier) {
+        [](const StepNs::DataStoreClass& d, const std::string& cle, const fs::path& dossier) {
             std::ofstream(dossier / (cle + ".txt")) << d.get<int>(cle);
         },
-        [](DataStore& d, const std::string& cle, const fs::path& dossier) {
+        [](StepNs::DataStoreClass& d, const std::string& cle, const fs::path& dossier) {
             std::ifstream in(dossier / (cle + ".txt"));
             int v = 0;
             if (!(in >> v)) throw std::runtime_error("lecture impossible");
-            d.set(cle, v);
+            d.replace(cle, v);
         });
 }
 
 struct Banc {
     int execA = 0, execB = 0;
-    Pipeline p;
+    PipelineNs::PipelineClass p;
     Banc(const fs::path& checkpoints, std::function<void()> pendantA = {}) {
-        p.add(std::make_unique<StepCompteur>("a", VALEUR_A, "", "x", execA, std::move(pendantA)));
-        p.add(std::make_unique<StepCompteur>("b", VALEUR_B, "x", "y", execB));
-        RunState r;
-        r.checkpointDir = checkpoints.string();
+        p.addStep(std::make_unique<StepCompteur>("a", VALEUR_A, "", "x", execA, std::move(pendantA)));
+        p.addStep(std::make_unique<StepCompteur>("b", VALEUR_B, "x", "y", execB));
+        PipelineNs::RunState r;
+        r.checkpointDirectory = checkpoints.string();
         p.setRunState(r);
     }
     // Change une option d'un step (index), comme le ferait un JSON relu
     void option(size_t index, const std::string& cle, Json valeur) {
         const auto& s = p.getSteps()[index];
-        s->importConfig({{"name", s->getConfig().at("name")}, {"options", {{{"type", valeur.is_boolean() ? "bool" : "int"}, {"key", cle}, {"value", valeur}}}}});
+        s->importConfig({{"name", s->getConfigJson().at("name")}, {"parameters", {{{"valueType", valeur.is_boolean() ? "bool" : "int"}, {"name", cle}, {"value", valeur}}}}});
     }
     bool lancer() { return p.run([](const std::string&) {}); }
-    int y() const { return p.getData().has("y") ? p.getData().get<int>("y") : -1; }
+    int y() const { return p.getDataStore().has("y") ? p.getDataStore().get<int>("y") : -1; }
 };
 
 void testerSansCheckpoint() {
@@ -105,7 +106,7 @@ void testerSansCheckpoint() {
     Banc b("");
     verifier(b.lancer() && b.lancer(), "deux runs réussis");
     verifier(b.execA == 2 && b.execB == 2, "chaque run refait tous les steps");
-    verifier(b.p.getRunState().status == RunStatus::Completed, "statut completed");
+    verifier(b.p.getRunState().status == PipelineNs::RunStatus::Completed, "statut completed");
     verifier(b.y() == VALEUR_A + VALEUR_B, "sortie finale correcte");
 }
 
@@ -115,7 +116,7 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     Banc b(dossier);
     b.option(1, "echoue", true);
     verifier(!b.lancer(), "run 1 en échec au step b");
-    verifier(b.p.getRunState().status == RunStatus::Failed, "statut failed");
+    verifier(b.p.getRunState().status == PipelineNs::RunStatus::Failed, "statut failed");
     verifier(b.p.getRunState().completedSteps == std::vector<std::string>{"a"}, "completedSteps = [a]");
     verifier(fs::exists(dossier / "00_a" / "manifest.json"), "checkpoint de a écrit");
 
@@ -136,22 +137,22 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     verifier(b.y() == 20 + VALEUR_B, "sorties restaurées");
 
     std::cout << "run.from et skip\n";
-    RunState r = b.p.getRunState();
-    r.from = "b";
+    PipelineNs::RunState r = b.p.getRunState();
+    r.startFromStep = "b";
     b.p.setRunState(r);
     verifier(b.lancer() && b.execA == 2 && b.execB == 4, "from=b : seul b refait");
     r = b.p.getRunState();
-    r.from = "a";
+    r.startFromStep = "a";
     b.p.setRunState(r);
     verifier(b.lancer() && b.execA == 3 && b.execB == 5, "from=a : a et b refaits");
     r = b.p.getRunState();
-    r.skip = false;
+    r.skipCompletedSteps = false;
     b.p.setRunState(r);
     verifier(b.lancer() && b.execA == 4 && b.execB == 6, "skip=false : tout refait");
-    verifier(b.p.getRunState().skip, "consigne skip remise à true après le run");
+    verifier(b.p.getRunState().skipCompletedSteps, "consigne skip remise à true après le run");
 
     r = b.p.getRunState();
-    r.from = "inconnu";
+    r.startFromStep = "inconnu";
     b.p.setRunState(r);
     bool leve = false;
     try { b.lancer(); } catch (const std::invalid_argument&) { leve = true; }
@@ -159,8 +160,8 @@ void testerEchecPuisReprise(const fs::path& dossier) {
 
     fs::remove_all(dossier);
     Banc vide(dossier);
-    RunState r2 = vide.p.getRunState();
-    r2.from = "b";
+    PipelineNs::RunState r2 = vide.p.getRunState();
+    r2.startFromStep = "b";
     vide.p.setRunState(r2);
     leve = false;
     try { vide.lancer(); } catch (const std::invalid_argument&) { leve = true; }
@@ -170,15 +171,15 @@ void testerEchecPuisReprise(const fs::path& dossier) {
 void testerPause(const fs::path& dossier) {
     std::cout << "Pause\n";
     fs::remove_all(dossier);
-    Pipeline* cible = nullptr;
+    PipelineNs::PipelineClass* cible = nullptr;
     Banc b(dossier, [&] { cible->requestPause(); });
     cible = &b.p;
     verifier(!b.lancer(), "run interrompu");
-    verifier(b.p.getRunState().status == RunStatus::Paused, "statut paused");
+    verifier(b.p.getRunState().status == PipelineNs::RunStatus::Paused, "statut paused");
     verifier(b.execA == 1 && b.execB == 0, "pause entre a et b");
 
     Banc suite(dossier);   // nouveau processus : même dossier de checkpoints
-    RunState r = suite.p.getRunState();
+    PipelineNs::RunState r = suite.p.getRunState();
     r.completedSteps = b.p.getRunState().completedSteps;
     suite.p.setRunState(r);
     verifier(suite.lancer() && suite.execA == 0 && suite.execB == 1, "reprise : seul b exécuté");
@@ -203,10 +204,10 @@ void testerScript(const fs::path& dossier) {
 
     std::cout << "Champ run invalide\n";
     bool leve = false;
-    try { parseRunState({{"status", "bidon"}}); } catch (const std::invalid_argument&) { leve = true; }
+    try { PipelineNs::RunState::fromJson({{"status", "bidon"}}); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "statut inconnu refusé");
     leve = false;
-    try { parseRunState({{"skip", "oui"}}); } catch (const std::invalid_argument&) { leve = true; }
+    try { PipelineNs::RunState::fromJson({{"skipCompletedSteps", "oui"}}); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "skip non booléen refusé");
 }
 
@@ -215,30 +216,30 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     std::cout << "Sérialisation des types du pipeline\n";
     fs::remove_all(dossier);
     fs::create_directories(dossier);
-    const auto types = pipelineTypes();
-    verifier(types.size() == 4 && Checkpoint::hasType("Tiles") && Checkpoint::hasType("PairMatches") &&
-                 Checkpoint::hasType("Positions") && Checkpoint::hasType("Territories"),
+    const auto types = CheckpointNs::pipelineTypes();
+    verifier(types.size() == 4 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
+                 CheckpointNs::CheckpointClass::hasType("Positions") && CheckpointNs::CheckpointClass::hasType("Territories"),
              "4 types déclarés d'office");
 
-    DataStore avant, apres;
-    auto t0 = std::make_shared<Tuile>(0, "a.tif", "", 400, 300, CV_16UC3);
-    auto t1 = std::make_shared<Tuile>(1, "b.tif", "", 400, 300, CV_16UC3);
-    t0->setVoisins(nullptr, t1.get(), nullptr, nullptr);
-    t1->setVoisins(t0.get(), nullptr, nullptr, nullptr);
-    avant.set("tiles", Tiles{t0, t1});
-    PairMatches pm{0, 1, Direction::Bottom, {}};
-    pm.matches.pointsA = {{1.25f, 2.5f}};
-    pm.matches.pointsB = {{3.125f, 4.f}};
-    pm.matches.scores = {0.75f};
-    pm.matches.dx = 319.875f;
-    pm.matches.dy = -0.03125f;
-    avant.set("matches", std::vector<PairMatches>{pm});
-    avant.set("positions", std::vector<TilePositionData>{{"r00_c01", {320.123456789, -0.5}, 0.001}});
-    Seamline::TileTerritory terr;
-    terr.tile_index = 1;
+    StepNs::DataStoreClass avant, apres;
+    auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", 400, 300, CV_16UC3);
+    auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", 400, 300, CV_16UC3);
+    t0->setNeighbours(nullptr, t1.get(), nullptr, nullptr);
+    t1->setNeighbours(t0.get(), nullptr, nullptr, nullptr);
+    avant.replace("tiles", DataNs::TileList{t0, t1});
+    DataNs::PairMatches pm{0, 1, DataNs::Direction::Bottom, {}};
+    pm.featureMatches.pointsInA = {{1.25f, 2.5f}};
+    pm.featureMatches.pointsInB = {{3.125f, 4.f}};
+    pm.featureMatches.confidenceScores = {0.75f};
+    pm.featureMatches.translationX = 319.875f;
+    pm.featureMatches.translationY = -0.03125f;
+    avant.replace("matches", std::vector<DataNs::PairMatches>{pm});
+    avant.replace("positions", std::vector<DataNs::TilePositionData>{{"r00_c01", {320.123456789, -0.5}, 0.001}});
+    DataNs::TileTerritory terr;
+    terr.tileIndex = 1;
     terr.polygons = {{{0, 0}, {10, 0}, {10, 10}}};
     terr.holes = {{{{2, 2}, {3, 2}, {3, 3}}}};
-    avant.set("territories", std::vector<Seamline::TileTerritory>{terr});
+    avant.replace("territories", std::vector<DataNs::TileTerritory>{terr});
 
     const std::pair<const char*, const char*> cles[] = {
         {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"}};
@@ -247,42 +248,42 @@ void testerTypesDuPipeline(const fs::path& dossier) {
         types.at(type).second(apres, cle, dossier);
     }
 
-    const auto& tuiles = apres.get<Tiles>("tiles");
+    const auto& tuiles = apres.get<DataNs::TileList>("tiles");
     verifier(tuiles.size() == 2 && tuiles[0]->getSource() == "a.tif" && tuiles[0]->getType() == CV_16UC3 &&
-                 tuiles[0]->getNiveau(0).largeur == 400 && tuiles[0]->getRight() == tuiles[1].get() &&
+                 tuiles[0]->getLevel(0).width == 400 && tuiles[0]->getRight() == tuiles[1].get() &&
                  tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
              "Tiles : fiches et voisins");
-    const auto& m = apres.get<std::vector<PairMatches>>("matches");
-    verifier(m.size() == 1 && m[0].dir == Direction::Bottom && m[0].matches.dx == pm.matches.dx &&
-                 m[0].matches.dy == pm.matches.dy && m[0].matches.pointsA == pm.matches.pointsA &&
-                 m[0].matches.pointsB == pm.matches.pointsB && m[0].matches.scores == pm.matches.scores,
+    const auto& m = apres.get<std::vector<DataNs::PairMatches>>("matches");
+    verifier(m.size() == 1 && m[0].direction == DataNs::Direction::Bottom && m[0].featureMatches.translationX == pm.featureMatches.translationX &&
+                 m[0].featureMatches.translationY == pm.featureMatches.translationY && m[0].featureMatches.pointsInA == pm.featureMatches.pointsInA &&
+                 m[0].featureMatches.pointsInB == pm.featureMatches.pointsInB && m[0].featureMatches.confidenceScores == pm.featureMatches.confidenceScores,
              "PairMatches : valeurs exactes");
-    const auto& pos = apres.get<std::vector<TilePositionData>>("positions");
-    verifier(pos.size() == 1 && pos[0].tile_id == "r00_c01" && pos[0].position == cv::Point2d(320.123456789, -0.5) &&
-                 pos[0].rotation == 0.001,
+    const auto& pos = apres.get<std::vector<DataNs::TilePositionData>>("positions");
+    verifier(pos.size() == 1 && pos[0].tileId == "r00_c01" && pos[0].position == cv::Point2d(320.123456789, -0.5) &&
+                 pos[0].rotationRadians == 0.001,
              "Positions : valeurs exactes");
-    const auto& tr = apres.get<std::vector<Seamline::TileTerritory>>("territories");
-    verifier(tr.size() == 1 && tr[0].tile_index == 1 && tr[0].polygons == terr.polygons && tr[0].holes == terr.holes,
+    const auto& tr = apres.get<std::vector<DataNs::TileTerritory>>("territories");
+    verifier(tr.size() == 1 && tr[0].tileIndex == 1 && tr[0].polygons == terr.polygons && tr[0].holes == terr.holes,
              "Territories : polygones et trous");
 }
 
-} // namespace stitching::tests
-
-int main() {
-    using namespace stitching::tests;
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_reprise";
-    try {
+// Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en
+// parallèle) et déclare le type "Compteur" dans son processus
+class Reprise : public ::testing::Test {
+protected:
+    fs::path dossier;
+    void SetUp() override {
         declarerCompteur();
-        testerSansCheckpoint();
-        testerEchecPuisReprise(dossier);
-        testerPause(dossier);
-        testerScript(dossier);
-        testerTypesDuPipeline(dossier);
-    } catch (const std::exception& e) {
-        std::cout << "  ECHEC exception inattendue : " << e.what() << '\n';
-        ++nbEchecs;
+        dossier = fs::temp_directory_path() /
+                  ("kikirpa_test_reprise_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
     }
-    fs::remove_all(dossier);
-    std::cout << (nbEchecs == 0 ? "Tous les tests passent\n" : std::to_string(nbEchecs) + " test(s) en échec\n");
-    return nbEchecs == 0 ? 0 : 1;
-}
+    void TearDown() override { fs::remove_all(dossier); }
+};
+
+TEST_F(Reprise, SansCheckpoint) { testerSansCheckpoint(); }
+TEST_F(Reprise, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
+TEST_F(Reprise, Pause) { testerPause(dossier); }
+TEST_F(Reprise, Script) { testerScript(dossier); }
+TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
+
+} // namespace stitching::tests
