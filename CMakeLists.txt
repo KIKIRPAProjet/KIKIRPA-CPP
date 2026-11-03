@@ -15,21 +15,17 @@ find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 set(PROJECT_SOURCES
         src/Frontend/main.cpp
         src/Frontend/mainwindow.cpp
-        src/Frontend/mainwindow_workspace.cpp
         src/Frontend/homepage.cpp
         src/Frontend/projectgrid.cpp
         src/Frontend/simulationrunner.cpp
+        src/Frontend/workspace_ui.cpp
         src/Frontend/frontendutils.cpp
-        src/Frontend/project_mode.cpp
-        src/Frontend/tiles_mode.cpp
-        src/Frontend/masks_mode.cpp
-        src/Frontend/alignment_mode.cpp
-        src/Frontend/assembly_mode.cpp
         src/Frontend/export_mode.cpp
         include/Frontend/mainwindow.h
         include/Frontend/homepage.h
         include/Frontend/projectgrid.h
         include/Frontend/simulationrunner.h
+        include/Frontend/workspace_ui.h
         include/Frontend/frontendutils.h
         include/Frontend/artworkcanvas.h
         include/Frontend/workspace_helpers.h
