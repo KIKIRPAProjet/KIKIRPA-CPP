@@ -9,7 +9,7 @@ target_include_directories(stitching_frontend PUBLIC
     "${PROJECT_SOURCE_DIR}/include/frontend"
 )
 target_link_libraries(stitching_frontend PUBLIC
-    stitching_backend
+    kikirpa_backend
     Qt6::Widgets
     Qt6::Concurrent
 )
