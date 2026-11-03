@@ -15,7 +15,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonParseError>
 #include <QLabel>
 #include <QLayoutItem>
 #include <QLineEdit>
@@ -225,22 +224,7 @@ void HomePage::openProject()
         loadProjectFromPath(path);
 }
 
-bool HomePage::loadProjectFromPath(const QString &path)
+void HomePage::loadProjectFromPath(const QString &path)
 {
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, tr("Ouverture impossible"), tr("Le fichier ne peut pas être lu."));
-        return false;
-    }
-    QJsonParseError error;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
-    if (error.error != QJsonParseError::NoError || !document.isObject()) {
-        QMessageBox::warning(this, tr("Projet invalide"),
-            tr("Ce fichier n'est pas un projet JSON valide."));
-        return false;
-    }
-
-    const QJsonObject project = document.object();
-    emit projectLoaded(path, project);
-    return true;
+    emit projectLoaded(path);
 }

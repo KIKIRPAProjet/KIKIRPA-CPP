@@ -11,7 +11,6 @@ class ProjectGrid;
 class SimulationRunner;
 class WorkspaceUI;
 class MenuBarManager;
-class QJsonObject;
 class QImage;
 
 class MainWindow : public QMainWindow
@@ -46,7 +45,7 @@ private:
 private slots:
     void initializeNewProject(const QString &name, const QString &tileDirectory,
                               const QStringList &tilePaths);
-    void applyLoadedProject(const QString &path, const QJsonObject &project);
+    void applyLoadedProject(const QString &path);
     void openCurrentProjectFromHome();
     void handleTilesImported(const QString &directory, int importedCount);
     void showGridMessage(const QString &title, const QString &message, bool warning);

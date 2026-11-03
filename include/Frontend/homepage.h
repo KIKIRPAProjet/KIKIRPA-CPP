@@ -4,7 +4,6 @@
 #ifndef HOMEPAGE_H
 #define HOMEPAGE_H
 
-#include <QJsonObject>
 #include <QStringList>
 #include <QWidget>
 
@@ -28,12 +27,12 @@ public slots:
 signals:
     void projectCreationRequested(const QString &name, const QString &tileDirectory,
                                   const QStringList &tilePaths);
-    void projectLoaded(const QString &path, const QJsonObject &project);
+    void projectLoaded(const QString &path);
     void currentProjectRequested();
 
 private:
     void refreshRecentProjects();
-    bool loadProjectFromPath(const QString &path);
+    void loadProjectFromPath(const QString &path);
 
     QHBoxLayout *recentCardsLayout = nullptr;
     QLabel *recentEmptyLabel = nullptr;

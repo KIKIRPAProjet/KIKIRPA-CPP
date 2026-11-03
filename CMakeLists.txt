@@ -17,6 +17,7 @@ set(PROJECT_SOURCES
         src/Frontend/mainwindow.cpp
         src/Frontend/homepage.cpp
         src/Frontend/projectgrid.cpp
+        src/Frontend/project_serializer.cpp
         src/Frontend/simulationrunner.cpp
         src/Frontend/workspace_ui.cpp
         src/Frontend/menubar_manager.cpp
@@ -25,6 +26,7 @@ set(PROJECT_SOURCES
         include/Frontend/mainwindow.h
         include/Frontend/homepage.h
         include/Frontend/projectgrid.h
+        include/Frontend/project_serializer.h
         include/Frontend/simulationrunner.h
         include/Frontend/workspace_ui.h
         include/Frontend/menubar_manager.h

@@ -4,6 +4,7 @@
 #include "homepage.h"
 #include "menubar_manager.h"
 #include "projectgrid.h"
+#include "project_serializer.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
 
@@ -11,7 +12,6 @@
 #include <QButtonGroup>
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDateTime>
 #include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -24,9 +24,6 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QKeyEvent>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QImage>
 #include <QLabel>
 #include <QLineEdit>
@@ -41,7 +38,6 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
-#include <QSaveFile>
 #include <QSlider>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -236,53 +232,20 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     }
 }
 
-void MainWindow::applyLoadedProject(const QString &path, const QJsonObject &project)
+void MainWindow::applyLoadedProject(const QString &path)
 {
-    projectName = project.value(QStringLiteral("project_name"))
-                      .toString(QFileInfo(path).completeBaseName());
-    outputDirectory = project.value(QStringLiteral("output_directory")).toString();
-    ProjectGrid::State gridState;
-    gridState.tileDirectory = project.value(QStringLiteral("tile_directory")).toString();
-    gridState.gridRows = qBound(1, project.value(QStringLiteral("grid_rows")).toInt(3), 20);
-    gridState.gridColumns = qBound(1, project.value(QStringLiteral("grid_columns")).toInt(2), 20);
-    gridState.captureOrder = qBound(0, project.value(QStringLiteral("capture_order")).toInt(0), 5);
-    gridState.horizontalOverlap = qBound(
-        0, project.value(QStringLiteral("horizontal_overlap")).toInt(20), 90);
-    gridState.verticalOverlap = qBound(
-        0, project.value(QStringLiteral("vertical_overlap")).toInt(20), 90);
-    gridState.overlapsLinked = project.value(QStringLiteral("overlaps_linked")).toBool(true);
-    if (gridState.overlapsLinked)
-        gridState.verticalOverlap = gridState.horizontalOverlap;
-    gridState.modality = project.value(QStringLiteral("modality"))
-                             .toString(QStringLiteral("Infrarouge"));
-    gridState.scaleMmPerPixel = qMax(
-        0.0, project.value(QStringLiteral("scale_mm_per_pixel")).toDouble());
-    gridState.uncertaintyMargin = qMax(
-        0.0, project.value(QStringLiteral("uncertainty_margin")).toDouble());
-    gridState.automaticUncertainty =
-        project.value(QStringLiteral("automatic_uncertainty")).toBool(true);
-    gridState.referenceImagePath = project.value(QStringLiteral("reference_image")).toString();
-    for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
-        gridState.tilePaths.append(tile.toString());
-    const QJsonArray grid = project.value(QStringLiteral("grid_tiles")).toArray();
-    if (!grid.isEmpty()) {
-        gridState.gridTiles.reserve(qMax(gridState.gridRows * gridState.gridColumns,
-                                         static_cast<int>(grid.size())));
-        for (const QJsonValue &cellValue : grid) {
-            const QJsonObject cell = cellValue.toObject();
-            GridTile tile;
-            tile.path = cell.value(QStringLiteral("path")).toString();
-            const int savedRotation = cell.value(QStringLiteral("rotation")).toInt();
-            tile.rotation = ((savedRotation % 360) + 360) % 360;
-            tile.flipped = cell.value(QStringLiteral("flipped")).toBool();
-            tile.empty = cell.value(QStringLiteral("empty")).toBool();
-            gridState.gridTiles.append(tile);
-        }
+    ProjectData projectData;
+    QString errorMessage;
+    if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
+        QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
+        return;
     }
-    gridState.selectedGridCell = 0;
-    gridState.gridValidated = false;
-    projectGrid->setState(gridState);
-    if (grid.isEmpty())
+
+    projectName = projectData.projectName;
+    outputDirectory = projectData.outputDirectory;
+    const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
+    projectGrid->setState(projectData.gridState);
+    if (!hasSavedGrid)
         projectGrid->initializeGridFromPaths();
     projectPath = path;
     projectCreated = true;
@@ -612,43 +575,11 @@ void MainWindow::saveProject()
             projectName + QStringLiteral(".kikproj"), tr("Projet KIK-IRPA (*.kikproj);;JSON (*.json)"));
     if (path.isEmpty())
         return;
-    QJsonObject project;
-    project.insert(QStringLiteral("format_version"), QStringLiteral("1.0"));
-    project.insert(QStringLiteral("project_name"), projectName);
-    project.insert(QStringLiteral("saved_at"), QDateTime::currentDateTime().toString(Qt::ISODate));
-    project.insert(QStringLiteral("mode"), currentMode);
-    project.insert(QStringLiteral("tile_directory"), gridState.tileDirectory);
-    project.insert(QStringLiteral("output_directory"), outputDirectory);
-    project.insert(QStringLiteral("grid_rows"), gridState.gridRows);
-    project.insert(QStringLiteral("grid_columns"), gridState.gridColumns);
-    project.insert(QStringLiteral("capture_order"), gridState.captureOrder);
-    project.insert(QStringLiteral("horizontal_overlap"), gridState.horizontalOverlap);
-    project.insert(QStringLiteral("vertical_overlap"), gridState.verticalOverlap);
-    project.insert(QStringLiteral("overlaps_linked"), gridState.overlapsLinked);
-    project.insert(QStringLiteral("modality"), gridState.modality);
-    project.insert(QStringLiteral("scale_mm_per_pixel"), gridState.scaleMmPerPixel);
-    project.insert(QStringLiteral("uncertainty_margin"), gridState.uncertaintyMargin);
-    project.insert(QStringLiteral("automatic_uncertainty"), gridState.automaticUncertainty);
-    project.insert(QStringLiteral("reference_image"), gridState.referenceImagePath);
-    QJsonArray tiles;
-    for (const QString &tile : gridState.tilePaths)
-        tiles.append(tile);
-    project.insert(QStringLiteral("tiles"), tiles);
-    QJsonArray grid;
-    for (const GridTile &tile : gridState.gridTiles) {
-        QJsonObject cell;
-        cell.insert(QStringLiteral("path"), tile.path);
-        cell.insert(QStringLiteral("rotation"), tile.rotation);
-        cell.insert(QStringLiteral("flipped"), tile.flipped);
-        cell.insert(QStringLiteral("empty"), tile.empty);
-        grid.append(cell);
-    }
-    project.insert(QStringLiteral("grid_tiles"), grid);
-    QSaveFile file(path);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(project).toJson(QJsonDocument::Indented)) < 0
-        || !file.commit()) {
+    QString errorMessage;
+    if (!ProjectSerializer::saveToFile(
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
-            tr("Le projet n'a pas pu être enregistré à cet emplacement."));
+            tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
     }
     projectPath = path;
