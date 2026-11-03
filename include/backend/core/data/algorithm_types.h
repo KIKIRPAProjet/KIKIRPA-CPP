@@ -82,4 +82,12 @@ namespace DataNs {
         std::vector<std::vector<std::vector<cv::Point>>> holes;
     };
 
+    // Correction d'intensité de chaque tuile (type "IntensityCorrection", clé "intensityCorrection"),
+    // produite par le step intensity-correction. Les gains sont multiplicatifs, de moyenne géométrique 1.
+    struct IntensityCorrection {
+        std::vector<double> tileGains;           // un gain par tuile, dans l'ordre de la TileList
+        double fieldStrength = 0.0;              // force c du champ d'éclairage exp(c · r²) ; 0 si seuls les gains sont utilisés
+        std::vector<int> isolatedTileIndices;    // tuiles sans voisine exploitable : gain 1, non égalisées
+    };
+
 }

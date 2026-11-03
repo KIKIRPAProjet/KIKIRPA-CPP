@@ -15,6 +15,7 @@ namespace CheckpointNs {
     //   "PairMatches"  std::vector<PairMatches>
     //   "Positions"    std::vector<TilePositionData>
     //   "Territories"  std::vector<TileTerritory>
+    //   "IntensityCorrection"  IntensityCorrection : gains par tuile et force du champ d'éclairage
     // Nouveau type : une entrée dans pipelineTypes() (checkpoint_types.cpp) ou un appel à CheckpointClass::registerType.
     std::map<std::string, std::pair<CheckpointClass::Saver, CheckpointClass::Loader>> pipelineTypes();
 

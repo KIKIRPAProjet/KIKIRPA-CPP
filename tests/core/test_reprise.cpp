@@ -217,9 +217,9 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     const auto types = CheckpointNs::pipelineTypes();
-    verifier(types.size() == 4 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
+    verifier(types.size() == 5 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
                  CheckpointNs::CheckpointClass::hasType("Positions") && CheckpointNs::CheckpointClass::hasType("Territories"),
-             "4 types déclarés d'office");
+             "5 types déclarés d'office");
 
     StepNs::DataStoreClass avant, apres;
     auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", 400, 300, CV_16UC3);
@@ -240,9 +240,16 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     terr.polygons = {{{0, 0}, {10, 0}, {10, 10}}};
     terr.holes = {{{{2, 2}, {3, 2}, {3, 3}}}};
     avant.replace("territories", std::vector<DataNs::TileTerritory>{terr});
+    DataNs::IntensityCorrection correction;
+    correction.tileGains = { 1.25, 0.8 };
+    correction.fieldStrength = -0.12;
+    correction.isolatedTileIndices = { 1 };
+    avant.replace("intensityCorrection", correction);
 
     const std::pair<const char*, const char*> cles[] = {
-        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"}};
+        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},  {"IntensityCorrection", "intensityCorrection"}};
+
+};
     for (const auto& [type, cle] : cles) {
         types.at(type).first(avant, cle, dossier);
         types.at(type).second(apres, cle, dossier);
@@ -265,6 +272,11 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     const auto& tr = apres.get<std::vector<DataNs::TileTerritory>>("territories");
     verifier(tr.size() == 1 && tr[0].tileIndex == 1 && tr[0].polygons == terr.polygons && tr[0].holes == terr.holes,
              "Territories : polygones et trous");
+    const auto& intensity = apres.get<DataNs::IntensityCorrection>("intensityCorrection");
+    verifier(intensity.tileGains == correction.tileGains && intensity.fieldStrength == correction.fieldStrength &&
+        intensity.isolatedTileIndices == correction.isolatedTileIndices,
+        "IntensityCorrection : valeurs exactes");
+
 }
 
 // Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en
