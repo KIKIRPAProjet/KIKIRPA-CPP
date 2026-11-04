@@ -1,11 +1,14 @@
 # Deux exécutables : les deux fichiers définissent les mêmes fonctions d'aide (verifier…)
 add_executable(pipeline_tests test_pipeline.cpp)
+kikirpa_copy_onnxruntime_dlls(pipeline_tests)
 target_link_libraries(pipeline_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 add_executable(reprise_tests test_reprise.cpp)
+kikirpa_copy_onnxruntime_dlls(reprise_tests)
 target_link_libraries(reprise_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 add_executable(pyramidal_tiff_reader_tests test_pyramidal_tiff_reader.cpp)
+kikirpa_copy_onnxruntime_dlls(pyramidal_tiff_reader_tests)
 target_link_libraries(pyramidal_tiff_reader_tests PRIVATE kikirpa_backend GTest::gtest_main)
 include(GoogleTest)
 gtest_discover_tests(pipeline_tests PROPERTIES LABELS "unit")
