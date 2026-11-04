@@ -1,8 +1,8 @@
 # Conventions de code
 
-Règles à suivre pour tout nouveau code et toute modification. Elles sont appliquées dans `core/`, `steps/` et `frontend/` depuis la réorganisation (PR #50, voir [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md)). Les algorithmes et les tests ne les suivent pas encore entièrement (voir [§9](#9-ce-qui-nest-pas-encore-migré)).
+Règles à suivre pour tout nouveau code et toute modification. Elles sont appliquées dans `core/`, `steps/` et `frontend/` depuis la réorganisation (PR #50), et dans `algorithms/` depuis leur migration (voir [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) §12). Les tests ne les suivent pas encore entièrement (voir [§9](#9-ce-qui-nest-pas-encore-migré)).
 
-En cas de doute, prendre pour modèle `include/backend/core/step/step.h` et `src/backend/steps/phase_correlation_step.cpp`.
+En cas de doute, prendre pour modèle `include/backend/core/step/step.h`, `src/backend/steps/phase_correlation_step.cpp` et, pour un algorithme, `algorithms/stitching/phase_correlation/`.
 
 **Sommaire** : [1 Langue](#1-langue) · [2 Fichiers](#2-fichiers-et-dossiers) · [3 Noms](#3-noms) · [4 Mise en forme](#4-mise-en-forme) · [5 Includes](#5-includes) · [6 Commentaires](#6-commentaires) · [7 Erreurs](#7-erreurs) · [8 Structure](#8-structure-du-code) · [9 Non migré](#9-ce-qui-nest-pas-encore-migré) · [10 Documentation](#10-documentation) · [11 Classes et fonctions](#11-classes-et-fonctions) · [12 Tests](#12-tests) · [13 Principes de code propre](#13-principes-de-code-propre) · [14 Git et pull requests](#14-git-et-pull-requests)
 
@@ -26,7 +26,7 @@ En cas de doute, prendre pour modèle `include/backend/core/step/step.h` et `src
 - Puis `#pragma once` dans un header.
 - Un `.h` et un `.cpp` par classe, avec le même nom : `PhaseCorrelationStepClass` est dans `phase_correlation_step.h` / `.cpp`.
 - Le header contient l'**interface** (déclarations), le `.cpp` l'**implémentation**.
-- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/Backend.cmake`).
+- Un `.cpp` posé ailleurs que dans `src/backend/` n'est pas compilé (`GLOB_RECURSE` de `cmake/backend.cmake`).
 
 ## 3. Noms
 
@@ -202,12 +202,19 @@ Jamais de `catch (...) { }` vide : une erreur avalée est introuvable. Quand on 
 
 ## 9. Ce qui n'est pas encore migré
 
-- `algorithms/` : noms français (`Parametres`, `raisonEchec`, `Algorithme`, `Preparation`, `Sortie`…), namespaces d'origine (`stitching::…`, `seamlib`, `Seamline`), et `algorithms/legacy_type_aliases.h`, qui leur évite de préfixer les types de `DataNs`. Ce fichier est **temporaire** : un algorithme migré qualifie lui-même ses types (`DataNs::Matches`) et ne l'inclut plus.
-- `tests/` : noms français (`verifier`, `LARGEUR_TUILE`…).
-- `graph_cut_step.cpp` écrit ses erreurs sur `std::cerr`, en français, en plus de `result` ; LightGlue écrit des traces `[DEBUG]` sur `std::cout`.
-- Les noms des paramètres des steps existants (`niveau`, `lissage`, `marge`…) sont gardés tels quels pour ne pas casser les scripts.
+Les algorithmes ont été migrés (noms anglais, un namespace par dossier, types partagés qualifiés `DataNs::…`, fonctions internes dans un `namespace { }` anonyme) ; `algorithms/legacy_type_aliases.h` a été supprimé. Il reste :
 
-Tout nouveau code suit les règles ci-dessus, même dans un dossier pas encore migré.
+- `tests/` : noms internes en français (`verifier`, `LARGEUR_TUILE`, noms des `TEST(…, QuatreDirections)`…), et en `snake_case` dans `tests/seamline/` (`random_pair`, `maze_grid`, namespace `testmaps`). Les appels aux algorithmes, eux, sont à jour.
+- Sorties console : `graph_cut_step.cpp` écrit ses erreurs sur `std::cerr`, en français, en plus de `result` ; LightGlue écrit des traces `[DEBUG]` sur `std::cout` ; GraphCut (`GraphCutSeamFinderClass`, `ImagePretreatmentClass`) écrit ses erreurs sur `std::cout` et renvoie un `int` (±1) au lieu d'un `bool`.
+- Noms gardés pour ne pas casser les scripts et les configurations :
+  - les paramètres des steps existants (`niveau`, `lissage`, `marge`…), alors que les champs C++ correspondants sont en anglais (`PhaseCorrelationInput::level`, `PhaseCorrelationNs::Parameters::smoothingSigma`…) ;
+  - les clés JSON des algorithmes qui n'ont pas encore de step : SIFT (`max_features`, `lowe_ratio`, `contrast_threshold`, `clahe_clip_limit`, en `snake_case`), RANSAC et vote (`ransacReprojThreshold`, `maxIters`, `refineIters`, `seuil`, `case`…), LightGlue (`model_path`) ;
+  - les valeurs texte : `"correlation_phase"` dans `PositioningNs::PositioningSettings::matcherName`, les options de `CostMapParameters` (`"noise"`, `"euclidian"`, `"caped"`…) et les noms du notebook (`"color_gradient"`, `"DP"`, `"Dijkstra-8"`).
+
+  À renommer quand un step les exposera, avec l'accord de l'équipe.
+- Structure : `VoteRejectorClass` partage `ransac_rejector.h` / `.cpp` avec `RansacRejectorClass` (au lieu d'un fichier par classe) ; SIFT, LightGlue, `DynamicProgrammingDijkstraNs` et GraphCut ne suivent pas encore le découpage façade / types / modules (§8).
+
+Tout nouveau code suit les règles ci-dessus.
 
 ## 10. Documentation
 
@@ -304,6 +311,7 @@ namespace {
 ## 12. Tests
 
 - **GoogleTest**, un dossier `tests/<module>/` avec son `CMakeLists.txt`, label `unit`, sans images externes : on construit des images synthétiques dans le test (rapide et reproductible).
+- L'exécutable de test se lie à `kikirpa_backend` et `GTest::gtest_main` ; le dossier est déclaré par un `add_subdirectory` dans `cmake/tests_runner.cmake`.
 - **Un comportement par test**, avec un nom qui le dit (`RejectsUnknownStatus`).
 - Structure **préparer, agir, vérifier**.
 - Tests **indépendants** et **déterministes**.

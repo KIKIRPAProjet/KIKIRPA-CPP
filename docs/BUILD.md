@@ -7,9 +7,9 @@
 | CMake ≥ 3.21 (presets) et Ninja | oui | build |
 | Compilateur C++17 | oui | MSVC 2022 sous Windows, GCC ou Clang sous Linux |
 | OpenCV 4 | oui | images, algorithmes |
-| libtiff | oui | TIFF tuilés pyramidaux (`core/PyramidalTiffWriter`) |
+| libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
-| Qt 6 (Widgets, Concurrent) | oui | GUI (`stitching_frontend`) |
+| Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
 | ONNX Runtime + module `dnn` d'OpenCV | non | LightGlue seulement (`-DONNXRUNTIME_ROOT=<dossier>`) |
@@ -106,3 +106,37 @@ Pour activer cette vérification dans un autre build CMake Clang, ajouter
 `-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
 clang-tidy uniquement sur les fichiers C++ modifiés dans une pull request et
 fait échouer le job si un diagnostic est émis.
+
+## Configuration optionnelle : LightGlue
+
+ONNX Runtime n'est nécessaire que pour LightGlue, qui demande aussi le module `dnn` d'OpenCV. Installer ONNX Runtime pour son système, puis indiquer son dossier à la configuration :
+
+```bash
+cmake --preset <preset> -DONNXRUNTIME_ROOT=<dossier>
+```
+
+Sans ONNX Runtime, le reste du projet se compile normalement (LightGlue est simplement retiré du build). La CI n'a pas ONNX Runtime : elle ne compile jamais LightGlue.
+
+## Désactiver les tests unitaires
+
+GoogleTest est obligatoire, sauf si les tests sont désactivés :
+
+```bash
+cmake --preset <preset> -DBUILD_TESTING=OFF
+```
+
+Remplacer `<preset>` par celui de son système : `windows-aqt`, `linux` ou `macos`.
+
+## Organisation du build
+
+| Fichier | Rôle |
+|---|---|
+| `CMakeLists.txt` | Point d'entrée : inclut les fichiers de `cmake/` dans l'ordre et déclare l'exécutable `stitching` (nom provisoire). |
+| `cmake/clang_tidy.cmake` | Option `ENABLE_CLANG_TIDY`. |
+| `cmake/dependencies_manager.cmake` | Recherche d'OpenCV, libtiff, Qt 6 ; téléchargement de nlohmann_json s'il manque. |
+| `cmake/backend.cmake` | Bibliothèque `kikirpa_backend` (tout `src/backend/`), LightGlue si ONNX Runtime est trouvé. |
+| `cmake/frontend.cmake` | Bibliothèque `kikirpa_frontend` (`src/frontend/`, Qt). |
+| `cmake/tests_runner.cmake` | GoogleTest et un `add_subdirectory` par dossier de `tests/`. |
+| `cmake/install.cmake` | Installation de `stitching` dans `bin/`. |
+
+Un exécutable de test se lie à `kikirpa_backend` (voir `tests/brightness_equalization/CMakeLists.txt`).

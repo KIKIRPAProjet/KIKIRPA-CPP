@@ -1,6 +1,6 @@
 # Migration : réorganisation du code (nov. 2026)
 
-Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
+Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
 
 ## Résumé
 
@@ -34,11 +34,26 @@ Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapp
 
 Supprimés : `src/run_pipeline.cpp` (retiré aussi par `main`), `include/frontend/stub.cpp`, `src/frontend/ToDelete.cpp`.
 
-Nouveau : `algorithms/legacy_type_aliases.h` (temporaire, voir §9).
+Nouveau : `algorithms/legacy_type_aliases.h` (temporaire, voir §9 ; supprimé depuis par la migration des algorithmes, §12).
+
+### Build (PR #67)
+
+Les fichiers de `cmake/` passent en `snake_case` et les bibliothèques prennent le préfixe `kikirpa_` (l'exécutable reste `stitching`, nom provisoire) :
+
+| Avant | Après |
+|---|---|
+| `cmake/Dependencies.cmake` | `cmake/dependencies_manager.cmake` |
+| `cmake/Backend.cmake` | `cmake/backend.cmake` |
+| `cmake/Frontend.cmake` | `cmake/frontend.cmake` |
+| `cmake/Tests.cmake` | `cmake/tests_runner.cmake` |
+| `cmake/Install.cmake` | `cmake/install.cmake` |
+| `cmake/ClangTidy.cmake` | `cmake/clang_tidy.cmake` |
+| cible `stitching_backend` | `kikirpa_backend` |
+| cible `stitching_frontend` | `kikirpa_frontend` |
 
 ## 2. Namespaces
 
-Le namespace `stitching` est remplacé par un namespace par dossier : `DataNs`, `ConfigNs`, `StepNs` (contrat d'un step), `PipelineNs`, `CheckpointNs`, `IONs`, `StepsNs` (steps concrets), `FrontendNs`. Les algorithmes restent pour l'instant dans `stitching::…`.
+Le namespace `stitching` est remplacé par un namespace par dossier : `DataNs`, `ConfigNs`, `StepNs` (contrat d'un step), `PipelineNs`, `CheckpointNs`, `IONs`, `StepsNs` (steps concrets), `FrontendNs`. Les algorithmes sont restés dans `stitching::…` jusqu'à leur migration (§12), qui leur a donné aussi un namespace par dossier.
 
 ## 3. Classes et types renommés
 
@@ -49,7 +64,7 @@ Le namespace `stitching` est remplacé par un namespace par dossier : `DataNs`, 
 | `Tiles` | `TileList` |
 | `Niveau` | `Level` (`largeur`/`hauteur`/`blocsX`/`blocsY`/`gris` deviennent `width`/`height`/`blocksCountX`/`blocksCountY`/`greyscale`) |
 | `RecouvrementReel` | `OverlapEstimate` (`translation`/`overlap`/`rapport` deviennent `translationBInA`/`overlapFraction`/`peakRatio`) |
-| `Seamline::TileTerritory` | `DataNs::TileTerritory` (alias `Seamline::TileTerritory` conservé ; `tile_index` devient `tileIndex`) |
+| `Seamline::TileTerritory` | `DataNs::TileTerritory` (`tile_index` devient `tileIndex` ; l'alias `Seamline::TileTerritory` a été supprimé au §12) |
 | `TAILLE_BLOC`, `NB_NIVEAUX` | `BLOCK_SIZE`, `LEVEL_COUNT` |
 
 ## 4. Format JSON (changement incompatible)
@@ -122,9 +137,9 @@ Hors renommages :
 
 ## 9. Ce qui reste à faire
 
-- Les algorithmes (`algorithms/`) utilisent encore `namespace stitching`, des noms français (`Parametres`, `raisonEchec`, `Algorithme`, `Preparation`, `Sortie`, `lissage`…) et `legacy_type_aliases.h`, qui est un fichier temporaire à supprimer.
-- Les tests contiennent encore des noms français (`verifier`, `LARGEUR_TUILE`…).
-- Les pages des algorithmes (`docs/algorithms/`) citent encore plusieurs anciens noms. `docs/core/Pipeline.md`, `docs/steps/PhaseCorrelationStep.md` et `docs/CARTE_ARCHITECTURE.md` sont à jour.
+- ~~Les algorithmes (`algorithms/`) utilisent encore `namespace stitching`, des noms français et `legacy_type_aliases.h`~~ : fait, voir §12.
+- Les tests contiennent encore des noms internes français (`verifier`, `LARGEUR_TUILE`…) ; voir `docs/CONVENTIONS.md` §9.
+- ~~Les pages des algorithmes (`docs/algorithms/`) citent encore plusieurs anciens noms~~ : mises à jour au §12.
 - À vérifier : `TileClass` calcule les dimensions des niveaux par décalage (`>>`, arrondi à l'inférieur), alors que le TIFF est écrit avec `cv::resize` ; pour une dimension impaire, les deux peuvent différer d'un pixel.
 
 ## 10. Adapter une branche existante
@@ -133,10 +148,196 @@ Une fois que `reformat-v3` sera fusionnée dans `main`, vous pourrez adapter vot
 
 1. Ramener `main` dans votre branche : `git fetch && git merge origin/main`.
 2. Remplacer les anciens includes : `core/Types.h` devient `core/data/algorithm_types.h`, etc. (tableau du §1).
-3. Qualifier les types avec leur namespace (`DataNs::Matches`, `StepNs::StepClass`…) ou, en attendant, inclure `algorithms/legacy_type_aliases.h` dans un fichier d'algorithme.
+3. Qualifier les types avec leur namespace (`DataNs::Matches`, `StepNs::StepClass`…). `algorithms/legacy_type_aliases.h` n'existe plus (§12).
 4. Renommer les champs, méthodes et clés JSON (§3 à §5).
-5. Compiler (`cmake --build --preset windows-aqt`, ou `linux`, `macos`) et lancer `ctest --preset windows-aqt`. Le preset `windows-msvc` a été remplacé par `windows-aqt` (#59) : voir [BUILD.md](BUILD.md).
+5. Dans les `CMakeLists.txt` de vos tests, lier `kikirpa_backend` au lieu de `stitching_backend`, et déclarer un nouveau dossier de tests dans `cmake/tests_runner.cmake` (et non plus `cmake/Tests.cmake` ni `cmake/algorithms.cmake`). Voir §1, « Build ».
+6. Si la branche touche aux algorithmes, appliquer aussi le §12.
+7. Compiler (`cmake --build --preset windows-aqt`, ou `linux`, `macos`) et lancer `ctest --preset windows-aqt`. Le preset `windows-msvc` a été remplacé par `windows-aqt` (#59) : voir [BUILD.md](BUILD.md).
 
 ## 11. Vérification effectuée
 
 Compilation complète depuis zéro (50 fichiers, 0 erreur, 0 avertissement) et 87 tests sur 87 réussis (MSVC 2022, OpenCV 4.10, libtiff 4.7, Qt 6.8).
+
+## 12. Migration des algorithmes (branche `refactor/algorithms-conventions`)
+
+Tous les algorithmes de `algorithms/` suivent maintenant `docs/CONVENTIONS.md` : fichiers en `snake_case`, noms anglais sans abréviation, un namespace par dossier, suffixe `Class` pour les classes, types partagés qualifiés (`DataNs::Matches`), fonctions et constantes internes dans un `namespace { }` anonyme du `.cpp`, commentaire de chemin en première ligne, includes groupés et triés. **`algorithms/legacy_type_aliases.h` est supprimé.**
+
+Ce qui ne change pas :
+- la logique et les résultats numériques (les 87 tests passent à l'identique) ;
+- les noms des steps (`phase-correlation`, `graphcut`) et de leurs paramètres JSON (`niveau`, `lissage`, `marge`, `scale`…) ;
+- les clés JSON lues par SIFT, LightGlue, RANSAC et le vote, et les valeurs texte des options (voir [CONVENTIONS.md §9](CONVENTIONS.md#9-ce-qui-nest-pas-encore-migré)) ;
+- les commentaires restent en français ; les messages des exceptions et des échecs passent en anglais (les tests qui cherchaient un mot du message ont été adaptés).
+
+### Dossiers, fichiers et namespaces
+
+| Avant | Après |
+|---|---|
+| `algorithms/stitching/FeatureMatcher.h` (`stitching::matching`) | `algorithms/stitching/feature_matcher.h` (`StitchingNs`) |
+| `algorithms/stitching/correlation_phase/` (`stitching::matching`, `::correlation_phase`) | `algorithms/stitching/phase_correlation/` (`PhaseCorrelationNs`) |
+| ↳ `CorrelationPhase.h`, `Types.h`, `Preparation.h`, `Algorithme.h`, `Sortie.h` | `phase_correlation_matcher.h`, `phase_correlation_types.h`, `preparation.h`, `algorithm.h`, `output.h` |
+| `algorithms/stitching/recouvrement/EstimationRecouvrement.h` | `algorithms/stitching/overlap_estimation/overlap_estimator.h` (`OverlapEstimationNs`) |
+| `algorithms/stitching/sift/SiftMatcher.h`, `SiftMatcherAlgorithm.h` | `algorithms/stitching/sift/sift_matcher.h`, `sift_matcher_algorithm.h` (`SiftNs`) |
+| `algorithms/stitching/lightglue/LightGlueMatcher.h` | `algorithms/stitching/lightglue/lightglue_matcher.h` (`LightGlueNs`) |
+| `algorithms/stitching/positioning/TilePositioner.h` (`stitching::positioning`) | `algorithms/stitching/positioning/tile_positioner.h` (`PositioningNs`) |
+| `algorithms/rejection/OutlierRejector.h` (`stitching::rejection`) | `algorithms/rejection/outlier_rejector.h` (`RejectionNs`) |
+| `algorithms/rejection/ransac/Ransac{Algorithm,Preprocessor,Rejector,Types}.h` (`stitching::rejection::ransac`) | `algorithms/rejection/ransac/ransac_{algorithm,preprocessor,rejector,types}.h` (`RansacNs`) |
+| `algorithms/egalisation/` (`stitching::egalisation`) | `algorithms/brightness_equalization/` (`BrightnessEqualizationNs`) |
+| ↳ `Egalisation.h`, `Types.h`, `Preparation.h`, `Algorithme.h`, `Sortie.h` | `brightness_equalizer.h`, `brightness_equalization_types.h`, `preparation.h`, `algorithm.h`, `output.h` |
+| `algorithms/seamline/dp_dijkstra/*.hpp` (`seamlib`) | `algorithms/seamline/dynamic_programming_dijkstra/*.h` (`DynamicProgrammingDijkstraNs`), mêmes noms de fichiers |
+| `algorithms/seamline/dp_dijkstra/export.hpp` (macro `KIRK_API`) | supprimé (bibliothèque statique) |
+| `algorithms/seamline/graphcut/` (`Seamline`) | `algorithms/seamline/graph_cut/` (`GraphCutNs`) |
+| ↳ `GraphCutSeamFinder.h`, `ImagePretreatment.h` | `graph_cut_seam_finder.h`, `image_pretreatment.h` |
+| `algorithms/legacy_type_aliases.h` | supprimé : écrire `DataNs::Matches`, `DataNs::OverlapEstimate`… |
+| `tests/correlation_phase/test_correlation_phase.cpp` (cible `correlation_phase_tests`) | `tests/phase_correlation/test_phase_correlation.cpp` (`phase_correlation_tests`) |
+| `tests/egalisation/test_egalisation.cpp` (cible `egalisation_tests`) | `tests/brightness_equalization/test_brightness_equalization.cpp` (`brightness_equalization_tests`) |
+| `tests/seamline/test_maps.hpp` | `tests/seamline/test_maps.h` |
+| `docs/algorithms/stitching/correlation_phase/CorrelationPhase.md` | `docs/algorithms/stitching/phase_correlation/PhaseCorrelation.md` |
+| `docs/algorithms/stitching/recouvrement/EstimationRecouvrement.md` | `docs/algorithms/stitching/overlap_estimation/OverlapEstimation.md` |
+| `docs/algorithms/egalisation/Egalisation.md` | `docs/algorithms/brightness_equalization/BrightnessEqualization.md` |
+
+Les tests, dont le namespace était `stitching::tests`, sont dans un namespace anonyme. Les suites `CorrelationPhase.*` et `Egalisation.*` s'appellent `PhaseCorrelation.*` et `BrightnessEqualization.*`.
+
+### Interfaces
+
+| Avant | Après |
+|---|---|
+| `matching::FeatureMatcher::match(a, b, ctx, out)` | `StitchingNs::FeatureMatcherClass::match(imageA, imageB, context, matches)` |
+| `rejection::OutlierRejector::estimate(matches, out)` | `RejectionNs::OutlierRejectorClass::estimate(matches, alignment)` |
+
+### Corrélation de phase
+
+| Avant | Après |
+|---|---|
+| `matching::CorrelationPhase` | `PhaseCorrelationNs::PhaseCorrelationMatcherClass` |
+| `CorrelationPhase::Parametres`, `correlation_phase::Parametres` | `PhaseCorrelationNs::Parameters` |
+| `raisonEchec()` | `getFailureReason()` |
+| `Preparation`, `Algorithme`, `Sortie` | `PreparationClass`, `AlgorithmClass`, `OutputClass` |
+| `PaireOrientee { A, B, extA, extB, position, inversee }` | `OrientedPair { imageA, imageB, outsideMaskA, outsideMaskB, direction, isSwapped }` |
+| `Bandes { a, b, origine, marge }` | `Strips { stripA, stripB, origin, searchMargin }` |
+| `Correlation { dy, dx, pic, surface, autorise }` | `Correlation { shiftY, shiftX, peakHeight, surface, allowedMask }` |
+| `Diagnostic { rapportMarge, picLibre, rapportLibre, horsMarge }` | `Diagnostic { peakRatioInMargin, unconstrainedPeak, unconstrainedPeakRatio, isOutsideMargin }` |
+| `Mesure { tx, ty, rapport }` | `Measurement { translationX, translationY, peakRatio }` |
+| `Recouvrement { a, b, origineA, decalage, marge }` | `Overlap { regionA, regionB, originInA, roundedTranslation, borderMargin }` |
+| `Correspondance { pointA, translation, confiance }` | `Correspondence { pointInA, localTranslation, confidence }` |
+| `Preparation::verifierParametres`, `orienter`, `orienterTranslation`, `bandes`, `zoneCommune`, `recouvrement`, `valides`, `remplirVides` | `PreparationClass::validateParameters`, `orientPair`, `orientTranslation`, `extractNominalStrips`, `extractCommonArea`, `extractOverlap`, `computeValidMask`, `fillEmptyPixels` |
+| `Algorithme::mesurerGlobal`, `affinerGlobal`, `diagnostiquerGlobal`, `raffiner` | `AlgorithmClass::measureGlobalTranslation`, `refineGlobalTranslation`, `diagnoseGlobalTranslation`, `measureLocalPoints` |
+| `Sortie::construire`, `echecPaire`, `echecBandes`, `echecGlobal`, `echecZoneCommune`, `echecAffinage` | `OutputClass::buildMatches`, `describePairFailure`, `describeStripsFailure`, `describeGlobalFailure`, `describeCommonAreaFailure`, `describeRefinementFailure` |
+| fonctions `private` (`correlationDePhase`, `spectreCroise`, `rapportPics`, `zoneExterieure`, `enGris`, `nombre`…) et constantes (`RAYON_PIC`, `MARGE_DEUXIEME_PASSE`…) | dans un namespace anonyme du `.cpp` : `correlatePhase`, `computeCrossSpectrum`, `computePeakRatio`, `computeOutsideMask`, `convertToGrey`, `formatNumber`… ; `PEAK_RADIUS`, `SECOND_PASS_MARGIN`… |
+
+Champs de `Parameters` (le nom du paramètre du step `phase-correlation` ne change pas) :
+
+| Avant (= paramètre du step) | Après |
+|---|---|
+| `lissage` | `smoothingSigma` |
+| `seuilRapport` | `minimumPeakRatio` |
+| `lissageLocal` | `localSmoothingSigma` |
+| `ecartMax` | `maximumLocalDeviation` |
+| `espacementMin` | `minimumPointSpacing` |
+| `marge` | `railMargin` |
+| `fractionValideMin` | `minimumValidFraction` |
+| `nbPoints` | `maximumPointCount` |
+| `fenetre` | `patchSize` |
+| `facteurDft` | `upsamplingFactor` |
+
+Step `phase-correlation` : `PhaseCorrelationInput::parametres` → `parameters`, `niveau` → `level` (le paramètre JSON reste `niveau`).
+
+### Estimation du recouvrement
+
+| Avant | Après |
+|---|---|
+| `matching::EstimationRecouvrement` | `OverlapEstimationNs::OverlapEstimatorClass` |
+| `estimer(a, b, ctx)` → `RecouvrementReel` | `estimate(imageA, imageB, context)` → `DataNs::OverlapEstimate` |
+| `raisonEchec()` | `getFailureReason()` |
+| `zonesCommunes(a, b, translation)` | `computeCommonAreas(sizeA, sizeB, translation)` |
+
+### SIFT et LightGlue
+
+| Avant | Après |
+|---|---|
+| `matching::SiftMatcher` | `SiftNs::SiftMatcherClass` |
+| `matching::runSiftMatching` | `SiftNs::runSiftMatching` |
+| `matching::LightGlueMatcher` | `LightGlueNs::LightGlueMatcherClass` |
+| `LightGlueMatcher::preprocessImage` (méthode privée) | `preprocessImage` (namespace anonyme) |
+| `kMinConfidenceScore` | `MINIMUM_CONFIDENCE_SCORE` |
+
+### Rejet des outliers
+
+| Avant | Après |
+|---|---|
+| `rejection::RansacRejector`, `rejection::VoteRejector` | `RansacNs::RansacRejectorClass`, `RansacNs::VoteRejectorClass` |
+| `ransac::RansacAlgorithm`, `ransac::RansacPreprocessor` | `RansacNs::RansacAlgorithmClass`, `RansacNs::RansacPreprocessorClass` |
+| `RansacParameters { minMatches, reprojectionThreshold, maxIters, confidence, refineIters, minInliers }` | `RansacParameters { minimumMatchCount, reprojectionThreshold, maximumIterationCount, confidence, refinementIterationCount, minimumInlierCount }` |
+| `RansacOutput { transform, inliers, inlierCount }` | `RansacOutput { transformBToA, inlierMask, inlierCount }` |
+| `makeParameters`, `RansacPreprocessor::isFinite` | `readParameters`, `isFinitePoint` (namespace anonyme) |
+
+### Positionnement absolu
+
+| Avant | Après |
+|---|---|
+| `positioning::computeTilePositions(tile_paths, settings, positions, log)` | `PositioningNs::computeTilePositions(tilePaths, settings, positions, log)` |
+| `PositioningSettings { overlap, matcher, rejector, matcherParams, rejectorParams }` | `PositioningSettings { overlapFraction, matcherName, rejectorName, matcherParameters, rejectorParameters }` |
+
+### Égalisation de luminosité
+
+| Avant | Après |
+|---|---|
+| `egalisation::Egalisation` | `BrightnessEqualizationNs::BrightnessEqualizerClass` |
+| `reduire`, `estimer`, `raisonEchec`, `corriger`, `pairesDepuisPositions` | `reduceTile`, `estimate`, `getFailureReason`, `correctTile`, `buildPairsFromPositions` |
+| `Methode::GainGlobal`, `Methode::GainEtChamp` | `CorrectionMethod::GlobalGain`, `CorrectionMethod::GainAndField` |
+| `Parametres { reduction, flou, marge, seuilBas, seuilHaut, iterations, huber, poidsJauge }` | `Parameters { reductionFactor, blurSigma, borderMargin, lowThreshold, highThreshold, iterationCount, huberThreshold, gaugeWeight }` |
+| `TuileReduite { lum, pleine }` | `ReducedTile { luminance, fullSize }` |
+| `PaireVoisine { a, b, translation }` | `NeighbourPair { tileIndexA, tileIndexB, translation }` |
+| `Echantillons { a, b, r2a, r2b, d }` | `PairSamples { tileIndexA, tileIndexB, squaredRadiiA, squaredRadiiB, logDifferences }` |
+| `Solution { logGains, c }` | `Solution { logGains, fieldStrength }` |
+| `Bilan { ecartMoyen, variationBF, rmsResidu, residuMedian }` | `QualityReport { meanDifference, lowFrequencyVariation, residualRms, medianResidual }` |
+| `Resultat { gainsA, gainsB, c, tuilesIsolees, pairesVides, nbEchantillons, avant, apresA, apresB, gain(), champ() }` | `EqualizationResult { gainsA, gainsB, fieldStrength, isolatedTiles, emptyPairs, sampleCount, before, afterA, afterB, getGain(), getFieldStrength() }` |
+| `Preparation::verifierParametres`, `reduire`, `depuisReduite`, `verifierEntrees`, `luminance`, `valeurMax` | `PreparationClass::validateParameters`, `reduceTile`, `prepareReducedTile`, `validateInputs`, `computeLuminance`, `maximumValueOfDepth` |
+| `Algorithme::echantillons`, `resoudre`, `residus`, `mesurer`, `corrigerReduite` | `AlgorithmClass::collectSamples`, `solveGains`, `computeResiduals`, `measureOverlaps`, `correctReducedLuminance` |
+| `Sortie::corriger`, `rapport`, `echecSansEchantillon` | `OutputClass::correctTile`, `buildReport`, `describeNoSampleFailure` |
+
+### Seamline DP / Dijkstra (ancien `seamlib`)
+
+| Avant | Après |
+|---|---|
+| `seamlib::SeamFinder::compute(left, right)` | `DynamicProgrammingDijkstraNs::SeamFinderClass::computeSeam(overlapLeft, overlapRight)` |
+| `SeamFinder::cost_function`, `params`, `method`, `corridor_radius` | `costFunction`, `parameters`, `method`, `corridorRadius` |
+| `Method { DP, Dijkstra8, DPDijkstraLocal }` | `SolverMethod { DynamicProgramming, Dijkstra8, DynamicProgrammingDijkstraLocal }` |
+| `CostFunction::LocalNorm` | `CostFunction::LocalNormalization` |
+| `CostMapParams { w_color, normalization, color_norm, treatment, recall, lam }` | `CostMapParameters { colorWeight, normalization, colorNorm, treatment, recall, recallWeight }` |
+| `CostMaps { e_color, e_gradient, treated }` | `CostMaps { colorTerm, gradientTerm, treated }` |
+| `Gradients { Gx, Gy, magnitude }` | `Gradients { gradientX, gradientY, magnitude }` |
+| `PathResult { path, objective, expanded, pushes, max_heap, settled }` | `PathResult { path, objective, expandedCount, pushCount, maximumHeapSize, settledMask }` |
+| `SolveResult { …, wall_s, expanded, pushes, max_heap, cells, corridor_ratio, seed_s, refine_s, mem_est_mb }` | `SolveResult { …, wallSeconds, expandedCount, pushCount, maximumHeapSize, cellCount, corridorRatio, seedSeconds, refineSeconds, estimatedMemoryMegabytes }` |
+| `EdgeCost { cost, overlap_px, scale }` | `EdgeCost { cost, overlapPixels, scale }` |
+| `SeamGrid { n_rows, n_cols, edges, n_edges(), n_junctions() }` | `SeamGrid { rowCount, columnCount, edges, getEdgeCount(), getJunctionCount() }` |
+| `Junction { u, v, score, score_map, time_s }` | `Junction { normalizedRow, normalizedColumn, score, scoreMap, timeSeconds }` |
+| `JunctionSet { method, points, total_time_s }` | `JunctionSet { method, points, totalTimeSeconds }` |
+| `Endpoints::start_ptr()`, `goal_ptr()` | `Endpoints::getStartPointer()`, `getGoalPointer()` |
+| `compute_cost`, `cost_function_name`, `cost_function_from_name`, `all_cost_functions` | `computeCost`, `getCostFunctionName`, `parseCostFunctionName`, `getAllCostFunctions` |
+| `cost_color_gradient`, `cost_color_only`, `cost_gradient_only`, `cost_grain_robust`, `cost_local_norm`, `cost_highlight_penalty`, `cost_center_prior` | `computeColorGradientCost`, `computeColorOnlyCost`, `computeGradientOnlyCost`, `computeGrainRobustCost`, `computeLocalNormalizationCost`, `computeHighlightPenaltyCost`, `computeCenterPriorCost` |
+| `gradient`, `gradient_magnitude`, `minmax`, `mad_calculator`, `percentile`, `gray_raw`, `compute_cost_maps` | `computeGradients`, `computeGradientMagnitude`, `normalizeMinMax`, `computeMedianAbsoluteDeviation`, `normalizeByPercentile`, `convertToRawGrey`, `computeCostMaps` |
+| `edge_weight`, `dp_constrained`, `dp_distance_top` | `computeEdgeWeight`, `findDynamicProgrammingPath`, `computeDynamicProgrammingDistanceFromTop` |
+| `dijkstra_path`, `dijkstra_distance_map`, `corridor_mask_from_path`, `hybrid_corridor`, `dp_dijkstra_local` | `findDijkstraPath`, `computeDijkstraDistanceMap`, `buildCorridorMask`, `buildHybridCorridor`, `findDynamicProgrammingDijkstraLocalPath` |
+| `method_name`, `method_from_name`, `all_methods`, `path_objective`, `estimate_solver_memory_mb`, `solve_edge` | `getMethodName`, `parseMethodName`, `getAllMethods`, `computePathObjective`, `estimateSolverMemoryMegabytes`, `solveEdge` |
+| `edge_key`, `directional_dist`, `choose_junction_point`, `choose_all_junctions`, `edge_endpoints`, `solve_global_network`, `draw_seam_network` | `buildEdgeKey`, `computeDirectionalDistance`, `chooseJunctionPoint`, `chooseAllJunctions`, `computeEdgeEndpoints`, `solveGlobalNetwork`, `drawSeamNetwork` |
+
+Les valeurs texte (`"noise"`, `"percentile"`, `"manhattan"`, `"euclidian"`, `"sigmoid"`, `"caped"`, `"color_gradient"`, `"local_norm"`, `"DP"`, `"Dijkstra-8"`, `"DP+Dijkstra-local"`, `"top"`, `"bottom"`, clés `"H_r_c"` / `"V_r_c"`) ne changent pas.
+
+### Seamline GraphCut (ancien `Seamline`)
+
+| Avant | Après |
+|---|---|
+| `Seamline::GraphCut` | `GraphCutNs::GraphCutSeamFinderClass` |
+| `Seamline::ImagePretreatment` | `GraphCutNs::ImagePretreatmentClass` |
+| `ImagePretreatment::read16` | `ImagePretreatmentClass::read16Bit` |
+| `Seamline::TileTerritory`, `Seamline::TilePositionData` (alias) | supprimés : `DataNs::TileTerritory`, `DataNs::TilePositionData` |
+| `GraphCut::fallbackPixels` | `GraphCutSeamFinderClass::fallbackPixelCount` |
+| `SeamCheck { exactTiling, differentPixels, overlapPixels, gapPixels, fallbackPixels, polygons, holes, vertices }` | `SeamCheck { isExactTiling, differentPixelCount, overlapPixelCount, gapPixelCount, fallbackPixelCount, polygonCount, holeCount, vertexCount }` |
+| paramètres `tile_paths`, `tile_sizes`, `original_corners`, `corners_small`, `masks_umat_small`, `final_mosaic`, `index_matrix`, `num_tiles` | `tilePaths`, `tileSizes`, `originalCorners`, `smallCorners`, `smallMasks`, `finalMosaic`, `tileIndexMap`, `tileCount` |
+
+### Adapter une branche qui touche aux algorithmes
+
+1. `git fetch && git merge origin/main`.
+2. Remplacer les includes et les noms d'après les tableaux ci-dessus. Plus d'`#include "algorithms/legacy_type_aliases.h"` : qualifier les types partagés (`DataNs::Matches`, `DataNs::PairContext`…) et déclarer `using Json = nlohmann::json;` dans son propre namespace si besoin.
+3. Dans les `CMakeLists.txt` de tests, `tests/correlation_phase` et `tests/egalisation` deviennent `tests/phase_correlation` et `tests/brightness_equalization`.
+4. Compiler et lancer `ctest`. Une branche qui touche LightGlue doit être compilée avec ONNX Runtime : la CI ne le fait pas.
