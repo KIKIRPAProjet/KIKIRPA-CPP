@@ -41,5 +41,6 @@ if(BUILD_TESTING)
     add_subdirectory(tests/phase_correlation)
     add_subdirectory(tests/seamline)
     add_subdirectory(tests/steps)
+    add_subdirectory(tests/frontend)
 
 endif()
