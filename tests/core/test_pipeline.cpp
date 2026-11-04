@@ -32,7 +32,7 @@
 
 namespace fs = std::filesystem;
 
-namespace StitchingNs::TestsNs {
+namespace {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
 constexpr int PHASE_PARAMETER_COUNT = 12;
@@ -256,4 +256,4 @@ TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
 TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
-} // namespace stitching::tests
+} // namespace

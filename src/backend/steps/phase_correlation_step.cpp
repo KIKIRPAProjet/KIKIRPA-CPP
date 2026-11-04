@@ -21,21 +21,21 @@ namespace StepsNs {
     // Déclare l'identité du step : son nom, ses 12 paramètres (valeurs par défaut = celles de l'entrée), la donnée
     // qu'il lit (tuiles) et celle qu'il produit (appariements). Le pipeline s'en sert pour vérifier l'enchaînement.
     PhaseCorrelationStepClass::PhaseCorrelationStepClass(const PhaseCorrelationInput& initialInput) {
-        const auto& correlationParameters = initialInput.parametres;
+        const auto& correlationParameters = initialInput.parameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "phase-correlation";
         stepConfig.parameters = {{"float", "overlap", initialInput.overlap},
-                                 {"int", "niveau", initialInput.niveau},
-                                 {"float", "lissage", correlationParameters.lissage},
-                                 {"float", "seuilRapport", correlationParameters.seuilRapport},
-                                 {"float", "lissageLocal", correlationParameters.lissageLocal},
-                                 {"float", "ecartMax", correlationParameters.ecartMax},
-                                 {"float", "espacementMin", correlationParameters.espacementMin},
-                                 {"float", "marge", correlationParameters.marge},
-                                 {"float", "fractionValideMin", correlationParameters.fractionValideMin},
-                                 {"int", "nbPoints", correlationParameters.nbPoints},
-                                 {"int", "fenetre", correlationParameters.fenetre},
-                                 {"int", "facteurDft", correlationParameters.facteurDft}};
+                                 {"int", "niveau", initialInput.level},
+                                 {"float", "lissage", correlationParameters.smoothingSigma},
+                                 {"float", "seuilRapport", correlationParameters.minimumPeakRatio},
+                                 {"float", "lissageLocal", correlationParameters.localSmoothingSigma},
+                                 {"float", "ecartMax", correlationParameters.maximumLocalDeviation},
+                                 {"float", "espacementMin", correlationParameters.minimumPointSpacing},
+                                 {"float", "marge", correlationParameters.railMargin},
+                                 {"float", "fractionValideMin", correlationParameters.minimumValidFraction},
+                                 {"int", "nbPoints", correlationParameters.maximumPointCount},
+                                 {"int", "fenetre", correlationParameters.patchSize},
+                                 {"int", "facteurDft", correlationParameters.upsamplingFactor}};
         stepConfig.inputs = {{"Tiles", "tiles"}};
         stepConfig.outputs = {{"PairMatches", "matches"}};
         configJson = stepConfig;
@@ -75,19 +75,19 @@ namespace StepsNs {
             } catch (const std::out_of_range&) {}
         };
         try {
-            auto& correlationParameters = input.parametres;
+            auto& correlationParameters = input.parameters;
             readParameter("overlap", input.overlap);
-            readParameter("niveau", input.niveau);
-            readParameter("lissage", correlationParameters.lissage);
-            readParameter("seuilRapport", correlationParameters.seuilRapport);
-            readParameter("lissageLocal", correlationParameters.lissageLocal);
-            readParameter("ecartMax", correlationParameters.ecartMax);
-            readParameter("espacementMin", correlationParameters.espacementMin);
-            readParameter("marge", correlationParameters.marge);
-            readParameter("fractionValideMin", correlationParameters.fractionValideMin);
-            readParameter("nbPoints", correlationParameters.nbPoints);
-            readParameter("fenetre", correlationParameters.fenetre);
-            readParameter("facteurDft", correlationParameters.facteurDft);
+            readParameter("niveau", input.level);
+            readParameter("lissage", correlationParameters.smoothingSigma);
+            readParameter("seuilRapport", correlationParameters.minimumPeakRatio);
+            readParameter("lissageLocal", correlationParameters.localSmoothingSigma);
+            readParameter("ecartMax", correlationParameters.maximumLocalDeviation);
+            readParameter("espacementMin", correlationParameters.minimumPointSpacing);
+            readParameter("marge", correlationParameters.railMargin);
+            readParameter("fractionValideMin", correlationParameters.minimumValidFraction);
+            readParameter("nbPoints", correlationParameters.maximumPointCount);
+            readParameter("fenetre", correlationParameters.patchSize);
+            readParameter("facteurDft", correlationParameters.upsamplingFactor);
         } catch (const Json::exception& exception) {
             result["error"] = std::string("invalid option type: ") + exception.what();
             return false;
@@ -98,9 +98,9 @@ namespace StepsNs {
             result["error"] = "overlap must be in ]0, 1[, got " + std::to_string(input.overlap);
             return false;
         }
-        if (input.niveau < 0 || input.niveau >= DataNs::LEVEL_COUNT) {
+        if (input.level < 0 || input.level >= DataNs::LEVEL_COUNT) {
             result["error"] = "niveau must be in [0, " + std::to_string(DataNs::LEVEL_COUNT - 1) + "], got "
-                              + std::to_string(input.niveau);
+                              + std::to_string(input.level);
             return false;
         }
         if (!dataStore || !dataStore->has("tiles")) {
@@ -109,9 +109,9 @@ namespace StepsNs {
         }
 
         // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
-        std::optional<stitching::matching::CorrelationPhase> matcher;
+        std::optional<PhaseCorrelationNs::PhaseCorrelationMatcherClass> matcher;
         try {
-            matcher.emplace(input.parametres);
+            matcher.emplace(input.parameters);
         } catch (const std::invalid_argument& exception) {
             result["error"] = std::string("invalid parameters: ") + exception.what();
             return false;
@@ -125,8 +125,8 @@ namespace StepsNs {
             cv::Mat tileImage;
             for (const auto& [neighbour, direction] : neighbours) {
                 if (!neighbour) continue;
-                if (tileImage.empty()) tileImage = readPixels(*tile, input.niveau);
-                const cv::Mat neighbourImage = readPixels(*neighbour, input.niveau);
+                if (tileImage.empty()) tileImage = readPixels(*tile, input.level);
+                const cv::Mat neighbourImage = readPixels(*neighbour, input.level);
                 if (tileImage.empty() || neighbourImage.empty()) {
                     result["error"] = "cannot read " + (tileImage.empty() ? tile.get() : neighbour)->getSource().string();
                     return false;
@@ -136,15 +136,15 @@ namespace StepsNs {
                 // est notée avec la raison donnée par l'algorithme, sans arrêter le step.
                 DataNs::PairMatches pair{tile->getId(), neighbour->getId(), direction, {}};
                 if (matcher->match(tileImage, neighbourImage, DataNs::PairContext{direction, input.overlap}, pair.featureMatches)) {
-                    scaleToFullResolution(pair.featureMatches, input.niveau);
+                    scaleToFullResolution(pair.featureMatches, input.level);
                     output.pairs.push_back(std::move(pair));
                 } else {
-                    failures.push_back({{"idA", pair.tileIdA}, {"idB", pair.tileIdB}, {"reason", matcher->raisonEchec()}});
+                    failures.push_back({{"idA", pair.tileIdA}, {"idB", pair.tileIdB}, {"reason", matcher->getFailureReason()}});
                 }
             }
         }
 
-        result["niveau"] = input.niveau;
+        result["niveau"] = input.level;
         result["pairs"] = output.pairs.size();
         if (!failures.empty()) result["failures"] = failures;
         if (output.pairs.empty()) {

@@ -42,8 +42,8 @@ jobs:
               changed_files=$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")
               ;;
             push)
-              if [[ "$PUSH_BEFORE_SHA" =~ ^0+$ && "$PUSH_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
-                # Une nouvelle branche ne doit contrôler que ses différences avec la branche principale.
+              if [[ "$PUSH_REF_NAME" != "$DEFAULT_BRANCH" ]]; then
+                # Une branche de travail contrôle ses propres différences, sans reprendre les changements fusionnés depuis main.
                 # fetch-depth: 0 rend cette référence disponible dans le checkout.
                 changed_files=$(git diff --name-only "origin/${DEFAULT_BRANCH}...${PUSH_AFTER_SHA}")
               elif [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then

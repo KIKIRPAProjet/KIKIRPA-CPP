@@ -1,8 +1,8 @@
 // src/backend/steps/intensity_correction_step.cpp
 #include "steps/intensity_correction_step.h"
 
-#include "algorithms/egalisation/Egalisation.h"
-#include "algorithms/egalisation/Types.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
+#include "algorithms/brightness_equalization/brightness_equalization_types.h"
 #include "core/config/pipeline_config.h"
 #include "core/checkpoint/intensity_correction_checkpoint.h"
 #include "core/data/algorithm_types.h"
@@ -35,15 +35,15 @@ namespace StepsNs {
     namespace {
 
         constexpr int ANALYSIS_REDUCTION = 8;
-        using EgalisationClass = stitching::egalisation::Egalisation;
-        using ReducedTile = stitching::egalisation::TuileReduite;
-        using NeighbourPair = stitching::egalisation::PaireVoisine;
-        using Estimation = stitching::egalisation::Resultat;
-        using Method = stitching::egalisation::Methode;
+        using EqualizerClass = BrightnessEqualizationNs::BrightnessEqualizerClass;
+        using ReducedTile = BrightnessEqualizationNs::ReducedTile;
+        using NeighbourPair = BrightnessEqualizationNs::NeighbourPair;
+        using Estimation = BrightnessEqualizationNs::EqualizationResult;
+        using Method = BrightnessEqualizationNs::CorrectionMethod;
 
         Method parseMethod(const std::string& name) {
-            if (name == "gain") return Method::GainGlobal;
-            if (name == "gain-and-field") return Method::GainEtChamp;
+            if (name == "gain") return Method::GlobalGain;
+            if (name == "gain-and-field") return Method::GainAndField;
             throw std::invalid_argument("intensity-correction: method must be 'gain' or 'gain-and-field'");
         }
 
@@ -66,7 +66,7 @@ namespace StepsNs {
             return indexById;
         }
 
-        std::vector<ReducedTile> reduceTiles(const DataNs::TileList& tiles, const EgalisationClass& algorithm) {
+        std::vector<ReducedTile> reduceTiles(const DataNs::TileList& tiles, const EqualizerClass& algorithm) {
             std::vector<ReducedTile> reduced;
             reduced.reserve(tiles.size());
             for (auto& tile : tiles) {
@@ -76,7 +76,7 @@ namespace StepsNs {
                 auto level = tile->getLevel(0);
                 if (pixels.cols != level.width || pixels.rows != level.height || pixels.type() != tile->getType())
                     throw std::invalid_argument("intensity-correction: tile pixels do not match imported metadata");
-                reduced.push_back(algorithm.reduire(pixels));
+                reduced.push_back(algorithm.reduceTile(pixels));
             }
             return reduced;
         }
@@ -104,14 +104,14 @@ namespace StepsNs {
             return pairs;
         }
 
-        void validateParameters(const stitching::egalisation::Parametres& parameters) {
-            for (auto value : {parameters.flou, parameters.seuilBas, parameters.seuilHaut, parameters.huber, parameters.poidsJauge})
+        void validateParameters(const BrightnessEqualizationNs::Parameters& parameters) {
+            for (auto value : {parameters.blurSigma, parameters.lowThreshold, parameters.highThreshold, parameters.huberThreshold, parameters.gaugeWeight})
                 if (!std::isfinite(value)) throw std::invalid_argument("intensity-correction: parameters must be finite");
         }
 
-        EgalisationClass createAlgorithm(const stitching::egalisation::Parametres& parameters) {
+        EqualizerClass createAlgorithm(const BrightnessEqualizationNs::Parameters& parameters) {
             try {
-                return EgalisationClass(parameters);
+                return EqualizerClass(parameters);
             } catch (const std::invalid_argument&) {
                 throw std::invalid_argument("intensity-correction: invalid algorithm parameters");
             }
@@ -119,9 +119,9 @@ namespace StepsNs {
 
         DataNs::IntensityCorrection makeCorrection(const Estimation& estimation, Method method) {
             DataNs::IntensityCorrection correction;
-            correction.tileGains = method == Method::GainGlobal ? estimation.gainsA : estimation.gainsB;
-            correction.fieldStrength = estimation.champ(method);
-            correction.isolatedTileIndices = estimation.tuilesIsolees;
+            correction.tileGains = method == Method::GlobalGain ? estimation.gainsA : estimation.gainsB;
+            correction.fieldStrength = estimation.getFieldStrength(method);
+            correction.isolatedTileIndices = estimation.isolatedTiles;
             if (!std::isfinite(correction.fieldStrength)) throw std::runtime_error("intensity-correction: non-finite illumination field");
             for (auto gain : correction.tileGains)
                 if (!std::isfinite(gain) || gain <= 0.0) throw std::runtime_error("intensity-correction: gains must be finite and positive");
@@ -129,23 +129,23 @@ namespace StepsNs {
         }
 
         void recordFailedPair(const NeighbourPair& pair, const DataNs::TileList& tiles, Json& result) {
-            result["failures"].push_back({{"idA", tiles.at(static_cast<std::size_t>(pair.a))->getId()},
-                                         {"idB", tiles.at(static_cast<std::size_t>(pair.b))->getId()},
+            result["failures"].push_back({{"idA", tiles.at(static_cast<std::size_t>(pair.tileIndexA))->getId()},
+                                         {"idB", tiles.at(static_cast<std::size_t>(pair.tileIndexB))->getId()},
                                          {"reason", "no valid overlap samples"}});
         }
 
-        Estimation estimateTiles(EgalisationClass& algorithm, const DataNs::TileList& tiles,
+        Estimation estimateTiles(EqualizerClass& algorithm, const DataNs::TileList& tiles,
                                   const std::vector<NeighbourPair>& pairs, Json& result) {
-            auto estimation = algorithm.estimer(reduceTiles(tiles, algorithm), pairs);
+            auto estimation = algorithm.estimate(reduceTiles(tiles, algorithm), pairs);
             if (!estimation) {
                 for (auto& pair : pairs) recordFailedPair(pair, tiles, result);
-                throw std::runtime_error("intensity-correction: estimation failed: " + algorithm.raisonEchec());
+                throw std::runtime_error("intensity-correction: estimation failed: " + algorithm.getFailureReason());
             }
-            for (auto pairIndex : estimation->pairesVides)
+            for (auto pairIndex : estimation->emptyPairs)
                 recordFailedPair(pairs.at(static_cast<std::size_t>(pairIndex)), tiles, result);
-            result["pairs"] = pairs.size() - estimation->pairesVides.size();
-            result["samples"] = estimation->nbEchantillons;
-            result["isolatedTiles"] = estimation->tuilesIsolees;
+            result["pairs"] = pairs.size() - estimation->emptyPairs.size();
+            result["samples"] = estimation->sampleCount;
+            result["isolatedTiles"] = estimation->isolatedTiles;
             return *estimation;
         }
 
@@ -156,10 +156,10 @@ namespace StepsNs {
         auto& parameters = input.algorithmParameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "intensity-correction";
-        stepConfig.parameters = {{"string", "method", input.method}, {"float", "blurSigma", parameters.flou},
-                                 {"int", "borderMargin", parameters.marge}, {"float", "lowThreshold", parameters.seuilBas},
-                                 {"float", "highThreshold", parameters.seuilHaut}, {"int", "iterationCount", parameters.iterations},
-                                 {"float", "huberThreshold", parameters.huber}, {"float", "gaugeWeight", parameters.poidsJauge}};
+        stepConfig.parameters = {{"string", "method", input.method}, {"float", "blurSigma", parameters.blurSigma},
+                                 {"int", "borderMargin", parameters.borderMargin}, {"float", "lowThreshold", parameters.lowThreshold},
+                                 {"float", "highThreshold", parameters.highThreshold}, {"int", "iterationCount", parameters.iterationCount},
+                                 {"float", "huberThreshold", parameters.huberThreshold}, {"float", "gaugeWeight", parameters.gaugeWeight}};
         stepConfig.inputs = {{"Tiles", "tiles"}, {"PairMatches", "matches"}};
         stepConfig.outputs = {{"IntensityCorrection", "intensityCorrection"}};
         configJson = stepConfig;
@@ -169,14 +169,14 @@ namespace StepsNs {
         IntensityCorrectionInput input;
         input.method = getParameter("method").get<std::string>();
         auto& parameters = input.algorithmParameters;
-        parameters.reduction = ANALYSIS_REDUCTION;
-        parameters.flou = getParameter("blurSigma").get<double>();
-        parameters.marge = readInteger(getParameter("borderMargin"));
-        parameters.seuilBas = getParameter("lowThreshold").get<double>();
-        parameters.seuilHaut = getParameter("highThreshold").get<double>();
-        parameters.iterations = readInteger(getParameter("iterationCount"));
-        parameters.huber = getParameter("huberThreshold").get<double>();
-        parameters.poidsJauge = getParameter("gaugeWeight").get<double>();
+        parameters.reductionFactor = ANALYSIS_REDUCTION;
+        parameters.blurSigma = getParameter("blurSigma").get<double>();
+        parameters.borderMargin = readInteger(getParameter("borderMargin"));
+        parameters.lowThreshold = getParameter("lowThreshold").get<double>();
+        parameters.highThreshold = getParameter("highThreshold").get<double>();
+        parameters.iterationCount = readInteger(getParameter("iterationCount"));
+        parameters.huberThreshold = getParameter("huberThreshold").get<double>();
+        parameters.gaugeWeight = getParameter("gaugeWeight").get<double>();
         validateParameters(parameters);
         return input;
     }

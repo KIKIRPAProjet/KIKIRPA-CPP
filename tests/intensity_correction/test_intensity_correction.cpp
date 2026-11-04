@@ -280,7 +280,7 @@ TEST(IntensityCorrectionStepTest, ValidatesDefaultsTypesAndIntegerBounds) {
 
 TEST(IntensityCorrectionStepTest, RejectsNonFiniteParametersFromCppInput) {
     StepsNs::IntensityCorrectionInput input;
-    input.algorithmParameters.flou = std::numeric_limits<double>::infinity();
+    input.algorithmParameters.blurSigma = std::numeric_limits<double>::infinity();
     StepsNs::IntensityCorrectionStepClass step(input);
     StepNs::DataStoreClass store;
     EXPECT_FALSE(executeStep(step, store));

@@ -1,6 +1,6 @@
 # IntensityCorrectionStep
 
-`StepsNs::IntensityCorrectionStepClass`, enregistré sous `intensity-correction`, estime la luminosité relative des tuiles dans leurs zones de recouvrement. Il réutilise `stitching::egalisation::Egalisation` et ne modifie aucun pixel des sources. Les gains et le champ d'éclairage sont appliqués ensuite, lors de l'assemblage.
+`StepsNs::IntensityCorrectionStepClass`, enregistré sous `intensity-correction`, estime la luminosité relative des tuiles dans leurs zones de recouvrement. Il réutilise `BrightnessEqualizationNs::BrightnessEqualizerClass` et ne modifie aucun pixel des sources. Les gains et le champ d'éclairage sont appliqués ensuite, lors de l'assemblage.
 
 ## Contrat
 
@@ -35,7 +35,7 @@ Les translations de `matches` sont en pixels pleine résolution et dans le repè
 
 `StepClass::importConfig()` contrôle les clés et les types et conserve les valeurs par défaut des paramètres absents. Le step vérifie la finitude des paramètres et les bornes des entiers avant conversion ; l'algorithme valide leur domaine numérique.
 
-La réduction est fixée à 1/8 pour l'estimation et ne constitue pas une option JSON. Le champ `algorithmParameters.reduction` de l'entrée C++ n'est donc pas utilisé pour modifier ce facteur.
+La réduction est fixée à 1/8 pour l'estimation et ne constitue pas une option JSON. Le champ `algorithmParameters.reductionFactor` de l'entrée C++ n'est donc pas utilisé pour modifier ce facteur.
 
 ## Convention des gains
 
@@ -49,7 +49,7 @@ Les tuiles isolées gardent un gain de 1. Le consommateur doit les laisser non c
 
 Les images sont lues depuis `TileClass::getSource()` avec `IMREAD_UNCHANGED`. Le step vérifie leurs dimensions et leur type par rapport aux métadonnées d'import. Une seule image pleine résolution est chargée à la fois ; seules les luminances réduites de toutes les tuiles sont conservées pour l'estimation.
 
-La réduction utilise directement `Egalisation::reduire()`, qui préserve la dynamique des images 8/16 bits. Le step ne dépend pas des fonctions internes de `PhaseCorrelationStepClass`. Il ne lit pas encore les régions TIFF ni un niveau réduit directement sur disque ; cette optimisation pourra utiliser une API de lecture commune lorsqu'elle sera disponible sur main.
+La réduction utilise directement `BrightnessEqualizerClass::reduceTile()`, qui préserve la dynamique des images 8/16 bits. Le step ne dépend pas des fonctions internes de `PhaseCorrelationStepClass`. Il ne lit pas encore les régions TIFF ni un niveau réduit directement sur disque ; cette optimisation pourra utiliser une API de lecture commune lorsqu'elle sera disponible sur main.
 
 ## Erreurs et résultats partiels
 
