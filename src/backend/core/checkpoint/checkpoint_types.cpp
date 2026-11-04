@@ -207,22 +207,6 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(territories));
         }
 
-        // Sauvegarde du type "IntensityCorrection" : { tileGains, fieldStrength, isolatedTileIndices }.
-        void saveIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
-            const auto& correction = dataStore.get<DataNs::IntensityCorrection>(key);
-            writeJson(directory, key, { {"tileGains", correction.tileGains}, {"fieldStrength", correction.fieldStrength},
-                                       {"isolatedTileIndices", correction.isolatedTileIndices} });
-        }
-
-        // Chargement du type "IntensityCorrection" : relit les champs écrits par saveIntensityCorrection.
-        void loadIntensityCorrection(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
-            const Json correctionJson = readJson(directory, key);
-            DataNs::IntensityCorrection correction;
-            correction.tileGains = correctionJson.at("tileGains").get<std::vector<double>>();
-            correction.fieldStrength = correctionJson.at("fieldStrength").get<double>();
-            correction.isolatedTileIndices = correctionJson.at("isolatedTileIndices").get<std::vector<int>>();
-            dataStore.replace(key, std::move(correction));
-        }
     }
 
     // Un type de donnée du pipeline -> sa paire (sauvegarde, chargement).
@@ -232,7 +216,6 @@ namespace CheckpointNs {
             {"PairMatches", {savePairMatches, loadPairMatches}},
             {"Positions", {savePositions, loadPositions}},
             {"Territories", {saveTerritories, loadTerritories}},
-            {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
         };
     }
 

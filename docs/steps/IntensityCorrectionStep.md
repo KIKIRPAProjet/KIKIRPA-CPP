@@ -1,45 +1,91 @@
-# IntensityCorrectionStepClass
+# IntensityCorrectionStep
 
-Code : `steps/intensity_correction_step.h` / `.cpp` (namespace `StepsNs`).
-
-Estime la correction de luminosité de chaque tuile à partir des recouvrements mesurés par `phase-correlation` (algorithme : [Egalisation](../algorithms/egalisation/Egalisation.md)). **Le step ne modifie aucun pixel** : il produit des gains, que l'assemblage appliquera.
+`StepsNs::IntensityCorrectionStepClass`, enregistré sous `intensity-correction`, estime la luminosité relative des tuiles dans leurs zones de recouvrement. Il réutilise `stitching::egalisation::Egalisation` et ne modifie aucun pixel des sources. Les gains et le champ d'éclairage sont appliqués ensuite, lors de l'assemblage.
 
 ## Contrat
 
-| | |
-|---|---|
-| `name` | `"intensity-correction"` |
-| entrées | `{ "dataType": "Tiles", "key": "tiles" }` et `{ "dataType": "PairMatches", "key": "matches" }` |
-| sortie | `{ "dataType": "IntensityCorrection", "key": "intensityCorrection" }` |
-| `getResult()` | `method`, `tileCount`, `pairCount`, `isolatedTiles`, `error` |
-
-**Paramètres** (un paramètre absent du JSON prend sa valeur par défaut) :
-
-| Paramètre | Type | Défaut | Rôle |
+| Sens | Clé | Type JSON | Type C++ |
 |---|---|---|---|
-| `method` | string | `"gain-and-field"` | `"gain"` : un gain par tuile ; `"gain-and-field"` : gains et champ d'éclairage commun |
-| `blurSigma` | float | 1.5 | flou (px de l'image réduite) avant l'estimation |
-| `borderMargin` | int | 40 | px ignorés au bord de chaque tuile (pleine résolution) |
-| `lowThreshold` | float | 0.03 | luminance en dessous de laquelle un pixel est exclu |
-| `highThreshold` | float | 0.97 | luminance au-dessus de laquelle un pixel est exclu (saturation) |
-| `iterationCount` | int | 6 | itérations des moindres carrés repondérés |
-| `huberThreshold` | float | 1.5 | seuil de Huber, en écarts-types robustes |
-| `gaugeWeight` | float | 1000 | poids de la contrainte « moyenne des log des gains = 0 » |
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` |
+| Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` |
+| Sortie | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` |
 
-La réduction des images (1/8, niveau 3 de la pyramide) est fixée par le step, pas par un paramètre.
+Le type partagé est déclaré dans `core/data/intensity_correction.h`. Il contient :
 
-## Conventions
+- `tileGains` : un gain par tuile, dans le même ordre que `TileList` ;
+- `fieldStrength` : force `c` du champ d'éclairage commun ;
+- `isolatedTileIndices` : indices des tuiles sans recouvrement exploitable.
 
-- **Gain** : `tileGains[i]` est la luminosité relative de la tuile `i`. La correction **divise** la tuile par son gain. Moyenne géométrique des gains = 1.
-- **Ordre** : `tileGains` suit l'ordre de la `TileList`.
-- **Champ** : `fieldStrength` est le `c` de `exp(c · r²)`, commun à toutes les tuiles ; 0 avec la méthode `"gain"`.
-- **Tuiles isolées** : `isolatedTileIndices` liste les tuiles sans paire exploitable (gain 1, non égalisées).
-- **Translations** : celles de `matches`, en pleine résolution, dans le repère de A.
+`IntensityCorrectionOutput` possède les champs `key`, `value`, `type`. Le résultat détaillé est accessible par `getOutput()` et dans le DataStore. `getResult()` garde uniquement un résumé : `pairs`, `samples`, `tileCount`, `method`, `isolatedTiles`, `failures`, `error` (les compteurs détaillés sont présents après une estimation réussie).
 
-## Échecs
+Les translations de `matches` sont en pixels pleine résolution et dans le repère de chaque tuile complète. L'étape ne relance aucun matcher et ne recalcule pas les positions. Elle peut consommer les sorties de la corrélation de phase, de SIFT ou de LightGlue, sous réserve de ce contrat commun. Les aberrants doivent être rejetés en amont.
 
-Le step renvoie `false` avec la cause dans `error` si une entrée manque, si `method` est inconnue, si un paramètre est invalide, si une image est illisible, si un identifiant de tuile des `matches` est inconnu, ou si l'estimation est impossible (moins de 2 tuiles, aucune paire avec des échantillons).
+## Paramètres
 
-## Lecture des pixels
+| Nom | Type | Défaut | Rôle |
+|---|---|---|---|
+| `method` | string | `gain-and-field` | `gain` : un gain par tuile ; `gain-and-field` : gains et champ commun |
+| `blurSigma` | float | 1.5 | flou avant estimation, en pixels réduits |
+| `borderMargin` | int | 40 | marge exclue aux bords, en pixels pleine résolution |
+| `lowThreshold` | float | 0.03 | luminance minimale retenue |
+| `highThreshold` | float | 0.97 | luminance maximale retenue |
+| `iterationCount` | int | 6 | itérations de moindres carrés robustes |
+| `huberThreshold` | float | 1.5 | seuil de Huber |
+| `gaugeWeight` | float | 1000 | poids de la jauge des gains |
 
-Comme `phase-correlation`, le step passe par `PhaseCorrelationStepClass::readPixels(tile, level)` au niveau 3. Une seule image pleine résolution est en mémoire à la fois. Quand `readRegion` existera, ce sera le seul endroit à changer.
+`StepClass::importConfig()` contrôle les clés et les types et conserve les valeurs par défaut des paramètres absents. Le step vérifie la finitude des paramètres et les bornes des entiers avant conversion ; l'algorithme valide leur domaine numérique.
+
+La réduction est fixée à 1/8 pour l'estimation et ne constitue pas une option JSON. Le champ `algorithmParameters.reduction` de l'entrée C++ n'est donc pas utilisé pour modifier ce facteur.
+
+## Convention des gains
+
+`tileGains[i]` représente la **luminosité relative** de la tuile. Pour corriger une tuile, il faut **diviser** les pixels par son gain, et non les multiplier. Par exemple, si B est 25 % plus lumineuse que A, le rapport `gainB / gainA` doit valoir environ 1.25.
+
+La moyenne géométrique des gains des tuiles participantes est centrée sur 1 par la jauge du modèle. Pour la méthode `gain-and-field`, on divise également par `exp(fieldStrength * r²)` ; le rayon normalisé est celui défini par l'algorithme existant. La méthode `gain` produit `fieldStrength = 0`.
+
+Les tuiles isolées gardent un gain de 1. Le consommateur doit les laisser non corrigées, y compris pour le champ d'éclairage global : `isolatedTileIndices` sert à les identifier.
+
+## Lecture et mémoire
+
+Les images sont lues depuis `TileClass::getSource()` avec `IMREAD_UNCHANGED`. Le step vérifie leurs dimensions et leur type par rapport aux métadonnées d'import. Une seule image pleine résolution est chargée à la fois ; seules les luminances réduites de toutes les tuiles sont conservées pour l'estimation.
+
+La réduction utilise directement `Egalisation::reduire()`, qui préserve la dynamique des images 8/16 bits. Le step ne dépend pas des fonctions internes de `PhaseCorrelationStepClass`. Il ne lit pas encore les régions TIFF ni un niveau réduit directement sur disque ; cette optimisation pourra utiliser une API de lecture commune lorsqu'elle sera disponible sur main.
+
+## Erreurs et résultats partiels
+
+Les paires invalides sont ignorées et listées dans `failures` sous la forme `{idA, idB, reason}` : identifiant inconnu, paire d'une tuile avec elle-même, translation non finie, doublon ou absence d'échantillons valides. Les doublons, y compris une paire renversée, ne sont pas comptés une seconde fois.
+
+Une estimation peut réussir avec certaines paires ignorées et des tuiles isolées. Elle échoue si aucune paire n'est exploitable. Elle échoue aussi si les entrées manquent, si une liste contient une tuile nulle ou des identifiants dupliqués, si moins de deux tuiles sont fournies, si une image est illisible, si les métadonnées ne correspondent plus aux pixels ou si les paramètres sont invalides.
+
+Les exceptions sont converties en `false` et en message d'erreur. Au début de chaque exécution, les anciennes sorties sont effacées dans l'objet et dans le DataStore. Aucune ancienne correction ne reste publiée après un échec.
+
+## Checkpoints
+
+La construction du step enregistre le type `IntensityCorrection` via l'API `CheckpointClass::registerType()`, si ce type n'a pas déjà été déclaré. L'enregistrement respecte donc un éventuel sérialiseur personnalisé existant. Il se fait avant l'exécution ou la reprise d'un pipeline.
+
+La sérialisation, isolée dans `core/checkpoint/intensity_correction_checkpoint.cpp`, sauvegarde exactement les gains, le champ et les indices isolés. Elle contrôle les gains positifs et finis, la finitude du champ et les bornes des indices isolés. Le chargement ne modifie le DataStore qu'après lecture et validation du document complet.
+
+## Exemple JSON
+
+À placer après un step produisant `matches` :
+
+```json
+{
+  "name": "intensity-correction",
+  "parameters": [
+    { "valueType": "string", "name": "method", "value": "gain" }
+  ]
+}
+```
+
+Les autres paramètres gardent leur valeur par défaut. Le registre déclare les entrées et sorties ; `buildPipeline()` vérifie l'enchaînement et les types.
+
+## Tests
+
+Les tests reprennent les cas initiaux et les complètent : gain connu sur de vraies tuiles 16 bits, jauge des gains, source 8 bits, intégration import → phase-correlation → intensity-correction, types et paramètres invalides, remise à zéro après échec, paires ignorées, recouvrement vide, tuile isolée, images absentes, métadonnées incohérentes, préservation des sources et sauvegarde/restauration par checkpoint.
+
+```sh
+ctest --test-dir build --output-on-failure -R IntensityCorrectionStepTest
+```
+
+Cette branche reprend l'implémentation d'Amory707 sur `fe/intensity-correction-step` ; son historique est conservé. L'issue #19 ne fournit pas de description supplémentaire : le contrat existant est donc maintenu.

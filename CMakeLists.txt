@@ -16,7 +16,6 @@ if(APPLE)
     endforeach()
 endif()
 
-include(cmake/ClangTidy.cmake)
 # Active clang-tidy pendant la compilation si ENABLE_CLANG_TIDY=ON.
 # Doit être inclus avant la création des cibles, qui lisent CMAKE_CXX_CLANG_TIDY.
 include(cmake/clang_tidy.cmake)
