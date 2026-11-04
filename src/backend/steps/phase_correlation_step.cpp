@@ -166,11 +166,11 @@ namespace StepsNs {
 
         // Points locaux (fond sombre, bruit) : le pic peut être franc mais décalé, les patchs le révèlent.
         std::string findPointsReason(const PairConfidence& confidence, const ConfidenceControl& control) {
-            if (control.nccMin > 0 && *confidence.ncc < control.nccMin) {
+            if (control.nccMin > 0 && confidence.ncc && *confidence.ncc < control.nccMin) {
                 return "confiance : patchs locaux peu ressemblants (NCC médiane " + formatNumber(*confidence.ncc) + " < nccMin " +
                        formatNumber(control.nccMin) + ") : fond sombre ou bruit, la translation peut être décalée de plusieurs px";
             }
-            if (control.dispersionMax > 0 && *confidence.dispersion > control.dispersionMax) {
+            if (control.dispersionMax > 0 && confidence.dispersion && *confidence.dispersion > control.dispersionMax) {
                 return "confiance : points locaux en désaccord avec la translation (écart médian " +
                        formatNumber(*confidence.dispersion) + " px > dispersionMax " + formatNumber(control.dispersionMax) +
                        " px) : fond sombre ou bruit dans une partie de la bande";

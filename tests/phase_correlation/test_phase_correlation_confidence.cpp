@@ -119,7 +119,7 @@ namespace {
         const auto confidence = PhaseCorrelationStepClass::checkConfidence(createMatches(LARGE_GAP, RELIABLE_SCORE), image, {});
         EXPECT_EQ(confidence.state, ConfidenceState::Reliable) << confidence.reason;
         ASSERT_TRUE(confidence.dispersion.has_value());
-        EXPECT_NEAR(*confidence.dispersion, LARGE_GAP, GAP_TOLERANCE);
+        EXPECT_NEAR(confidence.dispersion.value_or(0.0), LARGE_GAP, GAP_TOLERANCE);
     }
 
     TEST(PhaseCorrelationConfidence, DispersionRejectsWhenEnabled) {
@@ -142,7 +142,7 @@ namespace {
         const auto confidence = PhaseCorrelationStepClass::checkConfidence(createMatches(0.f, RELIABLE_SCORE), createRepeatedPattern(), {});
         EXPECT_EQ(confidence.state, ConfidenceState::Ambiguous);
         ASSERT_TRUE(confidence.autosim.has_value());
-        EXPECT_GE(*confidence.autosim, REPEATED_LIMIT);
+        EXPECT_GE(confidence.autosim.value_or(0.0), REPEATED_LIMIT);
     }
 
     TEST(PhaseCorrelationConfidence, TextureIsNotRepeated) {
