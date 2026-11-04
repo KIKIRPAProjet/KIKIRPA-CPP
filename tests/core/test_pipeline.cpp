@@ -67,9 +67,9 @@ bool throwsInvalidArgumentContaining(F callable, const std::string& expectedText
     try {
         callable();
     } catch (const std::invalid_argument& exception) {
-        const bool containsExpectedText = std::string(exception.what()).find(expectedText) != std::string::npos;
-        if (!containsExpectedText) std::cout << "        message reçu : " << exception.what() << '\n';
-        return containsExpectedText;
+        const bool CONTAINS_EXPECTED_TEXT = std::string(exception.what()).find(expectedText) != std::string::npos;
+        if (!CONTAINS_EXPECTED_TEXT) std::cout << "        message reçu : " << exception.what() << '\n';
+        return CONTAINS_EXPECTED_TEXT;
     }
     return false;
 }
@@ -98,22 +98,22 @@ class ThrowingStepClass : public StepNs::StepClass {
 };
 
 TEST(PipelineBuilder, StepRegistry) {
-    const auto stepNames = PipelineNs::getRegisteredStepNames();
-    EXPECT_EQ(stepNames.size(), EXPECTED_REGISTERED_STEP_COUNT);
-    EXPECT_EQ(stepNames, (std::vector<std::string>{"graphcut", "import", "phase-correlation"}));
-    for (const auto& stepName : stepNames) {
-        const auto step = PipelineNs::createStep(stepName);
-        ASSERT_NE(step, nullptr);
-        EXPECT_EQ(step->getConfigJson().value("name", ""), stepName);
+    const auto STEP_NAMES = PipelineNs::getRegisteredStepNames();
+    EXPECT_EQ(STEP_NAMES.size(), EXPECTED_REGISTERED_STEP_COUNT);
+    EXPECT_EQ(STEP_NAMES, (std::vector<std::string>{"graphcut", "import", "phase-correlation"}));
+    for (const auto& stepName : STEP_NAMES) {
+        const auto STEP = PipelineNs::createStep(stepName);
+        ASSERT_NE(STEP, nullptr);
+        EXPECT_EQ(STEP->getConfigJson().value("name", ""), stepName);
     }
     EXPECT_TRUE(throwsInvalidArgumentContaining([] { PipelineNs::createStep("unknown"); }, "unknown step 'unknown'"));
 }
 
 TEST(PipelineBuilder, CompletePipelineJson) {
-    const PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(STITCHING_PIPELINE_JSON_PATH);
-    ASSERT_EQ(pipeline.getSteps().size(), EXPECTED_PIPELINE_STEP_COUNT);
-    EXPECT_EQ(pipeline.getSteps()[FIRST_STEP_INDEX]->getConfigJson().at("name"), "import");
-    EXPECT_EQ(pipeline.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("name"), "phase-correlation");
+    const PipelineNs::PipelineClass PIPELINE = PipelineNs::buildPipelineFromFile(STITCHING_PIPELINE_JSON_PATH);
+    ASSERT_EQ(PIPELINE.getSteps().size(), EXPECTED_PIPELINE_STEP_COUNT);
+    EXPECT_EQ(PIPELINE.getSteps()[FIRST_STEP_INDEX]->getConfigJson().at("name"), "import");
+    EXPECT_EQ(PIPELINE.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("name"), "phase-correlation");
 }
 
 TEST(PipelineBuilder, RejectsInvalidScriptStructure) {
@@ -125,38 +125,38 @@ TEST(PipelineBuilder, RejectsInvalidScriptStructure) {
 }
 
 TEST(PipelineBuilder, RejectsInvalidParameters) {
-    const Json unknownParameterScript = makeScriptJson(
+    const Json UNKNOWN_PARAMETER_SCRIPT = makeScriptJson(
         {makeStepJson("import", Json::array({makeParameterJson("string", "unknown", "x")}))});
-    EXPECT_TRUE(rejectsPipeline(unknownParameterScript, "unknown parameter 'unknown'"));
+    EXPECT_TRUE(rejectsPipeline(UNKNOWN_PARAMETER_SCRIPT, "unknown parameter 'unknown'"));
 
-    const Json incorrectTypeScript = makeScriptJson(
+    const Json INCORRECT_TYPE_SCRIPT = makeScriptJson(
         {makeStepJson("import", Json::array({makeParameterJson("int", "path", INTEGER_OPTION_VALUE)}))});
-    EXPECT_TRUE(rejectsPipeline(incorrectTypeScript, "has type 'string', got 'int'"));
+    EXPECT_TRUE(rejectsPipeline(INCORRECT_TYPE_SCRIPT, "has type 'string', got 'int'"));
 
-    const Json incorrectValueScript = makeScriptJson(
+    const Json INCORRECT_VALUE_SCRIPT = makeScriptJson(
         {makeStepJson("import"), makeStepJson("phase-correlation", Json::array({
             makeParameterJson("int", "nbPoints", NON_INTEGER_OPTION_VALUE)}))});
-    EXPECT_TRUE(rejectsPipeline(incorrectValueScript, "expects a value of type 'int'"));
+    EXPECT_TRUE(rejectsPipeline(INCORRECT_VALUE_SCRIPT, "expects a value of type 'int'"));
 
-    const Json duplicateParameterScript = makeScriptJson(
+    const Json DUPLICATE_PARAMETER_SCRIPT = makeScriptJson(
         {makeStepJson("import", Json::array({makeParameterJson("string", "path", "first"),
                                              makeParameterJson("string", "path", "second")}))});
-    EXPECT_TRUE(rejectsPipeline(duplicateParameterScript, "duplicate parameter 'path'"));
+    EXPECT_TRUE(rejectsPipeline(DUPLICATE_PARAMETER_SCRIPT, "duplicate parameter 'path'"));
 }
 
 TEST(PipelineBuilder, RejectsUnproducedInputs) {
-    const Json missingTilesScript = makeScriptJson({makeStepJson("phase-correlation")});
-    EXPECT_TRUE(rejectsPipeline(missingTilesScript, "input 'tiles' is not produced"));
+    const Json MISSING_TILES_SCRIPT = makeScriptJson({makeStepJson("phase-correlation")});
+    EXPECT_TRUE(rejectsPipeline(MISSING_TILES_SCRIPT, "input 'tiles' is not produced"));
 
-    const Json missingPositionsScript = makeScriptJson({makeStepJson("import"), makeStepJson("graphcut")});
-    EXPECT_TRUE(rejectsPipeline(missingPositionsScript, "input 'positions' is not produced"));
+    const Json MISSING_POSITION_SCRIPT = makeScriptJson({makeStepJson("import"), makeStepJson("graphcut")});
+    EXPECT_TRUE(rejectsPipeline(MISSING_POSITION_SCRIPT, "input 'positions' is not produced"));
 }
 
 TEST(PipelineBuilder, MergesOptionsAndRoundTripsConfiguration) {
-    const PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(makeScriptJson({
+    const PipelineNs::PipelineClass PIPELINE = PipelineNs::buildPipeline(makeScriptJson({
         makeStepJson("import", Json::array({makeParameterJson("string", "path", "elsewhere/")})),
         makeStepJson("phase-correlation", Json::array({makeParameterJson("float", "overlap", ZERO_OVERLAP)}))}));
-    const Json& importConfig = pipeline.getSteps()[FIRST_STEP_INDEX]->getConfigJson();
+    const Json& importConfig = PIPELINE.getSteps()[FIRST_STEP_INDEX]->getConfigJson();
     std::string path;
     std::string format;
     for (const Json& parameter : importConfig.at("parameters")) {
@@ -165,19 +165,19 @@ TEST(PipelineBuilder, MergesOptionsAndRoundTripsConfiguration) {
     }
     EXPECT_EQ(path, "elsewhere/");
     EXPECT_EQ(format, StepsNs::ImportInput{}.format);
-    EXPECT_EQ(pipeline.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("parameters").size(),
+    EXPECT_EQ(PIPELINE.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("parameters").size(),
               EXPECTED_PHASE_CORRELATION_PARAMETER_COUNT);
 
-    const PipelineNs::PipelineClass copy = PipelineNs::buildPipeline(pipeline.exportConfig());
-    EXPECT_EQ(copy.exportConfig(), pipeline.exportConfig());
+    const PipelineNs::PipelineClass COPY = PipelineNs::buildPipeline(pipeline.exportConfig());
+    EXPECT_EQ(COPY.exportConfig(), PIPELINE.exportConfig());
 }
 
 TEST(PipelineBuilder, ReportsStepException) {
     PipelineNs::PipelineClass pipeline;
     pipeline.addStep(std::make_unique<ThrowingStepClass>());
     std::string logMessage;
-    const bool succeeded = pipeline.run([&](const std::string& message) { logMessage = message; });
-    EXPECT_FALSE(succeeded);
+    const bool SUCCEEDED = pipeline.run([&](const std::string& message) { logMessage = message; });
+    EXPECT_FALSE(SUCCEEDED);
     EXPECT_NE(logMessage.find("expected test exception"), std::string::npos);
 }
 
@@ -198,9 +198,9 @@ void createTiles(const FileSystemNs::path& directory) {
 }
 
 Json makeRealPipelineScript(const FileSystemNs::path& directory) {
-    const Json importStep = makeStepJson("import", Json::array({
+    const Json IMPORT_STEP = makeStepJson("import", Json::array({
         makeParameterJson("string", "path", directory.string())}));
-    return makeScriptJson({importStep, makeStepJson("phase-correlation")});
+    return makeScriptJson({IMPORT_STEP, makeStepJson("phase-correlation")});
 }
 
 void verifyRealPipelineOutputs(const PipelineNs::PipelineClass& pipeline) {
@@ -217,12 +217,12 @@ void verifyRealPipelineOutputs(const PipelineNs::PipelineClass& pipeline) {
 }
 
 TEST(PipelineBuilder, RunsRealPipeline) {
-    const FileSystemNs::path directory = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline";
-    createTiles(directory);
-    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(makeRealPipelineScript(directory));
+    const FileSystemNs::path DIRECTORY = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline";
+    createTiles(DIRECTORY);
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(makeRealPipelineScript(DIRECTORY));
     ASSERT_TRUE(pipeline.run());
     verifyRealPipelineOutputs(pipeline);
-    FileSystemNs::remove_all(directory);
+    FileSystemNs::remove_all(DIRECTORY);
 }
 
 void verifyCheckpointFiles(const FileSystemNs::path& checkpointDirectory) {
@@ -243,11 +243,11 @@ void verifyRestoredPipelineOutputs(const PipelineNs::PipelineClass& pipeline, fl
 }
 
 void modifySourceTile(const FileSystemNs::path& directory) {
-    const FileSystemNs::path sourcePath = directory / "img_C00_R00.tif";
-    cv::Mat image = cv::imread(sourcePath.string(), cv::IMREAD_UNCHANGED);
+    const FileSystemNs::path SOURCE_PATH = directory / "img_C00_R00.tif";
+    cv::Mat image = cv::imread(SOURCE_PATH.string(), cv::IMREAD_UNCHANGED);
     image(cv::Rect(PIXEL_ORIGIN, PIXEL_ORIGIN, MODIFIED_PIXEL_REGION_SIZE, MODIFIED_PIXEL_REGION_SIZE))
         .setTo(cv::Scalar(MODIFIED_PIXEL_VALUE));
-    cv::imwrite(sourcePath.string(), image);
+    cv::imwrite(SOURCE_PATH.string(), image);
 }
 
 PipelineNs::PipelineClass makeCheckpointedPipeline(const FileSystemNs::path& directory,
@@ -262,29 +262,29 @@ PipelineNs::PipelineClass makeCheckpointedPipeline(const FileSystemNs::path& dir
 void verifySourceChangeRebuildsPipeline(PipelineNs::PipelineClass& pipeline, const FileSystemNs::path& directory) {
     modifySourceTile(directory);
     std::string log;
-    const auto logger = [&](const std::string& message) { log += message + "\n"; };
-    ASSERT_TRUE(pipeline.run(logger));
+    const auto LOGGER = [&](const std::string& message) { log += message + "\n"; };
+    ASSERT_TRUE(pipeline.run(LOGGER));
     EXPECT_NE(log.find("Step 1/2 OK"), std::string::npos);
     EXPECT_NE(log.find("Step 2/2 OK"), std::string::npos);
 }
 
 TEST(PipelineBuilder, ResumesFromCheckpointsAndDetectsChangedInputs) {
-    const FileSystemNs::path directory = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline_resume";
-    const FileSystemNs::path checkpointDirectory = directory / "checkpoints";
-    createTiles(directory);
+    const FileSystemNs::path DIRECTORY = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline_resume";
+    const FileSystemNs::path CHECKPOINT_DIRECTORY = DIRECTORY / "checkpoints";
+    createTiles(DIRECTORY);
 
-    PipelineNs::PipelineClass pipeline = makeCheckpointedPipeline(directory, checkpointDirectory);
+    PipelineNs::PipelineClass pipeline = makeCheckpointedPipeline(DIRECTORY, CHECKPOINT_DIRECTORY);
     std::string log;
-    const auto logger = [&](const std::string& message) { log += message + "\n"; };
-    ASSERT_TRUE(pipeline.run(logger));
-    verifyCheckpointFiles(checkpointDirectory);
+    const auto LOGGER = [&](const std::string& message) { log += message + "\n"; };
+    ASSERT_TRUE(pipeline.run(LOGGER));
+    verifyCheckpointFiles(CHECKPOINT_DIRECTORY);
     const auto& matches = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
-    const float expectedTranslationX = matches.at(FIRST_MATCH_INDEX).featureMatches.translationX;
+    const float EXPECTED_TRANSLATION_X = matches.at(FIRST_MATCH_INDEX).featureMatches.translationX;
 
     log.clear();
-    ASSERT_TRUE(pipeline.run(logger));
+    ASSERT_TRUE(pipeline.run(LOGGER));
     EXPECT_NE(log.find("nothing to do"), std::string::npos);
-    verifyRestoredPipelineOutputs(pipeline, expectedTranslationX);
+    verifyRestoredPipelineOutputs(pipeline, EXPECTED_TRANSLATION_X);
 
     verifySourceChangeRebuildsPipeline(pipeline, directory);
     FileSystemNs::remove_all(directory);
