@@ -100,7 +100,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "QSplitter::handle { background:#202020; }"
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
-        "QCheckBox { spacing:7px; }"));
+        "QCheckBox { spacing:7px; }"
+    ));
 
     projectGrid = new ProjectGrid(this);
     simulationRunner = new SimulationRunner(this);
@@ -135,7 +136,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(simulationRunner, &SimulationRunner::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
     connect(simulationRunner, &SimulationRunner::stepChanged,
-            workspaceUI->currentStepLabel(), &QLabel::setText);
+            this, [this](int stepNumber, const QString &stepName) {
+                workspaceUI->currentStepLabel()->setText(stepName);
+                workspaceUI->setActiveStep(stepNumber);
+            });
     connect(simulationRunner, &SimulationRunner::statusChanged,
             this, &MainWindow::updateStatus);
     connect(simulationRunner, &SimulationRunner::cancellationAvailable,
@@ -150,6 +154,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
+    connect(simulationRunner, &SimulationRunner::logMessage,
+        workspaceUI, &WorkspaceUI::appendLog);
+    connect(simulationRunner, &SimulationRunner::mosaicReady,
+        this, [this](const QImage &image) {
+            if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                canvas->setMosaicPreview(image);
+                setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                updateStatus(tr("Mosaïque finale générée (simulation)."));
+            }
+        }
+    );
     connect(workspaceUI->homePage(), &HomePage::projectCreationRequested,
             this, &MainWindow::initializeNewProject);
     connect(workspaceUI->homePage(), &HomePage::projectLoaded,

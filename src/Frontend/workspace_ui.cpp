@@ -51,6 +51,7 @@
 #include <QTableWidgetItem>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QTime>
 
 
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
@@ -88,6 +89,22 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
 
     updateGridSummary(gridState);
     m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+}
+
+void WorkspaceUI::setActiveStep(int stepNumber)
+{
+    m_activeStep = stepNumber;
+    if (!m_stepList)
+        return;
+
+    if (stepNumber <= 0 || stepNumber > m_stepList->count()) {
+        m_stepList->clearSelection();
+        m_stepList->setCurrentRow(-1);
+        return;
+    }
+
+    m_stepList->setCurrentRow(stepNumber - 1);
+    m_stepList->scrollToItem(m_stepList->item(stepNumber - 1));
 }
 
 /** 
@@ -525,7 +542,7 @@ void WorkspaceUI::connectTilesModeSignals(QPushButton *rotateTile, QPushButton *
         [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
 }
 
-void WorrkspaceUI::showManualAdjustmentDialog()
+void WorkspaceUI::showManualAdjustmentDialog()
 {
     QDialog dialog(m_mainWindow);
     dialog.setWindowTitle(tr("Correction manuelle"));
@@ -648,15 +665,15 @@ QWidget *WorkspaceUI::createAssemblyMode()
         tr("4  Optimisation"), tr("5  Calage local"), tr("6  Égalisation"),
         tr("7  Ligne de couture"), tr("8  Fusion et export")};
 
-    auto *stepList = new QListWidget(chainPage);
+    m_stepList = new QListWidget(chainPage);
     for (int i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem((i == 2 ? QStringLiteral("⚠  ") : QStringLiteral("●  "))
-                                         + steps.at(i), stepList);
+                                         + steps.at(i), m_stepList);
         item->setData(Qt::UserRole, i + 1);
     }
-    chainLayout->addWidget(stepList);
+    chainLayout->addWidget(m_stepList);
 
-    connect(stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+    connect(m_stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
 
@@ -664,8 +681,8 @@ QWidget *WorkspaceUI::createAssemblyMode()
     auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), chainPage);
     chainLayout->addWidget(relaunch);
 
-    connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
-        const int row = qMax(0, stepList->currentRow());
+    connect(relaunch, &QPushButton::clicked, this, [this]() {
+        const int row = qMax(0, m_stepList->currentRow());
         m_mainWindow->requestRun(row + 1);
     });
 
@@ -884,15 +901,19 @@ QTabWidget *WorkspaceUI::createBottomTabs()
 {
     QTabWidget *bottomTabs = new QTabWidget;
     bottomTabs->setMinimumHeight(80);
+
+    // Onglet paires (données fictives)
+
     m_pairsTable = new QTableWidget(4, 8, bottomTabs);
-    m_pairsTable->setHorizontalHeaderLabels({tr("Paire"), tr("Sens"), tr("Statut"), tr("Confiance"),
-        tr("Contrôle NCC"), tr("dx (px)"), tr("dy (px)"), tr("Erreur")});
+    m_pairsTable->setHorizontalHeaderLabels({tr("Paire"), tr("Sens"), tr("Statut"), tr("Confiance"), tr("Contrôle NCC"), tr("dx (px)"), tr("dy (px)"), tr("Erreur")});
+
     const QStringList pairRows[] = {
         {QStringLiteral("r00_c00 → r00_c01"), tr("horizontal"), tr("douteuse"), QStringLiteral("0,91"), QStringLiteral("0,37"), QStringLiteral("4 065,5"), QStringLiteral("-20,7"), QStringLiteral("3,95 px")},
         {QStringLiteral("r00_c00 → r01_c00"), tr("vertical"), tr("fiable"), QStringLiteral("0,99"), QStringLiteral("0,76"), QStringLiteral("23,5"), QStringLiteral("4 086,7"), QStringLiteral("0,04 px")},
         {QStringLiteral("r00_c01 → r01_c01"), tr("vertical"), tr("fiable"), QStringLiteral("0,99"), QStringLiteral("0,92"), QStringLiteral("23,8"), QStringLiteral("4 133,7"), QStringLiteral("0,04 px")},
         {QStringLiteral("r01_c00 → r01_c01"), tr("horizontal"), tr("fiable"), QStringLiteral("0,98"), QStringLiteral("0,65"), QStringLiteral("4 064,7"), QStringLiteral("29,9"), QStringLiteral("0,02 px")}
     };
+
     for (int row = 0; row < 4; ++row) {
         for (int col = 0; col < 8; ++col)
             m_pairsTable->setItem(row, col, new QTableWidgetItem(pairRows[row].at(col)));
@@ -901,14 +922,17 @@ QTabWidget *WorkspaceUI::createBottomTabs()
     m_pairsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     bottomTabs->addTab(m_pairsTable, tr("Paires (4)"));
+
+    // Onglet journal (données fictives)
     
-    QListWidget *journal = new QListWidget;
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                       tr("14:10  4 tuiles importées"),
-                       tr("14:02  Projet ouvert")});
-    bottomTabs->addTab(journal, tr("Journal"));
-    auto *positions = new QTableWidget(4, 3);
+    m_journalList = new QListWidget(bottomTabs);
+    bottomTabs->addTab(m_journalList, tr("Journal"));
+
+    // Onglet positions (données fictives)
+
+    auto *positions = new QTableWidget(4, 3, bottomTabs);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
+
     for (int i = 0; i < 4; ++i) {
         positions->setItem(i, 0, new QTableWidgetItem(QStringLiteral("r%1_c%2").arg(i / 2).arg(i % 2)));
         positions->setItem(i, 1, new QTableWidgetItem(QString::number((i % 2) * 4065)));
@@ -925,7 +949,7 @@ QTabWidget *WorkspaceUI::createBottomTabs()
 }
 
 /**
- * Crée la barre d'état de l'espace de travail avec les informations sur le zoom, le statut et la progression.
+ * Crée la barre d'état de l'espace de travail avec les informations sur le zoom, le statut et la progression (tout en bas de l'écran).
  * @return Un QWidget contenant la barre d'état.
  */
 QWidget *WorkspaceUI::createStatusBar()
@@ -950,4 +974,16 @@ QWidget *WorkspaceUI::createStatusBar()
     m_mainWindow->statusBar()->addPermanentWidget(m_progressBar);
 
     return status;
+}
+
+void WorkspaceUI::appendLog(const QString &message)
+{
+    if (m_journalList) {
+        // Ajoute l'heure actuelle devant le message
+        QString timeStr = QTime::currentTime().toString("hh:mm:ss");
+        m_journalList->addItem(timeStr + "  " + message);
+        
+        // Fait défiler automatiquement vers le bas pour voir le dernier message
+        m_journalList->scrollToBottom(); 
+    }
 }

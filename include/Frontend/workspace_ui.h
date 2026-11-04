@@ -10,6 +10,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
@@ -68,6 +69,8 @@ public:
     QLabel *referencePathLabel() const { return m_referencePathLabel; }
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
+    void setActiveStep(int stepNumber);
+    void appendLog(const QString &message);
 
 private:
     
@@ -92,7 +95,7 @@ private:
     QWidget *createAlignmentMode();
     QWidget *createAssemblyMode();
 
-    void showManualAdjustementDialog();
+    void showManualAdjustmentDialog();
     
     QWidget *createGridDimensionsGroup(QWidget *parent);
     QWidget *createGridCaptureGroup(QWidget *parent);
@@ -112,6 +115,7 @@ private:
     QTabWidget *m_bottomTabs = nullptr;
     QWidget *m_gridTabPage = nullptr;
     QTableWidget *m_pairsTable = nullptr;
+    QListWidget *m_stepList = nullptr;
     QLabel *m_projectNameLabel = nullptr;
     QLineEdit *m_projectNameEdit = nullptr;
     QLabel *m_projectFolderLabel = nullptr;
@@ -138,6 +142,8 @@ private:
     QLabel *m_gridSummaryLabel = nullptr;
     QLabel *m_referencePathLabel = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
+    QListWidget *m_journalList = nullptr;
+    int m_activeStep = 0;
 };
 
 #endif
