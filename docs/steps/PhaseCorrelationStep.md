@@ -6,11 +6,11 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 
 ## Contrat
 
-| | |
-|---|---|
-| `name` | `"phase-correlation"` |
-| entrée | `{ "dataType": "Tiles", "key": "tiles" }` |
-| sortie | `{ "dataType": "PairMatches", "key": "matches" }` |
+|               |                                                                                                                      |
+| ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `name`        | `"phase-correlation"`                                                                                                |
+| entrée        | `{ "dataType": "Tiles", "key": "tiles" }`                                                                            |
+| sortie        | `{ "dataType": "PairMatches", "key": "matches" }`                                                                    |
 | `getResult()` | `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error` |
 
 **Paramètres** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de la corrélation de phase : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Ces noms n'ont pas changé avec la migration des algorithmes ; le champ de `PhaseCorrelationNs::Parameters` qui correspond à chacun est donné dans [PhaseCorrelation.md §5](../algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
@@ -28,9 +28,9 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 Au niveau n (s = 2ⁿ) : translation × s ; point `p ↦ (p + 0,5)·s − 0,5`.
 
 | Niveau | Tolérance sur la translation (px pleine résolution) |
-|---|---|
-| 0 | ±0,05 |
-| n ≥ 1 | ±0,25·2ⁿ |
+| ------ | --------------------------------------------------- |
+| 0      | ±0,05                                               |
+| n ≥ 1  | ±0,25·2ⁿ                                            |
 
 La perte de précision aux niveaux réduits vient de la pyramide (moyenne 2 × 2), pas de la conversion.
 
