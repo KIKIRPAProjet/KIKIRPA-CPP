@@ -130,12 +130,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(projectGrid, &ProjectGrid::gridValidationCompleted,
             this, &MainWindow::handleGridValidation);
     connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
-        workspaceUI->getProgressBar()->setValue(0);
+        workspaceUI->progressBar()->setValue(0);
     });
     connect(simulationRunner, &SimulationRunner::progressAdvanced,
-            workspaceUI->getProgressBar(), &QProgressBar::setValue);
+            workspaceUI->progressBar(), &QProgressBar::setValue);
     connect(simulationRunner, &SimulationRunner::stepChanged,
-            workspaceUI->getCurrentStepLabel(), &QLabel::setText);
+            workspaceUI->currentStepLabel(), &QLabel::setText);
     connect(simulationRunner, &SimulationRunner::statusChanged,
             this, &MainWindow::updateStatus);
     connect(simulationRunner, &SimulationRunner::cancellationAvailable,
@@ -148,19 +148,19 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showComparisonDialog);
     connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
             this, [this](bool visible) {
-        static_cast<ArtworkCanvas *>(workspaceUI->getCanvas())->setComparisonVisible(visible);
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
-    connect(workspaceUI->getHomePage(), &HomePage::projectCreationRequested,
+    connect(workspaceUI->homePage(), &HomePage::projectCreationRequested,
             this, &MainWindow::initializeNewProject);
-    connect(workspaceUI->getHomePage(), &HomePage::projectLoaded,
+    connect(workspaceUI->homePage(), &HomePage::projectLoaded,
             this, &MainWindow::applyLoadedProject);
-    connect(workspaceUI->getHomePage(), &HomePage::currentProjectRequested,
+    connect(workspaceUI->homePage(), &HomePage::currentProjectRequested,
             this, &MainWindow::openCurrentProjectFromHome);
 
     connect(menuBarManager, &MenuBarManager::newProjectRequested,
-            workspaceUI->getHomePage(), &HomePage::createProject);
+            workspaceUI->homePage(), &HomePage::createProject);
     connect(menuBarManager, &MenuBarManager::openProjectRequested,
-            workspaceUI->getHomePage(), &HomePage::openProject);
+            workspaceUI->homePage(), &HomePage::openProject);
     connect(menuBarManager, &MenuBarManager::importTilesRequested,
             this, &MainWindow::chooseTilesDirectory);
     connect(menuBarManager, &MenuBarManager::saveProjectRequested,
@@ -168,7 +168,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(menuBarManager, &MenuBarManager::exportRequested,
             this, &MainWindow::showExportDialog);
     connect(menuBarManager, &MenuBarManager::homeRequested, this, [this]() {
-        workspaceUI->getPages()->setCurrentIndex(0);
+        workspaceUI->pages()->setCurrentIndex(0);
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
@@ -178,30 +178,30 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, [this]() { updateStatus(tr("Action rétablie.")); });
     connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
         panelsVisible = !panelsVisible;
-        workspaceUI->getRightTabs()->setVisible(panelsVisible);
-        workspaceUI->getBottomTabs()->setVisible(panelsVisible);
+        workspaceUI->rightTabs()->setVisible(panelsVisible);
+        workspaceUI->bottomTabs()->setVisible(panelsVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
-        workspaceUI->getZoomLabel()->setText(QString::number(zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(workspaceUI->getCanvas())->setZoom(zoomPercent);
+        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
         zoomPercent = qMax(5, zoomPercent - 10);
-        workspaceUI->getZoomLabel()->setText(QString::number(zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(workspaceUI->getCanvas())->setZoom(zoomPercent);
+        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
         zoomPercent = 100;
-        workspaceUI->getZoomLabel()->setText(QStringLiteral("Ajuster"));
-        static_cast<ArtworkCanvas *>(workspaceUI->getCanvas())->setZoom(zoomPercent);
+        workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
         setMode(mode);
         if (mode == 1) {
             updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
         } else if (mode == 2) {
-            static_cast<ArtworkCanvas *>(workspaceUI->getCanvas())->setMaskVisible(true);
+            static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
             updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
         }
     });
@@ -215,7 +215,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
 
-    connect(workspaceUI->getPages(), &QStackedWidget::currentChanged, this, [this](int index) {
+    connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
     });
     menuBar()->setVisible(false);
@@ -230,11 +230,11 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
 
-    workspaceUI->getPages()->setCurrentWidget(workspaceUI->getWorkspace());
+    workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
     refreshProjectInfo();
     const int tileCount = projectGrid->state().tilePaths.size();
-    workspaceUI->getHomePage()->setCurrentProjectInfo(
+    workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, tileCount);
     if (tileCount == 0) {
         updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
@@ -261,17 +261,17 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectPath = path;
     projectCreated = true;
     refreshProjectInfo();
-    workspaceUI->getPages()->setCurrentWidget(workspaceUI->getWorkspace());
+    workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
-    workspaceUI->getHomePage()->setCurrentProjectInfo(
+    workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
-    workspaceUI->getHomePage()->rememberRecentProject(path);
+    workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
 }
 
 void MainWindow::openCurrentProjectFromHome()
 {
-    workspaceUI->getPages()->setCurrentWidget(workspaceUI->getWorkspace());
+    workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(1);
     updateStatus(tr("Projet courant : %1").arg(projectName));
 }
@@ -279,20 +279,20 @@ void MainWindow::openCurrentProjectFromHome()
 void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, 5);
-    workspaceUI->getPages()->setCurrentWidget(workspaceUI->getWorkspace());
-    if (workspaceUI->getRightTabs() && workspaceUI->getGridTabPage()) {
-        const int gridIndex = workspaceUI->getRightTabs()->indexOf(workspaceUI->getGridTabPage());
+    workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
+    if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
+        const int gridIndex = workspaceUI->rightTabs()->indexOf(workspaceUI->gridTabPage());
         if (currentMode == 1 && gridIndex < 0) {
-            workspaceUI->getRightTabs()->insertTab(0, workspaceUI->getGridTabPage(), tr("Grille"));
-            workspaceUI->getRightTabs()->setCurrentWidget(workspaceUI->getGridTabPage());
+            workspaceUI->rightTabs()->insertTab(0, workspaceUI->gridTabPage(), tr("Grille"));
+            workspaceUI->rightTabs()->setCurrentWidget(workspaceUI->gridTabPage());
         } else if (currentMode != 1 && gridIndex >= 0) {
-            const bool gridWasSelected = workspaceUI->getRightTabs()->currentWidget() == workspaceUI->getGridTabPage();
-            workspaceUI->getRightTabs()->removeTab(gridIndex);
-            if (gridWasSelected && workspaceUI->getRightTabs()->count() > 0)
-                workspaceUI->getRightTabs()->setCurrentIndex(qMin(gridIndex, workspaceUI->getRightTabs()->count() - 1));
+            const bool gridWasSelected = workspaceUI->rightTabs()->currentWidget() == workspaceUI->gridTabPage();
+            workspaceUI->rightTabs()->removeTab(gridIndex);
+            if (gridWasSelected && workspaceUI->rightTabs()->count() > 0)
+                workspaceUI->rightTabs()->setCurrentIndex(qMin(gridIndex, workspaceUI->rightTabs()->count() - 1));
         }
     }
-    if (auto *button = workspaceUI->getWorkspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
+    if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
     const QStringList descriptions = {
         tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
@@ -300,23 +300,23 @@ void MainWindow::setMode(int mode)
         tr("Vue Paire — points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
         tr("Export — TIFF 16 bits, profil ICC conservé")
     };
-    if (auto *label = workspaceUI->getWorkspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
+    if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->getCanvas()))
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMode(currentMode);
-    if (workspaceUI->getProjectInfoPanel())
-        workspaceUI->getProjectInfoPanel()->setVisible(currentMode == 0);
-    if (workspaceUI->getCanvas())
-        workspaceUI->getCanvas()->setVisible(currentMode != 0);
-    if (auto *canvasControls = workspaceUI->getWorkspace()->findChild<QWidget *>(
+    if (workspaceUI->projectInfoPanel())
+        workspaceUI->projectInfoPanel()->setVisible(currentMode == 0);
+    if (workspaceUI->canvas())
+        workspaceUI->canvas()->setVisible(currentMode != 0);
+    if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
     }
-    workspaceUI->getArrangementCombo()->setVisible(currentMode == 1);
+    workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
-        workspaceUI->getBottomTabs()->setCurrentIndex(1);
+        workspaceUI->bottomTabs()->setCurrentIndex(1);
     if (currentMode == 3)
-        workspaceUI->getBottomTabs()->setCurrentIndex(0);
+        workspaceUI->bottomTabs()->setCurrentIndex(0);
     updateStatus(tr("Mode : %1").arg(FrontendUtils::MODE_NAMES.at(currentMode)));
 }
 
@@ -383,7 +383,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
     updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3, ordre « %4 ».")
                      .arg(activeTileCount).arg(gridState.gridRows).arg(gridState.gridColumns)
-                     .arg(workspaceUI->getCaptureOrderCombo() ? workspaceUI->getCaptureOrderCombo()->currentText() : QString()));
+                     .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides. Enregistrez le projet pour conserver les réglages."));
 }
@@ -413,9 +413,9 @@ void MainWindow::saveProject()
     }
     projectPath = path;
     projectCreated = true;
-    workspaceUI->getHomePage()->setCurrentProjectInfo(
+    workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, gridState.tilePaths.size());
-    workspaceUI->getHomePage()->rememberRecentProject(path);
+    workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
@@ -446,7 +446,7 @@ void MainWindow::showComparisonDialog()
 
 void MainWindow::showCancelRunButton()
 {
-    if (workspaceUI->getCancelRunButton())
+    if (workspaceUI->cancelRunButton())
         return;
     auto *cancelRunButton = FrontendUtils::makeButton(tr("Annuler"), this);
     workspaceUI->setCancelRunButton(cancelRunButton);
@@ -458,7 +458,7 @@ void MainWindow::showCancelRunButton()
 
 void MainWindow::removeCancelRunButton()
 {
-    QPushButton *cancelRunButton = workspaceUI->getCancelRunButton();
+    QPushButton *cancelRunButton = workspaceUI->cancelRunButton();
     if (!cancelRunButton)
         return;
     statusBar()->removeWidget(cancelRunButton);
@@ -468,23 +468,23 @@ void MainWindow::removeCancelRunButton()
 
 void MainWindow::updateStatus(const QString &message)
 {
-    if (workspaceUI->getStatusLabel())
-        workspaceUI->getStatusLabel()->setText(message);
+    if (workspaceUI->statusLabel())
+        workspaceUI->statusLabel()->setText(message);
     statusBar()->showMessage(message, 5000);
 }
 
 void MainWindow::updateProgress(const QString &stepName, int percentage)
 {
-    workspaceUI->getCurrentStepLabel()->setText(stepName);
-    workspaceUI->getProgressBar()->setValue(qBound(0, percentage, 100));
+    workspaceUI->currentStepLabel()->setText(stepName);
+    workspaceUI->progressBar()->setValue(qBound(0, percentage, 100));
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
         panelsVisible = !panelsVisible;
-        workspaceUI->getRightTabs()->setVisible(panelsVisible);
-        workspaceUI->getBottomTabs()->setVisible(panelsVisible);
+        workspaceUI->rightTabs()->setVisible(panelsVisible);
+        workspaceUI->bottomTabs()->setVisible(panelsVisible);
         event->accept();
         return;
     }

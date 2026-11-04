@@ -1,4 +1,3 @@
-"""Détecte Qt, compile le projet Frontend, puis lance l'exécutable(pour ne pas trainer des versions différentes de exe)."""
 import os
 import re
 import shutil
@@ -11,14 +10,12 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parent
 
 
-# Retourne le dossier Qt portant la version numerique la plus récente, ou None
-# si le dossier de base n'existe pas ou ne contient aucune version valide
-def findLatestQtRoot(baseDir: Path) -> Path | None:
-    if not baseDir.exists():
+def find_latest_qt_root(base_dir: Path) -> Path | None:
+    if not base_dir.exists():
         return None
 
     versions = []
-    for child in baseDir.iterdir():
+    for child in base_dir.iterdir():
         if not child.is_dir():
             continue
         try:
@@ -33,129 +30,139 @@ def findLatestQtRoot(baseDir: Path) -> Path | None:
     return max(versions, key=lambda item: item[0])[1]
 
 
-# Retourne le dossier MinGW dont le nom contient la version numérique la plus
-# élevée, ou None si le dossier de base n'existe pas ou ne contient aucun candidat
-def findMingwDir(baseDir: Path) -> Path | None:
-    if not baseDir.exists():
+def find_mingw_dir(base_dir: Path) -> Path | None:
+    if not base_dir.exists():
         return None
 
-    candidates = [path for path in baseDir.iterdir() if path.is_dir() and "mingw" in path.name.lower()]
+    candidates = [path for path in base_dir.iterdir() if path.is_dir() and "mingw" in path.name.lower()]
     if not candidates:
         return None
 
-    # Retourne une clé numérique permettant de comparer les versions MinGW
-    def versionKey(path: Path):
+    def version_key(path: Path):
         numbers = [int(part) for part in re.findall(r"\d+", path.name)]
         while len(numbers) < 2:
             numbers.append(0)
         return tuple(numbers)
 
-    return max(candidates, key=versionKey)
+    return max(candidates, key=version_key)
 
 
-# Résout les chemins nécessaires à Qt, MinGW, CMake et Ninja
-# Lève FileNotFoundError si aucun dossier Qt utilisable n'est trouvé
-def resolvePaths() -> tuple[Path, Path, Path, Path, Path]:
-    qtDirStr = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
-    qtDir = Path(qtDirStr) if qtDirStr else None
-    if qtDir is None or not qtDir.exists():
-        qtDir = findLatestQtRoot(Path(r"C:\Qt"))
+def pause_before_exit() -> None:
+    try:
+        input("Appuyez sur Entrée pour fermer cette fenêtre...")
+    except EOFError:
+        pass
 
-    if qtDir is None or not qtDir.exists():
+
+def resolve_paths() -> tuple[Path, Path, Path, Path, Path]:
+    qt_dir_str = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
+    qt_dir = Path(qt_dir_str) if qt_dir_str else None
+    if qt_dir is None or not qt_dir.exists():
+        qt_dir = find_latest_qt_root(Path(r"C:\Qt"))
+
+    if qt_dir is None or not qt_dir.exists():
         raise FileNotFoundError("Aucun dossier Qt n’a été trouvé sous C:\\Qt. Installez Qt 6 et réessayez.")
 
-    mingwDirStr = os.environ.get("MINGW_DIR")
-    mingwDir = Path(mingwDirStr) if mingwDirStr else None
-    if mingwDir is None or not mingwDir.exists():
-        mingwDir = findMingwDir(Path(r"C:\Qt\Tools")) or (qtDir.parent / "Tools" / "mingw1310_64")
+    mingw_dir_str = os.environ.get("MINGW_DIR")
+    mingw_dir = Path(mingw_dir_str) if mingw_dir_str else None
+    if mingw_dir is None or not mingw_dir.exists():
+        mingw_dir = find_mingw_dir(Path(r"C:\Qt\Tools")) or (qt_dir.parent / "Tools" / "mingw1310_64")
 
-    cmakeDir = Path(os.environ.get("CMAKE_DIR") or r"C:\Qt\Tools\CMake_64")
-    ninjaDir = Path(os.environ.get("NINJA_DIR") or r"C:\Qt\Tools\Ninja")
+    cmake_dir = Path(os.environ.get("CMAKE_DIR") or r"C:\Qt\Tools\CMake_64")
+    ninja_dir = Path(os.environ.get("NINJA_DIR") or r"C:\Qt\Tools\Ninja")
 
-    qtPrefix = Path(os.environ.get("QT_PREFIX") or (qtDir / "mingw_64"))
-    return qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix
+    qt_prefix = Path(os.environ.get("QT_PREFIX") or (qt_dir / "mingw_64"))
+    return qt_dir, mingw_dir, cmake_dir, ninja_dir, qt_prefix
 
 
-# Configure l'environnement, compile temporairement le projet Frontend et
-# lance l'exécutable
-# Retourne 0 pour succès et 1 pour echec
 def main() -> int:
     try:
-        qtDir, mingwDir, cmakeDir, ninjaDir, qtPrefix = resolvePaths()
+        qt_dir, mingw_dir, cmake_dir, ninja_dir, qt_prefix = resolve_paths()
     except FileNotFoundError as error:
-        print(error)
+        print(error, flush=True)
+        pause_before_exit()
         return 1
 
-    cmake = cmakeDir / "bin" / "cmake.exe"
-    ninja = ninjaDir / "ninja.exe"
+    cmake = cmake_dir / "bin" / "cmake.exe"
+    ninja = ninja_dir / "ninja.exe"
 
-    requiredFiles = (cmake, ninja, qtPrefix)
-    missing = [str(path) for path in requiredFiles if not path.exists()]
+    required_files = (cmake, ninja, qt_prefix)
+    missing = [str(path) for path in required_files if not path.exists()]
     if missing:
-        print("Outil ou dossier Qt introuvable :")
-        print("\n".join(f"  - {path}" for path in missing))
-        print(f"Qt détecté : {qtDir}")
+        print("Outil ou dossier Qt introuvable :", flush=True)
+        print("\n".join(f"  - {path}" for path in missing), flush=True)
+        print(f"Qt détecté : {qt_dir}", flush=True)
+        pause_before_exit()
         return 1
 
     environment = os.environ.copy()
     environment["PATH"] = os.pathsep.join(
         [
-            str(mingwDir / "bin"),
-            str(qtPrefix / "bin"),
-            str(cmakeDir / "bin"),
-            str(ninjaDir),
+            str(mingw_dir / "bin"),
+            str(qt_prefix / "bin"),
+            str(cmake_dir / "bin"),
+            str(ninja_dir),
             environment.get("PATH", ""),
         ]
     )
 
-    temporaryDir: Path | None = None
-    try:
-        temporaryDir = Path(tempfile.mkdtemp(prefix="Frontend-"))
-        print(f"Qt détecté : {qtDir}")
-        print(f"Compilation temporaire dans : {temporaryDir}")
+    temporary_dir = Path(tempfile.mkdtemp(prefix="Frontend-"))
+    succeeded = False
+    print(f"Qt détecté : {qt_dir}", flush=True)
+    print(f"Compilation temporaire dans : {temporary_dir}", flush=True)
 
+    try:
         subprocess.run(
             [
                 str(cmake),
                 "-S",
                 str(PROJECT_DIR),
                 "-B",
-                str(temporaryDir),
+                str(temporary_dir),
                 "-G",
                 "Ninja",
-                f"-DCMAKE_PREFIX_PATH={qtPrefix}",
+                f"-DCMAKE_PREFIX_PATH={qt_prefix}",
             ],
             env=environment,
             check=True,
         )
 
         subprocess.run(
-            [str(cmake), "--build", str(temporaryDir), "--parallel", "4"],
+            [str(cmake), "--build", str(temporary_dir), "--parallel", "4"],
             env=environment,
             check=True,
         )
 
-        executable = temporaryDir / "Frontend.exe"
+        executable = temporary_dir / "Frontend.exe"
         if not executable.exists():
-            print(f"Executable introuvable : {executable}")
+            print(f"Exécutable introuvable : {executable}", flush=True)
+            print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+            pause_before_exit()
             return 1
 
-        print("Lancement de Frontend.exe...")
-        subprocess.run([str(executable)], cwd=temporaryDir, check=True)
+        print("Lancement de Frontend.exe...", flush=True)
+        subprocess.run([str(executable)], cwd=temporary_dir, check=True)
+        succeeded = True
         return 0
     except subprocess.CalledProcessError as error:
-        print(f"La commande a échoué avec le code {error.returncode}.")
+        print(f"La commande a échoué avec le code {error.returncode}.", flush=True)
+        if isinstance(error.cmd, (list, tuple)):
+            command = subprocess.list2cmdline([str(part) for part in error.cmd])
+        else:
+            command = str(error.cmd)
+        print(f"Commande : {command}", flush=True)
+        print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+        pause_before_exit()
         return error.returncode or 1
     except OSError as error:
-        print(f"Impossible d'accéder à un fichier ou d'exécuter un outil : {error}")
+        print(f"Impossible d’exécuter une commande : {error}", flush=True)
+        print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+        pause_before_exit()
         return 1
     finally:
-        if temporaryDir is not None:
-            try:
-                shutil.rmtree(temporaryDir)
-                print("Fichiers temporaires supprimés.")
-            except OSError as error:
-                print(f"Impossible de supprimer les fichiers temporaires : {error}")
+        if succeeded:
+            shutil.rmtree(temporary_dir, ignore_errors=True)
+            print("Fichiers temporaires supprimés.", flush=True)
 
 
 if __name__ == "__main__":
