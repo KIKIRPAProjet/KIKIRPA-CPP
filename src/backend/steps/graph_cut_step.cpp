@@ -116,9 +116,9 @@ namespace StepsNs {
         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         GraphCutNs::GraphCutSeamFinderClass graphCut;
         cv::Mat indexMatrix;
-        const bool is_cut_done = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
+        const bool isCutDone = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
                                                  tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
-        if (!is_cut_done) {
+        if (!isCutDone) {
             result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;
         }
