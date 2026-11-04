@@ -35,7 +35,7 @@ namespace fs = std::filesystem;
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
-constexpr int PHASE_PARAMETER_COUNT = 12;
+constexpr int PHASE_PARAMETER_COUNT = 15;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -107,7 +107,7 @@ void testerDefaults() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 12 options");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 15 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());
@@ -139,6 +139,7 @@ void testerValidation() {
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("graphcut")})); },
                                  "input 'positions' is not produced"),
              "graphcut sans step qui produit les positions");
+
 
     testerDefaults();
 }
