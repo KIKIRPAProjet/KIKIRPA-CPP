@@ -110,14 +110,14 @@ constexpr std::array<double, 2> TEXTURE_OUT_OF_MARGIN_OFFSET = {3.37, 70.62};
 cv::Mat decalerFourier(const cv::Mat& image, cv::Point2d f) {
     cv::Mat canal, spectre, decale;
     image.convertTo(canal, CV_64F);
-    const int H = image.rows, W = image.cols;
-    cv::Mat rampe(H, W, CV_64FC2);
-    for (int v = 0; v < H; ++v)
-        for (int u = 0; u < W; ++u) {
-            const double FU = (u <= W / 2 ? u : u - W) / static_cast<double>(W);
-            const double FV = (v <= H / 2 ? v : v - H) / static_cast<double>(H);
-            const double PHASE = 2 * CV_PI * (FU * f.x + FV * f.y);
-            rampe.at<cv::Vec2d>(v, u) = {std::cos(PHASE), std::sin(PHASE)};
+    const int height = image.rows, width = image.cols;
+    cv::Mat rampe(height, width, CV_64FC2);
+    for (int v = 0; v < height; ++v)
+        for (int u = 0; u < width; ++u) {
+            const double frequencyU = (u <= width / 2 ? u : u - width) / static_cast<double>(width);
+            const double frequencyV = (v <= height / 2 ? v : v - height) / static_cast<double>(height);
+            const double phase = 2 * CV_PI * (frequencyU * f.x + frequencyV * f.y);
+            rampe.at<cv::Vec2d>(v, u) = {std::cos(phase), std::sin(phase)};
         }
     cv::dft(canal, spectre, cv::DFT_COMPLEX_OUTPUT);
     cv::mulSpectrums(spectre, rampe, spectre, 0);
@@ -142,9 +142,9 @@ cv::Mat texture(cv::Size taille, unsigned graine) {
 
 // Motif de période (px, py) répété (0 = pas de répétition sur cet axe), dans [0, 1]
 cv::Mat motif(cv::Size taille, int px, int py, unsigned graine) {
-    const cv::Mat BASE = texture({px > 0 ? px : taille.width, py > 0 ? py : taille.height}, graine);
+    const cv::Mat base = texture({px > 0 ? px : taille.width, py > 0 ? py : taille.height}, graine);
     cv::Mat r;
-    cv::repeat(BASE, taille.height / BASE.rows + 1, taille.width / BASE.cols + 1, r);
+    cv::repeat(base, taille.height / base.rows + 1, taille.width / base.cols + 1, r);
     return r(cv::Rect({0, 0}, taille)).clone();
 }
 
@@ -175,16 +175,16 @@ cv::Size sceneSize() {
 
 // Paire A, B (16 bits) : A au coin COIN_A, B à COIN_A + (vrai.x, PAS + vrai.y). Bruit capteur indépendant.
 std::pair<cv::Mat, cv::Mat> paire(const Scene& s, cv::Point2d vrai, unsigned graine) {
-    const cv::Point2d COIN_B(TILE_ORIGIN_X + vrai.x, TILE_ORIGIN_Y + NOMINAL_STEP + vrai.y);
-    const cv::Point INTEGER_CORNER(static_cast<int>(std::floor(COIN_B.x)), static_cast<int>(std::floor(COIN_B.y)));
-    const cv::Rect RECT_A(cv::Point(TILE_ORIGIN_X, TILE_ORIGIN_Y), cv::Size(TILE_SIDE, TILE_SIDE));
-    const cv::Rect RECT_B(INTEGER_CORNER, cv::Size(TILE_SIDE, TILE_SIDE));
-    const cv::Rect ZONE = cv::Rect(RECT_B.tl() - cv::Point(FOURIER_MARGIN, FOURIER_MARGIN),
-                                   RECT_B.size() + cv::Size(2 * FOURIER_MARGIN, 2 * FOURIER_MARGIN))
+    const cv::Point2d cornerB(TILE_ORIGIN_X + vrai.x, TILE_ORIGIN_Y + NOMINAL_STEP + vrai.y);
+    const cv::Point integerCorner(static_cast<int>(std::floor(cornerB.x)), static_cast<int>(std::floor(cornerB.y)));
+    const cv::Rect rectA(cv::Point(TILE_ORIGIN_X, TILE_ORIGIN_Y), cv::Size(TILE_SIDE, TILE_SIDE));
+    const cv::Rect rectB(integerCorner, cv::Size(TILE_SIDE, TILE_SIDE));
+    const cv::Rect zone = cv::Rect(rectB.tl() - cv::Point(FOURIER_MARGIN, FOURIER_MARGIN),
+                                   rectB.size() + cv::Size(2 * FOURIER_MARGIN, 2 * FOURIER_MARGIN))
                           & cv::Rect({0, 0}, s.image.size());
-    const cv::Point2d FRAC = COIN_B - cv::Point2d(INTEGER_CORNER);
-    cv::Mat a = s.image(RECT_A).clone();
-    cv::Mat b = decalerFourier(s.image(ZONE), FRAC)(RECT_B - ZONE.tl()).clone();
+    const cv::Point2d fraction = cornerB - cv::Point2d(integerCorner);
+    cv::Mat a = s.image(rectA).clone();
+    cv::Mat b = decalerFourier(s.image(zone), fraction)(rectB - zone.tl()).clone();
 
     cv::RNG rng(graine);
     for (cv::Mat* m : {&a, &b}) {
@@ -197,11 +197,11 @@ std::pair<cv::Mat, cv::Mat> paire(const Scene& s, cv::Point2d vrai, unsigned gra
     b.convertTo(imageB16, CV_16U);
     // Noir exact hors de l'œuvre (après le bruit : un scan met ces pixels à 0), au pixel près pour B
     if (!s.exterieur.empty()) {
-        imageA16.setTo(0, s.exterieur(RECT_A));
-        const cv::Rect ROUNDED_RECT(cv::Point(static_cast<int>(std::lround(COIN_B.x)),
-                                              static_cast<int>(std::lround(COIN_B.y))),
+        imageA16.setTo(0, s.exterieur(rectA));
+        const cv::Rect roundedRect(cv::Point(static_cast<int>(std::lround(cornerB.x)),
+                                              static_cast<int>(std::lround(cornerB.y))),
                                     cv::Size(TILE_SIDE, TILE_SIDE));
-        imageB16.setTo(0, s.exterieur(ROUNDED_RECT));
+        imageB16.setTo(0, s.exterieur(roundedRect));
     }
     return {imageA16, imageB16};
 }
@@ -237,10 +237,10 @@ void assessPipeline(Resultat& result, const cv::Mat& imageA, const cv::Mat& imag
     result.accepte = defaut.match(imageA, imageB, context, m);
     result.raison = defaut.getFailureReason();
     if (result.accepte) {
-        const auto CONFIDENCE = StepsNs::PhaseCorrelationStepClass::checkConfidence(
-            m, imageA, Direction::Bottom, OVERLAP, {}, {});
-        result.pipeline = CONFIDENCE.reason.empty();
-        if (!CONFIDENCE.reason.empty()) result.raison = CONFIDENCE.reason;
+        const auto confidence = StepsNs::PhaseCorrelationStepClass::checkConfidence(
+            m, imageA, StepsNs::ConfidenceContext{Direction::Bottom, OVERLAP, {}, {}});
+        result.pipeline = confidence.reason.empty();
+        if (!confidence.reason.empty()) result.raison = confidence.reason;
     }
 }
 
@@ -248,11 +248,11 @@ void measureUnfiltered(Resultat& result, const MesureEntree& input) {
     PhaseCorrelationNs::Parameters sans;
     sans.minimumPeakRatio = 0;
     EstimationRecouvrement premiere(sans);
-    const auto ESTIMATE = premiere.estimate(input.imageA, input.imageB, input.context);
-    if (!ESTIMATE) return;
-    result.rapport = ESTIMATE->peakRatio;
+    const auto estimate = premiere.estimate(input.imageA, input.imageB, input.context);
+    if (!estimate) return;
+    result.rapport = estimate->peakRatio;
     PairContext refinedContext = input.context;
-    refinedContext.estimatedTranslation = ESTIMATE->translationBInA;
+    refinedContext.estimatedTranslation = estimate->translationBInA;
     CorrelationPhase seconde(sans);
     Matches m2;
     if (seconde.match(input.imageA, input.imageB, refinedContext, m2)) {
@@ -260,15 +260,15 @@ void measureUnfiltered(Resultat& result, const MesureEntree& input) {
         result.t = {m2.translationX, m2.translationY};
     } else {
         result.mesure = true;   // deuxième passe en échec : on garde la position entière de la première
-        result.t = ESTIMATE->translationBInA;
+        result.t = estimate->translationBInA;
     }
     result.erreur = std::hypot(result.t.x - input.attendu.x, result.t.y - input.attendu.y);
     result.nbPoints = static_cast<int>(m2.pointsInA.size());
     std::vector<double> ncc, disp;
     for (size_t i = 0; i < m2.pointsInA.size(); ++i) {
         ncc.push_back(m2.confidenceScores[i]);
-        const cv::Point2d D = cv::Point2d(m2.pointsInA[i] - m2.pointsInB[i]) - result.t;
-        disp.push_back(std::hypot(D.x, D.y));
+        const cv::Point2d delta = cv::Point2d(m2.pointsInA[i] - m2.pointsInB[i]) - result.t;
+        disp.push_back(std::hypot(delta.x, delta.y));
     }
     result.ncc = mediane(ncc);
     result.dispersion = mediane(disp);
@@ -276,12 +276,12 @@ void measureUnfiltered(Resultat& result, const MesureEntree& input) {
 
 Resultat mesurer1(const CasEtude& studyCase, cv::Point2d truth, unsigned seed) {
     const auto [IMAGE_A, IMAGE_B] = paire(studyCase.scene, truth, seed);
-    const PairContext CONTEXT{Direction::Bottom, OVERLAP};
-    const cv::Point2d EXPECTED(truth.x, NOMINAL_STEP + truth.y);
+    const PairContext context{Direction::Bottom, OVERLAP};
+    const cv::Point2d expected(truth.x, NOMINAL_STEP + truth.y);
     Resultat result{studyCase.famille, studyCase.nom, truth};
     result.autoSim = StepsNs::PhaseCorrelationStepClass::selfSimilarity(IMAGE_A, Direction::Bottom, OVERLAP, 0);
-    assessPipeline(result, IMAGE_A, IMAGE_B, CONTEXT);
-    measureUnfiltered(result, {IMAGE_A, IMAGE_B, CONTEXT, EXPECTED});
+    assessPipeline(result, IMAGE_A, IMAGE_B, context);
+    measureUnfiltered(result, {IMAGE_A, IMAGE_B, context, expected});
     return result;
 }
 
@@ -290,8 +290,8 @@ Resultat mesurer1(const CasEtude& studyCase, cv::Point2d truth, unsigned seed) {
 void mesurer(std::vector<Resultat>& res, const CasEtude& studyCase) {
     for (int drawIndex = 0; drawIndex < DRAW_COUNT; ++drawIndex) {
         const auto& residual = RESIDUALS[static_cast<std::size_t>(drawIndex)];
-        const cv::Point2d TRUTH = studyCase.vrai ? *studyCase.vrai : cv::Point2d(residual[0], residual[1]);
-        res.push_back(mesurer1(studyCase, TRUTH, studyCase.graine * SEED_STRIDE + static_cast<unsigned>(drawIndex)));
+        const cv::Point2d truth = studyCase.vrai ? *studyCase.vrai : cv::Point2d(residual[0], residual[1]);
+        res.push_back(mesurer1(studyCase, truth, studyCase.graine * SEED_STRIDE + static_cast<unsigned>(drawIndex)));
     }
 }
 
@@ -357,10 +357,10 @@ void ajouterMotifsEnGrille(std::vector<Resultat>& results) {
 
 void ajouterMotifsImparfaits(std::vector<Resultat>& results) {
     for (double textureWeight : TEXTURE_WEIGHTS) {
-        const cv::Mat PATTERN_IMAGE = motif(sceneSize(), IMPERFECT_PATTERN_PERIOD, IMPERFECT_PATTERN_PERIOD,
+        const cv::Mat patternImage = motif(sceneSize(), IMPERFECT_PATTERN_PERIOD, IMPERFECT_PATTERN_PERIOD,
                                            IMPERFECT_PATTERN_SEED);
-        const cv::Mat TEXTURE_IMAGE = texture(sceneSize(), IMPERFECT_TEXTURE_SEED);
-        Scene scene{niveaux(PATTERN_IMAGE * (1 - textureWeight) + TEXTURE_IMAGE * textureWeight,
+        const cv::Mat textureImage = texture(sceneSize(), IMPERFECT_TEXTURE_SEED);
+        Scene scene{niveaux(patternImage * (1 - textureWeight) + textureImage * textureWeight,
                             IMAGE_MINIMUM, IMAGE_MAXIMUM), {}};
         char caseDescription[CSV_BUFFER_SIZE];
         std::snprintf(caseDescription, sizeof caseDescription, "grille 30 px + texture %.0f %%", textureWeight * PERCENT);
@@ -374,13 +374,13 @@ void ajouterCasHorsMarge(std::vector<Resultat>& results) {
                             IMAGE_MINIMUM, IMAGE_MAXIMUM), {}};
         char caseDescription[CSV_BUFFER_SIZE];
         std::snprintf(caseDescription, sizeof caseDescription, "periode 75, residu %.0f px (hors marge 50)", offset);
-        const cv::Point2d TRUTH(OUT_OF_MARGIN_OFFSET_X[0], offset + OUT_OF_MARGIN_OFFSET_X[1]);
-        mesurer(results, {"motif_hors_marge", caseDescription, scene, OUT_OF_MARGIN_PATTERN_MEASURE_SEED, TRUTH});
+        const cv::Point2d truth(OUT_OF_MARGIN_OFFSET_X[0], offset + OUT_OF_MARGIN_OFFSET_X[1]);
+        mesurer(results, {"motif_hors_marge", caseDescription, scene, OUT_OF_MARGIN_PATTERN_MEASURE_SEED, truth});
     }
     Scene scene{niveaux(texture(sceneSize(), DARK_BACKGROUND_SEED), IMAGE_MINIMUM, IMAGE_MAXIMUM), {}};
-    const cv::Point2d TRUTH(TEXTURE_OUT_OF_MARGIN_OFFSET[0], TEXTURE_OUT_OF_MARGIN_OFFSET[1]);
+    const cv::Point2d truth(TEXTURE_OUT_OF_MARGIN_OFFSET[0], TEXTURE_OUT_OF_MARGIN_OFFSET[1]);
     mesurer(results, {"motif_hors_marge", "texture, residu 70 px (hors marge 50)", scene,
-                      OUT_OF_MARGIN_TEXTURE_MEASURE_SEED, TRUTH});
+                      OUT_OF_MARGIN_TEXTURE_MEASURE_SEED, truth});
 }
 
 std::vector<Resultat> etude() {
@@ -453,8 +453,8 @@ std::vector<Regle> reglesConfiance() {
 
 std::vector<Regle> regles() {
     std::vector<Regle> rules = reglesRapport();
-    const auto CONFIDENCE_RULES = reglesConfiance();
-    rules.insert(rules.end(), CONFIDENCE_RULES.begin(), CONFIDENCE_RULES.end());
+    const auto confidenceRules = reglesConfiance();
+    rules.insert(rules.end(), confidenceRules.begin(), confidenceRules.end());
     return rules;
 }
 
@@ -476,9 +476,9 @@ void afficherComparaison(const std::vector<EtudeConfianceNs::Resultat>& results)
     for (const auto& rule : EtudeConfianceNs::regles()) {
         int totals[4] = {};
         for (const auto& result : results) {
-            const bool ACCEPTED = rule.accepte(result);
-            const bool CORRECT = EtudeConfianceNs::juste(result);
-            ++totals[ACCEPTED ? (CORRECT ? 0 : 1) : (CORRECT ? 3 : 2)];
+            const bool accepted = rule.accepte(result);
+            const bool correct = EtudeConfianceNs::juste(result);
+            ++totals[accepted ? (correct ? 0 : 1) : (correct ? 3 : 2)];
         }
         std::printf("%-42s %7d %13d %15d %14d\n", rule.nom.c_str(), totals[0], totals[1], totals[2], totals[3]);
     }
@@ -501,6 +501,7 @@ bool ecrireCsv(const std::string& path, const std::vector<EtudeConfianceNs::Resu
     return static_cast<bool>(csv);
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) : programme d'étude, une erreur peut l'arrêter.
 int main(int argc, char** argv) {
     auto results = EtudeConfianceNs::etude();
     afficherMesures(results);

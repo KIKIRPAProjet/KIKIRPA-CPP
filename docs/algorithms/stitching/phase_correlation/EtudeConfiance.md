@@ -6,8 +6,8 @@
 - Le seul critère actuel, le **rapport pic / second pic ≥ 1,5**, laisse passer **20 mesures fausses sur 111** dans ce banc.
 - En ajoutant deux contrôles sur les points locaux déjà calculés (**NCC médiane ≥ 0,3** et **dispersion ≤ 0,5 px**), on n'en laisse plus passer que 11, et toutes les erreurs sur fond sombre sont rattrapées.
 - Avec en plus l'**auto-similarité** de la bande (nouvel indicateur), on descend à 6 : les motifs répétés sont signalés comme ambigus.
-- Cette règle est **branchée dans `PhaseCorrelationStep`** (§6).
-- Les 6 qui restent sont un cas **qu'aucun indicateur calculé sur la paire seule ne peut détecter** (§5).
+- Ces 6 restants sont un cas **qu'aucun indicateur calculé sur la paire seule ne peut détecter** (§5).
+- **Sur de vraies tuiles, le seuil de dispersion rejette des mesures justes** (§6). `PhaseCorrelationStep` applique donc NCC et auto-similarité, et se contente d'exporter la dispersion : **9 faux acceptés** sur ce banc au lieu de 6.
 
 ---
 
@@ -99,7 +99,7 @@ Pour `autosim`, les seuils 0,6 et 0,8 donnent exactement les mêmes résultats :
 2. **`autosim` est prudente : elle rejette les motifs imparfaits.** Grille + 5 à 30 % de texture : la texture suffit à la corrélation de phase pour trouver la bonne copie (9 mesures justes sur 9), mais `autosim` reste à 0,99–1,00 et les signale comme ambiguës. Elle détecte la *présence* d'un motif répété, pas le fait que la mesure se soit trompée.
 3. **`autosim` ne voit que les périodes inférieures à la marge.** Une période > 50 px n'est pas cherchée (0,19 à 0,30). C'est voulu : seule une copie qui tombe dans la marge peut tromper la mesure. Mais c'est aussi pour cela que la limite 1 lui échappe.
 4. **NCC et dispersion demandent des points.** Sans point local (zone commune trop étroite, `nbPoints = 0`), ces deux contrôles ne peuvent pas être évalués. Le step garde alors la paire avec l'état `non_verifie` : sur une petite bande, une mesure fausse sur fond sombre peut donc passer (§6).
-5. **Seuils réglés sur ce banc.** Les données sont synthétiques (textures générées, bruit gaussien, motifs parfaits, direction `Bottom` seule). Les valeurs 0,3 (NCC), 0,5 px (dispersion) et 0,6 (`autosim`) sont à confirmer sur de vraies tuiles, en particulier des toiles visibles et des cadres.
+5. **Seuils réglés sur ce banc.** Les données sont synthétiques (textures générées, bruit gaussien, motifs parfaits, direction `Bottom` seule). Le seuil de dispersion de 0,5 px ne tient pas sur de vraies tuiles (§6). Les valeurs 0,3 (NCC) et 0,6 (`autosim`) passent sur les 4 paires essayées, mais restent à confirmer sur d'autres tuiles, en particulier des toiles visibles et des cadres.
 6. **Pistes écartées.**
    - Monter le seuil du rapport à 2 ou 3 : on passe de 20 à 12–14 faux acceptés, mais 6 à 9 mesures justes sont rejetées (contre 2), et le motif à 30 px (rapport 7,96) passe toujours.
    - Un « rapport compensé » (surface divisée par l'affaiblissement attendu de la fenêtre de Hann) a été essayé : les copies d'un motif restent très inégales (rapport 7,3), car la corrélation de phase ne garde que la phase.
@@ -108,14 +108,19 @@ Pour `autosim`, les seuils 0,6 et 0,8 donnent exactement les mêmes résultats :
 
 ## 6. Intégration dans le pipeline
 
-La règle est appliquée par `PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance), avec des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0.5) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Chaque paire a ses indicateurs (NCC, dispersion, auto-similarité, points et état) dans `getResult()["confidence"]`. Le format de `PairMatches` ne change pas.
+`PhaseCorrelationStep` (voir [sa page](../../../steps/PhaseCorrelationStep.md), § Confiance) a des seuils réglables dans le JSON : `nccMin` (0.3), `dispersionMax` (0 : désactivé) et `autosimMax` (0.6). Une paire refusée va dans `failures` avec sa raison. Chaque paire a ses indicateurs (NCC, dispersion, auto-similarité, points et état) dans `getResult()["confidence"]`. Le format de `PairMatches` ne change pas.
 
-Le banc mesure la décision réelle du step (ligne `PIPELINE` de sa sortie) : **6 faux acceptés, comme la règle étudiée**.
+**Sur de vraies tuiles.** Essai sur 4 paires de tuiles de 5176×5176 pixels en 16 bits (2×2, trois niveaux d'analyse, soit 12 mesures). Avec `dispersionMax = 0.5`, **11 mesures sur 12 sont rejetées**, dont les 4 en pleine résolution : la dispersion y vaut 0,84 à 2,44 px, alors que la NCC reste entre 0,93 et 0,99 et que LightGlue trouve la même translation à environ 1 px près. Une distorsion ou une légère rotation écarte probablement les points d'une translation pure, ce que le banc synthétique ne simule pas ; la cause n'a pas été vérifiée. Si aucune paire ne passe, le step échoue et la chaîne s'arrête. La dispersion est donc désactivée par défaut, et ces 12 mesures sont maintenant acceptées.
+
+**Sur le banc.** La ligne `PIPELINE` de sa sortie mesure la décision réelle du step :
 
 | | Fiable | Faux accepté | Rejet justifié | Rejet inutile |
 |---|---|---|---|---|
 | Avant (rapport ≥ 1,5) | 62 | 20 | 27 | 2 |
-| **PhaseCorrelationStep** | 45 | **6** | 41 | 19 |
+| Avec `dispersionMax = 0.5` | 45 | 6 | 41 | 19 |
+| **PhaseCorrelationStep (défaut)** | 45 | **9** | 38 | 19 |
+
+Les 3 faux acceptés en plus sont tous dans la famille `fond_presque_noir`. Ce coût est accepté, car un seuil qui bloque de vraies tuiles empêche toute mosaïque. Le contrôle reste disponible avec `dispersionMax > 0`, à régler sur plus de vraies tuiles.
 
 Une précision par rapport à l'étude : sans point local, la paire est rejetée seulement si la zone commune permettait d'en placer. Sinon, elle est gardée avec l'état `non_verifie`. Rejeter toute paire sans point aurait fait échouer les petits recouvrements (bande plus étroite qu'un patch), et le test du pipeline.
 

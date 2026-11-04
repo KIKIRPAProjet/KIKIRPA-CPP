@@ -2,33 +2,50 @@
 #pragma once
 
 #include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_types.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
 
-#include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace StepsNs {
 
+    constexpr float DEFAULT_OVERLAP = 0.2f;   // recouvrement nominal, en fraction de la tuile
+    constexpr double DEFAULT_NCC_MIN = 0.3;
+    constexpr double DEFAULT_AUTOSIM_MAX = 0.6;
+
     // Contrôles de confiance appliqués à chaque paire mesurée (voir docs/algorithms/stitching/phase_correlation/EtudeConfiance.md).
     // Une paire qui échoue à un contrôle est rejetée (getResult()["failures"]), comme une paire non mesurable.
     struct ConfidenceControl {
-        double nccMin = 0.3;          // NCC médiane minimale des points locaux (fond sombre, bruit). <= 0 : contrôle désactivé
-        double dispersionMax = 0.5;   // écart médian maximal (px du niveau analysé) entre les points et la translation. <= 0 : désactivé
-        double autosimMax = 0.6;      // auto-similarité maximale de la bande de A (motif répété : mesure ambiguë). >= 1 : désactivé
+        double nccMin = DEFAULT_NCC_MIN;          // NCC médiane minimale des points locaux (fond sombre, bruit). <= 0 : contrôle désactivé
+        // Écart médian maximal (px du niveau analysé) entre les points et la translation. <= 0 : désactivé (défaut) :
+        // sur de vraies tuiles, cet écart dépasse 0,5 px même quand la mesure est juste (voir l'étude, § 6).
+        double dispersionMax = 0.0;
+        double autosimMax = DEFAULT_AUTOSIM_MAX;  // auto-similarité maximale de la bande de A (motif répété : mesure ambiguë). >= 1 : désactivé
     };
 
     // État de confiance d'une paire
-    enum class ConfidenceState {
+    enum class ConfidenceState : std::uint8_t {
         Reliable,     // "fiable" : gardée, contrôles passés
         Unverified,   // "non_verifie" : gardée sans point local (zone commune trop étroite pour un patch, ou nbPoints = 0)
         Ambiguous,    // "ambigu" : rejetée, motif répété (auto-similarité >= autosimMax), plusieurs positions possibles
         Rejected      // "rejete" : rejetée, mesure impossible, NCC trop basse, points en désaccord ou aucun point fiable
+    };
+
+    // Ce que checkConfidence doit connaître d'une paire en plus de sa mesure.
+    struct ConfidenceContext {
+        DataNs::Direction direction = DataNs::Direction::Right;
+        float overlap = DEFAULT_OVERLAP;
+        PhaseCorrelationNs::Parameters parameters;
+        ConfidenceControl control;
     };
 
     // Point de correspondance d'une paire et son score
@@ -51,7 +68,7 @@ namespace StepsNs {
 
     // Valeurs initiales des paramètres du step.
     struct PhaseCorrelationInput {
-        float overlap = 0.2f;   // recouvrement nominal entre deux tuiles voisines, en fraction de la tuile
+        float overlap = DEFAULT_OVERLAP;   // recouvrement nominal entre deux tuiles voisines
         int level = 0;          // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
         PhaseCorrelationNs::Parameters parameters;   // réglages de l'algorithme, en px du niveau analysé
         ConfidenceControl confiance;   // seuils des contrôles de confiance
@@ -85,8 +102,8 @@ namespace StepsNs {
     //   résolution : translation × s, et chaque point p devient (p + 0,5)·s − 0,5 (centre des pixels moyennés). Les
     //   longueurs des paramètres (marge, fenetre, ecartMax...) et les messages d'échec sont en px du niveau analysé.
     //
-    // Confiance : chaque paire mesurée passe 3 contrôles (NCC, dispersion, auto-similarité). Une paire qui en échoue un
-    //   est rejetée comme une paire non mesurable. Chaque paire, gardée ou non, a ses indicateurs (PairConfidence) dans
+    // Confiance : chaque paire mesurée passe les contrôles actifs (NCC, auto-similarité ; dispersion désactivée par
+    //   défaut). Une paire qui en échoue un est rejetée comme une paire non mesurable. Chaque paire, gardée ou non, a ses indicateurs (PairConfidence) dans
     //   getOutput().confidence et dans getResult()["confidence"] (voir toJson).
     // Échecs : une paire non mesurable est ignorée et listée dans getResult()["failures"] ({idA, idB, reason}). Le
     //   step lui-même échoue (cause dans getResult()["error"]) si aucune paire ne réussit, si un paramètre est invalide,
@@ -119,9 +136,7 @@ namespace StepsNs {
             // Ambiguous (auto-similarité >= autosimMax), sinon Unverified (sans point) ou Reliable.
             // Ici, dispersion est en px du niveau analysé (comparée à dispersionMax) ; execute() la ramène en pleine résolution.
             static PairConfidence checkConfidence(const DataNs::Matches& matches, const cv::Mat& imageA,
-                                                  DataNs::Direction direction, float overlap,
-                                                  const PhaseCorrelationNs::Parameters& parameters,
-                                                  const ConfidenceControl& control);
+                                                  const ConfidenceContext& context);
 
             static const char* stateName(ConfidenceState state);   // "fiable", "non_verifie", "ambigu", "rejete"
 
@@ -130,6 +145,11 @@ namespace StepsNs {
             static nlohmann::json toJson(const PairConfidence& confidence);
 
         private:
+            void readInput(PhaseCorrelationInput& input) const;
+            bool loadInput(PhaseCorrelationInput& input);
+            bool measureAllTiles(const PhaseCorrelationInput& input,
+                                 PhaseCorrelationNs::PhaseCorrelationMatcherClass& matcher);
+
             PhaseCorrelationOutput output;
 
     };

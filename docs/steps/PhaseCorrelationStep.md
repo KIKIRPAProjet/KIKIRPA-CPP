@@ -36,12 +36,12 @@ La perte de précision aux niveaux réduits vient de la pyramide (moyenne 2 × 2
 
 ## Confiance
 
-Chaque paire mesurée passe 3 contrôles. Une paire qui en échoue un est rejetée (dans `failures`, raison commençant par `confiance :`). Seuils et justification : [EtudeConfiance](../algorithms/stitching/phase_correlation/EtudeConfiance.md).
+Chaque paire mesurée passe les contrôles actifs : NCC et auto-similarité par défaut, la dispersion étant mesurée et exportée, mais pas utilisée pour rejeter. Une paire qui échoue à un contrôle est rejetée (dans `failures`, raison commençant par `confiance :`). Seuils et justification : [EtudeConfiance](../algorithms/stitching/phase_correlation/EtudeConfiance.md).
 
 | Option | Défaut | Rejette si | Détecte | Désactiver |
 |---|---|---|---|---|
 | `nccMin` | 0.3 | NCC médiane des points < seuil | fond sombre, bruit | `0` |
-| `dispersionMax` | 0.5 | écart médian points / translation > seuil (px du niveau analysé) | fond sombre sur une partie de la bande | `0` |
+| `dispersionMax` | 0 (désactivé) | écart médian points / translation > seuil (px du niveau analysé) | fond sombre sur une partie de la bande | `0` |
 | `autosimMax` | 0.6 | auto-similarité de la bande de A ≥ seuil | motif répété (mesure ambiguë) | `1` |
 
 Sans point local, deux cas :
