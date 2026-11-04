@@ -34,6 +34,8 @@ CheckOptions:
   readability-identifier-naming.ParameterCase: camelBack
   readability-identifier-naming.MemberCase: camelBack
   readability-identifier-naming.ConstantCase: UPPER_CASE
+  readability-identifier-naming.LocalConstantCase: camelBack
+  readability-identifier-naming.LocalConstantPointerCase: camelBack
   readability-identifier-naming.ConstexprVariableCase: UPPER_CASE
   readability-identifier-naming.TypeAliasCase: CamelCase
   readability-identifier-naming.TypedefCase: CamelCase
