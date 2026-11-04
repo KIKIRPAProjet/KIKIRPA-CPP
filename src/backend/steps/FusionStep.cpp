@@ -1,25 +1,37 @@
 #include "steps/FusionStep.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/step/data_store.h"
 
+#include <opencv2/core/fast_math.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <iostream>
-#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-namespace StepsNs {
+namespace StepsNs { // NOLINT(readability-identifier-naming): namespace partage du projet
+
+namespace {
+constexpr int VALID_MASK_VALUE = 255;
+constexpr double ROTATION_TOLERANCE = 1e-9;
+} // namespace
 
 FusionStepClass::FusionStepClass(const FusionInput& initialInput)
-    : input_(initialInput) {
+    : input(initialInput) {
     ConfigNs::StepConfig stepConfig;
     stepConfig.name = "fusion";
     stepConfig.parameters = {
@@ -32,7 +44,7 @@ FusionStepClass::FusionStepClass(const FusionInput& initialInput)
         {"Positions", "positions"},
         {"Territories", "territories"}
     };
-    stepConfig.outputs = {}; // Sortie sur disque ; contrat de sortie DataStore à définir avec l'équipe.
+    stepConfig.outputs = {}; // Contrat DataStore de sortie a definir avec l'equipe.
     configJson = stepConfig;
 }
 
@@ -45,6 +57,7 @@ cv::Rect FusionStepClass::computeGlobalBoundingBox(
     return result;
 }
 
+// NOLINTNEXTLINE(readability-function-size): polygones et trous doivent rester synchronises
 cv::Mat FusionStepClass::makeTerritoryMask(
     const cv::Rect& block, const DataNs::TileTerritory& territory) {
     cv::Mat mask(block.size(), CV_8UC1, cv::Scalar(0));
@@ -55,7 +68,7 @@ cv::Mat FusionStepClass::makeTerritoryMask(
         shifted.reserve(outer.size());
         for (const auto& point : outer)
             shifted.emplace_back(point.x - block.x, point.y - block.y);
-        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shifted}, cv::Scalar(255));
+        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shifted}, cv::Scalar(VALID_MASK_VALUE));
         if (p < territory.holes.size()) {
             for (const auto& hole : territory.holes[p]) {
                 if (hole.size() < 3) continue;
@@ -70,15 +83,16 @@ cv::Mat FusionStepClass::makeTerritoryMask(
     return mask;
 }
 
+// NOLINTNEXTLINE(readability-function-size): controle et rendu du bloc dans une operation
 void FusionStepClass::renderBlock(
     const cv::Rect& block,
     const std::vector<TilePlacement>& placements,
     const std::vector<DataNs::TileTerritory>& territories,
-    cv::Mat& outBlockRgb,
+    cv::Mat& outBlockRgb, // NOLINT(bugprone-easily-swappable-parameters)
     cv::Mat& outBlockProvenance,
     cv::Mat& outBlockMask) const {
 
-    // OpenCV imread charge en BGR ; le nom outBlockRgb est historique.
+    // OpenCV imread charge en BGR ; nom outBlockRgb conserve pour compatibilite.
     outBlockRgb = cv::Mat::zeros(block.size(), CV_16UC3);
     outBlockProvenance = cv::Mat::zeros(block.size(), CV_16UC1);
     outBlockMask = cv::Mat::zeros(block.size(), CV_8UC1);
@@ -90,8 +104,8 @@ void FusionStepClass::renderBlock(
     for (const auto& tile : placements) {
         auto territoryIt = territoryByIndex.find(tile.index);
         if (territoryIt == territoryByIndex.end()) continue;
-        const cv::Rect intersection = block & tile.globalBox;
-        if (intersection.empty()) continue;
+        const cv::Rect INTERSECTION = block & tile.globalBox;
+        if (INTERSECTION.empty()) continue;
 
         cv::Mat source = cv::imread(tile.path.string(), cv::IMREAD_UNCHANGED);
         if (source.empty())
@@ -101,26 +115,27 @@ void FusionStepClass::renderBlock(
         if (source.size() != tile.globalBox.size())
             throw std::runtime_error("Dimensions inattendues : " + tile.path.string());
 
-        const cv::Rect srcRect(intersection.x - tile.globalBox.x,
-                               intersection.y - tile.globalBox.y,
-                               intersection.width, intersection.height);
-        const cv::Rect dstRect(intersection.x - block.x,
-                               intersection.y - block.y,
-                               intersection.width, intersection.height);
+        const cv::Rect SRC_RECT(INTERSECTION.x - tile.globalBox.x,
+                               INTERSECTION.y - tile.globalBox.y,
+                               INTERSECTION.width, INTERSECTION.height);
+        const cv::Rect DST_RECT(INTERSECTION.x - block.x,
+                               INTERSECTION.y - block.y,
+                               INTERSECTION.width, INTERSECTION.height);
 
         cv::Mat territoryMask = makeTerritoryMask(block, *territoryIt->second);
-        cv::Mat maskRoi = territoryMask(dstRect);
-        cv::Mat pixels = source(srcRect);
+        cv::Mat maskRoi = territoryMask(DST_RECT);
+        cv::Mat pixels = source(SRC_RECT);
         cv::Mat corrected;
         pixels.convertTo(corrected, CV_16UC3, tile.lightGain);
-        corrected.copyTo(outBlockRgb(dstRect), maskRoi);
-        outBlockProvenance(dstRect).setTo(cv::Scalar(tile.index + 1), maskRoi);
-        outBlockMask(dstRect).setTo(cv::Scalar(255), maskRoi);
+        corrected.copyTo(outBlockRgb(DST_RECT), maskRoi);
+        outBlockProvenance(DST_RECT).setTo(cv::Scalar(tile.index + 1), maskRoi);
+        outBlockMask(DST_RECT).setTo(cv::Scalar(VALID_MASK_VALUE), maskRoi);
     }
 }
 
+// NOLINTNEXTLINE(readability-function-size): orchestration de la lecture et ecriture des blocs
 bool FusionStepClass::execute() {
-    output_ = {};
+    output = {};
     try {
         if (!dataStore)
             throw std::runtime_error("FusionStep : DataStore non initialise");
@@ -138,29 +153,28 @@ bool FusionStepClass::execute() {
             throw std::runtime_error("FusionStep : nombre de tuiles/positions invalide");
         if (territories.empty())
             throw std::runtime_error("FusionStep : aucun territoire");
-        if (input_.blockSize <= 0)
+        if (input.blockSize <= 0)
             throw std::runtime_error("FusionStep : blockSize doit etre positif");
-        if (input_.enableBlending)
+        if (input.enableBlending)
             throw std::runtime_error("FusionStep : blending pas encore implemente");
 
-        // L'identifiant de position est de forme rLL_cCC. On le retrouve
-        // dans le nom de fichier source, sans supposer l'ordre des positions.
+        // L'identifiant de position rLL_cCC est present dans le nom de fichier.
         std::vector<TilePlacement> placements;
         placements.reserve(tiles.size());
         for (std::size_t i = 0; i < tiles.size(); ++i) {
             const auto& tile = tiles[i];
             if (!tile) throw std::runtime_error("FusionStep : tuile nulle");
-            const std::string filename = tile->getSource().filename().string();
+            const std::string FILENAME = tile->getSource().filename().string();
             const DataNs::TilePositionData* position = nullptr;
             for (const auto& candidate : positions) {
-                if (filename.find(candidate.tileId) != std::string::npos) {
-                    if (position) throw std::runtime_error("FusionStep : position ambigue pour " + filename);
+                if (FILENAME.find(candidate.tileId) != std::string::npos) {
+                    if (position) throw std::runtime_error("FusionStep : position ambigue pour " + FILENAME);
                     position = &candidate;
                 }
             }
             if (!position)
-                throw std::runtime_error("FusionStep : position introuvable pour " + filename);
-            if (std::abs(position->rotationRadians) > 1e-9)
+                throw std::runtime_error("FusionStep : position introuvable pour " + FILENAME);
+            if (std::abs(position->rotationRadians) > ROTATION_TOLERANCE)
                 throw std::runtime_error("FusionStep : rotations non prises en charge");
             const auto& level = tile->getLevel(0);
             if (level.width <= 0 || level.height <= 0)
@@ -178,33 +192,33 @@ bool FusionStepClass::execute() {
                 throw std::runtime_error("FusionStep : tileIndex hors limites");
         }
 
-        const cv::Rect bounds = computeGlobalBoundingBox(placements);
-        if (bounds.empty()) throw std::runtime_error("FusionStep : mosaique vide");
-        const std::filesystem::path directory = input_.outputPath.empty()
+        const cv::Rect BOUNDS = computeGlobalBoundingBox(placements);
+        if (BOUNDS.empty()) throw std::runtime_error("FusionStep : mosaique vide");
+        const std::filesystem::path DIRECTORY = input.outputPath.empty()
             ? std::filesystem::path("fusion_output")
-            : std::filesystem::path(input_.outputPath);
-        std::filesystem::create_directories(directory);
+            : std::filesystem::path(input.outputPath);
+        std::filesystem::create_directories(DIRECTORY);
 
-        for (int y = bounds.y; y < bounds.y + bounds.height; y += input_.blockSize) {
-            for (int x = bounds.x; x < bounds.x + bounds.width; x += input_.blockSize) {
-                const cv::Rect block(x, y,
-                    std::min(input_.blockSize, bounds.x + bounds.width - x),
-                    std::min(input_.blockSize, bounds.y + bounds.height - y));
+        for (int y = BOUNDS.y; y < BOUNDS.y + BOUNDS.height; y += input.blockSize) {
+            for (int x = BOUNDS.x; x < BOUNDS.x + BOUNDS.width; x += input.blockSize) {
+                const cv::Rect BLOCK(x, y,
+                    std::min(input.blockSize, BOUNDS.x + BOUNDS.width - x),
+                    std::min(input.blockSize, BOUNDS.y + BOUNDS.height - y));
                 cv::Mat rgb, provenance, mask;
-                renderBlock(block, placements, territories, rgb, provenance, mask);
-                const std::string suffix = "_x" + std::to_string(x) +
+                renderBlock(BLOCK, placements, territories, rgb, provenance, mask);
+                const std::string SUFFIX = "_x" + std::to_string(x) +
                                            "_y" + std::to_string(y) + ".png";
-                const bool ok =
-                    cv::imwrite((directory / ("rgb" + suffix)).string(), rgb) &&
-                    cv::imwrite((directory / ("provenance" + suffix)).string(), provenance) &&
-                    cv::imwrite((directory / ("mask" + suffix)).string(), mask);
-                if (!ok) throw std::runtime_error("FusionStep : ecriture bloc echouee");
-                ++output_.totalBlocks;
+                const bool OK =
+                    cv::imwrite((DIRECTORY / ("rgb" + SUFFIX)).string(), rgb) &&
+                    cv::imwrite((DIRECTORY / ("provenance" + SUFFIX)).string(), provenance) &&
+                    cv::imwrite((DIRECTORY / ("mask" + SUFFIX)).string(), mask);
+                if (!OK) throw std::runtime_error("FusionStep : ecriture bloc echouee");
+                ++output.totalBlocks;
             }
         }
-        output_.mosaicPath = directory.string();
-        result["mosaicPath"] = output_.mosaicPath;
-        result["totalBlocks"] = output_.totalBlocks;
+        output.mosaicPath = DIRECTORY.string();
+        result["mosaicPath"] = output.mosaicPath;
+        result["totalBlocks"] = output.totalBlocks;
         return true;
     } catch (const std::exception& e) {
         std::cerr << "Erreur FusionStep : " << e.what() << '\n';
