@@ -8,6 +8,7 @@
 #include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 
+#include <vector>
 #include <cstdint>
 #include <filesystem>
 #include <string>
