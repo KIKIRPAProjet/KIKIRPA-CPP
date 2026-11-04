@@ -4,6 +4,11 @@
 // GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
+
+// Tests historiques : conventions conservees pour eviter
+// une refactorisation sans rapport avec FusionStep.
+// NOLINTBEGIN(misc-include-cleaner,readability-function-size,readability-identifier-naming,readability-magic-numbers)
+
 #include "core/pipeline/pipeline_builder.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
@@ -209,7 +214,8 @@ void testerRepriseReelle() {
     // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
     {
         cv::Mat a = cv::imread((dossier / "img_C00_R00.tif").string(), cv::IMREAD_UNCHANGED);
-        a(cv::Rect(0, 0, 10, 10)).setTo(cv::Scalar(1000));
+        constexpr int VALEUR_PIXEL_MODIFIE = 1000;
+        a(cv::Rect(0, 0, 10, 10)).setTo(cv::Scalar(VALEUR_PIXEL_MODIFIE));
         cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
     }
     journal.clear();
@@ -227,3 +233,5 @@ TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
 } // namespace stitching::tests
+
+// NOLINTEND(misc-include-cleaner,readability-function-size,readability-identifier-naming,readability-magic-numbers)
