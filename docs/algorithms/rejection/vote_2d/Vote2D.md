@@ -87,15 +87,39 @@ Cette formulation présente **deux défauts majeurs** en macrophotographie d'œu
 namespace stitching::rejection {
 
 // Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
-class VoteRejector : public OutlierRejector {
-    Json parameters;
+class VoteRejectorClass : public OutlierRejector {
 public:
-    explicit VoteRejector(const Json& parameters = {});
+    VoteRejectorClass() = default;
+    explicit VoteRejectorClass(const Json& parameters);
     bool estimate(const Matches& matches, Alignment& out) override;
+    bool filterMatches(Matches& matches, Alignment& out);
+    bool filterPairMatches(PairMatches& pairMatches, Alignment& out);
+    static Json toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment);
+
+private:
+    Json parameters = Json::object();
 };
+
+using VoteRejector = VoteRejectorClass;
 
 } // namespace stitching::rejection
 ```
+
+### Méthodes d'adaptation pour le pipeline et l'égalisation
+
+1. **`estimate(const Matches& matches, Alignment& out)`** :
+   Estime la translation et remplit le masque d'inliers sans altérer l'objet `matches` d'entrée.
+
+2. **`filterMatches(Matches& matches, Alignment& out)`** :
+   Exécute `estimate()`, filtre sur place les points aberrants dans `matches.pointsInA`, `matches.pointsInB` et `matches.confidenceScores`, puis renseigne `matches.translationX` et `matches.translationY` à partir de `out.transformBToA`.
+
+3. **`filterPairMatches(PairMatches& pairMatches, Alignment& out)`** :
+   Spécialisation pour l'objet composite `PairMatches`, opérant directement sur `pairMatches.featureMatches`.
+
+4. **`toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment)`** :
+   Sérialise les identifiants de tuiles et la translation sous un format JSON doublement compatible :
+   - Clés directes pour l'égalisation : `{"a": idA, "b": idB, "translation": [tx, ty]}`
+   - Clés canoniques du pipeline : `{"tileIdA": idA, "tileIdB": idB, "translationX": tx, "translationY": ty}`
 
 ### Contrat de la méthode `estimate()`
 
@@ -265,6 +289,38 @@ L'extraction de l'angle résiduel pour le solveur global est naturelle et sans s
 const double rot = alignment.transformBToA.empty() ? 0.0
     : std::atan2(alignment.transformBToA.at<double>(1, 0), alignment.transformBToA.at<double>(0, 0));
 // Pour VoteRejector, rot vaut toujours exactement 0.0000 rad !
+```
+
+### Exemple 3 : Enchaînement direct avec l'Égalisation
+Grâce aux méthodes `filterPairMatches` et `toEqualizationJson`, la sortie du rejet d'aberrants alimente directement le module d'égalisation radiométrique :
+
+```cpp
+#include "algorithms/rejection/vote_2d/vote_rejector.h"
+#include "algorithms/egalisation/Egalisation.h"
+
+void traiterPaire(stitching::PairMatches& pair, const cv::Mat& tuileA, const cv::Mat& tuileB) {
+    stitching::rejection::VoteRejector rejector;
+    stitching::Alignment alignment;
+
+    if (!rejector.filterPairMatches(pair, alignment)) {
+        return; // Échec ou inliers insuffisants
+    }
+
+    // 1. Passage direct par l'objet PairMatches enrichi
+    stitching::egalisation::PaireVoisine paireVoisine{
+        pair.tileIdA,
+        pair.tileIdB,
+        cv::Point2d(pair.featureMatches.translationX, pair.featureMatches.translationY)
+    };
+
+    // 2. Ou sérialisation JSON compatible
+    nlohmann::json j = stitching::rejection::VoteRejector::toEqualizationJson(
+        pair.tileIdA, pair.tileIdB, alignment);
+
+    // 3. Résolution radiométrique
+    stitching::egalisation::Egalisation egalisation;
+    auto res = egalisation.estimer({egalisation.reduire(tuileA), egalisation.reduire(tuileB)}, {paireVoisine});
+}
 ```
 
 ---

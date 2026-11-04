@@ -161,6 +161,34 @@ int markInliers(const ValidDeltas& deltas,
     return inlierCount;
 }
 
+// Filtre sur place les points et scores pour ne conserver que les inliers validés.
+void retainInlierPoints(Matches& matches, const std::vector<unsigned char>& inlierMask) {
+    std::vector<cv::Point2f> filteredPointsA;
+    std::vector<cv::Point2f> filteredPointsB;
+    std::vector<float> filteredScores;
+    const bool hasScores = matches.confidenceScores.size() == matches.pointsInA.size();
+    filteredPointsA.reserve(matches.pointsInA.size());
+    filteredPointsB.reserve(matches.pointsInB.size());
+    if (hasScores) {
+        filteredScores.reserve(matches.confidenceScores.size());
+    }
+    for (std::size_t i = 0; i < matches.pointsInA.size(); ++i) {
+        if (inlierMask[i] == 0) {
+            continue;
+        }
+        filteredPointsA.push_back(matches.pointsInA[i]);
+        filteredPointsB.push_back(matches.pointsInB[i]);
+        if (hasScores) {
+            filteredScores.push_back(matches.confidenceScores[i]);
+        }
+    }
+    matches.pointsInA = std::move(filteredPointsA);
+    matches.pointsInB = std::move(filteredPointsB);
+    if (hasScores) {
+        matches.confidenceScores = std::move(filteredScores);
+    }
+}
+
 } // namespace
 
 VoteRejectorClass::VoteRejectorClass(const Json& params)
@@ -193,6 +221,36 @@ bool VoteRejectorClass::estimate(const Matches& matches, Alignment& out) {
     out.transformBToA.at<double>(0, 2) = translation.first;
     out.transformBToA.at<double>(1, 2) = translation.second;
     return true;
+}
+
+bool VoteRejectorClass::filterMatches(Matches& matches, Alignment& out) {
+    if (!estimate(matches, out)) {
+        return false;
+    }
+    retainInlierPoints(matches, out.inlierMask);
+    matches.translationX = static_cast<float>(out.transformBToA.at<double>(0, 2));
+    matches.translationY = static_cast<float>(out.transformBToA.at<double>(1, 2));
+    return true;
+}
+
+bool VoteRejectorClass::filterPairMatches(PairMatches& pairMatches, Alignment& out) {
+    return filterMatches(pairMatches.featureMatches, out);
+}
+
+Json VoteRejectorClass::toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment) {
+    const bool hasTransform = alignment.transformBToA.rows == HOMOGRAPHY_MATRIX_SIZE &&
+                              alignment.transformBToA.cols == HOMOGRAPHY_MATRIX_SIZE;
+    const double translationX = hasTransform ? alignment.transformBToA.at<double>(0, 2) : 0.0;
+    const double translationY = hasTransform ? alignment.transformBToA.at<double>(1, 2) : 0.0;
+    return {
+        {"a", tileIdA},
+        {"b", tileIdB},
+        {"translation", {translationX, translationY}},
+        {"tileIdA", tileIdA},
+        {"tileIdB", tileIdB},
+        {"translationX", translationX},
+        {"translationY", translationY}
+    };
 }
 
 } // namespace stitching::rejection

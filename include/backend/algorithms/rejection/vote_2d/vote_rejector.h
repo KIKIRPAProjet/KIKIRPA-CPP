@@ -18,6 +18,9 @@ public:
     VoteRejectorClass() = default;
     explicit VoteRejectorClass(const Json& parameters);
     bool estimate(const Matches& matches, Alignment& out) override;
+    bool filterMatches(Matches& matches, Alignment& out);
+    bool filterPairMatches(PairMatches& pairMatches, Alignment& out);
+    static Json toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment);
 
 private:
     Json parameters = Json::object();
