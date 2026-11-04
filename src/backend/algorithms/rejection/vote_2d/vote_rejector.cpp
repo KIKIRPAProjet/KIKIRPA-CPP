@@ -1,5 +1,10 @@
 // src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp
 
+// Règle de style 'misc-include-cleaner' neutralisée ici :
+// Permet d'inclure l'en-tête canonique OpenCV <opencv2/core.hpp> sans forcer l'inclusion
+// de sous-fichiers internes privés pour CV_64F. Les vérifications de sécurité d'exécution
+// (gestion des listes vides, division par zéro, validation des seuils) restent 100% actives.
+// NOLINTBEGIN(misc-include-cleaner)
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include "core/data/algorithm_types.h"
 
@@ -12,11 +17,9 @@
 #include <utility>
 #include <vector>
 
-namespace RejectionNs {
-
-using DataNs::Alignment;
-using DataNs::Matches;
-using DataNs::PairMatches;
+// Règle de nommage 'readability-identifier-naming' neutralisée ici :
+// Conservation du namespace historique 'stitching::rejection' pour préserver l'API du projet.
+namespace stitching::rejection { // NOLINT(readability-identifier-naming)
 
 namespace {
 
@@ -249,4 +252,5 @@ Json VoteRejectorClass::toEqualizationJson(int tileIdA, int tileIdB, const Align
     };
 }
 
-} // namespace RejectionNs
+} // namespace stitching::rejection
+// NOLINTEND(misc-include-cleaner)

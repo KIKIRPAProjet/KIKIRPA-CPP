@@ -2,7 +2,7 @@
 #include "algorithms/stitching/positioning/tile_positioner.h"
 
 #include "algorithms/rejection/outlier_rejector.h"
-#include "algorithms/rejection/ransac/ransac_rejector.h"
+#include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "algorithms/stitching/feature_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
@@ -154,7 +154,7 @@ namespace PositioningNs {
         // Paires de voisins directs : première passe OverlapEstimatorClass -> matcher -> rejector.
         // Sélection polymorphe du matcher et du rejector :
         // - matchers autorisés : "sift", "correlation_phase", "lightglue" (si STITCHING_PROJECT_ROOT est défini)
-        // - rejectors autorisés : "vote" (par défaut, Hough 2D) et "ransac" (estimateAffinePartial2D)
+        // - rejector : "vote" (Vote 2D / Hough 2D)
         std::unique_ptr<StitchingNs::FeatureMatcherClass> matcher;
         if (settings.matcherName == "sift") matcher = std::make_unique<SiftNs::SiftMatcherClass>(settings.matcherParameters);
         else if (settings.matcherName == "correlation_phase") matcher = std::make_unique<PhaseCorrelationNs::PhaseCorrelationMatcherClass>();
@@ -162,8 +162,8 @@ namespace PositioningNs {
         else if (settings.matcherName == "lightglue") matcher = std::make_unique<LightGlueNs::LightGlueMatcherClass>();
 #endif
         std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
-        if (settings.rejectorName == "ransac") rejector = std::make_unique<RansacNs::RansacRejectorClass>(settings.rejectorParameters);
-        else if (settings.rejectorName == "vote") rejector = std::make_unique<RejectionNs::VoteRejectorClass>(settings.rejectorParameters);
+        if (settings.rejectorName == "vote" || settings.rejectorName == "vote_2d") rejector = std::make_unique<RejectionNs::VoteRejectorClass>(settings.rejectorParameters);
+
         if (!matcher || !rejector) {
             log << "Matcher or rejector not available (" << settings.matcherName << " / " << settings.rejectorName << ")\n";
             return false;
@@ -212,7 +212,7 @@ namespace PositioningNs {
 
             DataNs::Alignment alignment;
             if (!rejector->estimate(matches, alignment) || alignment.inlierMask.size() != matches.pointsInA.size()) {
-                log << matches.pointsInA.size() << " matches, RANSAC failed, pair ignored\n";
+                log << matches.pointsInA.size() << " matches, Vote2D failed, pair ignored\n";
                 return true;
             }
 
@@ -245,7 +245,7 @@ namespace PositioningNs {
         }
 
         if (attemptedPairCount == 0) { log << "No horizontally or vertically adjacent tile pairs were found\n"; return false; }
-        if (offsets.empty()) { log << "SIFT + RANSAC did not give a usable offset for any neighboring pair\n"; return false; }
+        if (offsets.empty()) { log << "SIFT + Vote2D did not give a usable offset for any neighboring pair\n"; return false; }
 
         // Ajustement global
         std::vector<bool> connectedTiles;
