@@ -1,40 +1,48 @@
+
+// src/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 
 #include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
-// Ici on code la méthode concrètement
-namespace DynamicProgrammingDijkstraNS
-{
+namespace DynamicProgrammingDijkstraNs {
 
+    SeamFinderClass::SeamFinderClass() = default;
 
-    SeamFinder::SeamFinder()
-    {
-
-    }
-
-
-    SeamFinder::SeamFinder(CostFunction fn, const CostMapParams& p, Method m)
-        : cost_function(fn), params(p), method(m)
-    {
-
-    }
-
-
-    std::vector<cv::Point> SeamFinder::compute(
-        const cv::Mat& left,
-        const cv::Mat& right
+    SeamFinderClass::SeamFinderClass(
+        CostFunction costFunction,
+        const CostMapParams& costMapParams,
+        Method method
     )
-    {
-        if (left.empty() || right.empty())
-            return {};
-
-        // Section 5 / 5.0 : carte de coût de l'overlap (seul `treated` sert au solveur)
-        const CostMaps maps = compute_cost(left, right, cost_function, params);
-
-        // Section 6 : méthode choisie, extrémités libres
-        return solve_edge(maps.treated, method, nullptr, nullptr, corridor_radius).path;
+        : costFunction(costFunction),
+          params(costMapParams),
+          method(method) {
     }
 
+    std::vector<cv::Point> SeamFinderClass::compute(
+        const cv::Mat& leftImage,
+        const cv::Mat& rightImage
+    ) {
+        if (leftImage.empty() || rightImage.empty()) {
+            return {};
+        }
 
-}
+        // Seule la carte de coût traitée est utilisée pour la résolution.
+        const CostMaps costMaps = computeCost(
+            leftImage,
+            rightImage,
+            costFunction,
+            params
+        );
+
+        // Les extrémités du chemin restent libres.
+        return solveEdge(
+            costMaps.treated,
+            method,
+            nullptr,
+            nullptr,
+            corridorRadius
+        ).path;
+    }
+
+}  // namespace DynamicProgrammingDijkstraNs
