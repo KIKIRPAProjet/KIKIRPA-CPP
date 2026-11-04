@@ -73,36 +73,20 @@ La fusion des deux branches doit garder une seule copie de ces fichiers et les d
 
 ## Compilation et tests
 
-OpenCV, libtiff, nlohmann_json, Qt6 et GoogleTest sont requis. ONNX Runtime est facultatif pour les
-autres steps ; sans lui, l'exécution réelle de LightGlue retourne une erreur explicite.
+ONNX Runtime et le modèle de test sont téléchargés par CMake à la configuration (voir [BUILD.md](../BUILD.md)).
 La fabrique de matcher permet de tester le step sans remplacer l'estimation réelle du recouvrement.
-
-```sh
-cmake -S . -B build/lightglue -DBUILD_TESTING=ON -DONNXRUNTIME_ROOT=/chemin/onnxruntime
-cmake --build build/lightglue --parallel
-ctest --test-dir build/lightglue --output-on-failure
-```
-
-Sur macOS, les bibliothèques peuvent être installées avec Homebrew :
-
-```sh
-brew install opencv libtiff nlohmann-json qtbase googletest onnxruntime
-```
 
 Les tests GoogleTest du step vérifient le découpage horizontal/vertical en 8/16 bits, le recalage,
 les scores sous 0.9, la sérialisation, les succès partiels, les erreurs d'images, les relances,
 les paramètres, le registre JSON et l'échec de chargement du vrai matcher.
 
-Pour le test d'inférence complet, fournir un modèle compatible :
+Le test `lightglue_model` (label `integration`) tourne avec un vrai modèle, en local comme en CI :
 
 ```sh
-cmake -S . -B build/lightglue -DBUILD_TESTING=ON -DLIGHTGLUE_TEST_MODEL=/chemin/modele.onnx
-cmake --build build/lightglue --target test_lightglue_model
-ctest --test-dir build/lightglue -R '^lightglue_model$' --output-on-failure
+ctest --test-dir <build> -R '^lightglue_model$' --output-on-failure
 ```
 
-Ce dernier test utilise une translation connue et vérifie les correspondances 8/16 bits. Il n'est
-pas enregistré sans modèle et ne doit pas être présenté comme exécuté dans ce cas.
+Il utilise une translation connue et vérifie les correspondances 8/16 bits.
 
 ## Modèle vérifié
 
@@ -112,7 +96,7 @@ pas enregistré sans modèle et ne doit pas être présenté comme exécuté dan
 | Provenance | [fabio-sim/LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX/releases/tag/v3.0), version v3.0 |
 | ONNX Runtime | 1.20.1, CPU, Windows x64 |
 
-Le modèle n'est pas versionné dans le dépôt : il faut le télécharger et donner son chemin dans `modelPath`.
+Le modèle n'est pas versionné dans le dépôt. CMake le télécharge pour les tests ; pour exécuter le step, donner son chemin dans `modelPath`.
 `superpoint_lightglue_pipeline.onnx` (v2.0) est refusé avec le message `unexpected RACO/ALIKED output types`.
 
 Sur 4 tuiles réelles de 5176×5176 pixels (16 bits), comparaison avec la corrélation de phase :

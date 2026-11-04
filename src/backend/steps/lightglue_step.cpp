@@ -11,9 +11,7 @@
 #include <nlohmann/json_fwd.hpp>
 #include <opencv2/core/mat.hpp>
 #include <exception>
-#if defined(STITCHING_HAS_LIGHTGLUE)
 #include "algorithms/stitching/lightglue/lightglue_matcher.h"
-#endif
 
 #include <nlohmann/json.hpp>
 
@@ -30,12 +28,7 @@ namespace StepsNs {
     namespace {
 
         std::unique_ptr<StitchingNs::FeatureMatcherClass> createMatcher(const nlohmann::json& parameters) {
-#if defined(STITCHING_HAS_LIGHTGLUE)
             return std::make_unique<LightGlueNs::LightGlueMatcherClass>(parameters);
-#else
-            (void)parameters;
-            throw std::runtime_error("LightGlue unavailable: rebuild with ONNX Runtime and OpenCV dnn");
-#endif
         }
 
         struct PairProcessingContext {

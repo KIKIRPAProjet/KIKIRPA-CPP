@@ -108,6 +108,7 @@ namespace {
 
 }
 
+// NOLINTNEXTLINE(bugprone-exception-escape) : seul std::cerr, dans les catch, peut encore lever.
 int main(int argumentCount, char** arguments) {
     if (argumentCount != 2) { std::cerr << "Usage: test_lightglue_model <model.onnx>\n"; return 2; }
     try {
