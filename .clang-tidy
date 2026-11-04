@@ -29,12 +29,14 @@ CheckOptions:
   readability-identifier-naming.EnumCase: CamelCase
   readability-identifier-naming.EnumConstantCase: CamelCase
   readability-identifier-naming.FunctionCase: camelBack
+  # Noms imposés par les points d'extension de nlohmann_json.
+  readability-identifier-naming.FunctionIgnoredRegexp: '^(to_json|from_json)$'
   readability-identifier-naming.MethodCase: camelBack
   readability-identifier-naming.VariableCase: camelBack
   readability-identifier-naming.ParameterCase: camelBack
   readability-identifier-naming.MemberCase: camelBack
+  # Les variables locales const restent en camelCase ; les constantes statiques/constexpr sont en majuscules.
   readability-identifier-naming.ConstantCase: UPPER_CASE
-  # Les variables locales const suivent la convention camelCase du projet.
   readability-identifier-naming.LocalConstantCase: camelBack
   readability-identifier-naming.LocalConstantPointerCase: camelBack
   readability-identifier-naming.ConstexprVariableCase: UPPER_CASE

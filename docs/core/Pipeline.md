@@ -110,6 +110,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 |---|---|---|---|
 | `import` | `StepsNs::ImportStepClass` | — | `tiles` : `Tiles` |
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 
 ## Ajouter un step
@@ -118,3 +119,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 2. `execute()` relit ses paramètres avec `getParameter("nom")`, lit ses entrées avec `dataStore->get<T>("clé")` et écrit ses sorties avec `dataStore->replace("clé", …)`. En cas d'échec, il renvoie `false` avec la raison dans `result["error"]`.
 3. Ajouter une ligne dans `stepRegistry()` (`src/backend/core/pipeline/pipeline_builder.cpp`).
 4. **Le type C++ derrière une clé doit être le même pour tous les steps** : `tiles` est toujours un `DataNs::TileList`, `matches` toujours un `std::vector<DataNs::PairMatches>`. Sinon, `get<T>` lève `std::bad_any_cast` à l'exécution.
+
+### LightGlue
+
+Le registre expose `lightglue` (`StepsNs::LightGlueStepClass`). Entrée : `Tiles` sous `tiles` ;
+sortie : `PairMatches` sous `matches`. Exemple de script : [LightGlueStep.md](../steps/LightGlueStep.md).

@@ -14,6 +14,12 @@
 
 Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_r<ligne>_c<colonne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
 
+Le format par défaut de `import` (`img_C…_R…`) ne convient donc pas à ce step, ni à `graphcut`, qui exige les mêmes noms. Pour des fichiers `t_r00_c01.tif`, indiquer à `import` un format dont le groupe 1 est la colonne et le groupe 2 la ligne :
+
+```
+t_r(?=\d+_c(\d+)\.tif$)(\d+)_c\d+\.tif
+```
+
 ## Paramètre
 
 `referenceTileId` est un entier, par défaut `-1`. Cette valeur sélectionne la tuile de plus petit identifiant numérique, indépendamment de l'ordre de `tiles`. Sinon, la valeur doit désigner une tuile présente dans l'entrée. Sa position est fixée à `(0, 0)`. Les positions des autres tuiles peuvent être négatives : le step ne translate pas les résultats vers une boîte englobante positive.

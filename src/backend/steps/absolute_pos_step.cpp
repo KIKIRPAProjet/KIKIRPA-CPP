@@ -1,7 +1,7 @@
 // src/backend/steps/absolute_pos_step.cpp
 #include "steps/absolute_pos_step.h"
 
-#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "algorithms/stitching/positioning/position_solver.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
@@ -44,7 +44,7 @@ namespace StepsNs {
                     throw std::invalid_argument("absolute-pos: duplicate tile id");
                 int row = 0, column = 0;
                 std::string name;
-                if (!Seamline::ImagePretreatment::parseTileName(tile->getSource().string(), row, column, name))
+                if (!GraphCutNs::ImagePretreatmentClass::parseTileName(tile->getSource().string(), row, column, name))
                     throw std::invalid_argument("absolute-pos: tile filename must end in _r<row>_c<column>.tif[f]");
                 if (!names.insert(name).second) throw std::invalid_argument("absolute-pos: duplicate tile grid position");
                 index.names.push_back(std::move(name));
