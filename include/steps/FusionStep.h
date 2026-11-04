@@ -27,7 +27,8 @@ namespace StepsNs {
     class FusionStepClass : public StepNs::StepClass {
     public:
         explicit FusionStepClass(const FusionInput& initialInput = {});
-        ~FusionStepClass() override = default;
+        
+        virtual ~FusionStepClass() = default;
 
         bool execute() override;
         const FusionOutput& getOutput() const { return output_; }

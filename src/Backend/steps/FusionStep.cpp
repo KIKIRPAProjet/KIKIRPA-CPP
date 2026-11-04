@@ -1,8 +1,8 @@
-#include "steps/FusionStep.h"
+
 #include <opencv2/imgcodecs.hpp>
 #include <iostream>
 #include <algorithm>
-
+#include "steps/FusionStep.h"
 namespace StepsNs {
 
 FusionStepClass::FusionStepClass(const FusionInput& initialInput)
