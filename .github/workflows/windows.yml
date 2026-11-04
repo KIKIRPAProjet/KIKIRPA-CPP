@@ -1,0 +1,77 @@
+name: Windows
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-2022
+    env:
+      KIKIRPA_VCPKG_ROOT: C:\vcpkg
+      OpenCV_DIR: C:\opencv\build
+      QT_ROOT: C:\Qt\6.8.3\msvc2022_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        run: choco install ninja --no-progress -y
+
+      - name: Restore OpenCV
+        id: opencv
+        uses: actions/cache@v4
+        with:
+          path: C:\opencv
+          key: opencv-4.10.0-windows
+
+      - name: Install OpenCV
+        if: steps.opencv.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe -OutFile opencv.exe
+          Start-Process .\opencv.exe -ArgumentList '-oC:\', '-y' -Wait
+
+      - name: Restore Qt
+        id: qt
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-6.8.3-win64_msvc2022_64
+
+      - name: Install Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+
+      - name: Restore vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-x64-windows-tiff-gtest
+
+      - name: Install libtiff and GoogleTest
+        run: C:\vcpkg\vcpkg install tiff gtest --triplet x64-windows
+
+      - name: Restore LightGlue model
+        uses: actions/cache@v4
+        with:
+          path: build/windows-aqt/models
+          key: lightglue-model-${{ hashFiles('tests/steps/CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake --preset windows-aqt
+
+      - name: Build
+        run: cmake --build --preset windows-aqt
+
+      - name: Run CTest
+        run: ctest --preset windows-aqt -L "unit|integration"
