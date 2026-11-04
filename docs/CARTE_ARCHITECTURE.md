@@ -94,7 +94,7 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 | Voir le rejet des mauvais points (RANSAC, vote de Hough) | [RansacRejector.cpp](../src/backend/algorithms/rejection/ransac/RansacRejector.cpp) (contient aussi `VoteRejector`) |
 | **Voir l'alignement global** (moindres carrés) | [TilePositioner.cpp](../src/backend/algorithms/stitching/positioning/TilePositioner.cpp) → `solvePositions()` (l. 48) |
 | **Égaliser la luminosité entre tuiles** | [Egalisation.h](../include/backend/algorithms/egalisation/Egalisation.h) + sa [doc](algorithms/egalisation/Egalisation.md) |
-| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) (point d'entrée) puis [solver.hpp](../include/backend/algorithms/seamline/dp_dijkstra/solver.hpp) |
+| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.hpp](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) (point d'entrée) puis [solver.hpp](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.h) |
 | Voir le calcul des coutures, méthode GraphCut | [GraphCutSeamFinder.cpp](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) (commenté ligne à ligne) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) |
 | Voir un vrai pipeline tourner depuis un script JSON | [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()` |
 | Générer le JSON du pipeline depuis la GUI | [PipelineJson.h](../include/frontend/PipelineJson.h) |
@@ -251,15 +251,15 @@ Port du notebook `egalisation_gain_champ_final.ipynb`. Même découpage que la c
 
 | Fichier | Rôle |
 |---|---|
-| [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) / [.cpp](../src/backend/algorithms/seamline/dp_dijkstra/seam_finder.cpp) | **Point d'entrée** : `SeamFinder::compute(left, right)`, soit carte de coût puis chemin. Travaille sur **un** overlap déjà découpé, en **RGB**. |
-| [cost_map](../src/backend/algorithms/seamline/dp_dijkstra/cost_map.cpp) | Section 5 : gradients de Sobel, normalisations, termes couleur et gradient → carte de coût. |
-| [cost_catalog](../src/backend/algorithms/seamline/dp_dijkstra/cost_catalog.cpp) | Section 5.0 : catalogue des fonctions de coût (`CostFunction::ColorGradient`…). |
-| [dynamic_programming](../src/backend/algorithms/seamline/dp_dijkstra/dynamic_programming.cpp) | Section 6.1 : chemin de coût minimal par programmation dynamique (monotone, rapide). |
-| [dijkstra](../src/backend/algorithms/seamline/dp_dijkstra/dijkstra.cpp) | Section 6.2 : Dijkstra 8 voisins (exact) et variante restreinte à un corridor autour du chemin DP. |
-| [solver](../src/backend/algorithms/seamline/dp_dijkstra/solver.cpp) | Section 6.3 : `solve_edge()`, point d'entrée unique des 3 méthodes, avec mesures de temps et de mémoire. |
-| [junctions](../src/backend/algorithms/seamline/dp_dijkstra/junctions.cpp) | Sections 7-8 : points de jonction entre 4 tuiles et réseau global de coutures sur la grille (`H_r_c` / `V_r_c`). |
-| [overlay](../src/backend/algorithms/seamline/dp_dijkstra/overlay.cpp) | Dessin du réseau de coutures sur une mosaïque (illustration). |
-| [export.hpp](../include/backend/algorithms/seamline/dp_dijkstra/export.hpp) | Macro `KIRK_API` (export DLL). Inutile ici : la lib est statique. |
+| [seam_finder.hpp](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) / [.cpp](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.cpp) | **Point d'entrée** : `SeamFinder::compute(left, right)`, soit carte de coût puis chemin. Travaille sur **un** overlap déjà découpé, en **RGB**. |
+| [cost_map](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_map.cpp) | Section 5 : gradients de Sobel, normalisations, termes couleur et gradient → carte de coût. |
+| [cost_catalog](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.cpp) | Section 5.0 : catalogue des fonctions de coût (`CostFunction::ColorGradient`…). |
+| [dynamic_programming](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.cpp) | Section 6.1 : chemin de coût minimal par programmation dynamique (monotone, rapide). |
+| [dijkstra](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/dijkstra.cpp) | Section 6.2 : Dijkstra 8 voisins (exact) et variante restreinte à un corridor autour du chemin DP. |
+| [solver](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.cpp) | Section 6.3 : `solve_edge()`, point d'entrée unique des 3 méthodes, avec mesures de temps et de mémoire. |
+| [junctions](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/junctions.cpp) | Sections 7-8 : points de jonction entre 4 tuiles et réseau global de coutures sur la grille (`H_r_c` / `V_r_c`). |
+| [overlay](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/overlay.cpp) | Dessin du réseau de coutures sur une mosaïque (illustration). |
+| [export.hpp](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/export.h) | Macro `KIRK_API` (export DLL). Inutile ici : la lib est statique. |
 
 **`graphcut/` (namespace `Seamline`)** : coupe de graphe d'OpenCV, paire par paire.
 

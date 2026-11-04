@@ -1,4 +1,4 @@
-#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.hpp"
 
 #include <gtest/gtest.h>
 
@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 namespace {
 

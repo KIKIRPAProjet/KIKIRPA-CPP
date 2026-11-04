@@ -13,9 +13,9 @@
 
 #include <string>
 
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     // Sortie de gradient() : équivalent du triplet Python (Gx, Gy, √(Gx² + Gy²)), tout en CV_64F.
     struct Gradients {

@@ -1,6 +1,6 @@
-#include "algorithms/seamline/dp_dijkstra/cost_map.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.h"
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc.h>
 
 #include <algorithm>
 #include <initializer_list>
@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     namespace {
 

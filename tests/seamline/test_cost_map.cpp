@@ -1,11 +1,11 @@
-#include "algorithms/seamline/dp_dijkstra/cost_map.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <stdexcept>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 TEST(CostMap, GradientOfConstantImageIsZero) {
     const cv::Mat img(20, 20, CV_32F, cv::Scalar(7.0));

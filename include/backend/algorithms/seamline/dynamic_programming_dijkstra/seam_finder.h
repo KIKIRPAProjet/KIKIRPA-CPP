@@ -3,12 +3,12 @@
 #include <opencv2/core.hpp>
 #include <vector>
 
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
-#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
-#include "algorithms/seamline/dp_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
 
 
-namespace seamlib
+namespace DynamicProgrammingDijkstraNS
 {
 
     /*

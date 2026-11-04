@@ -1,5 +1,5 @@
-#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
-#include "algorithms/seamline/dp_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
 
 #include "test_maps.hpp"
 
@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 namespace {
 

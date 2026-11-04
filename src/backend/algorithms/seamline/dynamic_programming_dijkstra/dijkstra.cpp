@@ -1,4 +1,4 @@
-#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.h"
 
 #include <opencv2/imgproc.hpp>
 
@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     namespace {
 

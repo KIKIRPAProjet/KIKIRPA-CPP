@@ -1,6 +1,6 @@
-#include "algorithms/seamline/dp_dijkstra/solver.hpp"
-#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
-#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.hpp"
 
 #include "test_maps.hpp"
 
@@ -9,7 +9,7 @@
 #include <cmath>
 #include <stdexcept>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 TEST(Solver, MethodNamesRoundTrip) {
     ASSERT_EQ(all_methods().size(), 3u);

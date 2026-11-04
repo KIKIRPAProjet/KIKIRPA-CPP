@@ -1,10 +1,10 @@
-#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.hpp"
 
 #include <gtest/gtest.h>
 
 #include <stdexcept>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 namespace {
 

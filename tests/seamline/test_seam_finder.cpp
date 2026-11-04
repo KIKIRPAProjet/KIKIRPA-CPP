@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "algorithms/seamline/dp_dijkstra/seam_finder.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 
 
 TEST(SeamFinderTest, BasicCreation)
 {
-    seamlib::SeamFinder finder;
+    DynamicProgrammingDijkstraNS::SeamFinder finder;
 
     EXPECT_TRUE(true);
 }

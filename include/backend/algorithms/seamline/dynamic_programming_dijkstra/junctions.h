@@ -43,10 +43,10 @@
 #include <string>
 #include <utility>
 
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
-#include "algorithms/seamline/dp_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     // Une adjacence telle que la voit le solveur (équivalent des champs utiles de EdgeRecord).
     struct EdgeCost {

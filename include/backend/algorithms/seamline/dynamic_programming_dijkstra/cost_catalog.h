@@ -22,13 +22,13 @@
 // =====================================================================================
 #pragma once
 
-#include "algorithms/seamline/dp_dijkstra/cost_map.hpp"
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
 
 #include <string>
 #include <vector>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     // Les sept fonctions du catalogue, dans l'ordre du dict Python COST_FUNCTIONS.
     enum class CostFunction {

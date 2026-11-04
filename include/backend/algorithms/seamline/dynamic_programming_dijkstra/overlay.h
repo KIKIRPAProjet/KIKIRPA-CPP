@@ -14,10 +14,10 @@
 #include <map>
 #include <string>
 
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
-#include "algorithms/seamline/dp_dijkstra/junctions.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.hpp"
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     // Dessine sur une copie BGR de `mosaic` : chaque seamline en rouge, chaque jonction en cercle jaune.
     //   origins : position de chaque carte de coût dans la mosaïque (px d'origine). Les adjacences V sont

@@ -15,9 +15,9 @@
 
 #include <vector>
 
-#include "algorithms/seamline/dp_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     // --- Éléments de la section 6 (outils communs) dont la 6.1 a besoin --------------------
     const double SQRT2 = 1.4142135623730951;

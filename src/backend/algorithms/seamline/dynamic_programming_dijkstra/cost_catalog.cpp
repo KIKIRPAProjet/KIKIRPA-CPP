@@ -1,13 +1,13 @@
-#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc.h>
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     namespace {
 

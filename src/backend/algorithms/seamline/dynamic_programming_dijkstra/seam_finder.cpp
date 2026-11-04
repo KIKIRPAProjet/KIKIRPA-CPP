@@ -1,10 +1,10 @@
-#include "algorithms/seamline/dp_dijkstra/seam_finder.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 
-#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
-#include "algorithms/seamline/dp_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
 // Ici on code la méthode concrètement
-namespace seamlib
+namespace DynamicProgrammingDijkstraNS
 {
 
 

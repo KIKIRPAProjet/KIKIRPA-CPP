@@ -1,11 +1,11 @@
-#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.h"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     namespace {
 

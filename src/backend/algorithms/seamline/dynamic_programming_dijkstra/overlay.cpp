@@ -1,6 +1,6 @@
-#include "algorithms/seamline/dp_dijkstra/overlay.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/overlay.h"
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc.h>
 
 #include <algorithm>
 #include <cmath>
@@ -8,7 +8,7 @@
 #include <vector>
 #include <stdexcept>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     cv::Mat draw_seam_network(const cv::Mat& mosaic, const SeamGrid& grid, const std::map<std::string, SolveResult>& seams,
         const JunctionSet& junctions, const std::map<std::string, cv::Point2d>& origins, double scale) {

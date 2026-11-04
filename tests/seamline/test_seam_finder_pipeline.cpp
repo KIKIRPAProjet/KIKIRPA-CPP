@@ -8,7 +8,7 @@
 #include <cstdlib>
 #include <stdexcept>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 namespace {
 

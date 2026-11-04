@@ -1,14 +1,14 @@
-#include "algorithms/seamline/dp_dijkstra/junctions.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.h"
 
-#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
-#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <stdexcept>
 
-namespace seamlib {
+namespace DynamicProgrammingDijkstraNS {
 
     namespace {
 

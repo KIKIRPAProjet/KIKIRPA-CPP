@@ -1,7 +1,7 @@
-#include "algorithms/seamline/dp_dijkstra/junctions.hpp"
-#include "algorithms/seamline/dp_dijkstra/cost_catalog.hpp"
-#include "algorithms/seamline/dp_dijkstra/dijkstra.hpp"
-#include "algorithms/seamline/dp_dijkstra/dynamic_programming.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.hpp"
 
 #include "test_maps.hpp"
 
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <string>
 
-using namespace seamlib;
+using namespace DynamicProgrammingDijkstraNS;
 
 namespace {
 
