@@ -12,6 +12,7 @@ class QComboBox;
 class QDoubleSpinBox;
 class QLabel;
 class QLineEdit;
+class QListWidget;
 class QProgressBar;
 class QPushButton;
 class QSpinBox;
@@ -62,6 +63,8 @@ public:
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
     
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
+    void setActiveStep(int stepNumber);
+    void appendLog(const QString &message);
 
 private:
     
@@ -105,6 +108,8 @@ private:
     LogPanel *m_logPanel = nullptr;
     QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
+    QListWidget *m_journalList = nullptr;
+    int m_activeStep = 0;
 };
 
 #endif

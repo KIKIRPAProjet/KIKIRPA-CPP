@@ -459,11 +459,11 @@ QTabWidget *WorkspaceUI::createBottomTabs()
     m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     bottomTabs->addTab(m_pairsTable, tr("Paires (4)"));
     
-    QListWidget *journal = new QListWidget;
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                       tr("14:10  4 tuiles importées"),
-                       tr("14:02  Projet ouvert")});
-    bottomTabs->addTab(journal, tr("Journal"));
+    m_journalList = new QListWidget;
+    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
+                             tr("14:10  4 tuiles importées"),
+                             tr("14:02  Projet ouvert")});
+    bottomTabs->addTab(m_journalList, tr("Journal"));
     auto *positions = new QTableWidget(4, 3);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
     for (int i = 0; i < 4; ++i) {
@@ -479,6 +479,17 @@ QTabWidget *WorkspaceUI::createBottomTabs()
     });
 
     return bottomTabs;
+}
+
+void WorkspaceUI::setActiveStep(int stepNumber)
+{
+    m_activeStep = stepNumber;
+}
+
+void WorkspaceUI::appendLog(const QString &message)
+{
+    if (m_journalList)
+        m_journalList->addItem(message);
 }
 
 /**

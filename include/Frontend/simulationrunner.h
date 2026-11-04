@@ -26,13 +26,15 @@ public slots:
 signals:
     void runStarted();
     void progressAdvanced(int percentage);
-    void stepChanged(const QString &stepName);
+    void stepChanged(int stepNumber, const QString &stepName);
     void runFinished();
     void runCancelled();
     void cancellationAvailable();
     void statusChanged(const QString &message);
     void comparisonRequested();
     void comparisonVisibilityChanged(bool visible);
+    void logMessage(const QString &message);
+    void mosaicReady(const QImage &image);
 
 private:
     void finishRun();
