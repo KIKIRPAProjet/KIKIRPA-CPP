@@ -70,28 +70,10 @@ public:
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
 
 private:
-    /**
-     * Met à jour l'interface utilisateur en fonction de l'état de la grille du projet.
-     * @param projectName Le nom du projet.
-     * @param gridState L'état de la grille.
-     */
+    
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
-
-    /**
-     * Met à jour les paramètres de la grille dans l'interface utilisateur.
-     * @param gridState L'état de la grille.
-     */
     void updateGridParameters(const ProjectGrid::State &gridState);
-
-    /**
-     * Met à jour le résumé de la grille dans l'interface utilisateur.
-     * @param gridState L'état de la grille.
-     */
     void updateGridSummary(const ProjectGrid::State &gridState);
-
-    /** 
-     * Crée l'espace de travail principal avec les barres d'outils, les onglets et les panneaux.
-     */
     void createWorkspace();
 
 
@@ -110,6 +92,8 @@ private:
     QWidget *createAlignmentMode();
     QWidget *createAssemblyMode();
 
+    void showManualAdjustementDialog();
+    
     QWidget *createGridDimensionsGroup(QWidget *parent);
     QWidget *createGridCaptureGroup(QWidget *parent);
     void connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
