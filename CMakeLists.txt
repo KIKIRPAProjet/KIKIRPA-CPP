@@ -20,10 +20,13 @@ set(PROJECT_SOURCES
         src/Frontend/project_serializer.cpp
         src/Frontend/dialog_helpers.cpp
         src/Frontend/simulationrunner.cpp
-        src/Frontend/workspace_ui.cpp
         src/Frontend/menubar_manager.cpp
         src/Frontend/frontendutils.cpp
         src/Frontend/export_mode.cpp
+        src/Frontend/workspace/worspace_ui.cpp
+        src/Frontend/workspace/grid_tab.cpp
+        src/Frontend/workspace/assembly_tab.cpp 
+
         include/Frontend/mainwindow.h
         include/Frontend/homepage.h
         include/Frontend/projectgrid.h
@@ -35,6 +38,9 @@ set(PROJECT_SOURCES
         include/Frontend/frontendutils.h
         include/Frontend/artworkcanvas.h
         include/Frontend/workspace_helpers.h
+        include/Frontend/workspace/workspace_ui.h
+        include/Frontend/workspace/grid_tab.h
+        include/Frontend/workspace/assembly_tab.h
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)

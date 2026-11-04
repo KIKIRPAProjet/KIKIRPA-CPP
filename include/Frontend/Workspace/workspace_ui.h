@@ -2,6 +2,7 @@
 #define WORKSPACE_UI_H
 
 #include "projectgrid.h"
+#include "grid_tab.h"
 
 #include <QObject>
 
@@ -40,7 +41,9 @@ public:
     QWidget *projectInfoPanel() const { return m_projectInfoPanel; }
     QTabWidget *rightTabs() const { return m_rightTabs; }
     QTabWidget *bottomTabs() const { return m_bottomTabs; }
-    QWidget *gridTabPage() const { return m_gridTabPage; }
+    
+    GridTab *gridtab() const { return m_gridTab; }
+    
     QTableWidget *pairsTable() const { return m_pairsTable; }
     QLabel *projectNameLabel() const { return m_projectNameLabel; }
     QLineEdit *projectNameEdit() const { return m_projectNameEdit; }
@@ -52,28 +55,13 @@ public:
     QLabel *tileCountLabel() const { return m_tileCountLabel; }
     QProgressBar *progressBar() const { return m_progressBar; }
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
-    QSpinBox *gridRowsSpin() const { return m_gridRowsSpin; }
-    QSpinBox *gridColumnsSpin() const { return m_gridColumnsSpin; }
-    QSpinBox *horizontalOverlapSpin() const { return m_horizontalOverlapSpin; }
-    QSpinBox *verticalOverlapSpin() const { return m_verticalOverlapSpin; }
-    QComboBox *captureOrderCombo() const { return m_captureOrderCombo; }
-    QComboBox *modalityCombo() const { return m_modalityCombo; }
-    QDoubleSpinBox *scaleSpin() const { return m_scaleSpin; }
-    QDoubleSpinBox *uncertaintySpin() const { return m_uncertaintySpin; }
-    QCheckBox *linkedOverlapCheck() const { return m_linkedOverlapCheck; }
-    QCheckBox *automaticUncertaintyCheck() const { return m_automaticUncertaintyCheck; }
-    QPushButton *emptyCellButton() const { return m_emptyCellButton; }
-    QLabel *selectedGridTileLabel() const { return m_selectedGridTileLabel; }
-    QLabel *gridSummaryLabel() const { return m_gridSummaryLabel; }
-    QLabel *referencePathLabel() const { return m_referencePathLabel; }
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
+    
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
 
 private:
     
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
-    void updateGridParameters(const ProjectGrid::State &gridState);
-    void updateGridSummary(const ProjectGrid::State &gridState);
     void createWorkspace();
 
 
@@ -87,18 +75,10 @@ private:
     QWidget *createStatusBar();
  
     void createProjectMode(QWidget *center);
-    QWidget *createTilesMode();
     QWidget *createMasksMode();
     QWidget *createAlignmentMode();
-    QWidget *createAssemblyMode();
 
     void showManualAdjustementDialog();
-    
-    QWidget *createGridDimensionsGroup(QWidget *parent);
-    QWidget *createGridCaptureGroup(QWidget *parent);
-    void connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
-                                 QPushButton *importReference, QPushButton *compareReference,
-                                 QPushButton *validateGridButton);
 
     MainWindow *m_mainWindow = nullptr;
     ProjectGrid *m_projectGrid = nullptr;
@@ -110,7 +90,9 @@ private:
     QWidget *m_projectInfoPanel = nullptr;
     QTabWidget *m_rightTabs = nullptr;
     QTabWidget *m_bottomTabs = nullptr;
-    QWidget *m_gridTabPage = nullptr;
+    
+    GridTab *m_gridTab = nullptr;
+
     QTableWidget *m_pairsTable = nullptr;
     QLabel *m_projectNameLabel = nullptr;
     QLineEdit *m_projectNameEdit = nullptr;
@@ -123,20 +105,6 @@ private:
     QProgressBar *m_progressBar = nullptr;
     LogPanel *m_logPanel = nullptr;
     QComboBox *m_arrangementCombo = nullptr;
-    QSpinBox *m_gridRowsSpin = nullptr;
-    QSpinBox *m_gridColumnsSpin = nullptr;
-    QSpinBox *m_horizontalOverlapSpin = nullptr;
-    QSpinBox *m_verticalOverlapSpin = nullptr;
-    QComboBox *m_captureOrderCombo = nullptr;
-    QComboBox *m_modalityCombo = nullptr;
-    QDoubleSpinBox *m_scaleSpin = nullptr;
-    QDoubleSpinBox *m_uncertaintySpin = nullptr;
-    QCheckBox *m_linkedOverlapCheck = nullptr;
-    QCheckBox *m_automaticUncertaintyCheck = nullptr;
-    QPushButton *m_emptyCellButton = nullptr;
-    QLabel *m_selectedGridTileLabel = nullptr;
-    QLabel *m_gridSummaryLabel = nullptr;
-    QLabel *m_referencePathLabel = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
 };
 
