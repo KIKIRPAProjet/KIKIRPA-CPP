@@ -1,4 +1,4 @@
-#include "project_setup_window.h"
+#include "mainwindow.h"
 
 #include <QApplication>
 #include <QString>
@@ -8,7 +8,7 @@ int main(int argumentCount, char *arguments[]) {
   application.setApplicationName(QStringLiteral("KIK-IRPA Assemblage"));
   application.setOrganizationName(QStringLiteral("KIK-IRPA"));
 
-  FrontendNs::ProjectSetupWindowClass window;
+  MainWindow window;
   window.show();
   return application.exec();
 }

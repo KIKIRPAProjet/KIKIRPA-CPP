@@ -124,4 +124,21 @@ TEST_F(ProjectSetupTestClass, ReportsGridAndFilenameMismatchAfterMove) {
       }));
 }
 
+TEST_F(ProjectSetupTestClass, AcceptsPositionsChosenInExistingGrid) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.filenameFormat.clear();
+  std::swap(setup.tiles[0].path, setup.tiles[5].path);
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  const auto &tiles = script.at("project").at("grid").at("tiles");
+  EXPECT_EQ(tiles.at(0).at("row"), 0);
+  EXPECT_EQ(tiles.at(0).at("column"), 0);
+  EXPECT_EQ(tiles.at(0).at("path"),
+            fs::absolute(setup.tiles[0].path).string());
+  EXPECT_EQ(tiles.at(5).at("row"), 2);
+  EXPECT_EQ(tiles.at(5).at("column"), 1);
+}
+
 } // namespace

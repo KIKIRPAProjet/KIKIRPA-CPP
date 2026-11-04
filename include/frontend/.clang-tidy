@@ -1,0 +1,5 @@
+InheritParentConfig: true
+Checks: >
+  -readability-function-size,
+  -readability-identifier-naming,
+  -readability-magic-numbers
