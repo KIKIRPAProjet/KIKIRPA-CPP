@@ -6,7 +6,7 @@ target_compile_definitions(pipeline_tests PRIVATE
 )
 
 add_executable(reprise_tests test_reprise.cpp)
-target_link_libraries(reprise_tests PRIVATE stitching_backend GTest::gtest_main)
+target_link_libraries(reprise_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(pipeline_tests PROPERTIES LABELS "unit")
