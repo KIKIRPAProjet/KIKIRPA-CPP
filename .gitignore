@@ -6,4 +6,5 @@ out/
 .vs/
 CMakeUserPresets.json
 .DS_Store
+.claude/settings.local.json
 .vscode
