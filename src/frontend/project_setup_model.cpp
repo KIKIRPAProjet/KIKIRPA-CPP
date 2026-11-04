@@ -155,6 +155,8 @@ void validateSettings(const ProjectSetup &setup,
 
 std::optional<std::regex> validatedPattern(const ProjectSetup &setup,
                                            std::vector<std::string> &errors) {
+  if (setup.filenameFormat.empty())
+    return std::nullopt;
   try {
     std::regex pattern(setup.filenameFormat, std::regex::icase);
     if (pattern.mark_count() < 2) {
@@ -314,7 +316,8 @@ Json ProjectSetupModelClass::createBackendScript() const {
   replaceParameter(
       importStep, "path",
       fs::absolute(setup.inputDirectory).lexically_normal().string());
-  replaceParameter(importStep, "format", setup.filenameFormat);
+  if (!setup.filenameFormat.empty())
+    replaceParameter(importStep, "format", setup.filenameFormat);
 
   Json phaseCorrelationStep =
       PipelineNs::createStep("phase-correlation")->getConfigJson();
