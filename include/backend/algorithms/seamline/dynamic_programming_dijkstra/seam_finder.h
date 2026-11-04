@@ -1,11 +1,11 @@
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core.h>
 #include <vector>
 
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
-#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.hpp"
-#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
 
 namespace DynamicProgrammingDijkstraNS

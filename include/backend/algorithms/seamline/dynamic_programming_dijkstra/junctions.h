@@ -35,7 +35,7 @@
 // =====================================================================================
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core.h>
 
 #include <limits>
 #include <map>
@@ -43,8 +43,8 @@
 #include <string>
 #include <utility>
 
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
-#include "algorithms/seamline/dynamic_programming_dijkstra/solver.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
 namespace DynamicProgrammingDijkstraNS {
 

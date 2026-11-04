@@ -1,6 +1,6 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.h"
 
-#include <opencv2/imgproc.hpp>
+#include <opencv2/imgproc.h>
 
 #include <algorithm>
 #include <functional>

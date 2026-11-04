@@ -9,13 +9,13 @@
 //     cv::imwrite("reseau.png", img);
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core.h>
 
 #include <map>
 #include <string>
 
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
-#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.h"
 
 namespace DynamicProgrammingDijkstraNS {
 

@@ -11,11 +11,11 @@
 // =====================================================================================
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core.h>
 
 #include <vector>
 
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.hpp"
+#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
 
 namespace DynamicProgrammingDijkstraNS {
 
