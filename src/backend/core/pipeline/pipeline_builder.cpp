@@ -2,6 +2,7 @@
 #include "core/pipeline/pipeline_builder.h"
 
 #include "core/config/pipeline_config.h"
+#include "steps/dynamic_programming_dijkstra_step.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/phase_correlation_step.h"
@@ -26,6 +27,7 @@ namespace PipelineNs {
             static const std::map<std::string, StepCreator> registry = {
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
+                {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
             };
             return registry;

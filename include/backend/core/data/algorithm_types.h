@@ -74,6 +74,24 @@ namespace DataNs {
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
 
+    // Correction d'intensité produite par le step d'égalisation, dans l'ordre de la TileList.
+    // Ajouté car je n'ai pas le code qui calcule les gains, mais je veux pouvoir sauvegarder et relire les gains estimés.
+    struct IntensityCorrection {
+        std::vector<double> tileGains;   // facteur de luminosité à appliquer par division
+        double fieldStrength = 0.0;      // coefficient du champ d'éclairage
+        std::vector<int> isolatedTileIndices;   // indices des tuiles sans mesure exploitable
+    };
+
+    // Coutures calculées entre deux tuiles. Les points sont en pixels de pleine résolution,
+    // dans le repère absolu de la mosaïque.
+    struct Seamline {
+        int tileIdA = 0;   // TileClass::getId() des deux tuiles adjacentes
+        int tileIdB = 0;
+        Direction direction = Direction::Right;   // position de B par rapport à A
+        std::vector<cv::Point2d> points;   // chemin de couture dans le repère de la mosaïque
+    };
+    using Seamlines = std::vector<Seamline>;
+
     // Territoire d'une tuile : polygones, dans le repère de la mosaïque, délimitant les pixels pris dans cette tuile.
     // polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
     struct TileTerritory {
