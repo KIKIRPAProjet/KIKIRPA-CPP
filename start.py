@@ -47,6 +47,13 @@ def find_mingw_dir(base_dir: Path) -> Path | None:
     return max(candidates, key=version_key)
 
 
+def pause_before_exit() -> None:
+    try:
+        input("Appuyez sur Entrée pour fermer cette fenêtre...")
+    except EOFError:
+        pass
+
+
 def resolve_paths() -> tuple[Path, Path, Path, Path, Path]:
     qt_dir_str = os.environ.get("QT_DIR") or os.environ.get("QTDIR")
     qt_dir = Path(qt_dir_str) if qt_dir_str else None
@@ -72,7 +79,8 @@ def main() -> int:
     try:
         qt_dir, mingw_dir, cmake_dir, ninja_dir, qt_prefix = resolve_paths()
     except FileNotFoundError as error:
-        print(error)
+        print(error, flush=True)
+        pause_before_exit()
         return 1
 
     cmake = cmake_dir / "bin" / "cmake.exe"
@@ -81,9 +89,10 @@ def main() -> int:
     required_files = (cmake, ninja, qt_prefix)
     missing = [str(path) for path in required_files if not path.exists()]
     if missing:
-        print("Outil ou dossier Qt introuvable :")
-        print("\n".join(f"  - {path}" for path in missing))
-        print(f"Qt détecté : {qt_dir}")
+        print("Outil ou dossier Qt introuvable :", flush=True)
+        print("\n".join(f"  - {path}" for path in missing), flush=True)
+        print(f"Qt détecté : {qt_dir}", flush=True)
+        pause_before_exit()
         return 1
 
     environment = os.environ.copy()
@@ -98,8 +107,9 @@ def main() -> int:
     )
 
     temporary_dir = Path(tempfile.mkdtemp(prefix="Frontend-"))
-    print(f"Qt détecté : {qt_dir}")
-    print(f"Compilation temporaire dans : {temporary_dir}")
+    succeeded = False
+    print(f"Qt détecté : {qt_dir}", flush=True)
+    print(f"Compilation temporaire dans : {temporary_dir}", flush=True)
 
     try:
         subprocess.run(
@@ -125,18 +135,34 @@ def main() -> int:
 
         executable = temporary_dir / "Frontend.exe"
         if not executable.exists():
-            print(f"Executable introuvable : {executable}")
+            print(f"Exécutable introuvable : {executable}", flush=True)
+            print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+            pause_before_exit()
             return 1
 
-        print("Lancement de Frontend.exe...")
+        print("Lancement de Frontend.exe...", flush=True)
         subprocess.run([str(executable)], cwd=temporary_dir, check=True)
+        succeeded = True
         return 0
     except subprocess.CalledProcessError as error:
-        print(f"La commande a échoué avec le code {error.returncode}.")
+        print(f"La commande a échoué avec le code {error.returncode}.", flush=True)
+        if isinstance(error.cmd, (list, tuple)):
+            command = subprocess.list2cmdline([str(part) for part in error.cmd])
+        else:
+            command = str(error.cmd)
+        print(f"Commande : {command}", flush=True)
+        print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+        pause_before_exit()
         return error.returncode or 1
+    except OSError as error:
+        print(f"Impossible d’exécuter une commande : {error}", flush=True)
+        print(f"Les fichiers de compilation sont conservés dans : {temporary_dir}", flush=True)
+        pause_before_exit()
+        return 1
     finally:
-        shutil.rmtree(temporary_dir, ignore_errors=True)
-        print("Fichiers temporaires supprimés.")
+        if succeeded:
+            shutil.rmtree(temporary_dir, ignore_errors=True)
+            print("Fichiers temporaires supprimés.", flush=True)
 
 
 if __name__ == "__main__":

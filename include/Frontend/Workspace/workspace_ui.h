@@ -3,6 +3,7 @@
 
 #include "projectgrid.h"
 #include "grid_tab.h"
+#include "alignment_tab.h"
 
 #include <QObject>
 
@@ -41,18 +42,21 @@ public:
     QWidget *projectInfoPanel() const { return m_projectInfoPanel; }
     QTabWidget *rightTabs() const { return m_rightTabs; }
     QTabWidget *bottomTabs() const { return m_bottomTabs; }
+    QWidget *gridTabPage() const { return m_gridTab; }
+    QComboBox *captureOrderCombo() const
+    {
+        return m_gridTab ? m_gridTab->captureOrderCombo() : nullptr;
+    }
     
     GridTab *gridtab() const { return m_gridTab; }
     
     QTableWidget *pairsTable() const { return m_pairsTable; }
-    QLabel *projectNameLabel() const { return m_projectNameLabel; }
     QLineEdit *projectNameEdit() const { return m_projectNameEdit; }
     QLabel *projectFolderLabel() const { return m_projectFolderLabel; }
     QLabel *projectFormatLabel() const { return m_projectFormatLabel; }
     QLabel *statusLabel() const { return m_statusLabel; }
     QLabel *currentStepLabel() const { return m_currentStepLabel; }
     QLabel *zoomLabel() const { return m_zoomLabel; }
-    QLabel *tileCountLabel() const { return m_tileCountLabel; }
     QProgressBar *progressBar() const { return m_progressBar; }
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
@@ -75,10 +79,6 @@ private:
     QWidget *createStatusBar();
  
     void createProjectMode(QWidget *center);
-    QWidget *createMasksMode();
-    QWidget *createAlignmentMode();
-
-    void showManualAdjustementDialog();
 
     MainWindow *m_mainWindow = nullptr;
     ProjectGrid *m_projectGrid = nullptr;
@@ -92,16 +92,15 @@ private:
     QTabWidget *m_bottomTabs = nullptr;
     
     GridTab *m_gridTab = nullptr;
+    AlignmentTab *m_alignmentTab = nullptr;
 
     QTableWidget *m_pairsTable = nullptr;
-    QLabel *m_projectNameLabel = nullptr;
     QLineEdit *m_projectNameEdit = nullptr;
     QLabel *m_projectFolderLabel = nullptr;
     QLabel *m_projectFormatLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_currentStepLabel = nullptr;
     QLabel *m_zoomLabel = nullptr;
-    QLabel *m_tileCountLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
     LogPanel *m_logPanel = nullptr;
     QComboBox *m_arrangementCombo = nullptr;

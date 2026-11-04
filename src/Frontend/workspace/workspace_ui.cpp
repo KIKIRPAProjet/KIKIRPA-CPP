@@ -22,6 +22,10 @@
 #include "workspace_helpers.h"
 #include "workspace_ui.h"
 #include "grid_tab.h"
+#include "alignment_tab.h"
+#include "assembly_tab.h"
+#include "masks_tab.h"
+
 
 #include <QAbstractItemView>
 #include <QButtonGroup>
@@ -98,7 +102,6 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
  */
 void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState)
 {
-    m_projectNameLabel->setText(projectName);
     m_projectNameEdit->setText(projectName);
 
     m_projectFolderLabel->setText(gridState.tileDirectory.isEmpty()
@@ -115,8 +118,9 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
         const QString suffix = file.suffix().toLower();
             if (suffix == QStringLiteral("tif") || suffix == QStringLiteral("tiff"))
                 ++validFiles;
-        }
-        const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
+        }   
+    const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
+    
     m_projectFormatLabel->setText(allFilesValid
             ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
                   .arg(validFiles)
@@ -128,23 +132,13 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
             ? QStringLiteral("color:#66c98a;")
             : QStringLiteral("color:#e0a45f;"));
 
-    m_tileCountLabel->setText(
-            tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
-
-    const QString scaleText = gridState.scaleMmPerPixel > 0.0
-        ? tr("%1 mm/pixel").arg(gridState.scaleMmPerPixel, 0, 'g', 8)
-        : tr("à renseigner");
-
-    if (auto *metadata = m_workspace->findChild<QLabel *>(
-            QStringLiteral("projectMetadataLabel"))) {
-        metadata->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
-                              .arg(gridState.modality, scaleText)
-                              .arg(gridState.horizontalOverlap).arg(gridState.verticalOverlap));
-    }
-
     if (auto *title = m_workspace->findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
         title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
                            .arg(projectName, gridState.modality));
+    }
+
+    if(m_alignmentTab){
+        m_alignmentTab->updateInfo(projectName,gridState);
     }
 }
 
@@ -239,115 +233,6 @@ void WorkspaceUI::createProjectMode(QWidget *center)
     static_cast<QVBoxLayout *>(center->layout())->addWidget(m_projectInfoPanel, 1);
 
 }
-
-
-
-void WorrkspaceUI::showManualAdjustmentDialog()
-{
-    QDialog dialog(m_mainWindow);
-    dialog.setWindowTitle(tr("Correction manuelle"));
-    QFormLayout form(&dialog);
-
-    auto *dx = new QDoubleSpinBox(&dialog);
-    auto *dy = new QDoubleSpinBox(&dialog);  
-    dx->setRange(-100000, 100000); 
-    dx->setDecimals(1); 
-    dx->setValue(4065.5);
-    
-    dy->setRange(-100000, 100000); 
-    dy->setDecimals(1); 
-    dy->setValue(-20.7);
-        
-    form.addRow(tr("Décalage horizontal (px)"), dx);
-    form.addRow(tr("Décalage vertical (px)"), dy);
-        
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    form.addRow(buttons);
-    
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    
-    if (dialog.exec() == QDialog::Accepted){
-            m_mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
-                         .arg(dx->value()).arg(dy->value()));}
-}
-
-/**
- * Crée l'interface pour le mode masques.
- * @return Un QWidget contenant l'interface du mode masques.
- */
-QWidget *WorkspaceUI::createMasksMode()
-{
-    auto *layersPage = new QWidget;
-    auto *layersLayout = new QVBoxLayout(layersPage);
-    layersLayout->addWidget(new QLabel(tr("Calques")));
-    const QStringList layerNames = {tr("Lignes de couture"), tr("Erreur d'alignement"),
-                                    tr("Tuiles"), tr("Mosaïque"), tr("Masques")};
-    for (const QString &name : layerNames) {
-        auto *check = new QCheckBox(name);
-        check->setChecked(true);
-        layersLayout->addWidget(check);
-        connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
-            m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
-            if (name == tr("Masques")) {
-                m_mainWindow->maskVisible = checked;
-                static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(checked);
-            }
-        });
-    }
-    layersLayout->addStretch();
-    return layersPage;
-
-}
-
-/**
- * Crée l'interface pour le mode d'alignement.
- * @return Un QWidget contenant l'interface du mode d'alignement.
- */
-QWidget *WorkspaceUI::createAlignmentMode()
-{
-    auto *infoPage = new QWidget;
-    auto *infoLayout = new QVBoxLayout(infoPage);
-
-    infoLayout->addWidget(new QLabel(tr("Projet sélectionné")));
-    m_projectNameLabel = new QLabel;
-    m_projectNameLabel->setWordWrap(true);
-    infoLayout->addWidget(m_projectNameLabel);
-
-    m_tileCountLabel = new QLabel;
-    infoLayout->addWidget(m_tileCountLabel);
-
-    auto *projectMetadata = makeMutedLabel(QString(), infoPage);
-    projectMetadata->setObjectName(QStringLiteral("projectMetadataLabel"));
-    infoLayout->addWidget(projectMetadata);
-
-    auto *maskButton = makeWorkspaceButton(tr("Détecter les bords noirs"), infoPage);
-    auto *pairButton = makeWorkspaceButton(tr("Ouvrir la vue Paire"), infoPage);
-    auto *validateButton = makeWorkspaceButton(tr("Valider la paire"), infoPage, true);
-    auto *adjustButton = makeWorkspaceButton(tr("Saisir un décalage…"), infoPage);
-
-    infoLayout->addWidget(pairButton);
-    infoLayout->addWidget(maskButton);
-    infoLayout->addWidget(validateButton);
-    infoLayout->addWidget(adjustButton);
-    infoLayout->addStretch();
-
-    connect(maskButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->setMode(2);
-        static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(true);
-        m_mainWindow->updateStatus(tr("Masque proposé. Vérifiez-le avant validation."));
-    });
-    connect(pairButton, &QPushButton::clicked, this, [this]() { m_mainWindow->setMode(3); });
-    connect(validateButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->updateStatus(tr("Paire validée par l'opérateur; les étapes suivantes sont à refaire."));
-    });
-    
-    //connection a la fonction showManualAdjustmentDialog pour le bouton d'ajustement manuel
-    connect(adjustButton, &QPushButton::clicked, this, &WorkspaceUI::showManualAdjustmentDialog);
-
-    return infoPage;
-}
-
 
 
 /**
@@ -537,11 +422,13 @@ QTabWidget *WorkspaceUI::createRightTabs()
     QTabWidget *rightTabs = new QTabWidget;
     rightTabs->setMinimumWidth(218);
 
-    m_gridTab = new GridTab(m_mainwindow, m_projectGrid, static_cast<ArtworkCanvas*>(m_canvas));
+    m_gridTab = new GridTab(m_mainWindow, m_projectGrid, static_cast<ArtworkCanvas*>(m_canvas));
+    m_alignmentTab = new AlignmentTab(m_mainWindow, static_cast<ArtworkCanvas *>(m_canvas));
+    
     rightTabs->addTab(m_gridTab, tr("Grille"));
-    rightTabs->addTab(createMasksMode(), tr("Calques"));
+    rightTabs->addTab(new MasksTab(m_mainWindow, static_cast<ArtworkCanvas*>(m_canvas)), tr("Calques"));
     rightTabs->addTab(new AssemblyTab(m_mainWindow), tr("Chaîne"));
-    rightTabs->addTab(createAlignmentMode(), tr("Infos"));
+    rightTabs->addTab(m_alignmentTab, tr("Infos"));
     
     return rightTabs;
 }
@@ -621,4 +508,3 @@ QWidget *WorkspaceUI::createStatusBar()
 
     return status;
 }
-

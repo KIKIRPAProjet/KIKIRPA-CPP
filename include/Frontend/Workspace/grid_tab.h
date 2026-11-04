@@ -13,15 +13,20 @@ class QComboBox;
 class QCheckBox;
 class QPushButton;
 
+class GridTab : public QScrollArea
+{
+    Q_OBJECT
+
 public:
     explicit GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas *canvas, QWidget *parent = nullptr);
 
     void updateState(const ProjectGrid::State &gridState);
+    QComboBox *captureOrderCombo() const { return m_captureOrderCombo; }
 
 private:
     // sous-fonctions de création
-    QWidget *createDimensionsGroup();
-    QWidget *createCaptureGroup();
+    QWidget *createGridDimensionsGroup(QWidget *parent);
+    QWidget *createGridCaptureGroup(QWidget *parent);
     void setupConnections(QPushButton *rotateTile, QPushButton *flipTile, 
                           QPushButton *importReference, QPushButton *compareReference, 
                           QPushButton *validateGridButton);

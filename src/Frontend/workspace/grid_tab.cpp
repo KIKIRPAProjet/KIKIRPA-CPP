@@ -34,7 +34,7 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
     m_gridSummaryLabel = new QLabel;
     gridLayout->addWidget(m_gridSummaryLabel);
 
-    gridLayout->addWidget(createDimensionsGroup());
+    gridLayout->addWidget(createGridDimensionsGroup(m_gridTabPage));
 
     m_selectedGridTileLabel = makeMutedLabel(QString(), m_gridTabPage);
     m_selectedGridTileLabel->setWordWrap(true);
@@ -50,7 +50,7 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
     m_emptyCellButton = makeWorkspaceButton(tr("Marquer une case vide"), m_gridTabPage);
     gridLayout->addWidget(m_emptyCellButton);
 
-    gridLayout->addWidget(createCaptureGroup());
+    gridLayout->addWidget(createGridCaptureGroup(m_gridTabPage));
 
     m_referencePathLabel = makeMutedLabel(tr("Aucune image de référence"), m_gridTabPage);
     m_referencePathLabel->setWordWrap(true);
@@ -215,10 +215,6 @@ void GridTab::updateParameters(const ProjectGrid::State &gridState)
     if (m_captureOrderCombo) {
     const QSignalBlocker blocker(m_captureOrderCombo);
     m_captureOrderCombo->setCurrentIndex(gridState.captureOrder);
-    }
-    if (m_arrangementCombo) {
-    const QSignalBlocker blocker(m_arrangementCombo);
-    m_arrangementCombo->setCurrentIndex(gridState.captureOrder);
     }
     if (m_horizontalOverlapSpin) {
     const QSignalBlocker blocker(m_horizontalOverlapSpin);

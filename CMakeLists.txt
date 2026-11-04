@@ -23,9 +23,11 @@ set(PROJECT_SOURCES
         src/Frontend/menubar_manager.cpp
         src/Frontend/frontendutils.cpp
         src/Frontend/export_mode.cpp
-        src/Frontend/workspace/worspace_ui.cpp
+        src/Frontend/workspace/workspace_ui.cpp
         src/Frontend/workspace/grid_tab.cpp
         src/Frontend/workspace/assembly_tab.cpp 
+        src/Frontend/workspace/alignment_tab.cpp
+        src/Frontend/workspace/masks_tab.cpp
 
         include/Frontend/mainwindow.h
         include/Frontend/homepage.h
@@ -33,14 +35,15 @@ set(PROJECT_SOURCES
         include/Frontend/project_serializer.h
         include/Frontend/dialog_helpers.h
         include/Frontend/simulationrunner.h
-        include/Frontend/workspace_ui.h
         include/Frontend/menubar_manager.h
         include/Frontend/frontendutils.h
         include/Frontend/artworkcanvas.h
         include/Frontend/workspace_helpers.h
-        include/Frontend/workspace/workspace_ui.h
-        include/Frontend/workspace/grid_tab.h
-        include/Frontend/workspace/assembly_tab.h
+        include/Frontend/Workspace/workspace_ui.h
+        include/Frontend/Workspace/grid_tab.h
+        include/Frontend/Workspace/assembly_tab.h
+        include/Frontend/Workspace/alignment_tab.h
+        include/Frontend/Workspace/masks_tab.h
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
@@ -72,6 +75,7 @@ if(WIN32)
 endif()
 target_include_directories(Frontend PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend/Workspace
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

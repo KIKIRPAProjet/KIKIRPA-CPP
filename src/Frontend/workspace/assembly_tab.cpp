@@ -15,7 +15,7 @@
 AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     : QWidget(parent), m_mainWindow(mainWindow)
 {
-     auto *chainLayout = new QVBoxLayout(chainPage);
+     auto *chainLayout = new QVBoxLayout(this);
     chainLayout->setContentsMargins(6, 8, 6, 8);
 
     chainLayout->addWidget(new QLabel(tr("Chaîne de traitement")));
@@ -24,7 +24,7 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
         tr("4  Optimisation"), tr("5  Calage local"), tr("6  Égalisation"),
         tr("7  Ligne de couture"), tr("8  Fusion et export")};
 
-    auto *stepList = new QListWidget(chainPage);
+    auto *stepList = new QListWidget(this);
     for (int i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem((i == 2 ? QStringLiteral("⚠  ") : QStringLiteral("●  "))
                                          + steps.at(i), stepList);
@@ -37,7 +37,7 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     });
 
     //bouton de relance 
-    auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), chainPage);
+    auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), this);
     chainLayout->addWidget(relaunch);
 
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
@@ -45,7 +45,7 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
         m_mainWindow->requestRun(row + 1);
     });
 
-    auto *selectAlgo = new QComboBox(chainPage);
+    auto *selectAlgo = new QComboBox(this);
     selectAlgo->addItems({tr("Coupe de graphe"), tr("Programmation dynamique"), tr("Dijkstra")});
     chainLayout->addWidget(selectAlgo);
 

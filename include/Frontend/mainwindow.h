@@ -26,6 +26,10 @@ public slots:
 
 private:
     friend class WorkspaceUI;
+    friend class GridTab;
+    friend class AssemblyTab;
+    friend class AlignmentTab;
+    friend class MasksTab;
 
     void keyPressEvent(QKeyEvent *event) override;
     void refreshGrid();
