@@ -525,6 +525,36 @@ void WorkspaceUI::connectTilesModeSignals(QPushButton *rotateTile, QPushButton *
         [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
 }
 
+void WorrkspaceUI::showManualAdjustmentDialog()
+{
+    QDialog dialog(m_mainWindow);
+    dialog.setWindowTitle(tr("Correction manuelle"));
+    QFormLayout form(&dialog);
+
+    auto *dx = new QDoubleSpinBox(&dialog);
+    auto *dy = new QDoubleSpinBox(&dialog);  
+    dx->setRange(-100000, 100000); 
+    dx->setDecimals(1); 
+    dx->setValue(4065.5);
+    
+    dy->setRange(-100000, 100000); 
+    dy->setDecimals(1); 
+    dy->setValue(-20.7);
+        
+    form.addRow(tr("Décalage horizontal (px)"), dx);
+    form.addRow(tr("Décalage vertical (px)"), dy);
+        
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    form.addRow(buttons);
+    
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    
+    if (dialog.exec() == QDialog::Accepted){
+            m_mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
+                         .arg(dx->value()).arg(dy->value()));}
+}
+
 /**
  * Crée l'interface pour le mode masques.
  * @return Un QWidget contenant l'interface du mode masques.
@@ -561,51 +591,43 @@ QWidget *WorkspaceUI::createAlignmentMode()
 {
     auto *infoPage = new QWidget;
     auto *infoLayout = new QVBoxLayout(infoPage);
+
     infoLayout->addWidget(new QLabel(tr("Projet sélectionné")));
     m_projectNameLabel = new QLabel;
     m_projectNameLabel->setWordWrap(true);
     infoLayout->addWidget(m_projectNameLabel);
+
     m_tileCountLabel = new QLabel;
     infoLayout->addWidget(m_tileCountLabel);
+
     auto *projectMetadata = makeMutedLabel(QString(), infoPage);
     projectMetadata->setObjectName(QStringLiteral("projectMetadataLabel"));
     infoLayout->addWidget(projectMetadata);
+
     auto *maskButton = makeWorkspaceButton(tr("Détecter les bords noirs"), infoPage);
+    auto *pairButton = makeWorkspaceButton(tr("Ouvrir la vue Paire"), infoPage);
+    auto *validateButton = makeWorkspaceButton(tr("Valider la paire"), infoPage, true);
+    auto *adjustButton = makeWorkspaceButton(tr("Saisir un décalage…"), infoPage);
+
+    infoLayout->addWidget(pairButton);
     infoLayout->addWidget(maskButton);
+    infoLayout->addWidget(validateButton);
+    infoLayout->addWidget(adjustButton);
+    infoLayout->addStretch();
+
     connect(maskButton, &QPushButton::clicked, this, [this]() {
         m_mainWindow->setMode(2);
         static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(true);
         m_mainWindow->updateStatus(tr("Masque proposé. Vérifiez-le avant validation."));
     });
-    auto *pairButton = makeWorkspaceButton(tr("Ouvrir la vue Paire"), infoPage);
-    infoLayout->addWidget(pairButton);
     connect(pairButton, &QPushButton::clicked, this, [this]() { m_mainWindow->setMode(3); });
-    auto *validateButton = makeWorkspaceButton(tr("Valider la paire"), infoPage, true);
-    infoLayout->addWidget(validateButton);
     connect(validateButton, &QPushButton::clicked, this, [this]() {
         m_mainWindow->updateStatus(tr("Paire validée par l'opérateur; les étapes suivantes sont à refaire."));
     });
-    auto *adjustButton = makeWorkspaceButton(tr("Saisir un décalage…"), infoPage);
-    infoLayout->addWidget(adjustButton);
-    connect(adjustButton, &QPushButton::clicked, this, [this]() {
-        QDialog dialog(m_mainWindow);
-        dialog.setWindowTitle(tr("Correction manuelle"));
-        QFormLayout form(&dialog);
-        auto *dx = new QDoubleSpinBox(&dialog);
-        auto *dy = new QDoubleSpinBox(&dialog);
-        dx->setRange(-100000, 100000); dx->setDecimals(1); dx->setValue(4065.5);
-        dy->setRange(-100000, 100000); dy->setDecimals(1); dy->setValue(-20.7);
-        form.addRow(tr("Décalage horizontal (px)"), dx);
-        form.addRow(tr("Décalage vertical (px)"), dy);
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-        form.addRow(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-        if (dialog.exec() == QDialog::Accepted)
-            m_mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
-                         .arg(dx->value()).arg(dy->value()));
-    });
-    infoLayout->addStretch();
+    
+    //connection a la fonction showManualAdjustmentDialog pour le bouton d'ajustement manuel
+    connect(adjustButton, &QPushButton::clicked, this, &WorkspaceUI::showManualAdjustmentDialog);
+
     return infoPage;
 }
 
@@ -619,10 +641,13 @@ QWidget *WorkspaceUI::createAssemblyMode()
     auto *chainPage = new QWidget;
     auto *chainLayout = new QVBoxLayout(chainPage);
     chainLayout->setContentsMargins(6, 8, 6, 8);
+
     chainLayout->addWidget(new QLabel(tr("Chaîne de traitement")));
+
     const QStringList steps = {tr("1  Import"), tr("2  Masques"), tr("3  Correspondance"),
         tr("4  Optimisation"), tr("5  Calage local"), tr("6  Égalisation"),
         tr("7  Ligne de couture"), tr("8  Fusion et export")};
+
     auto *stepList = new QListWidget(chainPage);
     for (int i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem((i == 2 ? QStringLiteral("⚠  ") : QStringLiteral("●  "))
@@ -630,21 +655,28 @@ QWidget *WorkspaceUI::createAssemblyMode()
         item->setData(Qt::UserRole, i + 1);
     }
     chainLayout->addWidget(stepList);
+
     connect(stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
+
+    //bouton de relance 
     auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), chainPage);
     chainLayout->addWidget(relaunch);
+
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
         const int row = qMax(0, stepList->currentRow());
         m_mainWindow->requestRun(row + 1);
     });
+
     auto *selectAlgo = new QComboBox(chainPage);
     selectAlgo->addItems({tr("Coupe de graphe"), tr("Programmation dynamique"), tr("Dijkstra")});
     chainLayout->addWidget(selectAlgo);
+
     connect(selectAlgo, &QComboBox::currentTextChanged, this, [this](const QString &algorithm) {
         m_mainWindow->updateStatus(tr("Algorithme sélectionné : %1 — étapes suivantes à refaire.").arg(algorithm));
     });
+
     return chainPage;
 }
 
