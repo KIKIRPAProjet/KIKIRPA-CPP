@@ -283,9 +283,7 @@ Dans [`tile_positioner.cpp`](file:///C:/Users/Hp/OneDrive%20-%20UMONS/UMONS/Ma1/
 
 ```cpp
 std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
-if (settings.rejectorName == "ransac") {
-    rejector = std::make_unique<RansacNs::RansacRejectorClass>(settings.rejectorParameters);
-} else if (settings.rejectorName == "vote") {
+if (settings.rejectorName == "vote" || settings.rejectorName == "vote_2d") {
     rejector = std::make_unique<RejectionNs::VoteRejectorClass>(settings.rejectorParameters);
 }
 ```
@@ -313,7 +311,7 @@ void traiterPaire(DataNs::PairMatches& pair, const cv::Mat& tuileA, const cv::Ma
     }
 
     // 1. Passage direct par l'objet PairMatches enrichi
-    BrightnessEqualizationNs::NeighboringPair neighborPair{
+    BrightnessEqualizationNs::NeighbourPair neighborPair{
         pair.tileIdA,
         pair.tileIdB,
         cv::Point2d(pair.featureMatches.translationX, pair.featureMatches.translationY)
@@ -325,7 +323,7 @@ void traiterPaire(DataNs::PairMatches& pair, const cv::Mat& tuileA, const cv::Ma
 
     // 3. Résolution radiométrique
     BrightnessEqualizationNs::BrightnessEqualizerClass equalizer;
-    auto res = equalizer.estimate({equalizer.downscale(tuileA), equalizer.downscale(tuileB)}, {neighborPair});
+    auto res = equalizer.estimate({equalizer.reduceTile(tuileA), equalizer.reduceTile(tuileB)}, {neighborPair});
 }
 ```
 

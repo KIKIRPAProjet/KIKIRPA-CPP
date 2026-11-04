@@ -165,7 +165,7 @@ void retainInlierPoints(Matches& matches, const std::vector<unsigned char>& inli
     std::vector<cv::Point2f> filteredPointsA;
     std::vector<cv::Point2f> filteredPointsB;
     std::vector<float> filteredScores;
-    const bool hasScores = matches.confidenceScores.size() == matches.pointsInA.size();
+    bool hasScores = matches.confidenceScores.size() == matches.pointsInA.size();
     filteredPointsA.reserve(matches.pointsInA.size());
     filteredPointsB.reserve(matches.pointsInB.size());
     if (hasScores) {
@@ -237,10 +237,10 @@ bool VoteRejectorClass::filterPairMatches(PairMatches& pairMatches, Alignment& o
 }
 
 Json VoteRejectorClass::toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment) {
-    const bool hasTransform = alignment.transformBToA.rows == HOMOGRAPHY_MATRIX_SIZE &&
-                              alignment.transformBToA.cols == HOMOGRAPHY_MATRIX_SIZE;
-    const double translationX = hasTransform ? alignment.transformBToA.at<double>(0, 2) : 0.0;
-    const double translationY = hasTransform ? alignment.transformBToA.at<double>(1, 2) : 0.0;
+    bool hasTransform = alignment.transformBToA.rows == HOMOGRAPHY_MATRIX_SIZE &&
+                        alignment.transformBToA.cols == HOMOGRAPHY_MATRIX_SIZE;
+    double translationX = hasTransform ? alignment.transformBToA.at<double>(0, 2) : 0.0;
+    double translationY = hasTransform ? alignment.transformBToA.at<double>(1, 2) : 0.0;
     return {
         {"a", tileIdA},
         {"b", tileIdB},

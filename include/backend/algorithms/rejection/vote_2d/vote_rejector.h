@@ -6,7 +6,6 @@
 // Cela évite des inclusions directes superflues sans compromettre aucune sécurité logique ou mémoire.
 // NOLINTBEGIN(misc-include-cleaner)
 #include "algorithms/rejection/outlier_rejector.h"
-#include "core/data/algorithm_types.h"
 
 #include <nlohmann/json.hpp>
 
@@ -44,8 +43,4 @@ using VoteRejectorClass = stitching::rejection::VoteRejectorClass;
 using VoteRejector = stitching::rejection::VoteRejector;
 } // namespace RejectionNs
 
-namespace RansacNs {
-using VoteRejectorClass = stitching::rejection::VoteRejectorClass;
-using VoteRejector = stitching::rejection::VoteRejector;
-} // namespace RansacNs
 // NOLINTEND(misc-include-cleaner)
