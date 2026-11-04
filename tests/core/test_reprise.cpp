@@ -216,9 +216,9 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     const auto types = CheckpointNs::pipelineTypes();
-    verifier(types.size() == 5 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
+    verifier(types.size() == 6 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
                  CheckpointNs::CheckpointClass::hasType("Positions") && CheckpointNs::CheckpointClass::hasType("Territories"),
-             "5 types déclarés d'office");
+             "6 types déclarés d'office");
 
     StepNs::DataStoreClass avant, apres;
     auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", 400, 300, CV_16UC3);

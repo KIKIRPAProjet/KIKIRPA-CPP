@@ -177,24 +177,6 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(positions));
         }
 
-        // Sauvegarde des gains estimés, communs aux steps d'égalisation et de couture.
-        // A ajuster avec ce que amory aura fait pour l'égalisation, mais je n'ai pas le code qui calcule les gains, donc je ne peux pas le reproduire.
-        void saveIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
-            const DataNs::IntensityCorrection& correction = dataStore.get<DataNs::IntensityCorrection>(key);
-            writeJson(directory, key, {{"tileGains", correction.tileGains},
-                                       {"fieldStrength", correction.fieldStrength},
-                                       {"isolatedTileIndices", correction.isolatedTileIndices}});
-        }
-
-        void loadIntensityCorrection(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
-            const Json correctionJson = readJson(directory, key);
-            DataNs::IntensityCorrection correction;
-            correction.tileGains = correctionJson.at("tileGains").get<std::vector<double>>();
-            correction.fieldStrength = correctionJson.at("fieldStrength").get<double>();
-            correction.isolatedTileIndices = correctionJson.at("isolatedTileIndices").get<std::vector<int>>();
-            dataStore.replace(key, std::move(correction));
-        }
-
         // Sauvegarde des chemins de couture dans le repère de la mosaïque.
         void saveSeamlines(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json seamlinesJson = Json::array();
@@ -279,7 +261,6 @@ namespace CheckpointNs {
             {"Tiles", {saveTiles, loadTiles}},
             {"PairMatches", {savePairMatches, loadPairMatches}},
             {"Positions", {savePositions, loadPositions}},
-            {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
             {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
             {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},

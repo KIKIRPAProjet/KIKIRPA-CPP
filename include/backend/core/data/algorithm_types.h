@@ -76,14 +76,6 @@ namespace DataNs {
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
 
-    // Correction d'intensité produite par le step d'égalisation, dans l'ordre de la TileList.
-    // Ajouté car je n'ai pas le code qui calcule les gains, mais je veux pouvoir sauvegarder et relire les gains estimés.
-    struct IntensityCorrection {
-        std::vector<double> tileGains;   // facteur de luminosité à appliquer par division
-        double fieldStrength = 0.0;      // coefficient du champ d'éclairage
-        std::vector<int> isolatedTileIndices;   // indices des tuiles sans mesure exploitable
-    };
-
     // Coutures calculées entre deux tuiles. Les points sont en pixels de pleine résolution,
     // dans le repère absolu de la mosaïque.
     struct Seamline {

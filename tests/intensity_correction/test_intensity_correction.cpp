@@ -5,6 +5,7 @@
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/step/data_store.h"
+#include "steps/dynamic_programming_dijkstra_step.h"
 #include "steps/intensity_correction_step.h"
 
 #include <gtest/gtest.h>
@@ -163,4 +164,26 @@ TEST(IntensityCorrectionStepTest, RejectsInvalidAlgorithmParameter) {
 
     EXPECT_FALSE(executeStep(step, dataStore, { parameter("int", "iterationCount", 0) }));
     EXPECT_NE(errorOf(step).find("invalid parameters"), std::string::npos);
+}
+
+// La sortie du step est bien celle que lit le step dynamic-programming-dijkstra (type, clé et sens de la division).
+TEST(IntensityCorrectionStepTest, FeedsDynamicProgrammingDijkstraStep) {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_intensity_to_dijkstra";
+    createTiles(directory);
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(buildScript(directory, "gain"));
+    std::string journal;
+    ASSERT_TRUE(pipeline.run([&](const std::string& message) { journal += message + '\n'; })) << journal;
+
+    const StepNs::DataStoreClass& pipelineStore = pipeline.getDataStore();
+    StepNs::DataStoreClass dijkstraStore;
+    dijkstraStore.add("tiles", pipelineStore.get<DataNs::TileList>("tiles"));
+    dijkstraStore.add("positions", std::vector<DataNs::TilePositionData>{
+        {"r00_c00", cv::Point2d(0.0, 0.0), 0.0}, {"r00_c01", cv::Point2d(TILE_OFFSET_X, 0.0), 0.0} });
+    dijkstraStore.add("intensityCorrection", pipelineStore.get<DataNs::IntensityCorrection>("intensityCorrection"));
+
+    StepsNs::DynamicProgrammingDijkstraStepClass dijkstraStep;
+    dijkstraStep.setDataStore(dijkstraStore);
+    EXPECT_TRUE(dijkstraStep.execute()) << dijkstraStep.getResult().dump();
+    EXPECT_EQ(dijkstraStep.getOutput().seamlines.size(), 1u);
+    fs::remove_all(directory);
 }

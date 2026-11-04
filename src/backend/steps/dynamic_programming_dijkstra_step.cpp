@@ -4,6 +4,7 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "core/config/pipeline_config.h"
+#include "core/data/tile.h"
 
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
