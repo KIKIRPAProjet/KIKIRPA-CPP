@@ -41,7 +41,9 @@ jobs:
               ;;
             push)
               if [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
-                changed_files=$(git ls-tree -r --name-only "$PUSH_AFTER_SHA")
+                git fetch --no-tags origin main
+                base_sha=$(git merge-base origin/main "$PUSH_AFTER_SHA")
+                changed_files=$(git diff --name-only "$base_sha" "$PUSH_AFTER_SHA")
               elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
                 changed_files=$(git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA")
               else

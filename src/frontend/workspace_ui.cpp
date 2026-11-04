@@ -27,6 +27,9 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
