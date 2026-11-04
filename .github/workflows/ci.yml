@@ -44,8 +44,13 @@ jobs:
                 git fetch --no-tags origin main
                 base_sha=$(git merge-base origin/main "$PUSH_AFTER_SHA")
                 changed_files=$(git diff --name-only "$base_sha" "$PUSH_AFTER_SHA")
-              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
+              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null \
+                && git merge-base --is-ancestor "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA"; then
                 changed_files=$(git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA")
+              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
+                git fetch --no-tags origin main
+                base_sha=$(git merge-base origin/main "$PUSH_AFTER_SHA")
+                changed_files=$(git diff --name-only "$base_sha" "$PUSH_AFTER_SHA")
               else
                 changed_files=$(jq -r '.[] | (.added[]?, .modified[]?, .removed[]?)' <<< "$PUSH_COMMITS")
               fi

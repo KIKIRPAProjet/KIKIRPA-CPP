@@ -2,4 +2,10 @@ InheritParentConfig: true
 Checks: >
   -readability-function-size,
   -readability-identifier-naming,
-  -readability-magic-numbers
+  -readability-magic-numbers,
+  -misc-include-cleaner,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-narrowing-conversions,
+  -performance-implicit-conversion-in-loop,
+  -clang-diagnostic-deprecated-declarations

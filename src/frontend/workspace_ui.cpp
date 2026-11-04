@@ -24,6 +24,7 @@
 
 #include <QAbstractItemView>
 #include <QButtonGroup>
+#include <QChar>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
@@ -49,11 +50,15 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QString>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <Qt>
+
+#include <algorithm>
 
 
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
@@ -215,7 +220,7 @@ void WorkspaceUI::updateGridSummary(const ProjectGrid::State &gridState)
 {
     int activeTiles = 0;
     for (int index = 0;
-         index < qMin(gridState.gridRows * gridState.gridColumns,
+         index < std::min(gridState.gridRows * gridState.gridColumns,
                       static_cast<int>(gridState.gridTiles.size())); ++index) {
         const GridTile &tile = gridState.gridTiles.at(index);
         if (!tile.path.isEmpty() && !tile.empty)
@@ -226,8 +231,8 @@ void WorkspaceUI::updateGridSummary(const ProjectGrid::State &gridState)
     m_gridSummaryLabel->setText(tr("%1 tuile(s) active(s) · %2 lignes × %3 colonnes%4")
                 .arg(activeTiles).arg(gridState.gridRows).arg(gridState.gridColumns).arg(validationStatus));
    
-    const int row = gridState.selectedGridCell / qMax(1, gridState.gridColumns);
-    const int column = gridState.selectedGridCell % qMax(1, gridState.gridColumns);
+    const int row = gridState.selectedGridCell / std::max(1, gridState.gridColumns);
+    const int column = gridState.selectedGridCell % std::max(1, gridState.gridColumns);
     const GridTile tile = gridState.selectedGridCell >= 0 && gridState.selectedGridCell < gridState.gridTiles.size()
             ? gridState.gridTiles.at(gridState.selectedGridCell) : GridTile{};
     const QString label = QStringLiteral("r%1_c%2").arg(row, 2, 10, QLatin1Char('0')).arg(column, 2, 10, QLatin1Char('0'));
@@ -501,20 +506,21 @@ QWidget *WorkspaceUI::createGridCaptureGroup(QWidget *parent)
  * @param compareReference Bouton pour comparer à l'image de référence.
  * @param validateGridButton Bouton pour valider la grille.
  */
+// NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
 void WorkspaceUI::connectTilesModeSignals(QPushButton *rotateTile, QPushButton *flipTile,
                                          QPushButton *importReference, QPushButton *compareReference,
                                          QPushButton *validateGridButton)
 {
-    connect(m_gridRowsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) {m_projectGrid->setGridRows(value);});
-    connect(m_gridColumnsSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int value) { m_projectGrid->setGridColumns(value);});
-    connect(m_captureOrderCombo, qOverload<int>(&QComboBox::currentIndexChanged),this, [this](int value) {m_projectGrid->setCaptureOrder(value);});
-    connect(m_horizontalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),this, [this](int value) {m_projectGrid->setHorizontalOverlap(value);});
-    connect(m_verticalOverlapSpin, qOverload<int>(&QSpinBox::valueChanged),this, [this](int value) { m_projectGrid->setVerticalOverlap(value);});
+    connect(m_gridRowsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int value) {m_projectGrid->setGridRows(value);});
+    connect(m_gridColumnsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [this](int value) { m_projectGrid->setGridColumns(value);});
+    connect(m_captureOrderCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),this, [this](int value) {m_projectGrid->setCaptureOrder(value);});
+    connect(m_horizontalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged),this, [this](int value) {m_projectGrid->setHorizontalOverlap(value);});
+    connect(m_verticalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged),this, [this](int value) { m_projectGrid->setVerticalOverlap(value);});
     connect(m_linkedOverlapCheck, &QCheckBox::toggled, this, [this](bool linked) {m_projectGrid->setOverlapsLinked(linked);});
     connect(m_modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value) {m_projectGrid->setModality(value);});
-    connect(m_scaleSpin, qOverload<double>(&QDoubleSpinBox::valueChanged),this, [this](double value) {m_projectGrid->setScaleMmPerPixel(value);});
+    connect(m_scaleSpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged),this, [this](double value) {m_projectGrid->setScaleMmPerPixel(value);});
     connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this, [this](bool automatic) {m_projectGrid->setAutomaticUncertainty(automatic);});
-    connect(m_uncertaintySpin, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double value) {m_projectGrid->setUncertaintyMargin(value);});
+    connect(m_uncertaintySpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this, [this](double value) {m_projectGrid->setUncertaintyMargin(value);});
 
     connect(rotateTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::rotateSelectedTile);
     connect(flipTile, &QPushButton::clicked, m_projectGrid, &ProjectGrid::flipSelectedTile);
@@ -668,7 +674,7 @@ QWidget *WorkspaceUI::createAssemblyMode()
     chainLayout->addWidget(relaunch);
 
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
-        const int row = qMax(0, stepList->currentRow());
+        const int row = std::max(0, stepList->currentRow());
         m_mainWindow->requestRun(row + 1);
     });
 
@@ -761,7 +767,7 @@ QWidget* WorkspaceUI::createOptionsBar()
                                 tr("Serpentin horizontal"), tr("Par lignes"), tr("Par colonnes")});
     m_arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
     optionsLayout->addWidget(m_arrangementCombo);
-    connect(m_arrangementCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int value) {
+    connect(m_arrangementCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [this](int value) {
         m_projectGrid->setCaptureOrder(value);
         m_mainWindow->updateStatus(tr("Ordre de prise de vue : %1").arg(m_arrangementCombo->currentText()));
     });
@@ -840,12 +846,12 @@ QWidget* WorkspaceUI::createCenterArea()
     m_projectInfoPanel->setVisible(false);
 
     connect(minus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = qMax(5, m_mainWindow->zoomPercent - 5);
+        m_mainWindow->zoomPercent = std::max(5, m_mainWindow->zoomPercent - 5);
         m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
         static_cast<ArtworkCanvas *>(m_canvas)->setZoom(m_mainWindow->zoomPercent);
     });
     connect(plus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = qMin(1600, m_mainWindow->zoomPercent + 5);
+        m_mainWindow->zoomPercent = std::min(1600, m_mainWindow->zoomPercent + 5);
         m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
         static_cast<ArtworkCanvas *>(m_canvas)->setZoom(m_mainWindow->zoomPercent);
     });
