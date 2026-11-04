@@ -1,6 +1,6 @@
 #pragma once
 
-#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
 
@@ -14,7 +14,7 @@ namespace StepsNs {
 struct RecouvrementInput {
     float overlap = 0.2f; // recouvrement nominal attendu entre deux voisines, fraction de la tuile
     int niveau = 0;        // niveau de pyramide analysé : 0 = pleine résolution
-    stitching::matching::correlation_phase::Parametres parametres;
+    PhaseCorrelationNs::Parameters parametres;
 };
 
 // Estimation d'une paire voisine. Les zones sont exprimées en pixels de pleine résolution.

@@ -1,4 +1,4 @@
-#include "steps/RecouvrementStep.h"
+#include "backend/steps/RecouvrementStep.h"
 
 #include "core/config/pipeline_config.h"
 
@@ -15,7 +15,7 @@
 namespace StepsNs {
 
 using Json = nlohmann::json;
-using stitching::matching::EstimationRecouvrement;
+using OverlapEstimationNs::OverlapEstimatorClass;
 
 RecouvrementStepClass::RecouvrementStepClass(const RecouvrementInput& initialInput) {
     const auto& p = initialInput.parametres;
@@ -23,10 +23,10 @@ RecouvrementStepClass::RecouvrementStepClass(const RecouvrementInput& initialInp
     config.name = "recouvrement";
     config.parameters = {{"float", "overlap", initialInput.overlap},
                          {"int", "niveau", initialInput.niveau},
-                         {"float", "lissage", p.lissage},
-                         {"float", "seuilRapport", p.seuilRapport},
-                         {"float", "marge", p.marge},
-                         {"float", "fractionValideMin", p.fractionValideMin}};
+                         {"float", "lissage", p.smoothingSigma},
+                         {"float", "seuilRapport", p.minimumPeakRatio},
+                         {"float", "marge", p.railMargin},
+                         {"float", "fractionValideMin", p.minimumValidFraction}};
     config.inputs = {{"Tiles", "tiles"}};
     config.outputs = {{"OverlapEstimates", "overlap-estimates"}};
     configJson = config;
@@ -55,10 +55,10 @@ bool RecouvrementStepClass::execute() {
     try {
         readParameter("overlap", input.overlap);
         readParameter("niveau", input.niveau);
-        readParameter("lissage", input.parametres.lissage);
-        readParameter("seuilRapport", input.parametres.seuilRapport);
-        readParameter("marge", input.parametres.marge);
-        readParameter("fractionValideMin", input.parametres.fractionValideMin);
+        readParameter("lissage", input.parametres.smoothingSigma);
+        readParameter("seuilRapport", input.parametres.minimumPeakRatio);
+        readParameter("marge", input.parametres.railMargin);
+        readParameter("fractionValideMin", input.parametres.minimumValidFraction);
     } catch (const Json::exception& e) {
         result["error"] = std::string("invalid option type: ") + e.what();
         return false;
@@ -78,7 +78,7 @@ bool RecouvrementStepClass::execute() {
         return false;
     }
 
-    std::optional<EstimationRecouvrement> estimator;
+    std::optional<OverlapEstimatorClass> estimator;
     try {
         estimator.emplace(input.parametres);
     } catch (const std::exception& e) {
@@ -108,12 +108,12 @@ bool RecouvrementStepClass::execute() {
             }
 
             const DataNs::PairContext context{direction, input.overlap, std::nullopt};
-            const auto estimate = estimator->estimer(imageA, imageB, context);
+            const auto estimate = estimator->estimate(imageA, imageB, context);
             if (!estimate) {
                 failures.push_back({{"idA", tile->getId()},
                                     {"idB", neighbour->getId()},
                                     {"direction", direction == DataNs::Direction::Right ? "Right" : "Bottom"},
-                                    {"reason", estimator->raisonEchec()}});
+                                    {"reason", estimator->getFailureReason()}});
                 continue;
             }
 
@@ -124,7 +124,7 @@ bool RecouvrementStepClass::execute() {
 
             const cv::Size sizeA(tile->getLevel(0).width, tile->getLevel(0).height);
             const cv::Size sizeB(neighbour->getLevel(0).width, neighbour->getLevel(0).height);
-            const auto [zoneA, zoneB] = EstimationRecouvrement::zonesCommunes(
+            const auto [zoneA, zoneB] = OverlapEstimatorClass::computeCommonAreas(
                 sizeA, sizeB, fullResolution.translationBInA);
 
             if (zoneA.empty() || zoneB.empty()) {
