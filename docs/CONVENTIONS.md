@@ -212,7 +212,7 @@ Les algorithmes ont été migrés (noms anglais, un namespace par dossier, types
   - les valeurs texte : `"correlation_phase"` dans `PositioningNs::PositioningSettings::matcherName`, les options de `CostMapParameters` (`"noise"`, `"euclidian"`, `"caped"`…) et les noms du notebook (`"color_gradient"`, `"DP"`, `"Dijkstra-8"`).
 
   À renommer quand un step les exposera, avec l'accord de l'équipe.
-- Structure : `VoteRejectorClass` partage `ransac_rejector.h` / `.cpp` avec `RansacRejectorClass` (au lieu d'un fichier par classe) ; SIFT, LightGlue, `DynamicProgrammingDijkstraNs` et GraphCut ne suivent pas encore le découpage façade / types / modules (§8).
+- Structure : `VoteRejectorClass` est désormais isolé dans son propre sous-dossier et fichier (`algorithms/rejection/vote_2d/vote_rejector.h` / `.cpp`) ; SIFT, LightGlue, `DynamicProgrammingDijkstraNs` et GraphCut ne suivent pas encore le découpage façade / types / modules (§8).
 
 Tout nouveau code suit les règles ci-dessus.
 
