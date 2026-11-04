@@ -4,6 +4,7 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 
+#include <tiffio.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -38,6 +39,10 @@ namespace IONs {
 
         private:
             std::filesystem::path tiffPath;
+
+            // Méthodes propres à readMetadata
+            void extractResolution(TIFF* tiffFile, double& scaleX, double& scaleY) const;
+            void extractIccProfile(TIFF* tiffFile, std::vector<uint8_t>& iccProfile) const;
     };
 
 }

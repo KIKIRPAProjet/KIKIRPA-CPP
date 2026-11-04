@@ -298,6 +298,16 @@ namespace IONs {
             return false;
         }
 
+        // Pas besoin de faire de vérification d'erreur ici, car ces champs sont optionnels et peuvent ne pas exister.
+        extractResolution(tiffFile, scaleX, scaleY);
+        extractIccProfile(tiffFile, iccProfile);
+
+        TIFFClose(tiffFile);
+        
+        return true; // On renvoie true même si ICC/Echelle sont absents, car ils sont optionnels
+    }
+
+    void PyramidalTiffReaderClass::extractResolution(TIFF* tiffFile, double& scaleX, double& scaleY) const {
         // Récupération de l'échelle
         // LibTIFF utilise généralement des floats pour la résolution
         float resX = 1.0f;
@@ -308,7 +318,9 @@ namespace IONs {
         if (TIFFGetField(tiffFile, TIFFTAG_YRESOLUTION, &resY)) {
             scaleY = static_cast<double>(resY);
         }
+    }
 
+    void PyramidalTiffReaderClass::extractIccProfile(TIFF* tiffFile, std::vector<uint8_t>& iccProfile) const {
         // Récupération du profil ICC
         uint32_t iccSize = 0;
         void* iccBuffer = nullptr;
@@ -316,10 +328,6 @@ namespace IONs {
             iccProfile.resize(iccSize);
             std::memcpy(iccProfile.data(), iccBuffer, iccSize);
         }
-
-        TIFFClose(tiffFile);
-        
-    return true; // On renvoie true même si ICC/Echelle sont absents, car ils sont optionnels
     }
 
 }
