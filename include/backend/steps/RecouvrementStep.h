@@ -1,20 +1,35 @@
 #pragma once
 
-#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
 
-#include <opencv2/core.hpp>
+#if __has_include("algorithms/stitching/overlap_estimation/overlap_estimator.h")
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#define KIKIRPA_RECOUVREMENT_NEW_ESTIMATOR_API
+#else
+#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#endif
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <vector>
 
 namespace StepsNs {
 
+#ifdef KIKIRPA_RECOUVREMENT_NEW_ESTIMATOR_API
+using RecouvrementParameters = PhaseCorrelationNs::Parameters;
+#else
+using RecouvrementParameters = stitching::matching::correlation_phase::Parametres;
+#endif
+
 // Paramètres du step d'estimation du recouvrement.
 struct RecouvrementInput {
-    float overlap = 0.2f; // recouvrement nominal attendu entre deux voisines, fraction de la tuile
+    static constexpr float DEFAULT_OVERLAP = 0.2f;
+    float overlap = DEFAULT_OVERLAP; // recouvrement nominal attendu entre deux voisines, fraction de la tuile
     int niveau = 0;        // niveau de pyramide analysé : 0 = pleine résolution
-    PhaseCorrelationNs::Parameters parametres;
+    RecouvrementParameters parametres;
 };
 
 // Estimation d'une paire voisine. Les zones sont exprimées en pixels de pleine résolution.
@@ -51,6 +66,8 @@ public:
     static cv::Mat readPixels(const DataNs::TileClass& tile, int level);
 
 private:
+    bool readInput(RecouvrementInput& input);
+
     RecouvrementOutput output;
 };
 
