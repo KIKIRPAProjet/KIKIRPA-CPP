@@ -15,7 +15,6 @@
 #include <opencv2/core/types.hpp>
 #include <nlohmann/json_fwd.hpp>
 
-#include <cstddef>
 #include <chrono>
 #include <filesystem>
 #include <system_error>
