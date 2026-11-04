@@ -1,6 +1,6 @@
 #pragma once
 
-#include "backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
 
