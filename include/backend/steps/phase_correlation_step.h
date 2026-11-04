@@ -1,7 +1,7 @@
 // include/backend/steps/phase_correlation_step.h
 #pragma once
 
-#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
@@ -15,8 +15,8 @@ namespace StepsNs {
     // Valeurs initiales des paramètres du step.
     struct PhaseCorrelationInput {
         float overlap = 0.2f;   // recouvrement nominal entre deux tuiles voisines, en fraction de la tuile
-        int niveau = 0;         // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
-        stitching::matching::CorrelationPhase::Parametres parametres;   // réglages de l'algorithme, en px du niveau analysé
+        int level = 0;          // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
+        PhaseCorrelationNs::Parameters parameters;   // réglages de l'algorithme, en px du niveau analysé
     };
 
     // Sortie du step.
@@ -28,8 +28,9 @@ namespace StepsNs {
     // (voir docs/steps/PhaseCorrelationStep.md).
     //
     // Nom : "phase-correlation".
-    // Paramètres : overlap (float), niveau (int) et les champs de CorrelationPhase::Parametres : lissage, seuilRapport,
-    //   lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float) ; nbPoints, fenetre, facteurDft (int).
+    // Paramètres : overlap (float), niveau (int, champ level) et les champs de PhaseCorrelationNs::Parameters, sous leur
+    //   nom d'origine : lissage, seuilRapport, lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float) ;
+    //   nbPoints, fenetre, facteurDft (int). Correspondance avec les champs : phase_correlation_types.h.
     //   Un paramètre absent du JSON garde sa valeur par défaut.
     // Entrée : "Tiles" (clé "tiles").   Sortie : "PairMatches" (clé "matches").
     //

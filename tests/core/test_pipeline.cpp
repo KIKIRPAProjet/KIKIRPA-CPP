@@ -29,7 +29,7 @@
 
 namespace FileSystemNs = std::filesystem;
 
-namespace StitchingNs::TestsNs {
+namespace {
 
 using Json = nlohmann::json;
 

@@ -1,7 +1,6 @@
 // include/backend/steps/graph_cut_step.h
 #pragma once
 
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
@@ -20,7 +19,7 @@ namespace StepsNs {
 
     // Sortie du step.
     struct GraphCutOutput {
-        std::vector<Seamline::TileTerritory> territories;   // territoire de chaque tuile, dans le repère de la mosaïque
+        std::vector<DataNs::TileTerritory> territories;   // territoire de chaque tuile, dans le repère de la mosaïque
     };
 
     // Calcule la ligne de raccord entre les tuiles par coupe de graphe, puis en déduit le territoire de chaque tuile
