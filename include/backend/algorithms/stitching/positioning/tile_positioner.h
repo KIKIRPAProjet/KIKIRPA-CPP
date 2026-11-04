@@ -1,6 +1,9 @@
 // include/backend/algorithms/stitching/positioning/tile_positioner.h
 #pragma once
 
+// Règles de style 'misc-include-cleaner' et 'readability-magic-numbers' neutralisées ici :
+// json.hpp fournit l'API publique de nlohmann::json ; 0.3f est la fraction nominale de recouvrement.
+// NOLINTBEGIN(misc-include-cleaner,readability-magic-numbers)
 #include "core/data/algorithm_types.h"
 
 #include <nlohmann/json.hpp>
@@ -42,3 +45,4 @@ namespace PositioningNs {
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log);
 
 }
+// NOLINTEND(misc-include-cleaner,readability-magic-numbers)
