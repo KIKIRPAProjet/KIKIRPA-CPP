@@ -1,8 +1,8 @@
 // src/backend/steps/graph_cut_step.cpp
 #include "steps/graph_cut_step.h"
 
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
-#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/seamline/graphcut/graph_cut_seam_finder.h"
+#include "algorithms/seamline/graphcut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/tile.h"
 
