@@ -39,8 +39,8 @@ Il n'existe plus de cible `stitching_run` sur ce main ; utiliser `PipelineNs::bu
 ## Traitement et coordonnées
 
 Entrée : `DataNs::TileList` sous `tiles`. Le step valide le graphe, lit les images sources en
-8/16 bits non signés (1, 3 ou 4 canaux), puis appelle `EstimationRecouvrement::estimer()` et
-`zonesCommunes()`. Seules les bandes communes sont transmises à SIFT.
+8/16 bits non signés (1, 3 ou 4 canaux), puis appelle `OverlapEstimatorClass::estimate()` et
+`computeCommonAreas()`. Seules les bandes communes sont transmises à SIFT.
 
 Les points retournés sont ramenés dans les repères des deux tuiles en ajoutant l'origine de chaque
 rectangle. La différence des origines est ajoutée à `translationX` et `translationY`.

@@ -23,6 +23,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -35,7 +36,8 @@ namespace fs = std::filesystem;
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
-constexpr int PHASE_PARAMETER_COUNT = 12;
+constexpr int PHASE_PARAMETER_COUNT = 15;
+constexpr std::size_t REGISTERED_STEP_COUNT = 6;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -87,7 +89,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == 4, "4 steps enregistrés");
+    verifier(noms.size() == REGISTERED_STEP_COUNT, "6 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -107,7 +109,7 @@ void testerDefaults() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 12 options");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 15 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());
@@ -139,6 +141,7 @@ void testerValidation() {
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("graphcut")})); },
                                  "input 'positions' is not produced"),
              "graphcut sans step qui produit les positions");
+
 
     testerDefaults();
 }
@@ -256,4 +259,4 @@ TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
 TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
-} // namespace stitching::tests
+}

@@ -8,6 +8,8 @@
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/sift_step.h"
+#include "steps/absolute_pos_step.h"
+#include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
 
 #include <cstddef>
@@ -33,6 +35,8 @@ namespace PipelineNs {
         const std::map<std::string, StepCreator>& stepRegistry() {
             static const std::map<std::string, StepCreator> registry = {
                 {"sift", [] { return std::make_unique<StepsNs::SiftStepClass>(); }},
+                {"absolute-pos", [] { return std::make_unique<StepsNs::AbsolutePosStepClass>(); }},
+                {"lightglue", [] { return std::make_unique<StepsNs::LightGlueStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},

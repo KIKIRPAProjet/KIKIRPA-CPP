@@ -1,8 +1,8 @@
 // src/backend/steps/sift_step.cpp
 #include "steps/sift_step.h"
 
-#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
-#include "algorithms/stitching/sift/SiftMatcher.h"
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#include "algorithms/stitching/sift/sift_matcher.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
@@ -29,8 +29,8 @@ namespace StepsNs {
 
         struct PairProcessingContext {
             const SiftInput& input;
-            stitching::matching::SiftMatcher& matcher;
-            stitching::matching::EstimationRecouvrement& estimator;
+            SiftNs::SiftMatcherClass& matcher;
+            OverlapEstimationNs::OverlapEstimatorClass& estimator;
         };
 
         struct PairMeasurement {
@@ -41,9 +41,9 @@ namespace StepsNs {
         PairMeasurement measurePair(const NeighborPair& pair, const cv::Mat& imageA,
                                        const cv::Mat& imageB, const PairProcessingContext& context) {
             const DataNs::PairContext pairContext{pair.direction, context.input.overlap, std::nullopt};
-            const auto overlap = context.estimator.estimer(imageA, imageB, pairContext);
-            if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.raisonEchec()};
-            const auto regions = stitching::matching::EstimationRecouvrement::zonesCommunes(
+            const auto overlap = context.estimator.estimate(imageA, imageB, pairContext);
+            if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
+            const auto regions = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(
                 imageA.size(), imageB.size(), overlap->translationBInA);
             if (regions.first.empty() || regions.second.empty())
                 return {std::nullopt, "tiles have no common region"};
@@ -143,10 +143,10 @@ namespace StepsNs {
             const auto input = readInput();
             const auto pairs = collectPairs(dataStore->get<DataNs::TileList>("tiles"));
             // L'API de l'algorithme conserve ses paramètres internes en snake_case.
-            stitching::matching::SiftMatcher matcher(nlohmann::json{{"max_features", input.maxFeatures}, {"lowe_ratio", input.loweRatio},
+            SiftNs::SiftMatcherClass matcher(nlohmann::json{{"max_features", input.maxFeatures}, {"lowe_ratio", input.loweRatio},
                                                          {"contrast_threshold", input.contrastThreshold},
                                                          {"clahe_clip_limit", input.claheClipLimit}});
-            stitching::matching::EstimationRecouvrement estimator;
+            OverlapEstimationNs::OverlapEstimatorClass estimator;
             const PairProcessingContext context{input, matcher, estimator};
             measurePairs(pairs, context, output, result);
             result["pairs"] = output.value.size();

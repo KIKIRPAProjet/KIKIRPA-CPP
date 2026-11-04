@@ -41,6 +41,7 @@ include(cmake/frontend.cmake)
 # Déclare l'exécutable principal de l'application.
 # Le point d'entrée du programme est défini dans src/main.cpp.
 add_executable(stitching src/main.cpp)
+kikirpa_copy_onnxruntime_dlls(stitching)
 
 # Lie le backend à l'exécutable principal.
 # PRIVATE signifie que cette dépendance est utilisée uniquement
