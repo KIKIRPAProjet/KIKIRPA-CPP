@@ -168,7 +168,7 @@ TEST(PipelineBuilder, MergesOptionsAndRoundTripsConfiguration) {
     EXPECT_EQ(PIPELINE.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("parameters").size(),
               EXPECTED_PHASE_CORRELATION_PARAMETER_COUNT);
 
-    const PipelineNs::PipelineClass COPY = PipelineNs::buildPipeline(pipeline.exportConfig());
+    const PipelineNs::PipelineClass COPY = PipelineNs::buildPipeline(PipelineNs.exportConfig());
     EXPECT_EQ(COPY.exportConfig(), PIPELINE.exportConfig());
 }
 
