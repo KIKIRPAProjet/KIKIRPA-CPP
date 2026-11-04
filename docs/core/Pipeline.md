@@ -120,6 +120,11 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 3. Ajouter une ligne dans `stepRegistry()` (`src/backend/core/pipeline/pipeline_builder.cpp`).
 4. **Le type C++ derrière une clé doit être le même pour tous les steps** : `tiles` est toujours un `DataNs::TileList`, `matches` toujours un `std::vector<DataNs::PairMatches>`. Sinon, `get<T>` lève `std::bad_any_cast` à l'exécution.
 
+### SIFT
+
+Le registre contient aussi `sift` (`StepsNs::SiftStepClass`). Il consomme `Tiles` et produit
+`PairMatches` sous `matches`. Paramètres et exemple de script : [SiftStep.md](../steps/SiftStep.md).
+
 ### LightGlue
 
 Le registre expose `lightglue` (`StepsNs::LightGlueStepClass`). Entrée : `Tiles` sous `tiles` ;
