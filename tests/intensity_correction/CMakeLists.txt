@@ -1,6 +1,6 @@
 add_executable(intensity_correction_tests test_intensity_correction.cpp)
 
-target_link_libraries(intensity_correction_tests PRIVATE stitching_backend GTest::gtest_main)
+target_link_libraries(intensity_correction_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(intensity_correction_tests PROPERTIES LABELS "unit")

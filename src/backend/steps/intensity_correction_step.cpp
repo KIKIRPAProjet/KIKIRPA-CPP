@@ -17,11 +17,11 @@
 namespace StepsNs {
 
     using Json = nlohmann::json;
-    using stitching::egalisation::Egalisation;
-    using stitching::egalisation::Methode;
-    using stitching::egalisation::PaireVoisine;
-    using stitching::egalisation::Resultat;
-    using stitching::egalisation::TuileReduite;
+using BrightnessEqualizationNs::BrightnessEqualizerClass;
+using BrightnessEqualizationNs::CorrectionMethod;
+using BrightnessEqualizationNs::EqualizationResult;
+using BrightnessEqualizationNs::NeighbourPair;
+using BrightnessEqualizationNs::ReducedTile;
 
     namespace {
 
@@ -34,16 +34,16 @@ namespace StepsNs {
         constexpr const char* GAIN_AND_FIELD_METHOD = "gain-and-field";
 
         // Convertit le nom de la méthode en méthode de l'algorithme. Vide si le nom est inconnu.
-        std::optional<Methode> parseMethod(const std::string& methodName) {
-            if (methodName == GAIN_METHOD) return Methode::GainGlobal;
-            if (methodName == GAIN_AND_FIELD_METHOD) return Methode::GainEtChamp;
+        std::optional<CorrectionMethod> parseMethod(const std::string& methodName) {
+            if (methodName == GAIN_METHOD) return CorrectionMethod::GlobalGain;
+            if (methodName == GAIN_AND_FIELD_METHOD) return CorrectionMethod::GainAndField;
             return std::nullopt;
         }
 
         // Lit puis réduit chaque tuile, dans l'ordre de la liste. Une tuile illisible est une erreur de données :
         // la cause est écrite dans errorMessage (qui reste vide si tout s'est bien passé).
-        std::vector<TuileReduite> reduceTiles(const DataNs::TileList& tiles, const Egalisation& egalisation, std::string& errorMessage) {
-            std::vector<TuileReduite> reducedTiles;
+        std::vector<ReducedTile> reduceTiles(const DataNs::TileList& tiles, const BrightnessEqualizerClass& equalizer, std::string& errorMessage) {
+            std::vector<ReducedTile> reducedTiles;
             reducedTiles.reserve(tiles.size());
             for (const auto& tile : tiles) {
                 const cv::Mat pixels = PhaseCorrelationStepClass::readPixels(*tile, ANALYSIS_LEVEL);
@@ -53,7 +53,7 @@ namespace StepsNs {
                 }
                 // L'algorithme a besoin de la taille pleine résolution pour ramener les translations à l'échelle réduite.
                 const DataNs::Level& fullResolution = tile->getLevel(0);
-                reducedTiles.push_back(egalisation.reduire(pixels, cv::Size(fullResolution.width, fullResolution.height)));
+                reducedTiles.push_back(equalizer.reduceTile(pixels, cv::Size(fullResolution.width, fullResolution.height)));
             }
             return reducedTiles;
         }
@@ -61,13 +61,13 @@ namespace StepsNs {
         // Convertit les appariements en paires de tuiles voisines : les identifiants de tuiles deviennent des indices
         // dans la liste des tuiles. La translation est déjà en pleine résolution, dans le repère de A.
         // Un identifiant inconnu est une erreur de données : la cause est écrite dans errorMessage.
-        std::vector<PaireVoisine> buildNeighbourPairs(const DataNs::TileList& tiles, const std::vector<DataNs::PairMatches>& pairMatches,
+        std::vector<NeighbourPair> buildNeighbourPairs(const DataNs::TileList& tiles, const std::vector<DataNs::PairMatches>& pairMatches,
             std::string& errorMessage) {
             std::map<int, int> tileIndexById;
             for (size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex)
                 tileIndexById[tiles[tileIndex]->getId()] = static_cast<int>(tileIndex);
 
-            std::vector<PaireVoisine> neighbourPairs;
+            std::vector<NeighbourPair> neighbourPairs;
             for (const DataNs::PairMatches& pair : pairMatches) {
                 const auto tileA = tileIndexById.find(pair.tileIdA);
                 const auto tileB = tileIndexById.find(pair.tileIdB);
@@ -83,11 +83,11 @@ namespace StepsNs {
         }
 
         // Garde, du résultat de l'algorithme, les gains de la méthode choisie.
-        DataNs::IntensityCorrection toCorrection(const Resultat& estimation, Methode method) {
+        DataNs::IntensityCorrection toCorrection(const EqualizationResult& estimation, CorrectionMethod method) {
             DataNs::IntensityCorrection correction;
-            correction.tileGains = method == Methode::GainGlobal ? estimation.gainsA : estimation.gainsB;
-            correction.fieldStrength = estimation.champ(method);
-            correction.isolatedTileIndices = estimation.tuilesIsolees;
+            correction.tileGains = method == CorrectionMethod::GlobalGain ? estimation.gainsA : estimation.gainsB;
+            correction.fieldStrength = estimation.getFieldStrength(method);
+            correction.isolatedTileIndices = estimation.isolatedTiles;
             return correction;
         }
 
@@ -97,17 +97,17 @@ namespace StepsNs {
     // qu'il lit (tuiles et appariements) et celle qu'il produit (correction). Le pipeline s'en sert pour vérifier
     // l'enchaînement. Le paramètre reduction de l'algorithme n'est pas exposé : il est imposé par ANALYSIS_LEVEL.
     IntensityCorrectionStepClass::IntensityCorrectionStepClass(const IntensityCorrectionInput& initialInput) {
-        const auto& algorithmParameters = initialInput.parametres;
+        const auto& algorithmParameters = initialInput.parameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "intensity-correction";
         stepConfig.parameters = { {"string", "method", initialInput.method},
-                                 {"float", "blurSigma", algorithmParameters.flou},
-                                 {"int", "borderMargin", algorithmParameters.marge},
-                                 {"float", "lowThreshold", algorithmParameters.seuilBas},
-                                 {"float", "highThreshold", algorithmParameters.seuilHaut},
-                                 {"int", "iterationCount", algorithmParameters.iterations},
-                                 {"float", "huberThreshold", algorithmParameters.huber},
-                                 {"float", "gaugeWeight", algorithmParameters.poidsJauge} };
+                         {"float", "blurSigma", algorithmParameters.blurSigma},
+                         {"int", "borderMargin", algorithmParameters.borderMargin},
+                         {"float", "lowThreshold", algorithmParameters.lowThreshold},
+                         {"float", "highThreshold", algorithmParameters.highThreshold},
+                         {"int", "iterationCount", algorithmParameters.iterationCount},
+                         {"float", "huberThreshold", algorithmParameters.huberThreshold},
+                         {"float", "gaugeWeight", algorithmParameters.gaugeWeight} };
         stepConfig.inputs = { {"Tiles", "tiles"}, {"PairMatches", "matches"} };
         stepConfig.outputs = { {"IntensityCorrection", "intensityCorrection"} };
         configJson = stepConfig;
@@ -123,15 +123,15 @@ namespace StepsNs {
             catch (const std::out_of_range&) {}
             };
         try {
-            auto& algorithmParameters = input.parametres;
+            auto& algorithmParameters = input.parameters;
             readParameter("method", input.method);
-            readParameter("blurSigma", algorithmParameters.flou);
-            readParameter("borderMargin", algorithmParameters.marge);
-            readParameter("lowThreshold", algorithmParameters.seuilBas);
-            readParameter("highThreshold", algorithmParameters.seuilHaut);
-            readParameter("iterationCount", algorithmParameters.iterations);
-            readParameter("huberThreshold", algorithmParameters.huber);
-            readParameter("gaugeWeight", algorithmParameters.poidsJauge);
+            readParameter("blurSigma", algorithmParameters.blurSigma);
+            readParameter("borderMargin", algorithmParameters.borderMargin);
+            readParameter("lowThreshold", algorithmParameters.lowThreshold);
+            readParameter("highThreshold", algorithmParameters.highThreshold);
+            readParameter("iterationCount", algorithmParameters.iterationCount);
+            readParameter("huberThreshold", algorithmParameters.huberThreshold);
+            readParameter("gaugeWeight", algorithmParameters.gaugeWeight);
         }
         catch (const Json::exception& exception) {
             result["error"] = std::string("invalid option type: ") + exception.what();
@@ -149,7 +149,7 @@ namespace StepsNs {
         IntensityCorrectionInput input;
         if (!readInput(input)) return false;
 
-        const std::optional<Methode> method = parseMethod(input.method);
+        const std::optional<CorrectionMethod> method = parseMethod(input.method);
         if (!method) {
             result["error"] = "method must be '" + std::string(GAIN_METHOD) + "' or '" + GAIN_AND_FIELD_METHOD + "', got '" + input.method + "'";
             return false;
@@ -160,11 +160,11 @@ namespace StepsNs {
         }
 
         // reduction suit le niveau de pyramide lu : la même valeur ne doit pas être écrite à deux endroits.
-        input.parametres.reduction = 1 << ANALYSIS_LEVEL;
+        input.parameters.reductionFactor = 1 << ANALYSIS_LEVEL;
         // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
-        std::optional<Egalisation> egalisation;
+        std::optional<BrightnessEqualizerClass> equalizer;
         try {
-            egalisation.emplace(input.parametres);
+            equalizer.emplace(input.parameters);
         }
         catch (const std::invalid_argument& exception) {
             result["error"] = std::string("invalid parameters: ") + exception.what();
@@ -173,21 +173,21 @@ namespace StepsNs {
 
         const auto& tiles = dataStore->get<DataNs::TileList>("tiles");
         std::string errorMessage;
-        const std::vector<TuileReduite> reducedTiles = reduceTiles(tiles, *egalisation, errorMessage);
+        const std::vector<ReducedTile> reducedTiles = reduceTiles(tiles, *equalizer, errorMessage);
         if (!errorMessage.empty()) {
             result["error"] = errorMessage;
             return false;
         }
-        const std::vector<PaireVoisine> neighbourPairs =
+        const std::vector<NeighbourPair> neighbourPairs =
             buildNeighbourPairs(tiles, dataStore->get<std::vector<DataNs::PairMatches>>("matches"), errorMessage);
         if (!errorMessage.empty()) {
             result["error"] = errorMessage;
             return false;
         }
 
-        const std::optional<Resultat> estimation = egalisation->estimer(reducedTiles, neighbourPairs);
+        const std::optional<EqualizationResult> estimation = equalizer->estimate(reducedTiles, neighbourPairs);
         if (!estimation) {
-            result["error"] = egalisation->raisonEchec();
+            result["error"] = equalizer->getFailureReason();
             return false;
         }
 

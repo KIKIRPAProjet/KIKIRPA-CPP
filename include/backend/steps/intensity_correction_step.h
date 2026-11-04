@@ -1,7 +1,7 @@
 // include/backend/steps/intensity_correction_step.h
 #pragma once
 
-#include "algorithms/egalisation/Egalisation.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
@@ -12,7 +12,7 @@ namespace StepsNs {
     // Valeurs initiales des paramètres du step.
     struct IntensityCorrectionInput {
         std::string method = "gain-and-field";   // "gain" : un gain par tuile ; "gain-and-field" : gains et champ d'éclairage
-        stitching::egalisation::Egalisation::Parametres parametres;   // réglages de l'algorithme (reduction est imposée par le step)
+        BrightnessEqualizationNs::Parameters parameters;   // réglages de l'algorithme (reduction est imposée par le step)
     };
 
     // Sortie du step.
