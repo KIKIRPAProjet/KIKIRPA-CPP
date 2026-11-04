@@ -24,21 +24,21 @@ namespace StepsNs {
     // Déclare l'identité du step : son nom, ses 15 paramètres (valeurs par défaut = celles de l'entrée), la donnée
     // qu'il lit (tuiles) et celle qu'il produit (appariements). Le pipeline s'en sert pour vérifier l'enchaînement.
     PhaseCorrelationStepClass::PhaseCorrelationStepClass(const PhaseCorrelationInput& initialInput) {
-        const auto& correlationParameters = initialInput.parametres;
+        const auto& correlationParameters = initialInput.parameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "phase-correlation";
         stepConfig.parameters = {{"float", "overlap", initialInput.overlap},
-                                 {"int", "niveau", initialInput.niveau},
-                                 {"float", "lissage", correlationParameters.lissage},
-                                 {"float", "seuilRapport", correlationParameters.seuilRapport},
-                                 {"float", "lissageLocal", correlationParameters.lissageLocal},
-                                 {"float", "ecartMax", correlationParameters.ecartMax},
-                                 {"float", "espacementMin", correlationParameters.espacementMin},
-                                 {"float", "marge", correlationParameters.marge},
-                                 {"float", "fractionValideMin", correlationParameters.fractionValideMin},
-                                 {"int", "nbPoints", correlationParameters.nbPoints},
-                                 {"int", "fenetre", correlationParameters.fenetre},
-                                 {"int", "facteurDft", correlationParameters.facteurDft},
+                                 {"int", "niveau", initialInput.level},
+                                 {"float", "lissage", correlationParameters.smoothingSigma},
+                                 {"float", "seuilRapport", correlationParameters.minimumPeakRatio},
+                                 {"float", "lissageLocal", correlationParameters.localSmoothingSigma},
+                                 {"float", "ecartMax", correlationParameters.maximumLocalDeviation},
+                                 {"float", "espacementMin", correlationParameters.minimumPointSpacing},
+                                 {"float", "marge", correlationParameters.railMargin},
+                                 {"float", "fractionValideMin", correlationParameters.minimumValidFraction},
+                                 {"int", "nbPoints", correlationParameters.maximumPointCount},
+                                 {"int", "fenetre", correlationParameters.patchSize},
+                                 {"int", "facteurDft", correlationParameters.upsamplingFactor},
                                  {"float", "nccMin", initialInput.confiance.nccMin},
                                  {"float", "dispersionMax", initialInput.confiance.dispersionMax},
                                  {"float", "autosimMax", initialInput.confiance.autosimMax}};
@@ -135,7 +135,7 @@ namespace StepsNs {
 
     PairConfidence PhaseCorrelationStepClass::checkConfidence(const DataNs::Matches& matches, const cv::Mat& imageA,
                                                               DataNs::Direction direction, float overlap,
-                                                              const stitching::matching::CorrelationPhase::Parametres& parameters,
+                                                              const PhaseCorrelationNs::Parameters& parameters,
                                                               const ConfidenceControl& control) {
         auto number = [](double x) {
             char text[32];
@@ -161,7 +161,7 @@ namespace StepsNs {
             confidence.ncc = median(std::vector<double>(matches.confidenceScores.begin(), matches.confidenceScores.end()));
             confidence.dispersion = median(gaps);
         }
-        const double autosim = selfSimilarity(imageA, direction, overlap, parameters.marge);
+        const double autosim = selfSimilarity(imageA, direction, overlap, parameters.railMargin);
         if (!std::isnan(autosim)) confidence.autosim = autosim;
 
         // 2. Décision
@@ -172,12 +172,12 @@ namespace StepsNs {
         };
         // Points locaux (fond sombre, bruit) : le pic peut être franc mais décalé, les patchs le révèlent
         const bool checkPoints = control.nccMin > 0 || control.dispersionMax > 0;
-        if (!hasPoints && checkPoints && parameters.nbPoints > 0) {
+        if (!hasPoints && checkPoints && parameters.maximumPointCount > 0) {
             // Pas de point : soit la zone commune est trop petite pour un patch (rien à vérifier, la paire est gardée),
             // soit elle est assez grande mais aucun point n'a été jugé fiable (bruit, zone sans texture) : rejet.
-            // Taille minimale : celle qu'exige Preparation::recouvrement pour chercher des points.
-            const int patchMargin = parameters.fenetre / 2 + static_cast<int>(std::ceil(parameters.ecartMax)) + 1;
-            const int minimum = parameters.fenetre + 2 * patchMargin;
+            // Taille minimale : celle qu'exige PreparationClass::extractOverlap pour chercher des points.
+            const int patchMargin = parameters.patchSize / 2 + static_cast<int>(std::ceil(parameters.maximumLocalDeviation)) + 1;
+            const int minimum = parameters.patchSize + 2 * patchMargin;
             const int width = imageA.cols - static_cast<int>(std::lround(std::abs(matches.translationX)));
             const int height = imageA.rows - static_cast<int>(std::lround(std::abs(matches.translationY)));
             if (width >= minimum && height >= minimum)
@@ -217,19 +217,19 @@ namespace StepsNs {
             } catch (const std::out_of_range&) {}
         };
         try {
-            auto& correlationParameters = input.parametres;
+            auto& correlationParameters = input.parameters;
             readParameter("overlap", input.overlap);
-            readParameter("niveau", input.niveau);
-            readParameter("lissage", correlationParameters.lissage);
-            readParameter("seuilRapport", correlationParameters.seuilRapport);
-            readParameter("lissageLocal", correlationParameters.lissageLocal);
-            readParameter("ecartMax", correlationParameters.ecartMax);
-            readParameter("espacementMin", correlationParameters.espacementMin);
-            readParameter("marge", correlationParameters.marge);
-            readParameter("fractionValideMin", correlationParameters.fractionValideMin);
-            readParameter("nbPoints", correlationParameters.nbPoints);
-            readParameter("fenetre", correlationParameters.fenetre);
-            readParameter("facteurDft", correlationParameters.facteurDft);
+            readParameter("niveau", input.level);
+            readParameter("lissage", correlationParameters.smoothingSigma);
+            readParameter("seuilRapport", correlationParameters.minimumPeakRatio);
+            readParameter("lissageLocal", correlationParameters.localSmoothingSigma);
+            readParameter("ecartMax", correlationParameters.maximumLocalDeviation);
+            readParameter("espacementMin", correlationParameters.minimumPointSpacing);
+            readParameter("marge", correlationParameters.railMargin);
+            readParameter("fractionValideMin", correlationParameters.minimumValidFraction);
+            readParameter("nbPoints", correlationParameters.maximumPointCount);
+            readParameter("fenetre", correlationParameters.patchSize);
+            readParameter("facteurDft", correlationParameters.upsamplingFactor);
             readParameter("nccMin", input.confiance.nccMin);
             readParameter("dispersionMax", input.confiance.dispersionMax);
             readParameter("autosimMax", input.confiance.autosimMax);
@@ -243,9 +243,9 @@ namespace StepsNs {
             result["error"] = "overlap must be in ]0, 1[, got " + std::to_string(input.overlap);
             return false;
         }
-        if (input.niveau < 0 || input.niveau >= DataNs::LEVEL_COUNT) {
+        if (input.level < 0 || input.level >= DataNs::LEVEL_COUNT) {
             result["error"] = "niveau must be in [0, " + std::to_string(DataNs::LEVEL_COUNT - 1) + "], got "
-                              + std::to_string(input.niveau);
+                              + std::to_string(input.level);
             return false;
         }
         if (!dataStore || !dataStore->has("tiles")) {
@@ -254,9 +254,9 @@ namespace StepsNs {
         }
 
         // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
-        std::optional<stitching::matching::CorrelationPhase> matcher;
+        std::optional<PhaseCorrelationNs::PhaseCorrelationMatcherClass> matcher;
         try {
-            matcher.emplace(input.parametres);
+            matcher.emplace(input.parameters);
         } catch (const std::invalid_argument& exception) {
             result["error"] = std::string("invalid parameters: ") + exception.what();
             return false;
@@ -264,15 +264,15 @@ namespace StepsNs {
 
         // Au plus deux images en mémoire : la tuile courante (lue une seule fois pour ses deux voisines) et sa voisine.
         Json failures = Json::array(), confidences = Json::array();
-        const float scale = static_cast<float>(1 << input.niveau);
+        const float scale = static_cast<float>(1 << input.level);
         for (const auto& tile : dataStore->get<DataNs::TileList>("tiles")) {
             const std::pair<DataNs::TileClass*, DataNs::Direction> neighbours[] = {{tile->getRight(), DataNs::Direction::Right},
                                                                                     {tile->getBottom(), DataNs::Direction::Bottom}};
             cv::Mat tileImage;
             for (const auto& [neighbour, direction] : neighbours) {
                 if (!neighbour) continue;
-                if (tileImage.empty()) tileImage = readPixels(*tile, input.niveau);
-                const cv::Mat neighbourImage = readPixels(*neighbour, input.niveau);
+                if (tileImage.empty()) tileImage = readPixels(*tile, input.level);
+                const cv::Mat neighbourImage = readPixels(*neighbour, input.level);
                 if (tileImage.empty() || neighbourImage.empty()) {
                     result["error"] = "cannot read " + (tileImage.empty() ? tile.get() : neighbour)->getSource().string();
                     return false;
@@ -284,15 +284,15 @@ namespace StepsNs {
                 PairConfidence confidence;
                 if (matcher->match(tileImage, neighbourImage, DataNs::PairContext{direction, input.overlap}, pair.featureMatches)) {
                     confidence = checkConfidence(pair.featureMatches, tileImage, direction, input.overlap,
-                                                 input.parametres, input.confiance);
-                    scaleToFullResolution(pair.featureMatches, input.niveau);   // points et dispersion en pleine résolution
+                                                 input.parameters, input.confiance);
+                    scaleToFullResolution(pair.featureMatches, input.level);   // points et dispersion en pleine résolution
                     if (confidence.dispersion) *confidence.dispersion *= scale;
                     const DataNs::Matches& m = pair.featureMatches;
                     for (size_t i = 0; i < m.pointsInA.size(); ++i)
                         confidence.points.push_back({m.pointsInA[i], m.pointsInB[i], m.confidenceScores[i]});
                 } else {
                     confidence.state = ConfidenceState::Rejected;
-                    confidence.reason = matcher->raisonEchec();
+                    confidence.reason = matcher->getFailureReason();
                 }
                 confidence.tileIdA = pair.tileIdA;
                 confidence.tileIdB = pair.tileIdB;
@@ -304,7 +304,7 @@ namespace StepsNs {
             }
         }
 
-        result["niveau"] = input.niveau;
+        result["niveau"] = input.level;
         result["pairs"] = output.pairs.size();
         if (!failures.empty()) result["failures"] = failures;
         result["confidence"] = confidences;

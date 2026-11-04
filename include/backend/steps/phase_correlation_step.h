@@ -1,7 +1,7 @@
 // include/backend/steps/phase_correlation_step.h
 #pragma once
 
-#include "algorithms/stitching/correlation_phase/CorrelationPhase.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/step.h"
@@ -15,7 +15,7 @@
 
 namespace StepsNs {
 
-    // Contrôles de confiance appliqués à chaque paire mesurée (voir docs/algorithms/stitching/correlation_phase/EtudeConfiance.md).
+    // Contrôles de confiance appliqués à chaque paire mesurée (voir docs/algorithms/stitching/phase_correlation/EtudeConfiance.md).
     // Une paire qui échoue à un contrôle est rejetée (getResult()["failures"]), comme une paire non mesurable.
     struct ConfidenceControl {
         double nccMin = 0.3;          // NCC médiane minimale des points locaux (fond sombre, bruit). <= 0 : contrôle désactivé
@@ -52,8 +52,8 @@ namespace StepsNs {
     // Valeurs initiales des paramètres du step.
     struct PhaseCorrelationInput {
         float overlap = 0.2f;   // recouvrement nominal entre deux tuiles voisines, en fraction de la tuile
-        int niveau = 0;         // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
-        stitching::matching::CorrelationPhase::Parametres parametres;   // réglages de l'algorithme, en px du niveau analysé
+        int level = 0;          // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
+        PhaseCorrelationNs::Parameters parameters;   // réglages de l'algorithme, en px du niveau analysé
         ConfidenceControl confiance;   // seuils des contrôles de confiance
     };
 
@@ -67,9 +67,10 @@ namespace StepsNs {
     // (voir docs/steps/PhaseCorrelationStep.md).
     //
     // Nom : "phase-correlation".
-    // Paramètres : overlap (float), niveau (int) et les champs de CorrelationPhase::Parametres : lissage, seuilRapport,
-    //   lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float) ; nbPoints, fenetre, facteurDft (int) ;
-    //   contrôles de confiance : nccMin, dispersionMax, autosimMax (float).
+    // Paramètres : overlap (float), niveau (int, champ level) et les champs de PhaseCorrelationNs::Parameters, sous leur
+    //   nom d'origine : lissage, seuilRapport, lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float) ;
+    //   nbPoints, fenetre, facteurDft (int). Correspondance avec les champs : phase_correlation_types.h.
+    //   Contrôles de confiance : nccMin, dispersionMax, autosimMax (float).
     //   Un paramètre absent du JSON garde sa valeur par défaut.
     // Entrée : "Tiles" (clé "tiles").   Sortie : "PairMatches" (clé "matches").
     //
@@ -109,7 +110,7 @@ namespace StepsNs {
             // Auto-similarité de la bande de recouvrement nominal de A, côté B (Right ou Bottom) : la bande ressemble-t-elle
             // à elle-même à un décalage non nul de la marge du rail (hors ±10 px) ? 1 = motif répété (plusieurs positions
             // de B possibles), proche de 0 = aucune répétition. NaN si la bande est vide à plus de 75 % ou trop étroite.
-            // margin : Parametres::marge (0 = automatique, même règle que l'algorithme).
+            // margin : Parameters::railMargin (0 = automatique, même règle que l'algorithme).
             static double selfSimilarity(const cv::Mat& imageA, DataNs::Direction direction, float overlap, double margin);
 
             // Indicateurs et état de confiance d'une paire mesurée (matches et imageA au niveau analysé ; tileIdA, tileIdB
@@ -119,7 +120,7 @@ namespace StepsNs {
             // Ici, dispersion est en px du niveau analysé (comparée à dispersionMax) ; execute() la ramène en pleine résolution.
             static PairConfidence checkConfidence(const DataNs::Matches& matches, const cv::Mat& imageA,
                                                   DataNs::Direction direction, float overlap,
-                                                  const stitching::matching::CorrelationPhase::Parametres& parameters,
+                                                  const PhaseCorrelationNs::Parameters& parameters,
                                                   const ConfidenceControl& control);
 
             static const char* stateName(ConfidenceState state);   // "fiable", "non_verifie", "ambigu", "rejete"

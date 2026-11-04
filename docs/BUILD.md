@@ -139,4 +139,4 @@ Remplacer `<preset>` par celui de son système : `windows-aqt`, `linux` ou `maco
 | `cmake/tests_runner.cmake` | GoogleTest et un `add_subdirectory` par dossier de `tests/`. |
 | `cmake/install.cmake` | Installation de `stitching` dans `bin/`. |
 
-Un exécutable de test se lie à `kikirpa_backend` (voir `tests/egalisation/CMakeLists.txt`).
+Un exécutable de test se lie à `kikirpa_backend` (voir `tests/brightness_equalization/CMakeLists.txt`).

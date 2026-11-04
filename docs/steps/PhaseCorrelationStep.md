@@ -2,7 +2,7 @@
 
 Code : `steps/phase_correlation_step.h` / `.cpp` (namespace `StepsNs`).
 
-Mesure par corrélation de phase la position de chaque tuile par rapport à ses voisines de droite et du dessous (algorithme : [CorrelationPhase](../algorithms/stitching/correlation_phase/CorrelationPhase.md)). Le résultat est **toujours en pixels de pleine résolution**, même si l'analyse est faite sur un niveau réduit.
+Mesure par corrélation de phase la position de chaque tuile par rapport à ses voisines de droite et du dessous (algorithme : [PhaseCorrelationMatcherClass](../algorithms/stitching/phase_correlation/PhaseCorrelation.md)). Le résultat est **toujours en pixels de pleine résolution**, même si l'analyse est faite sur un niveau réduit.
 
 ## Contrat
 
@@ -13,7 +13,7 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 | sortie | `{ "dataType": "PairMatches", "key": "matches" }` |
 | `getResult()` | `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error` |
 
-**Paramètres** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de `CorrelationPhase` : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
+**Paramètres** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de la corrélation de phase : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Ces noms n'ont pas changé avec la migration des algorithmes ; le champ de `PhaseCorrelationNs::Parameters` qui correspond à chacun est donné dans [PhaseCorrelation.md §5](../algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
 
 ## Conventions
 
@@ -36,7 +36,7 @@ La perte de précision aux niveaux réduits vient de la pyramide (moyenne 2 × 2
 
 ## Confiance
 
-Chaque paire mesurée passe 3 contrôles. Une paire qui en échoue un est rejetée (dans `failures`, raison commençant par `confiance :`). Seuils et justification : [EtudeConfiance](../algorithms/stitching/correlation_phase/EtudeConfiance.md).
+Chaque paire mesurée passe 3 contrôles. Une paire qui en échoue un est rejetée (dans `failures`, raison commençant par `confiance :`). Seuils et justification : [EtudeConfiance](../algorithms/stitching/phase_correlation/EtudeConfiance.md).
 
 | Option | Défaut | Rejette si | Détecte | Désactiver |
 |---|---|---|---|---|
@@ -74,4 +74,4 @@ Une paire non mesurable, ou rejetée par un contrôle de confiance, est ignorée
 
 ## Lecture des pixels
 
-Seul accès aux pixels : `readPixels(tile, level)`. Elle lit aujourd'hui le fichier source, réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`). Elle sera remplacée par `readRegion(tuile, niveau, rect)` (Mathias B.) dès que cette fonction existe.
+Seul accès aux pixels : `readPixels(tile, level)`. Elle lit aujourd'hui le fichier source, réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`). Elle sera remplacée par `readRegion(tile, level, rectangle)` (Mathias B.) dès que cette fonction existe.
