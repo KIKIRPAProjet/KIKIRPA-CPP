@@ -12,6 +12,7 @@
 #include "core/step/step.h"
 #include "core/pipeline/run_state.h"
 #include "steps/import_step.h"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json_fwd.hpp>
 #include <memory>
@@ -22,15 +23,17 @@
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <cmath>
+
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace fs = std::filesystem;
+namespace FileSystemNs = std::filesystem;
 
 namespace StitchingNs::TestsNs {
 
@@ -44,37 +47,53 @@ constexpr int MODIFIED_PIXEL = 1000;
 
 using Json = nlohmann::json;
 
-constexpr int    LARGEUR_TUILE  = 400;
-constexpr int    HAUTEUR_TUILE  = 300;
-constexpr int    DECALAGE_B     = 320;    // px : coin de B dans A (recouvrement de 20 %)
-constexpr double SIGMA_TEXTURE  = 2.0;    // flou de la texture aléatoire
-constexpr double TOLERANCE      = 0.05;   // px
+constexpr int TILE_WIDTH = 400;
+constexpr int TILE_HEIGHT = 300;
+constexpr int TILE_OFFSET_X = 320;
+constexpr double TEXTURE_SIGMA = 2.0;
+constexpr double TRANSLATION_TOLERANCE = 0.05;
+constexpr int EXPECTED_REGISTERED_STEP_COUNT = 3;
+constexpr int EXPECTED_PIPELINE_STEP_COUNT = 2;
+constexpr int EXPECTED_TILE_COUNT = 2;
+constexpr int EXPECTED_MATCH_COUNT = 1;
+constexpr std::size_t FIRST_STEP_INDEX = 0;
+constexpr std::size_t SECOND_STEP_INDEX = 1;
+constexpr std::size_t FIRST_TILE_INDEX = 0;
+constexpr std::size_t SECOND_TILE_INDEX = 1;
+constexpr std::size_t FIRST_MATCH_INDEX = 0;
+constexpr int EXPECTED_PHASE_CORRELATION_PARAMETER_COUNT = 12;
+constexpr int INTEGER_OPTION_VALUE = 3;
+constexpr int INVALID_STEPS_VALUE = 3;
+constexpr double NON_INTEGER_OPTION_VALUE = 2.5;
+constexpr int PIXEL_ORIGIN = 0;
+constexpr double ZERO_OVERLAP = 0.0;
+constexpr unsigned int RANDOM_SEED = 12345;
+constexpr double RANDOM_VALUE_MINIMUM = 0.0;
+constexpr double RANDOM_VALUE_MAXIMUM = 1.0;
+constexpr double NORMALIZED_VALUE_MINIMUM = 2000.0;
+constexpr double NORMALIZED_VALUE_MAXIMUM = 60000.0;
+constexpr int MODIFIED_PIXEL_REGION_SIZE = 10;
+constexpr int MODIFIED_PIXEL_VALUE = 1000;
 
-// Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
-void verifier(bool ok, const std::string& message) {
-    EXPECT_TRUE(ok) << message;
-}
-
-// Vrai si `f` lève std::invalid_argument dont le message contient `extrait`
+// Returns true if the callable throws std::invalid_argument containing the expected text.
 template <class F>
-bool leveInvalidArgument(F f, const std::string& extrait) {
+bool throwsInvalidArgumentContaining(F callable, const std::string& expectedText) {
     try {
-        f();
-    } catch (const std::invalid_argument& e) {
-        const bool trouve = std::string(e.what()).find(extrait) != std::string::npos;
-        if (!trouve) std::cout << "        message reçu : " << e.what() << '\n';
-        return trouve;
+        callable();
+    } catch (const std::invalid_argument& exception) {
+        const bool CONTAINS_EXPECTED_TEXT = std::string(exception.what()).find(expectedText) != std::string::npos;
+        if (!CONTAINS_EXPECTED_TEXT) std::cout << "        message reçu : " << exception.what() << '\n';
+        return CONTAINS_EXPECTED_TEXT;
     }
     return false;
 }
 
-Json etape(const std::string& nom, Json options = Json::array()) {
-    return {{"name", nom}, {"parameters", std::move(options)}};
+Json makeStepJson(const std::string& stepName, Json parameters = Json::array()) {
+    return {{"name", stepName}, {"parameters", std::move(parameters)}};
 }
 
-// std::vector et non Json : avec nlohmann, {x} à un seul élément ne donne pas un tableau
-Json script(const std::vector<Json>& etapes) {
-    return {{"pipeline", {{"steps", etapes}}}};
+Json makeScriptJson(const std::vector<Json>& steps) {
+    return {{"pipeline", {{"steps", steps}}}};
 }
 
 // Step de test qui lève une exception à l'exécution
@@ -187,6 +206,51 @@ void testerPipelineReel() {
         std::cout << journal;
         return;
     }
+    EXPECT_TRUE(throwsInvalidArgumentContaining([] { PipelineNs::createStep("unknown"); }, "unknown step 'unknown'"));
+}
+
+TEST(PipelineBuilder, CompletePipelineJson) {
+    const PipelineNs::PipelineClass PIPELINE = PipelineNs::buildPipelineFromFile(STITCHING_PIPELINE_JSON_PATH);
+    ASSERT_EQ(PIPELINE.getSteps().size(), EXPECTED_PIPELINE_STEP_COUNT);
+    EXPECT_EQ(PIPELINE.getSteps()[FIRST_STEP_INDEX]->getConfigJson().at("name"), "import");
+    EXPECT_EQ(PIPELINE.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("name"), "phase-correlation");
+}
+
+TEST(PipelineBuilder, RejectsInvalidScriptStructure) {
+    EXPECT_TRUE(throwsInvalidArgumentContaining([] { PipelineNs::buildPipeline(Json::array()); }, "JSON object"));
+    EXPECT_TRUE(throwsInvalidArgumentContaining(
+        [] { PipelineNs::buildPipeline({{"pipeline", {{"steps", INVALID_STEPS_VALUE}}}}); }, "pipeline.steps"));
+    EXPECT_TRUE(throwsInvalidArgumentContaining(
+        [] { PipelineNs::buildPipeline(makeScriptJson({{{"parameters", Json::array()}}})); }, "string 'name'"));
+}
+
+TEST(PipelineBuilder, RejectsInvalidParameters) {
+    const Json UNKNOWN_PARAMETER_SCRIPT = makeScriptJson(
+        {makeStepJson("import", Json::array({makeParameterJson("string", "unknown", "x")}))});
+    EXPECT_TRUE(rejectsPipeline(UNKNOWN_PARAMETER_SCRIPT, "unknown parameter 'unknown'"));
+
+    const Json INCORRECT_TYPE_SCRIPT = makeScriptJson(
+        {makeStepJson("import", Json::array({makeParameterJson("int", "path", INTEGER_OPTION_VALUE)}))});
+    EXPECT_TRUE(rejectsPipeline(INCORRECT_TYPE_SCRIPT, "has type 'string', got 'int'"));
+
+    const Json INCORRECT_VALUE_SCRIPT = makeScriptJson(
+        {makeStepJson("import"), makeStepJson("phase-correlation", Json::array({
+            makeParameterJson("int", "nbPoints", NON_INTEGER_OPTION_VALUE)}))});
+    EXPECT_TRUE(rejectsPipeline(INCORRECT_VALUE_SCRIPT, "expects a value of type 'int'"));
+
+    const Json DUPLICATE_PARAMETER_SCRIPT = makeScriptJson(
+        {makeStepJson("import", Json::array({makeParameterJson("string", "path", "first"),
+                                             makeParameterJson("string", "path", "second")}))});
+    EXPECT_TRUE(rejectsPipeline(DUPLICATE_PARAMETER_SCRIPT, "duplicate parameter 'path'"));
+}
+
+TEST(PipelineBuilder, RejectsUnproducedInputs) {
+    const Json MISSING_TILES_SCRIPT = makeScriptJson({makeStepJson("phase-correlation")});
+    EXPECT_TRUE(rejectsPipeline(MISSING_TILES_SCRIPT, "input 'tiles' is not produced"));
+
+    const Json MISSING_POSITION_SCRIPT = makeScriptJson({makeStepJson("import"), makeStepJson("graphcut")});
+    EXPECT_TRUE(rejectsPipeline(MISSING_POSITION_SCRIPT, "input 'positions' is not produced"));
+}
 
     const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
     verifier(tuiles.size() == 2, "2 tuiles importées");
@@ -242,18 +306,131 @@ void testerRepriseReelle() {
         a(cv::Rect(0, 0, PATCH_SIZE, PATCH_SIZE)).setTo(cv::Scalar(MODIFIED_PIXEL));
         cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
     }
-    journal.clear();
-    verifier(p.run(log), "run 3 réussi");
-    verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
-             "image modifiée : import et appariement refaits");
-    fs::remove_all(dossier);
+    EXPECT_EQ(path, "elsewhere/");
+    EXPECT_EQ(format, StepsNs::ImportInput{}.format);
+    EXPECT_EQ(PIPELINE.getSteps()[SECOND_STEP_INDEX]->getConfigJson().at("parameters").size(),
+              EXPECTED_PHASE_CORRELATION_PARAMETER_COUNT);
+
+    const PipelineNs::PipelineClass COPY = PipelineNs::buildPipeline(PipelineNs.exportConfig());
+    EXPECT_EQ(COPY.exportConfig(), PIPELINE.exportConfig());
 }
 
-// Une exception inattendue fait échouer le test : GoogleTest l'attrape et affiche son message
-TEST(PipelineBuilder, Registre) { testerRegistre(); }
-TEST(PipelineBuilder, Validation) { testerValidation(); }
-TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
-TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
-TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
-
+TEST(PipelineBuilder, ReportsStepException) {
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<ThrowingStepClass>());
+    std::string logMessage;
+    const bool SUCCEEDED = pipeline.run([&](const std::string& message) { logMessage = message; });
+    EXPECT_FALSE(SUCCEEDED);
+    EXPECT_NE(logMessage.find("expected test exception"), std::string::npos);
 }
+
+void createTiles(const FileSystemNs::path& directory) {
+    FileSystemNs::remove_all(directory);
+    FileSystemNs::create_directories(directory);
+    cv::Mat source(TILE_HEIGHT, TILE_OFFSET_X + TILE_WIDTH, CV_32F);
+    cv::RNG randomGenerator(RANDOM_SEED);
+    randomGenerator.fill(source, cv::RNG::UNIFORM, RANDOM_VALUE_MINIMUM, RANDOM_VALUE_MAXIMUM);
+    cv::GaussianBlur(source, source, cv::Size(), TEXTURE_SIGMA);
+    cv::normalize(source, source, NORMALIZED_VALUE_MINIMUM, NORMALIZED_VALUE_MAXIMUM, cv::NORM_MINMAX);
+    cv::Mat source16Bit;
+    source.convertTo(source16Bit, CV_16U);
+    cv::imwrite((directory / "img_C00_R00.tif").string(),
+                source16Bit(cv::Rect(PIXEL_ORIGIN, PIXEL_ORIGIN, TILE_WIDTH, TILE_HEIGHT)));
+    cv::imwrite((directory / "img_C01_R00.tif").string(),
+                source16Bit(cv::Rect(TILE_OFFSET_X, PIXEL_ORIGIN, TILE_WIDTH, TILE_HEIGHT)));
+}
+
+Json makeRealPipelineScript(const FileSystemNs::path& directory) {
+    const Json IMPORT_STEP = makeStepJson("import", Json::array({
+        makeParameterJson("string", "path", directory.string())}));
+    return makeScriptJson({IMPORT_STEP, makeStepJson("phase-correlation")});
+}
+
+void verifyRealPipelineOutputs(const PipelineNs::PipelineClass& pipeline) {
+    const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");
+    ASSERT_EQ(tiles.size(), EXPECTED_TILE_COUNT);
+    EXPECT_EQ(tiles[FIRST_TILE_INDEX]->getRight(), tiles[SECOND_TILE_INDEX].get());
+    EXPECT_TRUE(FileSystemNs::exists(tiles[FIRST_TILE_INDEX]->getTiff()));
+
+    const auto& matches = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    ASSERT_EQ(matches.size(), EXPECTED_MATCH_COUNT);
+    const DataNs::Matches& translation = matches[FIRST_MATCH_INDEX].featureMatches;
+    EXPECT_NEAR(translation.translationX, TILE_OFFSET_X, TRANSLATION_TOLERANCE);
+    EXPECT_NEAR(translation.translationY, PIXEL_ORIGIN, TRANSLATION_TOLERANCE);
+}
+
+TEST(PipelineBuilder, RunsRealPipeline) {
+    const FileSystemNs::path DIRECTORY = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline";
+    createTiles(DIRECTORY);
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(makeRealPipelineScript(DIRECTORY));
+    ASSERT_TRUE(pipeline.run());
+    verifyRealPipelineOutputs(pipeline);
+    FileSystemNs::remove_all(DIRECTORY);
+}
+
+void verifyCheckpointFiles(const FileSystemNs::path& checkpointDirectory) {
+    EXPECT_TRUE(FileSystemNs::exists(checkpointDirectory / "00_import" / "tiles.json"));
+    EXPECT_TRUE(FileSystemNs::exists(checkpointDirectory / "01_phase-correlation" / "matches.json"));
+}
+
+void verifyRestoredPipelineOutputs(const PipelineNs::PipelineClass& pipeline, float expectedTranslationX) {
+    const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");
+    ASSERT_EQ(tiles.size(), EXPECTED_TILE_COUNT);
+    EXPECT_EQ(tiles[FIRST_TILE_INDEX]->getRight(), tiles[SECOND_TILE_INDEX].get());
+    EXPECT_EQ(tiles[SECOND_TILE_INDEX]->getLeft(), tiles[FIRST_TILE_INDEX].get());
+
+    const auto& matches = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    ASSERT_EQ(matches.size(), EXPECTED_MATCH_COUNT);
+    EXPECT_EQ(matches[FIRST_MATCH_INDEX].featureMatches.translationX, expectedTranslationX);
+    EXPECT_EQ(matches[FIRST_MATCH_INDEX].direction, DataNs::Direction::Right);
+}
+
+void modifySourceTile(const FileSystemNs::path& directory) {
+    const FileSystemNs::path SOURCE_PATH = directory / "img_C00_R00.tif";
+    cv::Mat image = cv::imread(SOURCE_PATH.string(), cv::IMREAD_UNCHANGED);
+    image(cv::Rect(PIXEL_ORIGIN, PIXEL_ORIGIN, MODIFIED_PIXEL_REGION_SIZE, MODIFIED_PIXEL_REGION_SIZE))
+        .setTo(cv::Scalar(MODIFIED_PIXEL_VALUE));
+    cv::imwrite(SOURCE_PATH.string(), image);
+}
+
+PipelineNs::PipelineClass makeCheckpointedPipeline(const FileSystemNs::path& directory,
+                                                    const FileSystemNs::path& checkpointDirectory) {
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(makeRealPipelineScript(directory));
+    PipelineNs::RunState runState;
+    runState.checkpointDirectory = checkpointDirectory.string();
+    pipeline.setRunState(runState);
+    return pipeline;
+}
+
+void verifySourceChangeRebuildsPipeline(PipelineNs::PipelineClass& pipeline, const FileSystemNs::path& directory) {
+    modifySourceTile(directory);
+    std::string log;
+    const auto LOGGER = [&](const std::string& message) { log += message + "\n"; };
+    ASSERT_TRUE(pipeline.run(LOGGER));
+    EXPECT_NE(log.find("Step 1/2 OK"), std::string::npos);
+    EXPECT_NE(log.find("Step 2/2 OK"), std::string::npos);
+}
+
+TEST(PipelineBuilder, ResumesFromCheckpointsAndDetectsChangedInputs) {
+    const FileSystemNs::path DIRECTORY = FileSystemNs::temp_directory_path() / "kikirpa_test_pipeline_resume";
+    const FileSystemNs::path CHECKPOINT_DIRECTORY = DIRECTORY / "checkpoints";
+    createTiles(DIRECTORY);
+
+    PipelineNs::PipelineClass pipeline = makeCheckpointedPipeline(DIRECTORY, CHECKPOINT_DIRECTORY);
+    std::string log;
+    const auto LOGGER = [&](const std::string& message) { log += message + "\n"; };
+    ASSERT_TRUE(pipeline.run(LOGGER));
+    verifyCheckpointFiles(CHECKPOINT_DIRECTORY);
+    const auto& matches = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    const float EXPECTED_TRANSLATION_X = matches.at(FIRST_MATCH_INDEX).featureMatches.translationX;
+
+    log.clear();
+    ASSERT_TRUE(pipeline.run(LOGGER));
+    EXPECT_NE(log.find("nothing to do"), std::string::npos);
+    verifyRestoredPipelineOutputs(pipeline, EXPECTED_TRANSLATION_X);
+
+    verifySourceChangeRebuildsPipeline(pipeline, directory);
+    FileSystemNs::remove_all(directory);
+}
+
+} // namespace StitchingNs::TestsNs
