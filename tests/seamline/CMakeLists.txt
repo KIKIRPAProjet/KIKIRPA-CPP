@@ -9,6 +9,7 @@ add_executable(seam_tests
     test_junctions.cpp
 )
 
+kikirpa_copy_onnxruntime_dlls(seam_tests)
 target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
