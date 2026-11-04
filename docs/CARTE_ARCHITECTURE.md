@@ -1,6 +1,6 @@
 # Carte de l'architecture : KIKIRPA-CPP
 
-Guide pour se repérer dans le code de **`main`**, à jour du 03/11/2026 après la réorganisation de `core/` et `steps/` (PR #50). Les éléments marqués **🆕** ont changé avec cette réorganisation : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. Correspondance complète entre anciens et nouveaux noms : [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md). Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
+Guide pour se repérer dans le code de **`main`**, à jour du 03/11/2026 après la réorganisation de `core/` et `steps/` (PR #50) et la migration des algorithmes (branche `refactor/algorithms-conventions`). Les éléments marqués **🆕** ont changé avec l'une ou l'autre : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. Correspondance complète entre anciens et nouveaux noms : [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§12 pour les algorithmes). Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
 
 > **Cette carte doit rester à jour.** Elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
@@ -87,20 +87,20 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 | Voir comment les images sont chargées | [import_step.cpp](../src/backend/steps/import_step.cpp) |
 | Voir le cache TIFF pyramidal créé à l'import | [pyramidal_tiff_writer.cpp](../src/backend/core/io/pyramidal_tiff_writer.cpp) |
 | **Écrire un nouveau step** : modèle à copier | [phase_correlation_step.h](../include/backend/steps/phase_correlation_step.h) / [.cpp](../src/backend/steps/phase_correlation_step.cpp) et sa doc [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) (contrat, conventions, échecs) |
-| Mesurer le décalage entre deux tuiles (corrélation de phase) | [CorrelationPhase.h](../include/backend/algorithms/stitching/correlation_phase/CorrelationPhase.h) + sa [doc](algorithms/stitching/correlation_phase/CorrelationPhase.md) |
-| Estimer le recouvrement réel d'une paire (1re passe) | [EstimationRecouvrement.h](../include/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.h) + sa [doc](algorithms/stitching/recouvrement/EstimationRecouvrement.md) |
-| Voir l'appariement SIFT | [SiftMatcherAlgorithm.cpp](../src/backend/algorithms/stitching/sift/SiftMatcherAlgorithm.cpp) (le calcul) ; [SiftMatcher.cpp](../src/backend/algorithms/stitching/sift/SiftMatcher.cpp) (l'emballage) |
-| Voir l'appariement LightGlue (ONNX) | [LightGlueMatcher.cpp](../src/backend/algorithms/stitching/lightglue/LightGlueMatcher.cpp) |
-| Voir le rejet des mauvais points (RANSAC, vote de Hough) | [RansacRejector.cpp](../src/backend/algorithms/rejection/ransac/RansacRejector.cpp) (contient aussi `VoteRejector`) |
-| **Voir l'alignement global** (moindres carrés) | [TilePositioner.cpp](../src/backend/algorithms/stitching/positioning/TilePositioner.cpp) → `solvePositions()` (l. 48) |
-| **Égaliser la luminosité entre tuiles** | [Egalisation.h](../include/backend/algorithms/egalisation/Egalisation.h) + sa [doc](algorithms/egalisation/Egalisation.md) |
-| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) (point d'entrée) puis [solver.hpp](../include/backend/algorithms/seamline/dp_dijkstra/solver.hpp) |
-| Voir le calcul des coutures, méthode GraphCut | [GraphCutSeamFinder.cpp](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) (commenté ligne à ligne) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) |
+| Mesurer le décalage entre deux tuiles (corrélation de phase) | [phase_correlation_matcher.h](../include/backend/algorithms/stitching/phase_correlation/phase_correlation_matcher.h) + sa [doc](algorithms/stitching/phase_correlation/PhaseCorrelation.md) 🆕 |
+| Estimer le recouvrement réel d'une paire (1re passe) | [overlap_estimator.h](../include/backend/algorithms/stitching/overlap_estimation/overlap_estimator.h) + sa [doc](algorithms/stitching/overlap_estimation/OverlapEstimation.md) 🆕 |
+| Voir l'appariement SIFT | [sift_matcher_algorithm.cpp](../src/backend/algorithms/stitching/sift/sift_matcher_algorithm.cpp) (le calcul) ; [sift_matcher.cpp](../src/backend/algorithms/stitching/sift/sift_matcher.cpp) (l'emballage) 🆕 |
+| Voir l'appariement LightGlue (ONNX) | [lightglue_matcher.cpp](../src/backend/algorithms/stitching/lightglue/lightglue_matcher.cpp) 🆕 |
+| Voir le rejet des mauvais points (RANSAC, vote de Hough) | [ransac_rejector.cpp](../src/backend/algorithms/rejection/ransac/ransac_rejector.cpp) (contient aussi `VoteRejectorClass`) 🆕 |
+| **Voir l'alignement global** (moindres carrés) | [tile_positioner.cpp](../src/backend/algorithms/stitching/positioning/tile_positioner.cpp) → `solvePositions()` (namespace anonyme) 🆕 |
+| **Égaliser la luminosité entre tuiles** | [brightness_equalizer.h](../include/backend/algorithms/brightness_equalization/brightness_equalizer.h) + sa [doc](algorithms/brightness_equalization/BrightnessEqualization.md) 🆕 |
+| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) (point d'entrée) puis [solver.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.h) 🆕 |
+| Voir le calcul des coutures, méthode GraphCut | [graph_cut_seam_finder.cpp](../src/backend/algorithms/seamline/graph_cut/graph_cut_seam_finder.cpp) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) 🆕 |
 | Voir un vrai pipeline tourner depuis un script JSON | [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()` |
 | Générer le JSON du pipeline depuis la GUI | [PipelineJson.h](../include/frontend/PipelineJson.h) |
 | Voir comment le projet est compilé | [CMakeLists.txt](../CMakeLists.txt) + [cmake/](../cmake/) (`clang_tidy`, `dependencies_manager`, `backend`, `frontend`, `tests_runner`, `install`) |
 | **Nommer un fichier, une classe, une variable** 🆕 | [CONVENTIONS.md](CONVENTIONS.md) |
-| Adapter une branche écrite avant la réorganisation 🆕 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§10) |
+| Adapter une branche écrite avant la réorganisation 🆕 | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) (§10 ; §12 pour les algorithmes) |
 | Voir ce que fait la CI | [build-test.yml](../.github/workflows/build-test.yml) (appelé par `ci.yml` et `release.yml`) |
 
 ---
@@ -119,21 +119,21 @@ include/backend/  ⟷  src/backend/   🆕 en minuscules
         checkpoint/     sauvegarde des sorties de chaque step
         io/             écriture du TIFF pyramidal
     steps/          les étapes concrètes, une classe par étape (<nom>_step.h) 🆕
-    algorithms/     les méthodes de calcul
+    algorithms/     les méthodes de calcul, un dossier et un namespace par méthode 🆕
         stitching/      appariement + recouvrement + positionnement global
         rejection/      rejet des outliers
-        egalisation/    égalisation de luminosité
+        brightness_equalization/   égalisation de luminosité 🆕
         seamline/       calcul des coutures
 include/frontend/ ⟷  src/frontend/   GUI Qt (quasi vide sur main)
-tests/               un dossier par module, en GoogleTest : core/, correlation_phase/, egalisation/, seamline/
+tests/               un dossier par module, en GoogleTest : brightness_equalization/, core/, phase_correlation/, seamline/ 🆕
 docs/                algorithms/ (une page par algorithme), core/ (le pipeline), steps/ (contrat de chaque step),
                      BUILD.md, CONVENTIONS.md 🆕, MIGRATION_REORGANISATION.md 🆕, cette carte
 cmake/               un fichier par partie du build
 ```
 
-**Les includes partent de `include/backend/`** 🆕, jamais de `"../"`. On écrit `#include "core/data/algorithm_types.h"` ou `#include "algorithms/stitching/sift/SiftMatcher.h"`.
+**Les includes partent de `include/backend/`** 🆕, jamais de `"../"`. On écrit `#include "core/data/algorithm_types.h"` ou `#include "algorithms/stitching/sift/sift_matcher.h"`.
 
-**Les namespaces** 🆕 : un par dossier pour `core/`, `steps/` et `frontend/` ; les algorithmes gardent pour l'instant leurs namespaces d'origine (héritage des branches de recherche, migration prévue, voir [CONVENTIONS.md](CONVENTIONS.md)) :
+**Les namespaces** 🆕 : un par dossier, partout. Les algorithmes qualifient eux-mêmes les types partagés (`DataNs::Matches`) ; `algorithms/legacy_type_aliases.h` a été supprimé.
 
 | Dossier | Namespace C++ |
 |---|---|
@@ -145,12 +145,17 @@ cmake/               un fichier par partie du build
 | `core/io/` | `IONs` 🆕 |
 | `steps/` | `StepsNs` 🆕 |
 | `frontend/` | `FrontendNs` 🆕 |
-| `algorithms/stitching/*` | `stitching::matching` (et `stitching::matching::correlation_phase`) |
-| `algorithms/stitching/positioning/` | `stitching::positioning` |
-| `algorithms/rejection/*` | `stitching::rejection` (et `::ransac`) |
-| `algorithms/egalisation/` | `stitching::egalisation` |
-| `algorithms/seamline/dp_dijkstra/` | **`seamlib`** (fichiers en `.hpp`, style `snake_case`) |
-| `algorithms/seamline/graphcut/` | **`Seamline`** |
+| `algorithms/stitching/` (interface `feature_matcher.h`) | `StitchingNs` 🆕 |
+| `algorithms/stitching/phase_correlation/` | `PhaseCorrelationNs` 🆕 |
+| `algorithms/stitching/overlap_estimation/` | `OverlapEstimationNs` 🆕 |
+| `algorithms/stitching/sift/` | `SiftNs` 🆕 |
+| `algorithms/stitching/lightglue/` | `LightGlueNs` 🆕 |
+| `algorithms/stitching/positioning/` | `PositioningNs` 🆕 |
+| `algorithms/rejection/` (interface `outlier_rejector.h`) | `RejectionNs` 🆕 |
+| `algorithms/rejection/ransac/` | `RansacNs` 🆕 |
+| `algorithms/brightness_equalization/` | `BrightnessEqualizationNs` 🆕 |
+| `algorithms/seamline/dynamic_programming_dijkstra/` | `DynamicProgrammingDijkstraNs` 🆕 (ancien `seamlib`) |
+| `algorithms/seamline/graph_cut/` | `GraphCutNs` 🆕 (ancien `Seamline`) |
 
 **Le build compile tout seul tout ce qui est dans `src/backend/`.** Il le fait par `GLOB_RECURSE` ([cmake/backend.cmake](../cmake/backend.cmake)), sans liste de fichiers. Un `.cpp` posé ailleurs, par exemple dans `include/`, n'est **pas** compilé. Seule exception : les sources LightGlue sont retirées si ONNX Runtime ou le module `dnn` d'OpenCV manquent.
 
@@ -195,8 +200,8 @@ cmake/               un fichier par partie du build
 | Fichier | Nom JSON | Lit | Écrit | Appelle |
 |---|---|---|---|---|
 | [ImportStepClass](../src/backend/steps/import_step.cpp) | `import` | paramètres `path`, `format` (regex col/ligne) | `"tiles"` : `Tiles` | `cv::imread` + `createPyramidalTiledTiff` (cache dans `<images>/.cache/pyramids`) |
-| [PhaseCorrelationStepClass](../src/backend/steps/phase_correlation_step.cpp) | `phase-correlation` | `"tiles"` ; 12 paramètres, dont `niveau` (analyse sur un niveau réduit de la pyramide, résultat ramené en pleine résolution) | `"matches"` : `vector<PairMatches>` | `CorrelationPhase` sur chaque paire droite/dessous, pixels lus par `readPixels()` |
-| [GraphCutStepClass](../src/backend/steps/graph_cut_step.cpp) | `graphcut` | `"tiles"`, `"positions"` : `vector<TilePositionData>` | `"territories"` : `vector<TileTerritory>` | `ImagePretreatment` + `GraphCut` |
+| [PhaseCorrelationStepClass](../src/backend/steps/phase_correlation_step.cpp) | `phase-correlation` | `"tiles"` ; 12 paramètres, dont `niveau` (analyse sur un niveau réduit de la pyramide, résultat ramené en pleine résolution) | `"matches"` : `vector<PairMatches>` | `PhaseCorrelationNs::PhaseCorrelationMatcherClass` sur chaque paire droite/dessous, pixels lus par `readPixels()` |
+| [GraphCutStepClass](../src/backend/steps/graph_cut_step.cpp) | `graphcut` | `"tiles"`, `"positions"` : `vector<TilePositionData>` | `"territories"` : `vector<TileTerritory>` | `GraphCutNs::ImagePretreatmentClass` + `GraphCutNs::GraphCutSeamFinderClass` |
 
 Ces 3 steps sont dans le registre : on peut les mettre dans un script JSON. `graphcut` ne peut pas encore y être utilisé, car aucun step ne produit `positions`, et `buildPipeline` le refuse.
 
@@ -206,67 +211,66 @@ Chaque step a deux modes :
 - **dans un pipeline** : les données viennent du `DataStoreClass` ;
 - **en appel direct** : on passe une struct `XxxInput` au constructeur. Utile pour tester une étape seule.
 
-### `algorithms/stitching/` : appariement et positionnement
+### `algorithms/stitching/` : appariement et positionnement 🆕
 
 | Fichier | Rôle |
 |---|---|
-| [FeatureMatcher.h](../include/backend/algorithms/stitching/FeatureMatcher.h) | **Interface** de toute méthode d'appariement : `match(a, b, ctx, Matches&)`. |
-| **`correlation_phase/`** | Translation sous-pixel entre deux tuiles, en deux passes, plus des points raffinés localement. Port de `correlation_phase.py`. Voir §6. |
-| ↳ [CorrelationPhase.h](../include/backend/algorithms/stitching/correlation_phase/CorrelationPhase.h) / [.cpp](../src/backend/algorithms/stitching/correlation_phase/CorrelationPhase.cpp) | Façade : le seul header à inclure. `match()` enchaîne les 3 modules. Paramètres documentés en tête du header. |
-| ↳ [Types.h](../include/backend/algorithms/stitching/correlation_phase/Types.h) | Structures internes : `Parametres`, `PaireOrientee`, `Bandes`, `Mesure`, `Correspondance`… |
-| ↳ [Preparation](../src/backend/algorithms/stitching/correlation_phase/Preparation.cpp) | Tuiles brutes → images de travail : gris en `float64`, NaN = vide, paire ramenée à « B en bas ou à droite », découpe des bandes. |
-| ↳ [Algorithme](../src/backend/algorithms/stitching/correlation_phase/Algorithme.cpp) | Les calculs : corrélation de phase globale, affinage par DFT, diagnostic d'échec, points locaux. |
-| ↳ [Sortie](../src/backend/algorithms/stitching/correlation_phase/Sortie.cpp) | Mise au format `Matches` dans le repère d'origine, et messages d'échec explicites. |
-| **`recouvrement/`** [EstimationRecouvrement](../src/backend/algorithms/stitching/recouvrement/EstimationRecouvrement.cpp) | 1re passe commune à toutes les méthodes : position de B au pixel près et recouvrement réel. `zonesCommunes()` donne les rectangles à découper dans A et B. |
-| **`sift/`** [SiftMatcher](../src/backend/algorithms/stitching/sift/SiftMatcher.cpp) | Implémente `FeatureMatcher` et délègue à… |
-| ↳ [SiftMatcherAlgorithm](../src/backend/algorithms/stitching/sift/SiftMatcherAlgorithm.cpp) | …`runSiftMatching()` : passage en 8 bits juste avant le détecteur, SIFT, BFMatcher + test de Lowe, translation médiane. |
-| **`lightglue/`** [LightGlueMatcher](../src/backend/algorithms/stitching/lightglue/LightGlueMatcher.cpp) | Appariement par réseau (ONNX Runtime) : chargement du modèle, prétraitement (redimensionnement à un multiple de 32), inférence, remise à l'échelle. Compilé seulement si ONNX Runtime est trouvé. |
-| **`positioning/`** [TilePositioner](../src/backend/algorithms/stitching/positioning/TilePositioner.cpp) | `computeTilePositions()` : à partir des **chemins**, refait recouvrement → matcher → rejector sur chaque paire, puis `solvePositions()` (moindres carrés globaux, positions et rotations). Écrit les résidus dans un `ostream`. |
+| [feature_matcher.h](../include/backend/algorithms/stitching/feature_matcher.h) | **Interface** de toute méthode d'appariement : `StitchingNs::FeatureMatcherClass::match(imageA, imageB, context, matches)`. |
+| **`phase_correlation/`** (`PhaseCorrelationNs`) | Translation sous-pixel entre deux tuiles, en deux passes, plus des points raffinés localement. Port de `correlation_phase.py`. Voir §6. |
+| ↳ [phase_correlation_matcher.h](../include/backend/algorithms/stitching/phase_correlation/phase_correlation_matcher.h) / [.cpp](../src/backend/algorithms/stitching/phase_correlation/phase_correlation_matcher.cpp) | Façade `PhaseCorrelationMatcherClass` : le seul header à inclure. `match()` enchaîne les 3 modules ; `getFailureReason()` explique un échec. Paramètres documentés en tête du header, avec leur nom dans le step. |
+| ↳ [phase_correlation_types.h](../include/backend/algorithms/stitching/phase_correlation/phase_correlation_types.h) | Structures internes : `Parameters`, `OrientedPair`, `Strips`, `Measurement`, `Overlap`, `Correspondence`… |
+| ↳ [preparation](../src/backend/algorithms/stitching/phase_correlation/preparation.cpp) | `PreparationClass` : tuiles brutes → images de travail (gris en `float64`, NaN = vide), paire ramenée à « B en bas ou à droite », découpe des bandes. |
+| ↳ [algorithm](../src/backend/algorithms/stitching/phase_correlation/algorithm.cpp) | `AlgorithmClass` : corrélation de phase globale, affinage par DFT, diagnostic d'échec, points locaux. |
+| ↳ [output](../src/backend/algorithms/stitching/phase_correlation/output.cpp) | `OutputClass` : mise au format `DataNs::Matches` dans le repère d'origine, messages d'échec explicites (en anglais). |
+| **`overlap_estimation/`** [overlap_estimator](../src/backend/algorithms/stitching/overlap_estimation/overlap_estimator.cpp) | `OverlapEstimationNs::OverlapEstimatorClass` : 1re passe commune à toutes les méthodes, position de B au pixel près et recouvrement réel (`estimate()`). `computeCommonAreas()` donne les rectangles à découper dans A et B. |
+| **`sift/`** [sift_matcher](../src/backend/algorithms/stitching/sift/sift_matcher.cpp) | `SiftNs::SiftMatcherClass` : implémente `FeatureMatcherClass` et délègue à… |
+| ↳ [sift_matcher_algorithm](../src/backend/algorithms/stitching/sift/sift_matcher_algorithm.cpp) | …`runSiftMatching()` : passage en 8 bits juste avant le détecteur, SIFT, BFMatcher + test de Lowe, translation médiane. |
+| **`lightglue/`** [lightglue_matcher](../src/backend/algorithms/stitching/lightglue/lightglue_matcher.cpp) | `LightGlueNs::LightGlueMatcherClass` : appariement par réseau (ONNX Runtime), chargement du modèle, prétraitement (redimensionnement à un multiple de 32), inférence, remise à l'échelle. Compilé seulement si ONNX Runtime est trouvé (**jamais par la CI**). |
+| **`positioning/`** [tile_positioner](../src/backend/algorithms/stitching/positioning/tile_positioner.cpp) | `PositioningNs::computeTilePositions()` : à partir des **chemins**, refait recouvrement → matcher → rejector sur chaque paire, puis `solvePositions()` (moindres carrés globaux, positions et rotations). Écrit les résidus dans un `ostream`. |
 
-### `algorithms/rejection/` : rejet des outliers
-
-| Fichier | Rôle |
-|---|---|
-| [OutlierRejector.h](../include/backend/algorithms/rejection/OutlierRejector.h) | **Interface** : `estimate(Matches, Alignment&)`. |
-| [RansacRejector](../src/backend/algorithms/rejection/ransac/RansacRejector.cpp) | Façade RANSAC (lit les paramètres JSON). Le **même fichier** contient `VoteRejector` (vote de Hough 2D + médiane itérative, translation pure), utilisé par défaut par `TilePositioner`. |
-| [RansacTypes.h](../include/backend/algorithms/rejection/ransac/RansacTypes.h) | `RansacParameters`, `RansacInput`, `RansacPreparedInput`, `RansacOutput`. |
-| [RansacPreprocessor](../src/backend/algorithms/rejection/ransac/RansacPreprocessor.cpp) | Contrôle des points : tailles, valeurs finies, minimum de matches. |
-| [RansacAlgorithm](../src/backend/algorithms/rejection/ransac/RansacAlgorithm.cpp) | `cv::estimateAffinePartial2D` (similitude B → A), mise en 3×3, masque des inliers. |
-
-### `algorithms/egalisation/` : égalisation de luminosité 🆕
-
-Port du notebook `egalisation_gain_champ_final.ipynb`. Même découpage que la corrélation de phase. Il n'y a pas encore de step : on l'appelle à la main.
+### `algorithms/rejection/` : rejet des outliers 🆕
 
 | Fichier | Rôle |
 |---|---|
-| [Egalisation.h](../include/backend/algorithms/egalisation/Egalisation.h) / [.cpp](../src/backend/algorithms/egalisation/Egalisation.cpp) | Façade : `reduire()` (une tuile à la fois), `estimer()` (gains et champ), `corriger()` (tuile pleine résolution), `pairesDepuisPositions()`. Méthode A : un gain par tuile ; méthode B : gain + assombrissement vers les bords `exp(c·r²)` commun à toutes les tuiles. |
-| [Types.h](../include/backend/algorithms/egalisation/Types.h) | `Parametres`, `TuileReduite`, `PaireVoisine`, `Echantillons`, `Solution`, `Bilan`, `Resultat`. |
-| [Preparation](../src/backend/algorithms/egalisation/Preparation.cpp) | Tuiles 8 ou 16 bits, gris ou couleur → luminance réduite (1/8) et floutée. |
-| [Algorithme](../src/backend/algorithms/egalisation/Algorithme.cpp) | Échantillons dans les recouvrements, moindres carrés robustes (IRLS, Huber), bilan avant / A / B. |
-| [Sortie](../src/backend/algorithms/egalisation/Sortie.cpp) | Correction pixel par pixel (sortie 16 bits), rapport lisible. |
+| [outlier_rejector.h](../include/backend/algorithms/rejection/outlier_rejector.h) | **Interface** `RejectionNs::OutlierRejectorClass` : `estimate(matches, alignment)`. |
+| [ransac_rejector](../src/backend/algorithms/rejection/ransac/ransac_rejector.cpp) | `RansacNs::RansacRejectorClass` : façade RANSAC (lit les paramètres JSON). Le **même fichier** contient `VoteRejectorClass` (vote de Hough 2D + médiane itérative, translation pure), utilisé par défaut par le positionnement. |
+| [ransac_types.h](../include/backend/algorithms/rejection/ransac/ransac_types.h) | `RansacParameters`, `RansacInput`, `RansacPreparedInput`, `RansacOutput`. |
+| [ransac_preprocessor](../src/backend/algorithms/rejection/ransac/ransac_preprocessor.cpp) | `RansacPreprocessorClass` : contrôle des points (tailles, valeurs finies, minimum de matches). |
+| [ransac_algorithm](../src/backend/algorithms/rejection/ransac/ransac_algorithm.cpp) | `RansacAlgorithmClass` : `cv::estimateAffinePartial2D` (similitude B → A), mise en 3×3, masque des inliers. |
 
-### `algorithms/seamline/` : les coutures
+### `algorithms/brightness_equalization/` : égalisation de luminosité 🆕
 
-**`dp_dijkstra/` (bibliothèque `seamlib`)** : port du notebook *Projet_KIK_IRPA_Montauban*. Les en-têtes citent la section du notebook correspondante.
-
-| Fichier | Rôle |
-|---|---|
-| [seam_finder.hpp](../include/backend/algorithms/seamline/dp_dijkstra/seam_finder.hpp) / [.cpp](../src/backend/algorithms/seamline/dp_dijkstra/seam_finder.cpp) | **Point d'entrée** : `SeamFinder::compute(left, right)`, soit carte de coût puis chemin. Travaille sur **un** overlap déjà découpé, en **RGB**. |
-| [cost_map](../src/backend/algorithms/seamline/dp_dijkstra/cost_map.cpp) | Section 5 : gradients de Sobel, normalisations, termes couleur et gradient → carte de coût. |
-| [cost_catalog](../src/backend/algorithms/seamline/dp_dijkstra/cost_catalog.cpp) | Section 5.0 : catalogue des fonctions de coût (`CostFunction::ColorGradient`…). |
-| [dynamic_programming](../src/backend/algorithms/seamline/dp_dijkstra/dynamic_programming.cpp) | Section 6.1 : chemin de coût minimal par programmation dynamique (monotone, rapide). |
-| [dijkstra](../src/backend/algorithms/seamline/dp_dijkstra/dijkstra.cpp) | Section 6.2 : Dijkstra 8 voisins (exact) et variante restreinte à un corridor autour du chemin DP. |
-| [solver](../src/backend/algorithms/seamline/dp_dijkstra/solver.cpp) | Section 6.3 : `solve_edge()`, point d'entrée unique des 3 méthodes, avec mesures de temps et de mémoire. |
-| [junctions](../src/backend/algorithms/seamline/dp_dijkstra/junctions.cpp) | Sections 7-8 : points de jonction entre 4 tuiles et réseau global de coutures sur la grille (`H_r_c` / `V_r_c`). |
-| [overlay](../src/backend/algorithms/seamline/dp_dijkstra/overlay.cpp) | Dessin du réseau de coutures sur une mosaïque (illustration). |
-| [export.hpp](../include/backend/algorithms/seamline/dp_dijkstra/export.hpp) | Macro `KIRK_API` (export DLL). Inutile ici : la lib est statique. |
-
-**`graphcut/` (namespace `Seamline`)** : coupe de graphe d'OpenCV, paire par paire.
+Port du notebook `egalisation_gain_champ_final.ipynb`, namespace `BrightnessEqualizationNs`. Même découpage que la corrélation de phase. Il n'y a pas encore de step : on l'appelle à la main.
 
 | Fichier | Rôle |
 |---|---|
-| [ImagePretreatment](../src/backend/algorithms/seamline/graphcut/ImagePretreatment.cpp) | Relit les tuiles depuis le disque (`read16`, `readSmallFloat`), calcule les coins et les masques réduits. `parseTileName()` extrait ligne et colonne de `..._rLL_cCC.tif`. **Aussi utilisé par `TilePositioner`.** |
-| [GraphCutSeamFinder](../src/backend/algorithms/seamline/graphcut/GraphCutSeamFinder.cpp) | `computeSeamline()` : coupe à échelle réduite, carte de provenance pleine résolution, mosaïque 8 bits d'aperçu. `extractPolygons()` produit les territoires par tuile. `verifyTiling()` contrôle le pavage. |
+| [brightness_equalizer.h](../include/backend/algorithms/brightness_equalization/brightness_equalizer.h) / [.cpp](../src/backend/algorithms/brightness_equalization/brightness_equalizer.cpp) | Façade `BrightnessEqualizerClass` : `reduceTile()` (une tuile à la fois), `estimate()` (gains et champ), `correctTile()` (tuile pleine résolution), `buildPairsFromPositions()`. Méthode A : un gain par tuile ; méthode B : gain + assombrissement vers les bords `exp(c·r²)` commun à toutes les tuiles. |
+| [brightness_equalization_types.h](../include/backend/algorithms/brightness_equalization/brightness_equalization_types.h) | `Parameters`, `ReducedTile`, `NeighbourPair`, `PairSamples`, `Solution`, `QualityReport`, `EqualizationResult`, `CorrectionMethod`. |
+| [preparation](../src/backend/algorithms/brightness_equalization/preparation.cpp) | `PreparationClass` : tuiles 8 ou 16 bits, gris ou couleur → luminance réduite (1/8) et floutée. |
+| [algorithm](../src/backend/algorithms/brightness_equalization/algorithm.cpp) | `AlgorithmClass` : échantillons dans les recouvrements, moindres carrés robustes (IRLS, Huber), bilan avant / A / B. |
+| [output](../src/backend/algorithms/brightness_equalization/output.cpp) | `OutputClass` : correction pixel par pixel (sortie 16 bits), rapport lisible. |
+
+### `algorithms/seamline/` : les coutures 🆕
+
+**`dynamic_programming_dijkstra/`** (namespace `DynamicProgrammingDijkstraNs`, ancienne bibliothèque `seamlib`) : port du notebook *Projet_KIK_IRPA_Montauban*. Les en-têtes citent la section du notebook correspondante, et les commentaires gardent les noms Python d'origine (`solve_edge`, `w_color`…).
+
+| Fichier | Rôle |
+|---|---|
+| [seam_finder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) / [.cpp](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.cpp) | **Point d'entrée** : `SeamFinderClass::computeSeam(overlapLeft, overlapRight)`, soit carte de coût puis chemin. Travaille sur **un** overlap déjà découpé, en **RGB**. |
+| [cost_map](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_map.cpp) | Section 5 : gradients de Sobel, normalisations, termes couleur et gradient → carte de coût (`computeCostMaps`, `CostMapParameters`). |
+| [cost_catalog](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.cpp) | Section 5.0 : catalogue des fonctions de coût (`CostFunction::ColorGradient`…, `computeCost`). |
+| [dynamic_programming](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.cpp) | Section 6.1 : chemin de coût minimal par programmation dynamique (`findDynamicProgrammingPath`, monotone, rapide). |
+| [dijkstra](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/dijkstra.cpp) | Section 6.2 : Dijkstra 8 voisins exact (`findDijkstraPath`) et variante restreinte à un corridor autour du chemin DP. |
+| [solver](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.cpp) | Section 6.3 : `solveEdge()`, point d'entrée unique des 3 méthodes (`SolverMethod`), avec mesures de temps et de mémoire. |
+| [junctions](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/junctions.cpp) | Sections 7-8 : points de jonction entre 4 tuiles et réseau global de coutures sur la grille (`H_r_c` / `V_r_c`, `SeamGrid`, `solveGlobalNetwork`). |
+| [overlay](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/overlay.cpp) | Dessin du réseau de coutures sur une mosaïque (`drawSeamNetwork`, illustration). |
+
+**`graph_cut/`** (namespace `GraphCutNs`, ancien `Seamline`) : coupe de graphe d'OpenCV, paire par paire.
+
+| Fichier | Rôle |
+|---|---|
+| [image_pretreatment](../src/backend/algorithms/seamline/graph_cut/image_pretreatment.cpp) | `ImagePretreatmentClass` : relit les tuiles depuis le disque (`read16Bit`, `readSmallFloat`), calcule les coins et les masques réduits. `parseTileName()` extrait ligne et colonne de `..._rLL_cCC.tif`. **Aussi utilisé par le positionnement.** |
+| [graph_cut_seam_finder](../src/backend/algorithms/seamline/graph_cut/graph_cut_seam_finder.cpp) | `GraphCutSeamFinderClass` : `computeSeamline()` (coupe à échelle réduite, carte de provenance pleine résolution, mosaïque 8 bits d'aperçu), `extractPolygons()` (territoires par tuile, `DataNs::TileTerritory`), `verifyTiling()` (contrôle du pavage, `SeamCheck`). |
 
 ### `frontend/` : interface graphique
 
@@ -281,31 +285,31 @@ Tous en GoogleTest, avec le label `unit`, et lancés par `ctest`. Il n'y a plus 
 | Dossier | Tests | Ce qu'ils vérifient |
 |---|---|---|
 | [core/](../tests/core/) | `PipelineBuilder.*` (5), `Reprise.*` (5) | Registre, validation du script, fusion des options, aller-retour `exportConfig` → `buildPipeline`, pipeline réel import → phase-correlation sur deux tuiles 16 bits générées, reprise sur checkpoints (échec, paramètres modifiés, `startFromStep`, `skipCompletedSteps`, pause, `run.json`), aller-retour des 4 types sérialisés. |
-| [correlation_phase/](../tests/correlation_phase/) | `CorrelationPhase.*` (3) | Paires générées à vérité sous-pixel exacte dans les 4 directions, les deux passes, les cas limites. |
-| [egalisation/](../tests/egalisation/) | `Egalisation.*` (3) | 6 tuiles générées avec gains et champ connus, gris et couleur, 8 et 16 bits ; cas limites. |
-| [seamline/](../tests/seamline/) | 71 tests | seamlib : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook. |
+| [brightness_equalization/](../tests/brightness_equalization/) 🆕 | `BrightnessEqualization.*` (3) | 6 tuiles générées avec gains et champ connus, gris et couleur, 8 et 16 bits ; cas limites. |
+| [phase_correlation/](../tests/phase_correlation/) 🆕 | `PhaseCorrelation.*` (3) | Paires générées à vérité sous-pixel exacte dans les 4 directions, les deux passes, les cas limites. |
+| [seamline/](../tests/seamline/) | 71 tests | `DynamicProgrammingDijkstraNs` : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook. |
 
-Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/egalisation/CMakeLists.txt](../tests/egalisation/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) ; l'exécutable de test se lie à `kikirpa_backend`.
+Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/brightness_equalization/CMakeLists.txt](../tests/brightness_equalization/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) ; l'exécutable de test se lie à `kikirpa_backend`.
 
 ### `docs/`
 
 | Fichier | Contenu |
 |---|---|
-| [CorrelationPhase.md](algorithms/stitching/correlation_phase/CorrelationPhase.md) | Méthode, paramètres, limites et résultats chiffrés comparés au Python. **La meilleure doc du projet.** |
-| [EstimationRecouvrement.md](algorithms/stitching/recouvrement/EstimationRecouvrement.md) | La 1re passe commune. |
-| [Egalisation.md](algorithms/egalisation/Egalisation.md) | Modèle, méthodes A et B, paramètres, vérification. |
+| [PhaseCorrelation.md](algorithms/stitching/phase_correlation/PhaseCorrelation.md) 🆕 | Méthode, paramètres (avec leur nom dans le step), limites et résultats chiffrés comparés au Python. **La meilleure doc du projet.** |
+| [OverlapEstimation.md](algorithms/stitching/overlap_estimation/OverlapEstimation.md) 🆕 | La 1re passe commune. |
+| [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) 🆕 | Modèle, méthodes A et B, paramètres, vérification. |
 | [Pipeline.md](core/Pipeline.md) | Le pipeline : format du script, contrôles, exécution, reprise et checkpoints, steps enregistrés, ajout d'un step. |
 | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) | Contrat du step `phase-correlation` : paramètres, conventions d'axes et de signe, résolution réduite, échecs. |
 | [BUILD.md](BUILD.md) | Installer les dépendances et compiler, sous Windows (vcpkg + Qt via aqt), macOS (Homebrew) et Linux. |
 | [CONVENTIONS.md](CONVENTIONS.md) 🆕 | Règles de code (noms, mise en forme, includes, erreurs, classes et fonctions, tests), principes de code propre, Git et pull requests. |
-| [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) 🆕 | Ce que la réorganisation de `core/` et `steps/` a renommé, et comment adapter une branche. |
+| [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) 🆕 | Ce que la réorganisation de `core/` et `steps/`, puis la migration des algorithmes (§12), ont renommé, et comment adapter une branche. |
 | cette carte | Se repérer dans le code. |
 
 ---
 
 ## 5. Les données qui circulent
 
-Les types sont dans [algorithm_types.h](../include/backend/core/data/algorithm_types.h) (namespace `DataNs`), sauf `TileList` ([tile.h](../include/backend/core/data/tile.h)). `TileTerritory` y est aussi 🆕 ; `Seamline::TileTerritory` reste un alias.
+Les types sont dans [algorithm_types.h](../include/backend/core/data/algorithm_types.h) (namespace `DataNs`), sauf `TileList` ([tile.h](../include/backend/core/data/tile.h)). `TileTerritory` y est aussi 🆕 (l'alias `Seamline::TileTerritory` a été supprimé).
 
 ```
 fichiers .tif ──ImportStepClass──► "tiles" : TileList = vector<shared_ptr<TileClass>>   (fiches, sans pixels)
@@ -350,16 +354,16 @@ fichiers .tif ──ImportStepClass──► "tiles" : TileList = vector<shared_
 
 ## 6. Lire un algorithme : l'exemple de la corrélation de phase
 
-C'est le modèle de découpage que tout nouvel algorithme doit suivre (noms en anglais pour le nouveau code, voir [CONVENTIONS.md](CONVENTIONS.md)). Les algorithmes existants gardent leurs noms français en attendant leur migration. Ordre de lecture conseillé :
+C'est le modèle de découpage que tout nouvel algorithme doit suivre (voir [CONVENTIONS.md](CONVENTIONS.md)). Ordre de lecture conseillé :
 
-1. **[CorrelationPhase.h](../include/backend/algorithms/stitching/correlation_phase/CorrelationPhase.h)** : ce que fait l'algorithme et ses paramètres, documentés dans l'en-tête.
-2. **[CorrelationPhase.cpp](../src/backend/algorithms/stitching/correlation_phase/CorrelationPhase.cpp)** : l'orchestrateur (`match()`), court. Il dit dans quel ordre les modules sont appelés.
-3. **[Types.h](../include/backend/algorithms/stitching/correlation_phase/Types.h)** : les structures échangées entre modules.
-4. Les trois modules dans l'ordre d'exécution : **Preparation → Algorithme → Sortie**. Chaque header liste toutes les fonctions, publiques et privées, avec un commentaire qui dit *quoi*. Le `.cpp` dit *pourquoi*.
-5. **[CorrelationPhase.md](algorithms/stitching/correlation_phase/CorrelationPhase.md)** pour la théorie et les résultats.
-6. **[test_correlation_phase.cpp](../tests/correlation_phase/test_correlation_phase.cpp)** pour voir l'algorithme utilisé.
+1. **[phase_correlation_matcher.h](../include/backend/algorithms/stitching/phase_correlation/phase_correlation_matcher.h)** : ce que fait l'algorithme et ses paramètres, documentés dans l'en-tête.
+2. **[phase_correlation_matcher.cpp](../src/backend/algorithms/stitching/phase_correlation/phase_correlation_matcher.cpp)** : l'orchestrateur (`match()`), court. Il dit dans quel ordre les modules sont appelés.
+3. **[phase_correlation_types.h](../include/backend/algorithms/stitching/phase_correlation/phase_correlation_types.h)** : les structures échangées entre modules.
+4. Les trois modules dans l'ordre d'exécution : **PreparationClass → AlgorithmClass → OutputClass**. Chaque header liste les fonctions publiques, avec un commentaire qui dit *quoi* ; les fonctions internes sont dans un `namespace { }` anonyme du `.cpp`, qui dit *pourquoi*.
+5. **[PhaseCorrelation.md](algorithms/stitching/phase_correlation/PhaseCorrelation.md)** pour la théorie et les résultats.
+6. **[test_phase_correlation.cpp](../tests/phase_correlation/test_phase_correlation.cpp)** pour voir l'algorithme utilisé.
 
-L'**égalisation** suit exactement le même schéma (Egalisation → Preparation → Algorithme → Sortie), et RANSAC à peu près (Preprocessor → Algorithm → Rejector). SIFT, LightGlue, seamlib et GraphCut ne le suivent pas encore.
+L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass → PreparationClass → AlgorithmClass → OutputClass), et RANSAC à peu près (RansacPreprocessorClass → RansacAlgorithmClass → RansacRejectorClass). SIFT, LightGlue, `DynamicProgrammingDijkstraNs` et GraphCut ne le suivent pas encore.
 
 ---
 
@@ -373,21 +377,22 @@ L'**égalisation** suit exactement le même schéma (Egalisation → Preparation
 | Les checkpoints sont actifs par défaut | Non : `checkpointDirectory` est vide par défaut. Il faut le remplir dans `RunState` (champ `run.checkpointDirectory` du script). |
 | Un checkpoint de `tiles` contient les images | Non : seulement les fiches. Les pixels restent dans les TIFF source et pyramidaux, qui doivent toujours exister à la reprise. |
 | Les steps lisent les pixels via `TileClass` | `readRegion` n'existe pas encore : les steps relisent les `.tif` sources avec `cv::imread` (dans `PhaseCorrelationStepClass`, isolé dans `readPixels()`). |
-| `TilePositioner` prend les matches du step d'appariement | Non : il refait tout lui-même à partir des chemins de fichiers. |
-| `RansacRejector.cpp` ne contient que RANSAC | Il contient aussi `VoteRejector`, le rejet utilisé par défaut. |
-| `ImagePretreatment` ne sert qu'à GraphCut | Le positionnement l'utilise aussi (`read16`, `parseTileName`). |
-| Les tuiles sont en RGB | OpenCV donne du **BGR**. seamlib attend du **RGB**. |
+| `computeTilePositions` prend les matches du step d'appariement | Non : il refait tout lui-même à partir des chemins de fichiers. |
+| `ransac_rejector.cpp` ne contient que RANSAC | Il contient aussi `VoteRejectorClass`, le rejet utilisé par défaut. |
+| `ImagePretreatmentClass` ne sert qu'à GraphCut | Le positionnement l'utilise aussi (`read16Bit`, `parseTileName`). |
+| Les tuiles sont en RGB | OpenCV donne du **BGR**. `DynamicProgrammingDijkstraNs` attend du **RGB**. |
+| Les champs de `PhaseCorrelationNs::Parameters` portent le nom des paramètres du step | Non 🆕 : les champs sont en anglais (`smoothingSigma`, `railMargin`…), le JSON garde `lissage`, `marge`… (correspondance dans [PhaseCorrelation.md §5](algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres)). |
 | Le TIFF pyramidal est la sortie du pipeline | C'est un cache d'import, par tuile. Il n'y a pas encore d'export. |
 | Il existe un exemple de la chaîne complète (import → couture → mosaïque) | Plus sur `main` : `test_chaine_paire` a été supprimé avec les tests d'intégration (#43). Il reste dans l'historique : `git show c383a38:tests/algorithms/integration/test_chaine_paire.cpp`. |
 | Qt est facultatif | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, Qt s'installe avec aqt et GoogleTest avec vcpkg ([BUILD.md](BUILD.md)). |
-| Tout le code suit déjà les conventions | Non 🆕 : seuls `core/`, `steps/` et `frontend/` ont été migrés. Les algorithmes gardent leurs noms français, leurs namespaces (`stitching::…`, `seamlib`, `Seamline`) et passent par `algorithms/legacy_type_aliases.h` (temporaire). Les tests gardent aussi des noms français. |
+| Tout le code suit déjà les conventions | Presque 🆕 : `core/`, `steps/`, `frontend/` et `algorithms/` ont été migrés. Restent les noms internes des tests (français, ou `snake_case` dans `tests/seamline/`), quelques sorties console et les noms des paramètres JSON gardés pour compatibilité : voir [CONVENTIONS.md §9](CONVENTIONS.md#9-ce-qui-nest-pas-encore-migré). |
 | `docs/` couvre tous les algorithmes | Seulement la corrélation de phase, le recouvrement et l'égalisation, plus le pipeline, le step `phase-correlation` et le build. |
 
 ---
 
 ## 8. Ce qui n'existe qu'en branche
 
-État au 03/11/2026. Pour savoir où chercher quand un fichier n'est pas sur `main`. **Toutes ces branches datent d'avant la réorganisation (#50)** : à leur prochaine mise à jour, elles doivent suivre [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) §10.
+État au 03/11/2026. Pour savoir où chercher quand un fichier n'est pas sur `main`. **Toutes ces branches datent d'avant la réorganisation (#50)** : à leur prochaine mise à jour, elles doivent suivre [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) §10, et §12 si elles touchent aux algorithmes.
 
 | Je cherche… | Branche (PR) | État |
 |---|---|---|
