@@ -15,6 +15,9 @@ jobs:
       build-type: Release
       test-labels: "unit|integration"
 
+  build-and-test-windows:
+    uses: ./.github/workflows/build-test-windows.yml
+
   clang-tidy:
     runs-on: ubuntu-24.04
     steps:

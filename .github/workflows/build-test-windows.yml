@@ -1,15 +1,21 @@
-name: Windows
+name: Build and test (Windows)
 
 on:
-  push:
-  pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
+  workflow_call:
+    inputs:
+      test-labels:
+        description: CTest label expression
+        required: false
+        type: string
+        default: "unit|integration"
+      package-release:
+        description: Package the executable with its DLLs
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  build-and-test:
+  build:
     runs-on: windows-2022
     env:
       KIKIRPA_VCPKG_ROOT: C:\vcpkg
@@ -74,4 +80,26 @@ jobs:
         run: cmake --build --preset windows-aqt
 
       - name: Run CTest
-        run: ctest --preset windows-aqt -L "unit|integration"
+        run: ctest --preset windows-aqt -L "${{ inputs.test-labels }}"
+
+      # Le programme doit démarrer sur un poste sans outils de développement : l'archive contient
+      # donc les DLL du projet, d'OpenCV et du runtime MSVC.
+      - name: Package release binaries
+        if: inputs.package-release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory release | Out-Null
+          Copy-Item build/windows-aqt/stitching.exe, build/windows-aqt/*.dll release
+          Copy-Item "$env:OpenCV_DIR/x64/vc16/bin/opencv_world4100.dll" release
+          Copy-Item "$env:VCToolsRedistDir/x64/Microsoft.VC143.CRT/*.dll" release
+          ./release/stitching.exe
+          Compress-Archive -Path release/* -DestinationPath "stitching-$env:GITHUB_REF_NAME-windows-x86_64.zip"
+
+      - name: Upload release archive
+        if: inputs.package-release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries-windows
+          path: stitching-${{ github.ref_name }}-windows-x86_64.zip
+          if-no-files-found: error
+          retention-days: 7
