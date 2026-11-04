@@ -35,9 +35,11 @@ if(BUILD_TESTING)
     # - core                    : tests des fonctionnalités fondamentales du backend.
     # - phase_correlation       : tests de la corrélation de phase.
     # - seamline                : tests liés à la génération des seamlines.
+    # - steps                   : tests des steps d'appariement.
     add_subdirectory(tests/brightness_equalization)
     add_subdirectory(tests/core)
     add_subdirectory(tests/phase_correlation)
     add_subdirectory(tests/seamline)
+    add_subdirectory(tests/steps)
 
 endif()

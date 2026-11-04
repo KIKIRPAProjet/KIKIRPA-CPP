@@ -15,6 +15,9 @@ jobs:
       build-type: Release
       test-labels: "unit|integration"
 
+  build-and-test-windows:
+    uses: ./.github/workflows/build-test-windows.yml
+
   clang-tidy:
     runs-on: ubuntu-24.04
     steps:
@@ -80,6 +83,13 @@ jobs:
             ninja-build \
             nlohmann-json3-dev \
             qt6-base-dev
+
+      - name: Restore LightGlue model
+        if: steps.changed-files.outputs.cpp == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/linux-clang-tidy/models
+          key: lightglue-model-${{ hashFiles('tests/steps/CMakeLists.txt') }}
 
       - name: Configure with clang-tidy
         if: steps.changed-files.outputs.cpp == 'true'

@@ -7,71 +7,9 @@ file(GLOB_RECURSE backend_sources CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/src/backend/*.cpp"
 )
 
-# Isole les sources de l'algorithme LightGlue.
-# Ces sources ne seront intégrées au backend que si toutes les dépendances
-# nécessaires à LightGlue sont disponibles.
-set(lightglue_sources ${backend_sources})
-
-# Ne conserve dans lightglue_sources que les fichiers situés dans
-# le répertoire dédié à l'implémentation LightGlue.
-list(FILTER lightglue_sources INCLUDE REGEX "/algorithms/stitching/lightglue/")
-
-# Retire les sources LightGlue de la liste principale.
-# Elles seront éventuellement réintégrées plus bas, après vérification
-# de la disponibilité des dépendances optionnelles.
-list(REMOVE_ITEM backend_sources ${lightglue_sources})
-
-# Recherche d'ONNX Runtime
-
-# Définit le répertoire d'installation d'ONNX Runtime.
-# Cette variable peut être renseignée lors de la configuration CMake :
-# -DONNXRUNTIME_ROOT=<chemin>
-#
-# Elle est vide par défaut : ONNX Runtime reste une dépendance optionnelle.
-set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime installation directory")
-
-# Recherche le fichier d'en-tête principal d'ONNX Runtime.
-# La recherche utilise ONNXRUNTIME_ROOT comme chemin indicatif,
-# puis les chemins standards et les suffixes indiqués.
-find_path(ONNXRUNTIME_INCLUDE_DIR
-    NAMES onnxruntime_cxx_api.h
-    HINTS "${ONNXRUNTIME_ROOT}/include"
-    PATH_SUFFIXES onnxruntime include
-)
-
-# Recherche la bibliothèque binaire d'ONNX Runtime.
-find_library(ONNXRUNTIME_LIB
-    NAMES onnxruntime
-    HINTS "${ONNXRUNTIME_ROOT}/lib"
-)
-
-# Activation conditionnelle de LightGlue
-
-# LightGlue nécessite :
-# - Les fichiers d'en-tête d'ONNX Runtime.
-# - La bibliothèque ONNX Runtime.
-# - Le module dnn d'OpenCV.
-#
-# Si toutes ces conditions sont remplies, ses sources sont ajoutées
-# au backend. Dans le cas contraire, LightGlue est désactivé sans empêcher
-# la compilation du reste du projet.
-if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIB AND TARGET opencv_dnn)
-
-    # Réintègre les sources LightGlue dans la compilation du backend.
-    list(APPEND backend_sources ${lightglue_sources})
-
-    # Mémorise l'état de disponibilité de LightGlue pour les étapes suivantes.
-    set(lightglue_enabled TRUE)
-
-else()
-    set(lightglue_enabled FALSE)
-endif()
-
 # Création de la bibliothèque backend
 
 # Crée une bibliothèque statique contenant les fonctionnalités du backend.
-# Les sources LightGlue ne sont présentes que si ses dépendances optionnelles
-# ont été détectées précédemment.
 add_library(kikirpa_backend STATIC ${backend_sources})
 
 # Impose la norme C++17 aux cibles qui utilisent cette bibliothèque.
@@ -115,37 +53,39 @@ target_compile_options(kikirpa_backend PUBLIC
 
 # Configuration spécifique à LightGlue
 
-if(lightglue_enabled)
+# Rend les en-têtes d'ONNX Runtime accessibles au backend
+# et aux cibles qui en dépendent.
+target_include_directories(kikirpa_backend PUBLIC
+    "${ONNXRUNTIME_INCLUDE_DIR}"
+)
 
-    # Rend les en-têtes d'ONNX Runtime accessibles au backend
-    # et aux cibles qui en dépendent.
-    target_include_directories(kikirpa_backend PUBLIC
-        "${ONNXRUNTIME_INCLUDE_DIR}"
-    )
+# Lie ONNX Runtime et le module dnn d'OpenCV au backend.
+target_link_libraries(kikirpa_backend PUBLIC
+    "${ONNXRUNTIME_LIB}" opencv_dnn
+)
 
-    # Lie la bibliothèque ONNX Runtime au backend.
-    target_link_libraries(kikirpa_backend PUBLIC
-        "${ONNXRUNTIME_LIB}"
-    )
+# Définit le chemin racine du projet pour le code LightGlue.
+# Cette définition est privée : elle n'est pas propagée aux autres cibles.
+target_compile_definitions(kikirpa_backend PRIVATE
+    STITCHING_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
+)
 
-    # Définit le chemin racine du projet pour le code LightGlue.
-    # Cette définition est privée : elle n'est pas propagée aux autres cibles.
-    target_compile_definitions(kikirpa_backend PRIVATE
-        STITCHING_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
-    )
+# Sous Windows, System32 contient souvent un onnxruntime.dll plus ancien, chargé avant le PATH :
+# l'exécutable plante au premier appel. Les DLL copiées à côté de lui ont priorité.
+get_filename_component(onnxruntime_library_directory "${ONNXRUNTIME_LIB}" DIRECTORY)
+file(GLOB onnxruntime_dlls CONFIGURE_DEPENDS "${onnxruntime_library_directory}/onnxruntime*.dll")
 
-    message(STATUS "ONNX Runtime found: LightGlue enabled")
-
-elseif(NOT TARGET opencv_dnn)
-
-    # Le module dnn d'OpenCV est absent :
-    # LightGlue ne peut donc pas être compilé.
-    message(STATUS "OpenCV dnn not found: LightGlue disabled")
-
-else()
-
-    # OpenCV dnn est disponible, mais ONNX Runtime est absent
-    # ou n'a pas été correctement détecté.
-    message(STATUS "ONNX Runtime not found: LightGlue disabled (set ONNXRUNTIME_ROOT)")
-
-endif()
+# Copie les DLL d'ONNX Runtime à côté d'un exécutable lié au backend, une seule fois par dossier :
+# deux copies simultanées vers le même fichier échouent. Sans effet hors de Windows.
+function(kikirpa_copy_onnxruntime_dlls target)
+    if(WIN32)
+        string(MAKE_C_IDENTIFIER "${CMAKE_CURRENT_BINARY_DIR}" output_directory_id)
+        set(copy_target "onnxruntime_dlls_${output_directory_id}")
+        if(NOT TARGET ${copy_target})
+            add_custom_target(${copy_target}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${onnxruntime_dlls} "${CMAKE_CURRENT_BINARY_DIR}"
+            )
+        endif()
+        add_dependencies(${target} ${copy_target})
+    endif()
+endfunction()
