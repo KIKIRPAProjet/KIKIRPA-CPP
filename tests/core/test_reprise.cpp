@@ -12,7 +12,6 @@
 #include "core/data/algorithm_types.h"
 #include "core/pipeline/pipeline.h"
 #include "core/data/tile.h"
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
@@ -23,7 +22,7 @@
 
 namespace fs = std::filesystem;
 
-namespace stitching::tests {
+namespace {
 
 using Json = nlohmann::json;
 
@@ -286,4 +285,4 @@ TEST_F(Reprise, Pause) { testerPause(dossier); }
 TEST_F(Reprise, Script) { testerScript(dossier); }
 TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
 
-} // namespace stitching::tests
+}

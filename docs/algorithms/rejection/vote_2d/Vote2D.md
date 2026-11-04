@@ -4,16 +4,16 @@ Documentation technique et mathématique de l'algorithme de rejet des aberrants 
 
 ```
 include/backend/algorithms/rejection/
-├── OutlierRejector.h               Interface abstraite commune de rejet
+├── outlier_rejector.h              Interface abstraite commune de rejet
 └── vote_2d/
-    └── vote_rejector.h             Déclaration de VoteRejector
+    └── vote_rejector.h             Déclaration de VoteRejectorClass
 src/backend/algorithms/rejection/
 └── vote_2d/
     └── vote_rejector.cpp           Implémentation complète (C++17)
 ```
 
 - **Dépendances** : OpenCV (`opencv2/core.hpp`), STL C++17 (`<vector>`, `<map>`, `<cmath>`, `<algorithm>`), `nlohmann/json.hpp`.
-- **Statut** : Méthode par défaut dans le pipeline (`settings.rejector = "vote"`).
+- **Statut** : Méthode par défaut dans le pipeline (`settings.rejectorName = "vote"`).
 
 ---
 
@@ -82,19 +82,23 @@ Cette formulation présente **deux défauts majeurs** en macrophotographie d'œu
 ### En-tête (`vote_rejector.h`)
 ```cpp
 #pragma once
-#include "algorithms/rejection/OutlierRejector.h"
+#include "algorithms/rejection/outlier_rejector.h"
+#include "core/data/algorithm_types.h"
+#include <nlohmann/json.hpp>
 
-namespace stitching::rejection {
+namespace RejectionNs {
+
+using Json = nlohmann::json;
 
 // Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
-class VoteRejectorClass : public OutlierRejector {
+class VoteRejectorClass : public OutlierRejectorClass {
 public:
     VoteRejectorClass() = default;
     explicit VoteRejectorClass(const Json& parameters);
-    bool estimate(const Matches& matches, Alignment& out) override;
-    bool filterMatches(Matches& matches, Alignment& out);
-    bool filterPairMatches(PairMatches& pairMatches, Alignment& out);
-    static Json toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment);
+    bool estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment) override;
+    bool filterMatches(DataNs::Matches& matches, DataNs::Alignment& out);
+    bool filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out);
+    static Json toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment);
 
 private:
     Json parameters = Json::object();
@@ -102,21 +106,21 @@ private:
 
 using VoteRejector = VoteRejectorClass;
 
-} // namespace stitching::rejection
+} // namespace RejectionNs
 ```
 
 ### Méthodes d'adaptation pour le pipeline et l'égalisation
 
-1. **`estimate(const Matches& matches, Alignment& out)`** :
+1. **`estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment)`** :
    Estime la translation et remplit le masque d'inliers sans altérer l'objet `matches` d'entrée.
 
-2. **`filterMatches(Matches& matches, Alignment& out)`** :
+2. **`filterMatches(DataNs::Matches& matches, DataNs::Alignment& out)`** :
    Exécute `estimate()`, filtre sur place les points aberrants dans `matches.pointsInA`, `matches.pointsInB` et `matches.confidenceScores`, puis renseigne `matches.translationX` et `matches.translationY` à partir de `out.transformBToA`.
 
-3. **`filterPairMatches(PairMatches& pairMatches, Alignment& out)`** :
+3. **`filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out)`** :
    Spécialisation pour l'objet composite `PairMatches`, opérant directement sur `pairMatches.featureMatches`.
 
-4. **`toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment)`** :
+4. **`toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment)`** :
    Sérialise les identifiants de tuiles et la translation sous un format JSON doublement compatible :
    - Clés directes pour l'égalisation : `{"a": idA, "b": idB, "translation": [tx, ty]}`
    - Clés canoniques du pipeline : `{"tileIdA": idA, "tileIdB": idB, "translationX": tx, "translationY": ty}`
@@ -124,20 +128,20 @@ using VoteRejector = VoteRejectorClass;
 ### Contrat de la méthode `estimate()`
 
 ```cpp
-bool estimate(const Matches& matches, Alignment& out) override;
+bool estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment) override;
 ```
 
-- **Entrée** : `matches` (`stitching::Matches` défini dans `algorithm_types.h`)
+- **Entrée** : `matches` (`DataNs::Matches` défini dans `algorithm_types.h`)
   - `matches.pointsInA` (`std::vector<cv::Point2f>`) : points clés détectés dans la tuile A.
   - `matches.pointsInB` (`std::vector<cv::Point2f>`) : points clés correspondants dans la tuile B.
   - Les deux vecteurs doivent avoir la même taille $N$.
-- **Sortie** : `out` (`stitching::Alignment` défini dans `algorithm_types.h`)
-  - `out.transformBToA` (`cv::Mat`) : matrice de transformation homogène $3 \times 3$ en `CV_64F` de B vers A :
+- **Sortie** : `alignment` (`DataNs::Alignment` défini dans `algorithm_types.h`)
+  - `alignment.transformBToA` (`cv::Mat`) : matrice de transformation homogène $3 \times 3$ en `CV_64F` de B vers A :
     $$\mathbf{T}_{B \to A} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}$$
-  - `out.inlierMask` (`std::vector<uchar>`) : masque binaire de taille $N$ (`1` pour inlier conservé, `0` pour outlier rejeté).
+  - `alignment.inlierMask` (`std::vector<uchar>`) : masque binaire de taille $N$ (`1` pour inlier conservé, `0` pour outlier rejeté).
 - **Valeur de retour** :
   - `true` si le nombre d'inliers finaux est supérieur ou égal à `minInliers` ;
-  - `false` en cas d'échec (points non finis, tailles incohérentes, nombre de correspondances insuffisant ou manque d'inliers). En cas d'échec, `out.transformBToA` est libéré et `out.inlierMask` est vidé ou mis à zéro.
+  - `false` en cas d'échec (points non finis, tailles incohérentes, nombre de correspondances insuffisant ou manque d'inliers). En cas d'échec, `alignment.transformBToA` est libéré et `alignment.inlierMask` est vidé ou mis à zéro.
 
 ---
 
@@ -238,7 +242,7 @@ Si le nombre total d'inliers $\sum \text{inlierMask}[i] < \text{minInliers}$, l'
 ---
 
 ### Étape 6 : Construction de la matrice homogène $3 \times 3$
-La transformation géométrique finale est stockée dans `out.transformBToA` sous forme d'une matrice OpenCV `cv::Mat::eye(3, 3, CV_64F)` enrichie de la translation :
+La transformation géométrique finale est stockée dans `alignment.transformBToA` sous forme d'une matrice OpenCV `cv::Mat::eye(3, 3, CV_64F)` enrichie de la translation :
 
 $$\mathbf{T}_{B \to A} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}$$
 
@@ -253,7 +257,7 @@ Cette matrice est directement exploitable par les étapes ultérieures du pipeli
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
 #include <iostream>
 
-void testerAlignement(const stitching::Matches& matches) {
+void testerAlignement(const DataNs::Matches& matches) {
     // Configuration avec seuil strict de 1.0 px
     nlohmann::json params = {
         {"seuil", 1.0},
@@ -261,8 +265,8 @@ void testerAlignement(const stitching::Matches& matches) {
         {"minInliers", 5}
     };
 
-    stitching::rejection::VoteRejector rejector(params);
-    stitching::Alignment alignment;
+    RejectionNs::VoteRejectorClass rejector(params);
+    DataNs::Alignment alignment;
 
     if (rejector.estimate(matches, alignment)) {
         double tx = alignment.transformBToA.at<double>(0, 2);
@@ -274,13 +278,15 @@ void testerAlignement(const stitching::Matches& matches) {
 }
 ```
 
-### Exemple 2 : Sélection dans le placement global (`TilePositioner.cpp`)
-Dans [`TilePositioner.cpp`](file:///C:/Users/Hp/OneDrive%20-%20UMONS/UMONS/Ma1/Projet/Branche%20%20main/KIKIRPA-CPP/src/Backend/algorithms/stitching/positioning/TilePositioner.cpp), le choix du rejector est configuré via `settings.rejector` :
+### Exemple 2 : Sélection dans le placement global (`tile_positioner.cpp`)
+Dans [`tile_positioner.cpp`](file:///C:/Users/Hp/OneDrive%20-%20UMONS/UMONS/Ma1/Projet/Branche%20%20main/KIKIRPA-CPP/src/backend/algorithms/stitching/positioning/tile_positioner.cpp), le choix du rejector est configuré via `settings.rejectorName` :
 
 ```cpp
-std::unique_ptr<rejection::OutlierRejector> rejector;
-if (settings.rejector == "vote") {
-    rejector = std::make_unique<rejection::VoteRejector>(settings.rejectorParams);
+std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
+if (settings.rejectorName == "ransac") {
+    rejector = std::make_unique<RansacNs::RansacRejectorClass>(settings.rejectorParameters);
+} else if (settings.rejectorName == "vote") {
+    rejector = std::make_unique<RejectionNs::VoteRejectorClass>(settings.rejectorParameters);
 }
 ```
 
@@ -296,30 +302,30 @@ Grâce aux méthodes `filterPairMatches` et `toEqualizationJson`, la sortie du r
 
 ```cpp
 #include "algorithms/rejection/vote_2d/vote_rejector.h"
-#include "algorithms/egalisation/Egalisation.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
 
-void traiterPaire(stitching::PairMatches& pair, const cv::Mat& tuileA, const cv::Mat& tuileB) {
-    stitching::rejection::VoteRejector rejector;
-    stitching::Alignment alignment;
+void traiterPaire(DataNs::PairMatches& pair, const cv::Mat& tuileA, const cv::Mat& tuileB) {
+    RejectionNs::VoteRejectorClass rejector;
+    DataNs::Alignment alignment;
 
     if (!rejector.filterPairMatches(pair, alignment)) {
         return; // Échec ou inliers insuffisants
     }
 
     // 1. Passage direct par l'objet PairMatches enrichi
-    stitching::egalisation::PaireVoisine paireVoisine{
+    BrightnessEqualizationNs::NeighboringPair neighborPair{
         pair.tileIdA,
         pair.tileIdB,
         cv::Point2d(pair.featureMatches.translationX, pair.featureMatches.translationY)
     };
 
     // 2. Ou sérialisation JSON compatible
-    nlohmann::json j = stitching::rejection::VoteRejector::toEqualizationJson(
+    nlohmann::json j = RejectionNs::VoteRejectorClass::toEqualizationJson(
         pair.tileIdA, pair.tileIdB, alignment);
 
     // 3. Résolution radiométrique
-    stitching::egalisation::Egalisation egalisation;
-    auto res = egalisation.estimer({egalisation.reduire(tuileA), egalisation.reduire(tuileB)}, {paireVoisine});
+    BrightnessEqualizationNs::BrightnessEqualizerClass equalizer;
+    auto res = equalizer.estimate({equalizer.downscale(tuileA), equalizer.downscale(tuileB)}, {neighborPair});
 }
 ```
 

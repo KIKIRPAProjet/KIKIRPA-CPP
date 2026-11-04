@@ -1,34 +1,42 @@
 // include/backend/algorithms/rejection/vote_2d/vote_rejector.h
 #pragma once
 
-// Règle de style 'misc-include-cleaner' neutralisée ici :
-// Les types métier (Json, Matches, Alignment) sont fournis par l'en-tête parent OutlierRejector.h.
-// Cela évite des inclusions directes superflues sans compromettre aucune sécurité logique ou mémoire.
-// NOLINTBEGIN(misc-include-cleaner)
-#include "algorithms/rejection/OutlierRejector.h"
+#include "algorithms/rejection/outlier_rejector.h"
+#include "core/data/algorithm_types.h"
 
-// Règle de nommage 'readability-identifier-naming' neutralisée ici :
-// Conservation du namespace historique 'stitching::rejection' pour garantir la compatibilité
-// avec l'ensemble du projet sans casser le code existant.
-namespace stitching::rejection { // NOLINT(readability-identifier-naming)
+#include <nlohmann/json.hpp>
 
-// Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
-class VoteRejectorClass : public OutlierRejector {
-public:
-    VoteRejectorClass() = default;
-    explicit VoteRejectorClass(const Json& parameters);
-    bool estimate(const Matches& matches, Alignment& out) override;
-    bool filterMatches(Matches& matches, Alignment& out);
-    bool filterPairMatches(PairMatches& pairMatches, Alignment& out);
-    static Json toEqualizationJson(int tileIdA, int tileIdB, const Alignment& alignment);
+namespace RejectionNs {
 
-private:
-    Json parameters = Json::object();
-};
+    using Json = nlohmann::json;
 
-using VoteRejector = VoteRejectorClass;
+    // Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
+    class VoteRejectorClass : public OutlierRejectorClass {
 
+        public:
+            VoteRejectorClass() = default;
+            explicit VoteRejectorClass(const Json& parameters);
+
+            bool estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment) override;
+            bool filterMatches(DataNs::Matches& matches, DataNs::Alignment& out);
+            bool filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out);
+            static Json toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment);
+
+        private:
+            Json parameters = Json::object();
+
+    };
+
+    using VoteRejector = VoteRejectorClass;
+
+} // namespace RejectionNs
+
+namespace RansacNs {
+    using VoteRejectorClass = RejectionNs::VoteRejectorClass;
+    using VoteRejector = RejectionNs::VoteRejectorClass;
+} // namespace RansacNs
+
+namespace stitching::rejection {
+    using VoteRejectorClass = RejectionNs::VoteRejectorClass;
+    using VoteRejector = RejectionNs::VoteRejectorClass;
 } // namespace stitching::rejection
-// NOLINTEND(misc-include-cleaner)
-
-
