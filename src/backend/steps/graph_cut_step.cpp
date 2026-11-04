@@ -60,10 +60,10 @@ namespace StepsNs {
         // Renvoie false en cas d'échec, avec la cause dans result["error"].
         bool preprocessTiles(const GraphCutInput& resolvedInput, PreprocessedTiles& tiles, StepNs::Json& result) {
             GraphCutNs::ImagePretreatmentClass imagePretreatment;
-            const int STATUS = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
+            const int status = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
                                                                tiles.tileSizes, tiles.masksUmatSmall, tiles.originalCorners,
                                                                tiles.cornersSmall);
-            if (STATUS < 0) {
+            if (status < 0) {
                 result["error"] = "Error while image pretreatment";
                 return false;
             }
@@ -116,9 +116,9 @@ namespace StepsNs {
         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         GraphCutNs::GraphCutSeamFinderClass graphCut;
         cv::Mat indexMatrix;
-        const bool IS_CUT_DONE = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
+        const bool is_cut_done = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
                                                  tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
-        if (!IS_CUT_DONE) {
+        if (!is_cut_done) {
             result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;
         }
