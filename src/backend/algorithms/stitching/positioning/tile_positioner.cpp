@@ -7,21 +7,21 @@
 #include "algorithms/stitching/feature_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "algorithms/stitching/phase_correlation/phase_correlation_matcher.h"
+#include "algorithms/stitching/positioning/position_solver.h"
 #include "algorithms/stitching/sift/sift_matcher.h"
 #include "core/data/algorithm_types.h"
 #ifdef STITCHING_PROJECT_ROOT
 #include "algorithms/stitching/lightglue/lightglue_matcher.h"
 #endif
 
-#include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>
-#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <iomanip>
 #include <ios>
 #include <map>
@@ -45,28 +45,7 @@ namespace PositioningNs {
             int row = 0, column = 0;
         };
 
-        // Décalage mesuré entre deux tuiles voisines : positionB - positionA
-        struct TileOffset {
-            std::size_t tileIndexA, tileIndexB;
-            cv::Point2d positionDifference;
-            double rotationRadians = 0.0;   // angle de rotation relatif mesuré entre la tuile B et la tuile A
-        };
-
-        // Solution globale. Seules les tuiles reliées à la référence sont résolues (connectedTiles[i] = true).
-        struct SolvedTiles {
-            std::vector<bool> connectedTiles;
-            std::vector<cv::Point2d> positions;
-            std::vector<double> rotations;   // angle de rotation global calculé pour chaque tuile
-        };
-
-        // Système positionB - positionA = positionDifference, avec un second membre par inconnue résolue.
-        struct LinearSystem {
-            cv::Mat coefficients;
-            cv::Mat rightHandSideX;
-            cv::Mat rightHandSideY;
-            cv::Mat rightHandSideRotation;
-        };
-
+        using TileOffsets = std::vector<RelativeTilePosition>;
         using GridIndex = std::map<std::pair<int, int>, std::size_t>;
 
         // Tuiles triées et leur indice par position (ligne, colonne) dans la grille.
@@ -96,7 +75,7 @@ namespace PositioningNs {
             StitchingNs::FeatureMatcherClass& matcher;
             RejectionNs::OutlierRejectorClass& rejector;
             OverlapEstimationNs::OverlapEstimatorClass& overlapEstimator;
-            std::vector<TileOffset>& offsets;
+            TileOffsets& offsets;
             std::ostream& log;
             std::size_t attemptedPairCount = 0;
         };
@@ -109,89 +88,6 @@ namespace PositioningNs {
             double medianValue = *middle;
             if (valueCount % 2 == 0) medianValue = AVERAGE_OF_TWO_WEIGHT * (medianValue + *std::max_element(values.begin(), middle));
             return medianValue;
-        }
-
-        // Une passe de propagation depuis les tuiles déjà reliées. true si une nouvelle tuile a été reliée.
-        bool propagateConnections(const std::vector<TileOffset>& offsets, std::vector<bool>& connectedTiles) {
-            bool hasChanged = false;
-            for (const TileOffset& tileOffset : offsets) {
-                const bool isConnectedA = connectedTiles[tileOffset.tileIndexA];
-                const bool isConnectedB = connectedTiles[tileOffset.tileIndexB];
-                if (isConnectedA != isConnectedB) {
-                    connectedTiles[tileOffset.tileIndexA] = true;
-                    connectedTiles[tileOffset.tileIndexB] = true;
-                    hasChanged = true;
-                }
-            }
-            return hasChanged;
-        }
-
-        // Tuile 0 = référence.
-        std::vector<bool> findConnectedTiles(std::size_t tileCount, const std::vector<TileOffset>& offsets) {
-            std::vector<bool> connectedTiles(tileCount, false);
-            connectedTiles[0] = true;
-            while (propagateConnections(offsets, connectedTiles)) {
-            }
-            return connectedTiles;
-        }
-
-        LinearSystem buildLinearSystem(const std::vector<const TileOffset*>& usableOffsets, const std::vector<int>& variableIndex,
-                                       int variableCount) {
-            const int equationCount = static_cast<int>(usableOffsets.size());
-            LinearSystem system{cv::Mat(equationCount, variableCount, CV_64F, cv::Scalar(0)), cv::Mat(equationCount, 1, CV_64F),
-                                cv::Mat(equationCount, 1, CV_64F), cv::Mat(equationCount, 1, CV_64F)};
-            for (int equationIndex = 0; equationIndex < equationCount; ++equationIndex) {
-                const TileOffset& tileOffset = *usableOffsets[static_cast<std::size_t>(equationIndex)];
-                if (tileOffset.tileIndexB != 0) system.coefficients.at<double>(equationIndex, variableIndex[tileOffset.tileIndexB]) += 1.0;
-                if (tileOffset.tileIndexA != 0) system.coefficients.at<double>(equationIndex, variableIndex[tileOffset.tileIndexA]) -= 1.0;
-                system.rightHandSideX.at<double>(equationIndex, 0) = tileOffset.positionDifference.x;
-                system.rightHandSideY.at<double>(equationIndex, 0) = tileOffset.positionDifference.y;
-                // Équation theta_B - theta_A = rotation_AB, résolue sur le même graphe
-                system.rightHandSideRotation.at<double>(equationIndex, 0) = tileOffset.rotationRadians;
-            }
-            return system;
-        }
-
-        // Résolution simultanée des positions X, Y et des angles de rotation par SVD.
-        bool solveLinearSystem(const LinearSystem& system, const std::vector<int>& variableIndex, SolvedTiles& solved) {
-            cv::Mat solutionX;
-            cv::Mat solutionY;
-            cv::Mat solutionRotation;
-            if (!cv::solve(system.coefficients, system.rightHandSideX, solutionX, cv::DECOMP_SVD) ||
-                !cv::solve(system.coefficients, system.rightHandSideY, solutionY, cv::DECOMP_SVD) ||
-                !cv::solve(system.coefficients, system.rightHandSideRotation, solutionRotation, cv::DECOMP_SVD)) {
-                return false;
-            }
-            for (std::size_t tileIndex = 1; tileIndex < variableIndex.size(); ++tileIndex) {
-                const int variable = variableIndex[tileIndex];
-                if (variable < 0) continue;
-                solved.positions[tileIndex] = cv::Point2d(solutionX.at<double>(variable, 0), solutionY.at<double>(variable, 0));
-                solved.rotations[tileIndex] = solutionRotation.at<double>(variable, 0);
-            }
-            return true;
-        }
-
-        // Moindres carrés : positionB - positionA = positionDifference pour toutes les paires. Tuile 0 = référence (0, 0).
-        // Les angles de rotation absolus de chaque tuile sont résolus en même temps, par SVD.
-        bool solvePositions(std::size_t tileCount, const std::vector<TileOffset>& offsets, SolvedTiles& solved) {
-            solved.connectedTiles = findConnectedTiles(tileCount, offsets);
-            solved.positions.assign(tileCount, cv::Point2d(0.0, 0.0));
-            solved.rotations.assign(tileCount, 0.0);   // angles de rotation initialisés à 0.0 rad
-
-            std::vector<int> variableIndex(tileCount, -1);
-            int variableCount = 0;
-            for (std::size_t tileIndex = 1; tileIndex < tileCount; ++tileIndex) {
-                if (solved.connectedTiles[tileIndex]) variableIndex[tileIndex] = variableCount++;
-            }
-            if (variableCount == 0) return true;
-
-            std::vector<const TileOffset*> usableOffsets;
-            for (const TileOffset& tileOffset : offsets) {
-                if (solved.connectedTiles[tileOffset.tileIndexA] && solved.connectedTiles[tileOffset.tileIndexB]) {
-                    usableOffsets.push_back(&tileOffset);
-                }
-            }
-            return solveLinearSystem(buildLinearSystem(usableOffsets, variableIndex, variableCount), variableIndex, solved);
         }
 
         // Tuiles : nom -> (ligne, colonne, identifiant)
@@ -345,12 +241,12 @@ namespace PositioningNs {
         }
 
         // Résidu par paire : écart entre l'offset mesuré et celui de la solution globale (contrôle de cohérence).
-        void logResiduals(const std::vector<TileInfo>& tiles, const std::vector<TileOffset>& offsets, const SolvedTiles& solved,
+        void logResiduals(const std::vector<TileInfo>& tiles, const TileOffsets& offsets, const PositionSolution& solved,
                           std::ostream& log) {
             log << "Adjustment residuals (measured offset - adjusted offset):\n";
-            for (const TileOffset& tileOffset : offsets) {
-                if (!solved.connectedTiles[tileOffset.tileIndexA] || !solved.connectedTiles[tileOffset.tileIndexB]) continue;
-                const cv::Point2d residual = tileOffset.positionDifference -
+            for (const RelativeTilePosition& tileOffset : offsets) {
+                if (!solved.connected[tileOffset.tileIndexA] || !solved.connected[tileOffset.tileIndexB]) continue;
+                const cv::Point2d residual = tileOffset.translation -
                                              (solved.positions[tileOffset.tileIndexB] - solved.positions[tileOffset.tileIndexA]);
                 log << "  " << tiles[tileOffset.tileIndexA].tileId << " -> " << tiles[tileOffset.tileIndexB].tileId << " : ("
                     << std::fixed << std::setprecision(2) << residual.x << ", " << residual.y << ")\n";
@@ -358,10 +254,10 @@ namespace PositioningNs {
         }
 
         // Solution globale, angle de rotation compris.
-        void collectPositions(const std::vector<TileInfo>& tiles, const SolvedTiles& solved,
+        void collectPositions(const std::vector<TileInfo>& tiles, const PositionSolution& solved,
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log) {
             for (std::size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex) {
-                if (solved.connectedTiles[tileIndex]) {
+                if (solved.connected[tileIndex]) {
                     positions.push_back({tiles[tileIndex].tileId, solved.positions[tileIndex], solved.rotations[tileIndex]});
                 } else {
                     log << "WARNING: tile " << tiles[tileIndex].tileId << " is not linked to the reference tile by any valid pair\n";
@@ -370,7 +266,7 @@ namespace PositioningNs {
         }
 
         // Mesure toutes les paires et note leurs décalages. false en cas d'erreur (raison dans le journal).
-        bool measureOffsets(const TileGrid& grid, const PositioningSettings& settings, std::vector<TileOffset>& offsets,
+        bool measureOffsets(const TileGrid& grid, const PositioningSettings& settings, TileOffsets& offsets,
                             std::ostream& log) {
             const auto matcher = createMatcher(settings);
             const auto rejector = createRejector(settings);
@@ -395,6 +291,26 @@ namespace PositioningNs {
 
     }
 
+    namespace {
+
+        // Ajustement global, puis résidus par paire et positions finales.
+        bool solveAndPublish(const std::vector<TileInfo>& tiles, const TileOffsets& offsets,
+                             std::vector<DataNs::TilePositionData>& positions, std::ostream& log) {
+            PositionSolution solved;
+            try {
+                solved = solveRelativePositions(tiles.size(), offsets);
+            } catch (const std::exception&) {
+                log << "Could not solve tile positions\n";
+                return false;
+            }
+
+            logResiduals(tiles, offsets, solved, log);
+            collectPositions(tiles, solved, positions, log);
+            return !positions.empty();
+        }
+
+    }
+
     bool computeTilePositions(const std::vector<std::string>& tilePaths, const PositioningSettings& settings,
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log) {
         positions.clear();
@@ -412,19 +328,10 @@ namespace PositioningNs {
             return true;
         }
 
-        std::vector<TileOffset> offsets;
+        TileOffsets offsets;
         if (!measureOffsets(grid, settings, offsets, log)) return false;
 
-        // Ajustement global
-        SolvedTiles solved;
-        if (!solvePositions(grid.tiles.size(), offsets, solved)) {
-            log << "Could not solve tile positions\n";
-            return false;
-        }
-
-        logResiduals(grid.tiles, offsets, solved, log);
-        collectPositions(grid.tiles, solved, positions, log);
-        return !positions.empty();
+        return solveAndPublish(grid.tiles, offsets, positions, log);
     }
 
 }
