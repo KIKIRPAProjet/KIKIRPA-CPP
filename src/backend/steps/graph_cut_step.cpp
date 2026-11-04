@@ -4,9 +4,12 @@
 #include "algorithms/seamline/graph_cut/graph_cut_seam_finder.h"
 #include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/step/step.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <cstddef>
 #include <exception>
@@ -57,10 +60,10 @@ namespace StepsNs {
         // Renvoie false en cas d'échec, avec la cause dans result["error"].
         bool preprocessTiles(const GraphCutInput& resolvedInput, PreprocessedTiles& tiles, StepNs::Json& result) {
             GraphCutNs::ImagePretreatmentClass imagePretreatment;
-            const int status = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
+            const int STATUS = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
                                                                tiles.tileSizes, tiles.masksUmatSmall, tiles.originalCorners,
                                                                tiles.cornersSmall);
-            if (status < 0) {
+            if (STATUS < 0) {
                 result["error"] = "Error while image pretreatment";
                 return false;
             }
@@ -113,9 +116,9 @@ namespace StepsNs {
         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         GraphCutNs::GraphCutSeamFinderClass graphCut;
         cv::Mat indexMatrix;
-        const bool isCutDone = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
+        const bool IS_CUT_DONE = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
                                                  tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
-        if (!isCutDone) {
+        if (!IS_CUT_DONE) {
             result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;
         }
