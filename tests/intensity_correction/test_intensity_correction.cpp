@@ -8,7 +8,6 @@
 #include "steps/intensity_correction_step.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>

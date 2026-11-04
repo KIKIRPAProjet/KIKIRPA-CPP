@@ -23,6 +23,7 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -36,6 +37,7 @@ namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
 constexpr int PHASE_PARAMETER_COUNT = 12;
+constexpr std::size_t REGISTERED_STEP_COUNT = 5;   // import, phase-correlation, graphcut, lightglue, intensity-correction
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -87,7 +89,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == 5, "5 steps enregistrés");
+    verifier(noms.size() == REGISTERED_STEP_COUNT, "5 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");

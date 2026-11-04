@@ -1,6 +1,8 @@
 // src/backend/steps/intensity_correction_step.cpp
 #include "steps/intensity_correction_step.h"
 
+#include "algorithms/brightness_equalization/brightness_equalization_types.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
@@ -111,6 +113,11 @@ namespace StepsNs {
         // 4. estimer. Vide, avec la cause dans errorMessage, au premier échec.
         std::optional<DataNs::IntensityCorrection> estimateCorrection(IntensityCorrectionInput input, StepNs::DataStoreClass& dataStore,
             std::string& errorMessage) {
+            const std::optional<CorrectionMethod> method = parseMethod(input.method);
+            if (!method) {
+                errorMessage = "unknown method '" + input.method + "'";
+                return std::nullopt;
+            }
             // reduction suit le niveau de pyramide lu : la même valeur ne doit pas être écrite à deux endroits.
             input.parameters.reductionFactor = 1 << ANALYSIS_LEVEL;
             // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
@@ -134,7 +141,7 @@ namespace StepsNs {
                 errorMessage = equalizer->getFailureReason();
                 return std::nullopt;
             }
-            return toCorrection(*estimation, *parseMethod(input.method));
+            return toCorrection(*estimation, *method);
         }
 
     }

@@ -1,7 +1,7 @@
 // include/backend/steps/intensity_correction_step.h
 #pragma once
 
-#include "algorithms/brightness_equalization/brightness_equalizer.h"
+#include "algorithms/brightness_equalization/brightness_equalization_types.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 

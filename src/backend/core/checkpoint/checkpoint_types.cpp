@@ -1,15 +1,19 @@
 // src/backend/core/checkpoint/checkpoint_types.cpp
 #include "core/checkpoint/checkpoint_types.h"
 
+#include "core/checkpoint/checkpoint.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <map>
 #include <memory>
 #include <stdexcept>
