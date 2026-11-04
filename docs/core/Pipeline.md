@@ -112,6 +112,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `import` | `StepsNs::ImportStepClass` | — | `tiles` : `Tiles` |
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
+| `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 
 ## Ajouter un step
 

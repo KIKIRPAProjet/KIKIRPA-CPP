@@ -1,8 +1,10 @@
 // include/backend/core/data/algorithm_types.h
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -11,7 +13,7 @@
 namespace DataNs {
 
     // Position de la tuile B par rapport à la tuile A. PairMatches n'utilise que Right (B à droite de A) et Bottom (B sous A).
-    enum class Direction {
+    enum class Direction : std::uint8_t {
         Top,
         Bottom,
         Left,
@@ -64,7 +66,7 @@ namespace DataNs {
     // Sortie d'un RejectionNs::OutlierRejectorClass.
     struct Alignment {
         cv::Mat transformBToA;           // transformation de B vers A (3x3, CV_64F)
-        std::vector<uchar> inlierMask;   // 1 = inlier ; même taille que les points de Matches
+        std::vector<std::uint8_t> inlierMask;   // 1 = inlier ; même taille que les points de Matches
     };
 
     // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
@@ -83,7 +85,7 @@ namespace DataNs {
     };
 
     // Correction d'intensité de chaque tuile (type "IntensityCorrection", clé "intensityCorrection"),
-    // produite par le step intensity-correction. Les gains sont multiplicatifs, de moyenne géométrique 1.
+    // produite par le step intensity-correction. Le gain d'une tuile est sa luminosité relative (la correction divise par le gain), de moyenne géométrique 1.
     struct IntensityCorrection {
         std::vector<double> tileGains;           // un gain par tuile, dans l'ordre de la TileList
         double fieldStrength = 0.0;              // force c du champ d'éclairage exp(c · r²) ; 0 si seuls les gains sont utilisés

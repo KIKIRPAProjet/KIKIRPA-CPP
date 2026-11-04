@@ -2,13 +2,18 @@
 // Step intensity-correction : paramètres, échecs et estimation d'un gain connu sur de vraies tuiles 16 bits.
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/step/data_store.h"
 #include "steps/intensity_correction_step.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -22,6 +27,9 @@ namespace {
     using Json = nlohmann::json;
     namespace fs = std::filesystem;
 
+    constexpr int RNG_SEED = 12345;
+    constexpr int UNKNOWN_TILE_ID_A = 7;      // identifiants absents de la liste de tuiles
+    constexpr int UNKNOWN_TILE_ID_B = 8;
     constexpr int TILE_WIDTH = 400;           // px
     constexpr int TILE_HEIGHT = 300;          // px
     constexpr int TILE_OFFSET_X = 200;        // px : coin de B dans A (recouvrement de 50 %)
@@ -38,7 +46,7 @@ namespace {
         fs::remove_all(directory);
         fs::create_directories(directory);
         cv::Mat texture(TILE_HEIGHT, TILE_OFFSET_X + TILE_WIDTH, CV_32F);
-        cv::RNG rng(12345);
+        cv::RNG rng(RNG_SEED);
         rng.fill(texture, cv::RNG::UNIFORM, 0.0, 1.0);
         cv::GaussianBlur(texture, texture, cv::Size(), TEXTURE_BLUR_SIGMA);
         cv::normalize(texture, texture, TEXTURE_MIN, TEXTURE_MAX, cv::NORM_MINMAX);
@@ -142,10 +150,10 @@ TEST(IntensityCorrectionStepTest, FailsOnUnknownTileId) {
     StepsNs::IntensityCorrectionStepClass step;
     StepNs::DataStoreClass dataStore;
     dataStore.add("tiles", DataNs::TileList{});   // aucune tuile : tout identifiant des matches est inconnu
-    dataStore.add("matches", std::vector<DataNs::PairMatches>{{7, 8, DataNs::Direction::Right, {}}});
+    dataStore.add("matches", std::vector<DataNs::PairMatches>{{UNKNOWN_TILE_ID_A, UNKNOWN_TILE_ID_B, DataNs::Direction::Right, {}}});
 
     EXPECT_FALSE(executeStep(step, dataStore));
-    EXPECT_NE(errorOf(step).find("unknown tile id 7"), std::string::npos);
+    EXPECT_NE(errorOf(step).find("unknown tile id " + std::to_string(UNKNOWN_TILE_ID_A)), std::string::npos);
 }
 
 TEST(IntensityCorrectionStepTest, RejectsInvalidAlgorithmParameter) {

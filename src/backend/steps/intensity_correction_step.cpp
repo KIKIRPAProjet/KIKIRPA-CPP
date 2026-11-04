@@ -2,11 +2,18 @@
 #include "steps/intensity_correction_step.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
+#include "core/step/data_store.h"
 #include "steps/phase_correlation_step.h"
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstddef>
+#include <exception>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -17,11 +24,11 @@
 namespace StepsNs {
 
     using Json = nlohmann::json;
-using BrightnessEqualizationNs::BrightnessEqualizerClass;
-using BrightnessEqualizationNs::CorrectionMethod;
-using BrightnessEqualizationNs::EqualizationResult;
-using BrightnessEqualizationNs::NeighbourPair;
-using BrightnessEqualizationNs::ReducedTile;
+    using BrightnessEqualizationNs::BrightnessEqualizerClass;
+    using BrightnessEqualizationNs::CorrectionMethod;
+    using BrightnessEqualizationNs::EqualizationResult;
+    using BrightnessEqualizationNs::NeighbourPair;
+    using BrightnessEqualizationNs::ReducedTile;
 
     namespace {
 
@@ -91,6 +98,45 @@ using BrightnessEqualizationNs::ReducedTile;
             return correction;
         }
 
+        // Contrôle la méthode puis la présence des entrées. Renvoie la cause de l'échec, vide si tout est en ordre.
+        std::string checkInputs(const std::string& methodName, StepNs::DataStoreClass* dataStore) {
+            if (!parseMethod(methodName))
+                return "method must be '" + std::string(GAIN_METHOD) + "' or '" + GAIN_AND_FIELD_METHOD + "', got '" + methodName + "'";
+            if (dataStore == nullptr || !dataStore->has("tiles") || !dataStore->has("matches"))
+                return "no tiles or matches: run the import and phase-correlation steps first";
+            return {};
+        }
+
+        // Étapes : 1. créer l'algorithme ; 2. lire et réduire les tuiles ; 3. convertir les appariements en paires ;
+        // 4. estimer. Vide, avec la cause dans errorMessage, au premier échec.
+        std::optional<DataNs::IntensityCorrection> estimateCorrection(IntensityCorrectionInput input, StepNs::DataStoreClass& dataStore,
+            std::string& errorMessage) {
+            // reduction suit le niveau de pyramide lu : la même valeur ne doit pas être écrite à deux endroits.
+            input.parameters.reductionFactor = 1 << ANALYSIS_LEVEL;
+            // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
+            std::optional<BrightnessEqualizerClass> equalizer;
+            try {
+                equalizer.emplace(input.parameters);
+            }
+            catch (const std::invalid_argument& exception) {
+                errorMessage = std::string("invalid parameters: ") + exception.what();
+                return std::nullopt;
+            }
+            const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
+            const std::vector<ReducedTile> reducedTiles = reduceTiles(tiles, *equalizer, errorMessage);
+            if (!errorMessage.empty()) return std::nullopt;
+            const std::vector<NeighbourPair> neighbourPairs =
+                buildNeighbourPairs(tiles, dataStore.get<std::vector<DataNs::PairMatches>>("matches"), errorMessage);
+            if (!errorMessage.empty()) return std::nullopt;
+
+            const std::optional<EqualizationResult> estimation = equalizer->estimate(reducedTiles, neighbourPairs);
+            if (!estimation) {
+                errorMessage = equalizer->getFailureReason();
+                return std::nullopt;
+            }
+            return toCorrection(*estimation, *parseMethod(input.method));
+        }
+
     }
 
     // Déclare l'identité du step : son nom, ses 8 paramètres (valeurs par défaut = celles de l'entrée), les données
@@ -117,11 +163,8 @@ using BrightnessEqualizationNs::ReducedTile;
     // Un paramètre absent (JSON écrit avant son ajout) garde la valeur par défaut de IntensityCorrectionInput.
     bool IntensityCorrectionStepClass::readInput(IntensityCorrectionInput& input) {
         auto readParameter = [this](const char* parameterName, auto& value) {
-            try {
-                value = getParameter(parameterName).get<std::decay_t<decltype(value)>>();
-            }
-            catch (const std::out_of_range&) {}
-            };
+            value = getParameter(parameterName).get<std::decay_t<decltype(value)>>();
+        };
         try {
             auto& algorithmParameters = input.parameters;
             readParameter("method", input.method);
@@ -133,68 +176,37 @@ using BrightnessEqualizationNs::ReducedTile;
             readParameter("huberThreshold", algorithmParameters.huberThreshold);
             readParameter("gaugeWeight", algorithmParameters.gaugeWeight);
         }
-        catch (const Json::exception& exception) {
-            result["error"] = std::string("invalid option type: ") + exception.what();
+        catch (const std::exception& exception) {   // mauvais type (Json::exception) ou paramètre absent (out_of_range)
+            result["error"] = std::string("invalid option: ") + exception.what();
             return false;
         }
         return true;
     }
 
-    // Étapes : 1. lire et contrôler les paramètres et les entrées ; 2. créer l'algorithme ; 3. lire et réduire les
-    // tuiles, convertir les appariements en paires ; 4. estimer ; 5. publier la correction.
+    // Étapes : 1. lire et contrôler les paramètres et les entrées ; 2. estimer la correction ; 3. la publier.
     bool IntensityCorrectionStepClass::execute() {
         output = {};
         result = Json::object();
 
         IntensityCorrectionInput input;
         if (!readInput(input)) return false;
-
-        const std::optional<CorrectionMethod> method = parseMethod(input.method);
-        if (!method) {
-            result["error"] = "method must be '" + std::string(GAIN_METHOD) + "' or '" + GAIN_AND_FIELD_METHOD + "', got '" + input.method + "'";
-            return false;
-        }
-        if (!dataStore || !dataStore->has("tiles") || !dataStore->has("matches")) {
-            result["error"] = "no tiles or matches: run the import and phase-correlation steps first";
+        const std::string inputError = checkInputs(input.method, dataStore);
+        if (!inputError.empty()) {
+            result["error"] = inputError;
             return false;
         }
 
-        // reduction suit le niveau de pyramide lu : la même valeur ne doit pas être écrite à deux endroits.
-        input.parameters.reductionFactor = 1 << ANALYSIS_LEVEL;
-        // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
-        std::optional<BrightnessEqualizerClass> equalizer;
-        try {
-            equalizer.emplace(input.parameters);
-        }
-        catch (const std::invalid_argument& exception) {
-            result["error"] = std::string("invalid parameters: ") + exception.what();
-            return false;
-        }
-
-        const auto& tiles = dataStore->get<DataNs::TileList>("tiles");
         std::string errorMessage;
-        const std::vector<ReducedTile> reducedTiles = reduceTiles(tiles, *equalizer, errorMessage);
-        if (!errorMessage.empty()) {
-            result["error"] = errorMessage;
-            return false;
-        }
-        const std::vector<NeighbourPair> neighbourPairs =
-            buildNeighbourPairs(tiles, dataStore->get<std::vector<DataNs::PairMatches>>("matches"), errorMessage);
-        if (!errorMessage.empty()) {
+        const std::optional<DataNs::IntensityCorrection> correction = estimateCorrection(input, *dataStore, errorMessage);
+        if (!correction) {
             result["error"] = errorMessage;
             return false;
         }
 
-        const std::optional<EqualizationResult> estimation = equalizer->estimate(reducedTiles, neighbourPairs);
-        if (!estimation) {
-            result["error"] = equalizer->getFailureReason();
-            return false;
-        }
-
-        output.correction = toCorrection(*estimation, *method);
+        output.correction = *correction;
         result["method"] = input.method;
-        result["tileCount"] = tiles.size();
-        result["pairCount"] = neighbourPairs.size();
+        result["tileCount"] = dataStore->get<DataNs::TileList>("tiles").size();
+        result["pairCount"] = dataStore->get<std::vector<DataNs::PairMatches>>("matches").size();
         result["isolatedTiles"] = output.correction.isolatedTileIndices;
         dataStore->replace("intensityCorrection", output.correction);   // pour l'assemblage final
         return true;
