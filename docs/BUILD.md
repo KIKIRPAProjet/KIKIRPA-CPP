@@ -115,6 +115,8 @@ ONNX Runtime n'est nécessaire que pour LightGlue, qui demande aussi le module `
 cmake --preset <preset> -DONNXRUNTIME_ROOT=<dossier>
 ```
 
+Sous Windows, télécharger `onnxruntime-win-x64-1.20.1.zip` depuis les [versions d'ONNX Runtime](https://github.com/microsoft/onnxruntime/releases/tag/v1.20.1) et l'extraire, par exemple dans `C:\onnxruntime-win-x64-1.20.1`. `System32` contient souvent un `onnxruntime.dll` plus ancien, chargé avant le `PATH` : CMake copie donc les DLL à côté des exécutables qui utilisent LightGlue. Le modèle à utiliser est indiqué dans [LightGlueStep.md](steps/LightGlueStep.md).
+
 Sans ONNX Runtime, le reste du projet se compile normalement (LightGlue est simplement retiré du build). La CI n'a pas ONNX Runtime : elle ne compile jamais LightGlue.
 
 ## Désactiver les tests unitaires
@@ -139,4 +141,4 @@ Remplacer `<preset>` par celui de son système : `windows-aqt`, `linux` ou `maco
 | `cmake/tests_runner.cmake` | GoogleTest et un `add_subdirectory` par dossier de `tests/`. |
 | `cmake/install.cmake` | Installation de `stitching` dans `bin/`. |
 
-Un exécutable de test se lie à `kikirpa_backend` (voir `tests/egalisation/CMakeLists.txt`).
+Un exécutable de test se lie à `kikirpa_backend` (voir `tests/brightness_equalization/CMakeLists.txt`).

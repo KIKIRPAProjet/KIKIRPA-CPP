@@ -1,7 +1,7 @@
 // include/backend/steps/lightglue_step.h
 #pragma once
 
-#include "algorithms/stitching/FeatureMatcher.h"
+#include "algorithms/stitching/feature_matcher.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
@@ -35,7 +35,7 @@ namespace StepsNs {
     class LightGlueStepClass : public StepNs::StepClass {
 
         public:
-            using MatcherFactory = std::function<std::unique_ptr<stitching::matching::FeatureMatcher>(const nlohmann::json&)>;
+            using MatcherFactory = std::function<std::unique_ptr<StitchingNs::FeatureMatcherClass>(const nlohmann::json&)>;
 
             // La fabrique optionnelle remplace seulement l'inférence dans les tests du step.
             explicit LightGlueStepClass(const LightGlueInput& input = {}, MatcherFactory factory = {});
@@ -47,7 +47,7 @@ namespace StepsNs {
             void loadMatcher(const std::string& modelPath);
 
             MatcherFactory factory;
-            std::unique_ptr<stitching::matching::FeatureMatcher> matcher;
+            std::unique_ptr<StitchingNs::FeatureMatcherClass> matcher;
             std::string loadedModel;
             LightGlueOutput output;
     };

@@ -1,7 +1,8 @@
 // src/backend/steps/graph_cut_step.cpp
 #include "steps/graph_cut_step.h"
 
-#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/seamline/graph_cut/graph_cut_seam_finder.h"
+#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/tile.h"
 
@@ -64,11 +65,11 @@ namespace StepsNs {
         }
 
         // 3. Prétraitement : tailles des tuiles, coins dans la mosaïque (pleine résolution et réduits) et masques réduits.
-        Seamline::GraphCut graphCut;
+        GraphCutNs::GraphCutSeamFinderClass graphCut;
         std::vector<cv::UMat> masksUmatSmall;
         std::vector<cv::Point> originalCorners, cornersSmall;
         std::vector<cv::Size> tileSizes;
-        Seamline::ImagePretreatment imagePretreatment;
+        GraphCutNs::ImagePretreatmentClass imagePretreatment;
         cv::Mat finalMosaic;
         cv::Mat indexMatrix;
         if (imagePretreatment.processImages(positions, tilePaths, scale, tileSizes, masksUmatSmall, originalCorners, cornersSmall) < 0) {

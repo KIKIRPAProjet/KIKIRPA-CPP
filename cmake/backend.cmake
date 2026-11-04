@@ -135,6 +135,11 @@ if(lightglue_enabled)
         STITCHING_PROJECT_ROOT="${PROJECT_SOURCE_DIR}"
     )
 
+    # Sous Windows, System32 contient souvent un onnxruntime.dll plus ancien, chargé avant le PATH :
+    # l'exécutable plante au premier appel. Les DLL copiées à côté de lui ont priorité.
+    get_filename_component(onnxruntime_library_directory "${ONNXRUNTIME_LIB}" DIRECTORY)
+    file(GLOB onnxruntime_dlls CONFIGURE_DEPENDS "${onnxruntime_library_directory}/onnxruntime*.dll")
+
     message(STATUS "ONNX Runtime found: LightGlue enabled")
 
 elseif(NOT TARGET opencv_dnn)
@@ -150,3 +155,18 @@ else()
     message(STATUS "ONNX Runtime not found: LightGlue disabled (set ONNXRUNTIME_ROOT)")
 
 endif()
+
+# Copie les DLL d'ONNX Runtime à côté d'un exécutable qui utilise LightGlue, une seule fois par dossier :
+# deux copies simultanées vers le même fichier échouent. Sans effet si LightGlue est désactivé ou hors de Windows.
+function(kikirpa_copy_onnxruntime_dlls target)
+    if(WIN32 AND lightglue_enabled)
+        string(MAKE_C_IDENTIFIER "${CMAKE_CURRENT_BINARY_DIR}" output_directory_id)
+        set(copy_target "onnxruntime_dlls_${output_directory_id}")
+        if(NOT TARGET ${copy_target})
+            add_custom_target(${copy_target}
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different ${onnxruntime_dlls} "${CMAKE_CURRENT_BINARY_DIR}"
+            )
+        endif()
+        add_dependencies(${target} ${copy_target})
+    endif()
+endfunction()

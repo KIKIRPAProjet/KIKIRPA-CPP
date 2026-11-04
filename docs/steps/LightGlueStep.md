@@ -33,7 +33,7 @@ interne `model_path` du matcher est traduit par le step.
 Entrée : `DataNs::TileList` sous `tiles`. Les voisins droits et inférieurs sont traités une seule fois.
 Les images sources sont lues en 8/16 bits non signés (1, 3 ou 4 canaux), sans modifier leurs pixels.
 
-Chaque paire passe par `EstimationRecouvrement::estimer()`, puis `zonesCommunes()`.
+Chaque paire passe par `OverlapEstimatorClass::estimate()`, puis `computeCommonAreas()`.
 Le matcher reçoit seulement les rectangles communs, pas les tuiles entières.
 Les points sont validés dans les bandes, puis les origines respectives des rectangles sont ajoutées
 à `pointsInA` et `pointsInB`. Leur différence est ajoutée à `translationX` et `translationY`.
@@ -103,3 +103,26 @@ ctest --test-dir build/lightglue -R '^lightglue_model$' --output-on-failure
 
 Ce dernier test utilise une translation connue et vérifie les correspondances 8/16 bits. Il n'est
 pas enregistré sans modèle et ne doit pas être présenté comme exécuté dans ce cas.
+
+## Modèle vérifié
+
+| | |
+|---|---|
+| Modèle | `raco_aliked_lightglue_pipeline_k1024.onnx` |
+| Provenance | [fabio-sim/LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX/releases/tag/v3.0), version v3.0 |
+| ONNX Runtime | 1.20.1, CPU, Windows x64 |
+
+Le modèle n'est pas versionné dans le dépôt : il faut le télécharger et donner son chemin dans `modelPath`.
+`superpoint_lightglue_pipeline.onnx` (v2.0) est refusé avec le message `unexpected RACO/ALIKED output types`.
+
+Sur 4 tuiles réelles de 5176×5176 pixels (16 bits), comparaison avec la corrélation de phase :
+
+| Paire | Corrélation de phase | LightGlue | Points | Temps (CPU) |
+|---|---|---|---|---|
+| 1 → droite 4 | (4063,63 ; 30,25) | (4064,11 ; 31,27) | 828 | 31 s |
+| 2 → bas 1 | (23,59 ; 4086,64) | (23,79 ; 4086,11) | 818 | 20 s |
+| 2 → droite 3 | (4070,87 ; -18,54) | (4071,12 ; -18,76) | 837 | 17 s |
+| 3 → bas 4 | (23,75 ; 4133,40) | (23,81 ; 4133,83) | 882 | 15 s |
+
+L'écart maximal est de 1,02 pixel. La corrélation de phase sert ici de référence indépendante, mais ce n'est
+pas une vérité terrain.

@@ -1,6 +1,6 @@
 // tests/steps/test_lightglue_step.cpp
 #include <gtest/gtest.h>
-#include "algorithms/stitching/FeatureMatcher.h"
+#include "algorithms/stitching/feature_matcher.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/data_store.h"
 #include "steps/lightglue_step.h"
@@ -26,7 +26,6 @@
 #include <vector>
 
 using Json = nlohmann::json;
-namespace matching = stitching::matching;
 namespace {
 constexpr float LOCAL_TRANSLATION = 2.f;
 constexpr double TEXTURE_SIGMA = 2.0;
@@ -102,7 +101,7 @@ struct State {
     Mode mode = Mode::Valid;
     float score = LOW_CONFIDENCE;
 };
-class TestMatcherClass : public matching::FeatureMatcher {
+class TestMatcherClass : public StitchingNs::FeatureMatcherClass {
     std::shared_ptr<State> state;
 public:
     explicit TestMatcherClass(std::shared_ptr<State> s) : state(std::move(s)) {}

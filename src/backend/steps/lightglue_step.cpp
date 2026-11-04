@@ -1,8 +1,8 @@
 // src/backend/steps/lightglue_step.cpp
 #include "steps/lightglue_step.h"
 
-#include "algorithms/stitching/FeatureMatcher.h"
-#include "algorithms/stitching/recouvrement/EstimationRecouvrement.h"
+#include "algorithms/stitching/feature_matcher.h"
+#include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
@@ -12,7 +12,7 @@
 #include <opencv2/core/mat.hpp>
 #include <exception>
 #if defined(STITCHING_HAS_LIGHTGLUE)
-#include "algorithms/stitching/lightglue/LightGlueMatcher.h"
+#include "algorithms/stitching/lightglue/lightglue_matcher.h"
 #endif
 
 #include <nlohmann/json.hpp>
@@ -29,9 +29,9 @@ namespace StepsNs {
 
     namespace {
 
-        std::unique_ptr<stitching::matching::FeatureMatcher> createMatcher(const nlohmann::json& parameters) {
+        std::unique_ptr<StitchingNs::FeatureMatcherClass> createMatcher(const nlohmann::json& parameters) {
 #if defined(STITCHING_HAS_LIGHTGLUE)
-            return std::make_unique<stitching::matching::LightGlueMatcherClass>(parameters);
+            return std::make_unique<LightGlueNs::LightGlueMatcherClass>(parameters);
 #else
             (void)parameters;
             throw std::runtime_error("LightGlue unavailable: rebuild with ONNX Runtime and OpenCV dnn");
@@ -40,8 +40,8 @@ namespace StepsNs {
 
         struct PairProcessingContext {
             const LightGlueInput& input;
-            stitching::matching::FeatureMatcher& matcher;
-            stitching::matching::EstimationRecouvrement& estimator;
+            StitchingNs::FeatureMatcherClass& matcher;
+            OverlapEstimationNs::OverlapEstimatorClass& estimator;
         };
 
         struct PairMeasurement {
@@ -52,9 +52,9 @@ namespace StepsNs {
         PairMeasurement measurePair(const NeighborPair& pair, const cv::Mat& imageA,
                                     const cv::Mat& imageB, const PairProcessingContext& context) {
             const DataNs::PairContext pairContext{pair.direction, context.input.overlap, std::nullopt};
-            const auto overlap = context.estimator.estimer(imageA, imageB, pairContext);
-            if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.raisonEchec()};
-            const auto regions = stitching::matching::EstimationRecouvrement::zonesCommunes(
+            const auto overlap = context.estimator.estimate(imageA, imageB, pairContext);
+            if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
+            const auto regions = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(
                 imageA.size(), imageB.size(), overlap->translationBInA);
             if (regions.first.empty() || regions.second.empty()) return {std::nullopt, "tiles have no common region"};
             DataNs::PairMatches pairOutput{pair.tileA->getId(), pair.tileB->getId(), pair.direction, {}};
@@ -147,7 +147,7 @@ namespace StepsNs {
             const auto input = readInput();
             const auto pairs = collectPairs(dataStore->get<DataNs::TileList>("tiles"));
             loadMatcher(input.modelPath);
-            stitching::matching::EstimationRecouvrement estimator;
+            OverlapEstimationNs::OverlapEstimatorClass estimator;
             const PairProcessingContext context{input, *matcher, estimator};
             measurePairs(pairs, context, output, result);
             result["pairs"] = output.value.size();

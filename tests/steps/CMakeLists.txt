@@ -1,5 +1,6 @@
 add_executable(test_lightglue_step test_lightglue_step.cpp)
 target_link_libraries(test_lightglue_step PRIVATE kikirpa_backend GTest::gtest_main)
+kikirpa_copy_onnxruntime_dlls(test_lightglue_step)
 include(GoogleTest)
 gtest_discover_tests(test_lightglue_step PROPERTIES LABELS "unit")
 
@@ -7,6 +8,7 @@ set(LIGHTGLUE_TEST_MODEL "" CACHE FILEPATH "Modèle ONNX pour le test d'inféren
 if(lightglue_enabled)
     add_executable(test_lightglue_model test_lightglue_model.cpp)
     target_link_libraries(test_lightglue_model PRIVATE kikirpa_backend)
+    kikirpa_copy_onnxruntime_dlls(test_lightglue_model)
     if(LIGHTGLUE_TEST_MODEL)
         if(NOT EXISTS "${LIGHTGLUE_TEST_MODEL}")
             message(FATAL_ERROR "LIGHTGLUE_TEST_MODEL does not exist: ${LIGHTGLUE_TEST_MODEL}")
