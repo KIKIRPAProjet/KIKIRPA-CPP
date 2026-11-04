@@ -111,6 +111,9 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `import` | `StepsNs::ImportStepClass` | — | `tiles` : `Tiles` |
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit la mosaïque finale) |
+
+`export` est terminal. Il écrit uniquement `mosaic.tif` dans le dossier configuré (par défaut le dossier Téléchargements de l'utilisateur). Il ne produit pas de JSON, de carte de provenance ou de masque séparé. À ce jour, le registre ne contient pas encore le step de fusion et aucun step enregistré ne produit `compositeBlocks` : un pipeline contenant `export` ne peut donc pas encore être construit avec les steps actuellement disponibles.
 
 ## Ajouter un step
 

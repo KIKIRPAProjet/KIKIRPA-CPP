@@ -68,7 +68,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == 3, "3 steps enregistrés");
+    verifier(noms.size() == 4, "4 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -101,6 +101,9 @@ void testerValidation() {
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("graphcut")})); },
                                  "input 'positions' is not produced"),
              "graphcut sans step qui produit les positions");
+    verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("export")})); },
+                                 "input 'compositeBlocks' is not produced"),
+             "export sans step qui produit les blocs composites");
 
     std::cout << "Fusion des options\n";
     const PipelineNs::PipelineClass p = PipelineNs::buildPipeline(script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", "ailleurs/"}}}),
