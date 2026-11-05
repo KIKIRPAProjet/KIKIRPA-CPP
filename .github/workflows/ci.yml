@@ -15,6 +15,9 @@ jobs:
       build-type: Release
       test-labels: "unit|integration"
 
+  build-and-test-windows:
+    uses: ./.github/workflows/build-test-windows.yml
+
   clang-tidy:
     runs-on: ubuntu-24.04
     steps:
@@ -29,9 +32,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
-          PUSH_COMMITS: ${{ toJSON(github.event.commits) }}
         run: |
           set -euo pipefail
 
@@ -40,20 +41,9 @@ jobs:
               changed_files=$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")
               ;;
             push)
-              if [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
-                git fetch --no-tags origin main
-                base_sha=$(git merge-base origin/main "$PUSH_AFTER_SHA")
-                changed_files=$(git diff --name-only "$base_sha" "$PUSH_AFTER_SHA")
-              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null \
-                && git merge-base --is-ancestor "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA"; then
-                changed_files=$(git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA")
-              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
-                git fetch --no-tags origin main
-                base_sha=$(git merge-base origin/main "$PUSH_AFTER_SHA")
-                changed_files=$(git diff --name-only "$base_sha" "$PUSH_AFTER_SHA")
-              else
-                changed_files=$(jq -r '.[] | (.added[]?, .modified[]?, .removed[]?)' <<< "$PUSH_COMMITS")
-              fi
+              # Comme pour une pull request : seulement ce que la branche change par rapport à main,
+              # pour qu'une fusion de main dans la branche ne fasse pas analyser tout le code de main.
+              changed_files=$(git diff --name-only "origin/main...$PUSH_AFTER_SHA")
               ;;
             workflow_dispatch)
               changed_files=$(git ls-files)

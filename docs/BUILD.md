@@ -104,8 +104,8 @@ sont pas encore migrées peuvent aussi produire des diagnostics. Ceux-ci sont
 affichés pendant la compilation et ne font pas échouer le build par défaut.
 Pour activer cette vérification dans un autre build CMake Clang, ajouter
 `-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
-clang-tidy uniquement sur les fichiers C++ modifiés dans une pull request et
-fait échouer le job si un diagnostic est émis.
+clang-tidy uniquement sur les fichiers C++ qu'une branche ou une pull request
+modifie par rapport à `main`, et fait échouer le job si un diagnostic est émis.
 
 ## ONNX Runtime et modèle LightGlue
 
