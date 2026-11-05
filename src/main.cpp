@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 
-#include <QApplication>
-#include <QString>
+#include <QtCore/QString>
+#include <QtWidgets/QApplication>
 
 int main(int argumentCount, char *arguments[]) {
   QApplication application(argumentCount, arguments);
