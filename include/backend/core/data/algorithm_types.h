@@ -31,19 +31,19 @@ namespace DataNs {
     struct PairContext {
         Direction direction = Direction::Right;
         float overlapFraction = 0.f;   // recouvrement en fraction de la tuile : nominal, ou réel une fois estimé
-        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe (EstimationRecouvrement).
+        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe (OverlapEstimationNs::OverlapEstimatorClass).
         // Absent : l'algorithme part du recouvrement nominal overlapFraction.
         std::optional<cv::Point2d> estimatedTranslation;
     };
 
-    // Sortie de la première passe (EstimationRecouvrement), commune à toutes les méthodes d'appariement.
+    // Sortie de la première passe (OverlapEstimationNs::OverlapEstimatorClass), commune à toutes les méthodes d'appariement.
     struct OverlapEstimate {
         cv::Point2d translationBInA;   // coin haut-gauche de B dans le repère de A, au pixel près
         float overlapFraction = 0.f;   // recouvrement réel, en fraction de la tuile dans le sens du déplacement
         double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
-    // Sortie d'un FeatureMatcher : pointsInA[i] correspond à pointsInB[i].
+    // Sortie d'un StitchingNs::FeatureMatcherClass : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;
         std::vector<cv::Point2f> pointsInB;
@@ -61,13 +61,13 @@ namespace DataNs {
         Matches featureMatches;
     };
 
-    // Sortie d'un OutlierRejector.
+    // Sortie d'un RejectionNs::OutlierRejectorClass.
     struct Alignment {
         cv::Mat transformBToA;           // transformation de B vers A (3x3, CV_64F)
         std::vector<uchar> inlierMask;   // 1 = inlier ; même taille que les points de Matches
     };
 
-    // Position finale d'une tuile, calculée par le placement global (TilePositioner).
+    // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
         std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque

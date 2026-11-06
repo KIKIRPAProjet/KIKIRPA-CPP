@@ -6,13 +6,13 @@
 |---|---|---|
 | CMake ≥ 3.21 (presets) et Ninja | oui | build |
 | Compilateur C++17 | oui | MSVC 2022 sous Windows, GCC ou Clang sous Linux |
-| OpenCV 4 | oui | images, algorithmes |
+| OpenCV 4, avec le module `dnn` | oui | images, algorithmes |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
+| ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
 | Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
-| ONNX Runtime + module `dnn` d'OpenCV | non | LightGlue seulement (`-DONNXRUNTIME_ROOT=<dossier>`) |
 
 ## Windows (MSVC)
 
@@ -104,18 +104,20 @@ sont pas encore migrées peuvent aussi produire des diagnostics. Ceux-ci sont
 affichés pendant la compilation et ne font pas échouer le build par défaut.
 Pour activer cette vérification dans un autre build CMake Clang, ajouter
 `-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
-clang-tidy uniquement sur les fichiers C++ modifiés dans une pull request et
-fait échouer le job si un diagnostic est émis.
+clang-tidy uniquement sur les fichiers C++ qu'une branche ou une pull request
+modifie par rapport à `main`, et fait échouer le job si un diagnostic est émis.
 
-## Configuration optionnelle : LightGlue
+## ONNX Runtime et modèle LightGlue
 
-ONNX Runtime n'est nécessaire que pour LightGlue, qui demande aussi le module `dnn` d'OpenCV. Installer ONNX Runtime pour son système, puis indiquer son dossier à la configuration :
+Rien à installer : à la première configuration, CMake télécharge l'archive officielle d'ONNX Runtime 1.20.1 dans `build/.../_deps`, en vérifiant son empreinte SHA256. Si les tests sont activés, il télécharge aussi le modèle de test (environ 63 Mo) dans `build/.../models`. Une connexion internet est donc nécessaire la première fois.
+
+Pour travailler hors ligne, indiquer des fichiers déjà présents :
 
 ```bash
-cmake --preset <preset> -DONNXRUNTIME_ROOT=<dossier>
+cmake --preset <preset> -DONNXRUNTIME_ROOT=<dossier> -DLIGHTGLUE_TEST_MODEL=<fichier.onnx>
 ```
 
-Sans ONNX Runtime, le reste du projet se compile normalement (LightGlue est simplement retiré du build). La CI n'a pas ONNX Runtime : elle ne compile jamais LightGlue.
+Sous Windows, `System32` contient souvent un `onnxruntime.dll` plus ancien, chargé avant le `PATH` : CMake copie donc les DLL à côté des exécutables. Le modèle et sa provenance sont indiqués dans [LightGlueStep.md](steps/LightGlueStep.md).
 
 ## Désactiver les tests unitaires
 
@@ -134,9 +136,9 @@ Remplacer `<preset>` par celui de son système : `windows-aqt`, `linux` ou `maco
 | `CMakeLists.txt` | Point d'entrée : inclut les fichiers de `cmake/` dans l'ordre et déclare l'exécutable `stitching` (nom provisoire). |
 | `cmake/clang_tidy.cmake` | Option `ENABLE_CLANG_TIDY`. |
 | `cmake/dependencies_manager.cmake` | Recherche d'OpenCV, libtiff, Qt 6 ; téléchargement de nlohmann_json s'il manque. |
-| `cmake/backend.cmake` | Bibliothèque `kikirpa_backend` (tout `src/backend/`), LightGlue si ONNX Runtime est trouvé. |
+| `cmake/backend.cmake` | Bibliothèque `kikirpa_backend` (tout `src/backend/`), LightGlue compris. |
 | `cmake/frontend.cmake` | Bibliothèque `kikirpa_frontend` (`src/frontend/`, Qt). |
 | `cmake/tests_runner.cmake` | GoogleTest et un `add_subdirectory` par dossier de `tests/`. |
 | `cmake/install.cmake` | Installation de `stitching` dans `bin/`. |
 
-Un exécutable de test se lie à `kikirpa_backend` (voir `tests/egalisation/CMakeLists.txt`).
+Un exécutable de test se lie à `kikirpa_backend` (voir `tests/brightness_equalization/CMakeLists.txt`).
