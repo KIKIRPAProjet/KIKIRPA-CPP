@@ -1,7 +1,7 @@
-#include "dialog_helpers.h"
+#include "Frontend/common/dialog_helpers.h"
 
-#include "frontendutils.h"
-#include "simulationrunner.h"
+#include "Frontend/common/frontendutils.h"
+#include "Frontend/app/simulationrunner.h"
 
 #include <QCoreApplication>
 #include <QComboBox>

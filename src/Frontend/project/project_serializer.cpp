@@ -13,7 +13,7 @@
  * - quand ça lève une exception : si l'accès au fichier ou la conversion des données échoue.
  */
 //  charge et enregistre les projets au format JSON
-#include "project_serializer.h"
+#include "Frontend/project/project_serializer.h"
 
 #include <QDateTime>
 #include <QFile>

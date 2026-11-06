@@ -13,9 +13,9 @@
  * - quand ça lève une exception : si la boîte de dialogue ou l'enregistrement du fichier échoue.
  */
 //  gere l'export du projet et la creation du rapport
-#include "mainwindow.h"
-#include "projectgrid.h"
-#include "workspace_helpers.h"
+#include "Frontend/app/mainwindow.h"
+#include "Frontend/project/projectgrid.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -44,7 +44,7 @@ void MainWindow::showExportDialog()
     layout.addWidget(format);
     layout.addWidget(new QLabel(tr("Profil ICC des tuiles conservé"), &dialog));
     layout.addWidget(report);
-    layout.addWidget(makeMutedLabel(
+    layout.addWidget(FrontendUtils::mutedLabel(
         tr("L'export de la mosaïque nécessite le backend, non connecté dans ce prototype."),
         &dialog));
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);

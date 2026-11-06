@@ -1,7 +1,7 @@
 #ifndef PROJECT_SERIALIZER_H
 #define PROJECT_SERIALIZER_H
 
-#include "projectgrid.h"
+#include "Frontend/project/projectgrid.h"
 
 #include <QString>
 

@@ -2,7 +2,7 @@
 #define ALIGNMENT_TAB_H
 
 #include <QWidget>
-#include "projectgrid.h" 
+#include "Frontend/project/projectgrid.h" 
 
 class MainWindow;
 class ArtworkCanvas;

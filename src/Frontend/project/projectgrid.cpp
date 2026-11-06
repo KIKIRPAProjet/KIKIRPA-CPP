@@ -13,9 +13,9 @@
  * - quand ça lève une exception : si la création ou la manipulation d'une tuile échoue.
  */
 //  gere les tuiles et leur organisation dans la grille
-#include "projectgrid.h"
+#include "Frontend/project/projectgrid.h"
 
-#include "frontendutils.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QDir>
 #include <QFileInfo>

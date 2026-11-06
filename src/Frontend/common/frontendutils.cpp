@@ -13,7 +13,7 @@
  * - quand ça lève une exception : si la création ou la configuration d'un widget échoue.
  */
 // fournit les outils communs de linterface frontend
-#include "frontendutils.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QImageReader>
 #include <QLabel>

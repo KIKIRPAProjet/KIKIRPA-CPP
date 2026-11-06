@@ -1,6 +1,6 @@
-#include "masks_tab.h"
-#include "mainwindow.h"
-#include "artworkcanvas.h"
+#include "Frontend/workspace/masks_tab.h"
+#include "Frontend/app/mainwindow.h"
+#include "Frontend/canvas/artworkcanvas.h"
 
 #include <QVBoxLayout>
 #include <QLabel>

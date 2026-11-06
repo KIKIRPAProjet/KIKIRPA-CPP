@@ -13,7 +13,7 @@
  * - quand ça lève une exception : si la création d'un menu ou d'une action échoue.
  */
 //  construit la barre de menus et ses actions
-#include "menubar_manager.h"
+#include "Frontend/app/menubar_manager.h"
 
 #include <QAction>
 #include <QKeySequence>

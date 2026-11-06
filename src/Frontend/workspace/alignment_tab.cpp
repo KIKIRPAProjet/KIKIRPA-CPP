@@ -1,7 +1,7 @@
-#include "alignment_tab.h"
-#include "mainwindow.h"
-#include "artworkcanvas.h"
-#include "workspace_helpers.h"
+#include "Frontend/workspace/alignment_tab.h"
+#include "Frontend/app/mainwindow.h"
+#include "Frontend/canvas/artworkcanvas.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
@@ -24,14 +24,14 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     m_tileCountLabel = new QLabel;
     infoLayout->addWidget(m_tileCountLabel);
 
-    m_projectMetadataLabel = makeMutedLabel(QString(), this);
+    m_projectMetadataLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectMetadataLabel->setObjectName(QStringLiteral("projectMetadataLabel"));
     infoLayout->addWidget(m_projectMetadataLabel);
 
-    auto *maskButton = makeWorkspaceButton(tr("Détecter les bords noirs"), this);
-    auto *pairButton = makeWorkspaceButton(tr("Ouvrir la vue Paire"), this);
-    auto *validateButton = makeWorkspaceButton(tr("Valider la paire"), this, true);
-    auto *adjustButton = makeWorkspaceButton(tr("Saisir un décalage…"), this);
+    auto *maskButton = FrontendUtils::makeButton(tr("Détecter les bords noirs"), this);
+    auto *pairButton = FrontendUtils::makeButton(tr("Ouvrir la vue Paire"), this);
+    auto *validateButton = FrontendUtils::makeButton(tr("Valider la paire"), this, true);
+    auto *adjustButton = FrontendUtils::makeButton(tr("Saisir un décalage…"), this);
 
     infoLayout->addWidget(pairButton);
     infoLayout->addWidget(maskButton);

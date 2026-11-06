@@ -1,10 +1,10 @@
 /**
- * @brief assemblage de la chainde de traitement
+ * @brief assemblage de la chaine de de traitement
  * Crée l'interface pour le mode assemblage.
  */
-#include "assembly_tab.h"
-#include "mainwindow.h"
-#include "workspace_helpers.h"
+#include "Frontend/workspace/assembly_tab.h"
+#include "Frontend/app/mainwindow.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QVBoxLayout>
 #include <QLabel>
@@ -37,7 +37,7 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     });
 
     //bouton de relance 
-    auto *relaunch = makeWorkspaceButton(tr("Relancer à partir d'ici"), this);
+    auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), this);
     chainLayout->addWidget(relaunch);
 
     connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {

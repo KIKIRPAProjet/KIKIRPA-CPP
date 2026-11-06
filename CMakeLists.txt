@@ -13,37 +13,52 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
 
 set(PROJECT_SOURCES
-        src/Frontend/main.cpp
-        src/Frontend/mainwindow.cpp
-        src/Frontend/homepage.cpp
-        src/Frontend/projectgrid.cpp
-        src/Frontend/project_serializer.cpp
-        src/Frontend/dialog_helpers.cpp
-        src/Frontend/simulationrunner.cpp
-        src/Frontend/menubar_manager.cpp
-        src/Frontend/frontendutils.cpp
-        src/Frontend/export_mode.cpp
+        src/Frontend/app/main.cpp
+        src/Frontend/app/mainwindow.cpp
+        src/Frontend/canvas/artworkcanvas.cpp
+        src/Frontend/canvas/artworkcanvas_draw.cpp
+        src/Frontend/home/homepage.cpp
+        src/Frontend/project/projectgrid.cpp
+        src/Frontend/project/project_serializer.cpp
+        src/Frontend/common/dialog_helpers.cpp
+        src/Frontend/app/simulationrunner.cpp
+        src/Frontend/app/menubar_manager.cpp
+        src/Frontend/common/frontendutils.cpp
+        src/Frontend/app/export_mode.cpp
+        src/Frontend/app/logpanel.cpp
         src/Frontend/workspace/workspace_ui.cpp
         src/Frontend/workspace/grid_tab.cpp
         src/Frontend/workspace/assembly_tab.cpp 
         src/Frontend/workspace/alignment_tab.cpp
         src/Frontend/workspace/masks_tab.cpp
+        src/Frontend/workspace/bottom_tabs.cpp
+        src/Frontend/workspace/workspace_status_bar.cpp
+        src/Frontend/workspace/workspace_center.cpp
+        src/Frontend/workspace/left_toolbar.cpp
+        src/Frontend/workspace/right_panel.cpp
+        src/Frontend/workspace/top_toolbars.cpp
 
-        include/Frontend/mainwindow.h
-        include/Frontend/homepage.h
-        include/Frontend/projectgrid.h
-        include/Frontend/project_serializer.h
-        include/Frontend/dialog_helpers.h
-        include/Frontend/simulationrunner.h
-        include/Frontend/menubar_manager.h
-        include/Frontend/frontendutils.h
-        include/Frontend/artworkcanvas.h
-        include/Frontend/workspace_helpers.h
-        include/Frontend/Workspace/workspace_ui.h
-        include/Frontend/Workspace/grid_tab.h
-        include/Frontend/Workspace/assembly_tab.h
-        include/Frontend/Workspace/alignment_tab.h
-        include/Frontend/Workspace/masks_tab.h
+        include/Frontend/app/mainwindow.h
+        include/Frontend/home/homepage.h
+        include/Frontend/project/projectgrid.h
+        include/Frontend/project/project_serializer.h
+        include/Frontend/common/dialog_helpers.h
+        include/Frontend/app/simulationrunner.h
+        include/Frontend/app/menubar_manager.h
+        include/Frontend/common/frontendutils.h
+        include/Frontend/app/logpanel.h
+        include/Frontend/canvas/artworkcanvas.h
+        include/Frontend/workspace/workspace_ui.h
+        include/Frontend/workspace/grid_tab.h
+        include/Frontend/workspace/assembly_tab.h
+        include/Frontend/workspace/alignment_tab.h
+        include/Frontend/workspace/masks_tab.h
+        include/Frontend/workspace/bottom_tabs.h
+        include/Frontend/workspace/workspace_status_bar.h
+        include/Frontend/workspace/workspace_center.h
+        include/Frontend/workspace/left_toolbar.h
+        include/Frontend/workspace/right_panel.h
+        include/Frontend/workspace/top_toolbars.h
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
@@ -73,9 +88,11 @@ target_link_libraries(Frontend PRIVATE Qt${QT_VERSION_MAJOR}::Widgets)
 if(WIN32)
     target_link_libraries(Frontend PRIVATE windowscodecs ole32)
 endif()
+if(MSVC)
+    target_compile_options(Frontend PRIVATE /utf-8)
+endif()
 target_include_directories(Frontend PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/Frontend/Workspace
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

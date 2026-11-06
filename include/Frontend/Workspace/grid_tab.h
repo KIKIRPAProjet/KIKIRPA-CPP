@@ -2,7 +2,7 @@
 #define GRID_TAB_H
 
 #include <QScrollArea>
-#include "projectgrid.h"
+#include "Frontend/project/projectgrid.h"
 
 class MainWindow;
 class ArtworkCanvas;
@@ -12,6 +12,7 @@ class QDoubleSpinBox;
 class QComboBox;
 class QCheckBox;
 class QPushButton;
+class QVBoxLayout;
 
 class GridTab : public QScrollArea
 {
@@ -27,13 +28,15 @@ private:
     // sous-fonctions de création
     QWidget *createGridDimensionsGroup(QWidget *parent);
     QWidget *createGridCaptureGroup(QWidget *parent);
-    void setupConnections(QPushButton *rotateTile, QPushButton *flipTile, 
-                          QPushButton *importReference, QPushButton *compareReference, 
-                          QPushButton *validateGridButton);
+    void createTileActions(QVBoxLayout *layout);
+    void createReferenceActions(QVBoxLayout *layout);
+    void setupConnections();
 
     // Les sous-fonctions de mise à jour
     void updateParameters(const ProjectGrid::State &gridState);
     void updateSummary(const ProjectGrid::State &gridState);
+    void updateSelectionLabel(const ProjectGrid::State &gridState);
+    void updateReferenceLabel(const ProjectGrid::State &gridState);
 
     // Les accès aux autres modules
     MainWindow *m_mainWindow;
@@ -46,6 +49,8 @@ private:
     QSpinBox *m_gridColumnsSpin = nullptr;
     QComboBox *m_captureOrderCombo = nullptr;
     QLabel *m_selectedGridTileLabel = nullptr;
+    QPushButton *m_rotateTileButton = nullptr;
+    QPushButton *m_flipTileButton = nullptr;
     QPushButton *m_emptyCellButton = nullptr;
     QSpinBox *m_horizontalOverlapSpin = nullptr;
     QSpinBox *m_verticalOverlapSpin = nullptr;
@@ -55,6 +60,9 @@ private:
     QCheckBox *m_automaticUncertaintyCheck = nullptr;
     QDoubleSpinBox *m_uncertaintySpin = nullptr;
     QLabel *m_referencePathLabel = nullptr;
+    QPushButton *m_importReferenceButton = nullptr;
+    QPushButton *m_compareReferenceButton = nullptr;
+    QPushButton *m_validateGridButton = nullptr;
 };
 
-#endif 
+#endif // GRID_TAB_H

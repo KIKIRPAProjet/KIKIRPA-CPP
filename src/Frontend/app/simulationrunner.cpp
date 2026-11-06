@@ -13,7 +13,7 @@
  * - quand ça lève une exception : si la création ou le démarrage du minuteur échoue.
  */
 //  simule le lancement et le suivi dune execution
-#include "simulationrunner.h"
+#include "Frontend/app/simulationrunner.h"
 
 #include <QTimer>
 

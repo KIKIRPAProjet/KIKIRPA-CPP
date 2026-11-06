@@ -16,9 +16,9 @@
 /**
  * @brief Implémentation de la page d'accueil de l'application
  */
-#include "homepage.h"
+#include "Frontend/home/homepage.h"
 
-#include "frontendutils.h"
+#include "Frontend/common/frontendutils.h"
 
 #include <QDateTime>
 #include <QDir>

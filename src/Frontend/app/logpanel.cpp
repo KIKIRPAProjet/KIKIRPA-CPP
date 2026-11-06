@@ -16,7 +16,7 @@
 /**
  * @brief Panneau de journalisation pour afficher les messages du backend
  */
-#include "logpanel.h"
+#include "Frontend/app/logpanel.h"
 
 #include <QCheckBox>
 #include <QDateTime>

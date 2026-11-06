@@ -13,7 +13,7 @@
  * - quand ça lève une exception : si l'initialisation de l'application ou de la fenêtre échoue.
  */
 // lance application graphique
-#include "mainwindow.h"
+#include "Frontend/app/mainwindow.h"
 
 #include <QApplication>
 
