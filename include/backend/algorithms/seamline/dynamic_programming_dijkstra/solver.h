@@ -1,8 +1,10 @@
 // include/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.h
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -24,11 +26,14 @@
 namespace DynamicProgrammingDijkstraNs {
 
     // Les trois méthodes, dans l'ordre du tuple Python METHODS.
-    enum class SolverMethod {
+    enum class SolverMethod : std::uint8_t {
         DynamicProgramming,               // "DP"
         Dijkstra8,                        // "Dijkstra-8"
         DynamicProgrammingDijkstraLocal   // "DP+Dijkstra-local"
     };
+
+    // Rayon par défaut (px du solveur) du corridor de DynamicProgrammingDijkstraLocal.
+    constexpr int DEFAULT_CORRIDOR_RADIUS = 18;
 
     // Correspondance avec les noms du notebook. parseMethodName lève std::invalid_argument si le nom est inconnu.
     std::string getMethodName(SolverMethod method);
@@ -63,6 +68,6 @@ namespace DynamicProgrammingDijkstraNs {
     //   start, goal    : extrémités imposées, nullptr = libres (voir findDynamicProgrammingPath / findDijkstraPath).
     //   corridorRadius : rayon (px du solveur) du corridor, utilisé seulement par DynamicProgrammingDijkstraLocal.
     SolveResult solveEdge(const cv::Mat& cost, SolverMethod method, const cv::Point* start = nullptr,
-                          const cv::Point* goal = nullptr, int corridorRadius = 18);
+                          const cv::Point* goal = nullptr, int corridorRadius = DEFAULT_CORRIDOR_RADIUS);
 
 }

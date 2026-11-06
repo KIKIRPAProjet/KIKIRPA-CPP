@@ -2,11 +2,17 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 
 #include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+
+#include <vector>
 
 namespace DynamicProgrammingDijkstraNs {
 
-    SeamFinderClass::SeamFinderClass() {}
+    SeamFinderClass::SeamFinderClass() = default;
 
     SeamFinderClass::SeamFinderClass(CostFunction initialCostFunction, const CostMapParameters& initialParameters,
                                      SolverMethod initialMethod)
