@@ -37,6 +37,7 @@ if(BUILD_TESTING)
     # - seamline                : tests liés à la génération des seamlines.
     # - steps                   : tests des steps d'appariement.
     add_subdirectory(tests/brightness_equalization)
+    add_subdirectory(tests/intensity_correction)
     add_subdirectory(tests/core)
     add_subdirectory(tests/phase_correlation)
     add_subdirectory(tests/seamline)

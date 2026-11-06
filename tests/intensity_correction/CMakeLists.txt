@@ -1,0 +1,6 @@
+add_executable(intensity_correction_tests test_intensity_correction.cpp)
+kikirpa_copy_onnxruntime_dlls(intensity_correction_tests)
+target_link_libraries(intensity_correction_tests PRIVATE kikirpa_backend GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(intensity_correction_tests PROPERTIES LABELS "unit")
