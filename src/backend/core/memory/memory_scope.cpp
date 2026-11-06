@@ -1,6 +1,8 @@
 // src/backend/core/memory/memory_scope.cpp
 #include "core/memory/memory_scope.h"
 
+#include <nlohmann/json.hpp>
+
 #if defined(_WIN32)
     #ifndef NOMINMAX
         #define NOMINMAX
@@ -14,11 +16,12 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <thread>
 
 namespace MemoryNs {
@@ -93,33 +96,33 @@ namespace MemoryNs {
           scopeName(name),
           rssBeforeBytes(getCurrentUsage().value_or(MemoryUsage{}).rssBytes),
           rssPeakBytes(rssBeforeBytes) {
-        samplingThread = std::thread([this] {
-            while (isSampling) {
-                updatePeak();
-                std::this_thread::sleep_for(SAMPLING_PERIOD);
-            }
-        });
+        try {
+            samplingThread = std::thread(&MemoryScopeClass::sampleUntilStopped, this);
+        } catch (const std::system_error&) {
+            isSampling = false;   // pas de thread : le pic se limite aux mesures de début et de fin
+        }
     }
 
     MemoryScopeClass::~MemoryScopeClass() {
         isSampling = false;
-        samplingThread.join();
-        updatePeak();
+        if (samplingThread.joinable()) samplingThread.join();
+        try {
+            updatePeak();
+            const MemoryUsage usageAfter = getCurrentUsage().value_or(MemoryUsage{});
+            outputJson[scopeName] = {
+                {"beforeMib", toMebibytes(rssBeforeBytes)},
+                {"peakMib", toMebibytes(rssPeakBytes.load())},
+                {"afterMib", toMebibytes(usageAfter.rssBytes)},
+                {"processPeakMib", toMebibytes(usageAfter.peakRssBytes)}};
+        } catch (const std::exception&) {   // NOLINT(bugprone-empty-catch) : un destructeur ne doit pas lever ;
+        }                                    // la mesure est alors simplement absente du JSON
+    }
 
-        const MemoryUsage usageAfter = getCurrentUsage().value_or(MemoryUsage{});
-        const double beforeMib = toMebibytes(rssBeforeBytes);
-        const double peakMib = toMebibytes(rssPeakBytes.load());
-        const double afterMib = toMebibytes(usageAfter.rssBytes);
-        const double processPeakMib = toMebibytes(usageAfter.peakRssBytes);
-
-        outputJson[scopeName] = {
-            {"beforeMib", beforeMib},
-            {"peakMib", peakMib},
-            {"afterMib", afterMib},
-            {"processPeakMib", processPeakMib}};
-
-        std::cout << "[memory] " << scopeName << ": before " << beforeMib << " MiB, peak "
-                  << peakMib << " MiB, after " << afterMib << " MiB" << std::endl;
+    void MemoryScopeClass::sampleUntilStopped() {
+        while (isSampling) {
+            updatePeak();
+            std::this_thread::sleep_for(SAMPLING_PERIOD);
+        }
     }
 
     void MemoryScopeClass::updatePeak() {
