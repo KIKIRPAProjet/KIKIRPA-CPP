@@ -1,3 +1,4 @@
+// src/backend/algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.h"
 
 #include <algorithm>
@@ -5,108 +6,113 @@
 #include <limits>
 #include <stdexcept>
 
-namespace DynamicProgrammingDijkstraNS {
+namespace DynamicProgrammingDijkstraNs {
 
     namespace {
 
-        const double INF = std::numeric_limits<double>::infinity();
+        const double INFINITE_DISTANCE = std::numeric_limits<double>::infinity();
 
-        cv::Mat to_f64(const cv::Mat& cost) {
+        cv::Mat convertToDouble(const cv::Mat& cost) {
             CV_Assert(cost.channels() == 1 && !cost.empty());
-            cv::Mat c;
-            cost.convertTo(c, CV_64F);
-            return c;
+            cv::Mat doubleCost;
+            cost.convertTo(doubleCost, CV_64F);
+            return doubleCost;
         }
 
-        // Équivalent de _dp_fill_python : remplit les tables de distance et de parent
-        // des lignes sy à gy. sx < 0 signifie « départ libre sur toute la ligne sy ».
-        void dp_fill(const cv::Mat& cost, int sy, int sx, int gy, cv::Mat& dist, cv::Mat& parent) {
-            const int w = cost.cols;
-            dist = cv::Mat(cost.size(), CV_64F, cv::Scalar(INF));
-            parent = cv::Mat(cost.size(), CV_32S, cv::Scalar(-1));
-            if (sx < 0)
-                cost.row(sy).copyTo(dist.row(sy));
+        // Équivalent de _dp_fill_python : remplit les tables de distance et de parent des lignes startRow à goalRow.
+        // startColumn < 0 signifie « départ libre sur toute la ligne startRow ».
+        void fillDynamicProgrammingTables(const cv::Mat& cost, int startRow, int startColumn, int goalRow, cv::Mat& distances,
+                                          cv::Mat& parents) {
+            const int width = cost.cols;
+            distances = cv::Mat(cost.size(), CV_64F, cv::Scalar(INFINITE_DISTANCE));
+            parents = cv::Mat(cost.size(), CV_32S, cv::Scalar(-1));
+            if (startColumn < 0)
+                cost.row(startRow).copyTo(distances.row(startRow));
             else
-                dist.at<double>(sy, sx) = cost.at<double>(sy, sx);
+                distances.at<double>(startRow, startColumn) = cost.at<double>(startRow, startColumn);
 
-            for (int y = sy + 1; y <= gy; ++y) {
-                for (int x = 0; x < w; ++x) {
-                    double best = INF;
-                    int bx = -1;
-                    for (int px = x - 1; px <= x + 1; ++px) {     // ordre x−1, x, x+1 : premier minimum gardé
-                        if (0 <= px && px < w && std::isfinite(dist.at<double>(y - 1, px))) {
-                            const double val = dist.at<double>(y - 1, px) + edge_weight(cost, y - 1, px, y, x);
-                            if (val < best) {
-                                best = val;
-                                bx = px;
+            for (int row = startRow + 1; row <= goalRow; ++row) {
+                for (int column = 0; column < width; ++column) {
+                    double bestDistance = INFINITE_DISTANCE;
+                    int bestParentColumn = -1;
+                    // Ordre column−1, column, column+1 : premier minimum gardé
+                    for (int parentColumn = column - 1; parentColumn <= column + 1; ++parentColumn) {
+                        if (0 <= parentColumn && parentColumn < width &&
+                            std::isfinite(distances.at<double>(row - 1, parentColumn))) {
+                            const double distance = distances.at<double>(row - 1, parentColumn) +
+                                                    computeEdgeWeight(cost, row - 1, parentColumn, row, column);
+                            if (distance < bestDistance) {
+                                bestDistance = distance;
+                                bestParentColumn = parentColumn;
                             }
                         }
                     }
-                    dist.at<double>(y, x) = best;
-                    parent.at<int>(y, x) = bx;
+                    distances.at<double>(row, column) = bestDistance;
+                    parents.at<int>(row, column) = bestParentColumn;
                 }
             }
         }
 
-    }  // namespace
-
-    double edge_weight(const cv::Mat& cost, int y, int x, int ny, int nx) {
-        const double step = (ny != y && nx != x) ? SQRT2 : 1.0;
-        return 0.5 * (cost.at<double>(y, x) + cost.at<double>(ny, nx)) * step;
     }
 
-    PathResult dp_constrained(const cv::Mat& cost_in, const cv::Point* start, const cv::Point* goal) {
-        const cv::Mat cost = to_f64(cost_in);
-        const int h = cost.rows, w = cost.cols;
-        const int sy = start ? start->y : 0;
-        const int sx = start ? start->x : -1;
-        const int gy = goal ? goal->y : h - 1;
-        if (sy > gy) throw std::invalid_argument("DP requiert start_y <= goal_y");
+    double computeEdgeWeight(const cv::Mat& cost, int row, int column, int neighbourRow, int neighbourColumn) {
+        const double stepLength = (neighbourRow != row && neighbourColumn != column) ? SQRT2 : 1.0;
+        return 0.5 * (cost.at<double>(row, column) + cost.at<double>(neighbourRow, neighbourColumn)) * stepLength;
+    }
 
-        cv::Mat dist, parent;
-        dp_fill(cost, sy, sx, gy, dist, parent);
+    PathResult findDynamicProgrammingPath(const cv::Mat& inputCost, const cv::Point* start, const cv::Point* goal) {
+        const cv::Mat cost = convertToDouble(inputCost);
+        const int height = cost.rows, width = cost.cols;
+        const int startRow = start ? start->y : 0;
+        const int startColumn = start ? start->x : -1;
+        const int goalRow = goal ? goal->y : height - 1;
+        if (startRow > goalRow) throw std::invalid_argument("dynamic programming requires start.y <= goal.y");
 
-        int ex = 0;
+        cv::Mat distances, parents;
+        fillDynamicProgrammingTables(cost, startRow, startColumn, goalRow, distances, parents);
+
+        int endColumn = 0;
         if (goal) {
-            ex = goal->x;
+            endColumn = goal->x;
+        } else {   // np.argmin : premier minimum
+            const double* goalRowDistances = distances.ptr<double>(goalRow);
+            for (int column = 1; column < width; ++column)
+                if (goalRowDistances[column] < goalRowDistances[endColumn]) endColumn = column;
         }
-        else {                                           // np.argmin : premier minimum
-            const double* row = dist.ptr<double>(gy);
-            for (int x = 1; x < w; ++x)
-                if (row[x] < row[ex]) ex = x;
-        }
-        if (!std::isfinite(dist.at<double>(gy, ex))) throw std::runtime_error("Pas de chemin DP contraint");
+        if (!std::isfinite(distances.at<double>(goalRow, endColumn)))
+            throw std::runtime_error("no constrained dynamic programming path");
 
-        PathResult res;
-        int x = ex;
-        for (int y = gy; y >= sy; --y) {
-            res.path.push_back(cv::Point(x, y));
-            if (y > sy) x = parent.at<int>(y, x);
+        PathResult result;
+        int column = endColumn;
+        for (int row = goalRow; row >= startRow; --row) {
+            result.path.push_back(cv::Point(column, row));
+            if (row > startRow) column = parents.at<int>(row, column);
         }
-        std::reverse(res.path.begin(), res.path.end());
-        res.objective = dist.at<double>(gy, ex);
-        res.expanded = static_cast<long long>(gy - sy + 1) * w;
-        return res;
+        std::reverse(result.path.begin(), result.path.end());
+        result.objective = distances.at<double>(goalRow, endColumn);
+        result.expandedCount = static_cast<long long>(goalRow - startRow + 1) * width;
+        return result;
     }
 
-    cv::Mat dp_distance_top(const cv::Mat& cost_in) {
-        const cv::Mat cost = to_f64(cost_in);
-        const int h = cost.rows, w = cost.cols;
-        cv::Mat d(cost.size(), CV_64F, cv::Scalar(INF));
-        cost.row(0).copyTo(d.row(0));
-        for (int y = 1; y < h; ++y) {
-            for (int x = 0; x < w; ++x) {
-                double best = INF;
-                for (int px = x - 1; px <= x + 1; ++px) {
-                    if (0 <= px && px < w) {
-                        const double val = d.at<double>(y - 1, px) + edge_weight(cost, y - 1, px, y, x);
-                        if (val < best) best = val;
+    cv::Mat computeDynamicProgrammingDistanceFromTop(const cv::Mat& inputCost) {
+        const cv::Mat cost = convertToDouble(inputCost);
+        const int height = cost.rows, width = cost.cols;
+        cv::Mat distances(cost.size(), CV_64F, cv::Scalar(INFINITE_DISTANCE));
+        cost.row(0).copyTo(distances.row(0));
+        for (int row = 1; row < height; ++row) {
+            for (int column = 0; column < width; ++column) {
+                double bestDistance = INFINITE_DISTANCE;
+                for (int parentColumn = column - 1; parentColumn <= column + 1; ++parentColumn) {
+                    if (0 <= parentColumn && parentColumn < width) {
+                        const double distance = distances.at<double>(row - 1, parentColumn) +
+                                                computeEdgeWeight(cost, row - 1, parentColumn, row, column);
+                        if (distance < bestDistance) bestDistance = distance;
                     }
                 }
-                d.at<double>(y, x) = best;
+                distances.at<double>(row, column) = bestDistance;
             }
         }
-        return d;
+        return distances;
     }
 
-}  // namespace seamlib
+}

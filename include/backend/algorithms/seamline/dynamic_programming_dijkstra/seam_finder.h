@@ -1,66 +1,68 @@
-
- // include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h
+// include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h
 #pragma once
 
 #include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
-#include <opencv2/core.h>
+#include <opencv2/core.hpp>
 
 #include <vector>
 
 namespace DynamicProgrammingDijkstraNs {
 
-    // Classe publique de la bibliothèque permettant de calculer une seamline
-    // KIRK_API permet d'exporter la classe pour une utilisation externe
+    // Seamline entre deux overlaps, par carte de coût puis plus court chemin.
     //
-    // Pipeline :
-    // 1. Calculer la carte de coût à partir des deux images
-    // 2. Résoudre le chemin minimal avec la méthode choisie
-    // 3. Renvoyer la seamline sous forme de points (x, y)
-    class KIRK_API SeamFinderClass {
+    // Pipeline de computeSeam() :
+    //
+    //     overlapLeft, overlapRight  (overlaps RGB ou gris)
+    //          |
+    //          v
+    //     computeCost()     section 5 / 5.0 : carte de coût selon le mode choisi
+    //          |
+    //          v
+    //     solveEdge()       section 6   : chemin de coût minimal, haut -> bas,
+    //          |                avec la méthode choisie (DP, Dijkstra-8, DP -> Dijkstra local)
+    //          v
+    //     seamline (std::vector<cv::Point>)
+    //
+    // Exemple :
+    //
+    //     CostMapParameters parameters;
+    //     parameters.colorNorm = "euclidian";
+    //     parameters.recall    = true;
+    //
+    //     SeamFinderClass finder(CostFunction::ColorGradient, parameters, SolverMethod::Dijkstra8);
+    //     std::vector<cv::Point> seam = finder.computeSeam(overlapLeft, overlapRight);
+    class SeamFinderClass {
 
         public:
-
-            // Mode par défaut : ColorGradient, bruit, Manhattan,
-            // sigmoïde, sans rappel et méthode DP
+            // Mode par défaut : ColorGradient, bruit, manhattan, sigmoïde, sans rappel, méthode DP.
             SeamFinderClass();
 
-            // Permet de choisir la fonction de coût, les paramètres
-            // et la méthode de résolution
-            SeamFinderClass(
-                CostFunction costFunction,
-                const CostMapParams& costMapParams = CostMapParams(),
-                Method method = Method::DP
-            );
+            // Mode choisi par l'utilisateur (voir cost_catalog.h et solver.h).
+            SeamFinderClass(CostFunction initialCostFunction, const CostMapParameters& initialParameters = CostMapParameters(),
+                            SolverMethod initialMethod = SolverMethod::DynamicProgramming);
 
-            // Calcule la seamline verticale entre deux zones de recouvrement
+            // Calcule la seamline verticale entre deux overlaps.
             //
-            // leftImage et rightImage doivent avoir la même taille
-            // Elles peuvent être RGB ou en niveaux de gris
-            // cv::imread charge les images en BGR : convertir si nécessaire
+            // `overlapLeft`, `overlapRight` : zone de recouvrement vue dans chaque image, même taille, 3 canaux en
+            //                                 ordre RGB (cv::imread donne du BGR : convertir avant), ou 1 canal pour une
+            //                                 image en gris (ex. IRR).
             //
-            // Renvoie le chemin du haut vers le bas, en coordonnées (x, y)
-            // Renvoie un chemin vide si une entrée est vide
+            // Retour : chemin du haut vers le bas, en (x, y) dans le repère de l'overlap. Vide si une entrée est vide.
+            //          DP : exactement un point par ligne. Dijkstra-8 et DP -> Dijkstra local : pas latéraux possibles,
+            //          donc parfois plusieurs points sur une même ligne.
             //
-            // DP : exactement un point par ligne
-            // Dijkstra8 et DPDijkstraLocal : déplacements latéraux possibles
-            //
-            // Pour une paire haut/bas, transposer les images puis
-            // les coordonnées des points du résultat
-            std::vector<cv::Point> compute(
-                const cv::Mat& leftImage,
-                const cv::Mat& rightImage
-            );
+            // Pour une paire haut/bas, transposer les overlaps (cv::transpose) puis transposer les points du résultat.
+            std::vector<cv::Point> computeSeam(const cv::Mat& overlapLeft, const cv::Mat& overlapRight);
 
-            // Réglages utilisés par compute(), modifiables après construction
+            // Réglages utilisés par computeSeam(), modifiables après construction.
             CostFunction costFunction = CostFunction::ColorGradient;
-            CostMapParams params;
-            Method method = Method::DP;
+            CostMapParameters parameters;
+            SolverMethod method = SolverMethod::DynamicProgramming;
+            int corridorRadius = 18;   // rayon du corridor (px), utilisé seulement par DynamicProgrammingDijkstraLocal
 
-            // Rayon du corridor en pixels, utilisé uniquement en mode hybride
-            int corridorRadius = 18;
     };
 
-}  // namespace DynamicProgrammingDijkstraNs
+}

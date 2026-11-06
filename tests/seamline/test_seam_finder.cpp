@@ -5,7 +5,7 @@
 
 TEST(SeamFinderTest, BasicCreation)
 {
-    DynamicProgrammingDijkstraNS::SeamFinder finder;
+    DynamicProgrammingDijkstraNs::SeamFinderClass finder;
 
     EXPECT_TRUE(true);
 }

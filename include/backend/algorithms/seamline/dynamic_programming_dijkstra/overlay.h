@@ -1,23 +1,24 @@
-// Illustration du réseau de seamlines : la mosaïque finale avec les lignes de couture et les jonctions.
-//
-// Usage :
-//     std::map<std::string, cv::Point2d> origins;           // clé "H_r_c" / "V_r_c" → coin haut-gauche
-//     origins["H_0_0"] = { 4140.0, 0.0 };                    // de SA carte de coût dans la mosaïque (px d'origine)
-//     ...
-//     auto seams = seamlib::solve_global_network(grid, seamlib::Method::DP, J);
-//     cv::Mat img = seamlib::draw_seam_network(mosaic, grid, seams, J, origins, 0.1);
-//     cv::imwrite("reseau.png", img);
+// include/backend/algorithms/seamline/dynamic_programming_dijkstra/overlay.h
 #pragma once
 
-#include <opencv2/core.h>
+#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
+
+#include <opencv2/core.hpp>
 
 #include <map>
 #include <string>
 
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
-#include "algorithms/seamline/dynamic_programming_dijkstra/junctions.h"
-
-namespace DynamicProgrammingDijkstraNS {
+// Illustration du réseau de seamlines : la mosaïque finale avec les lignes de couture et les jonctions.
+//
+// Usage :
+//     std::map<std::string, cv::Point2d> origins;   // clé "H_r_c" / "V_r_c" → coin haut-gauche
+//     origins["H_0_0"] = { 4140.0, 0.0 };            // de SA carte de coût dans la mosaïque (px d'origine)
+//     ...
+//     auto seams = solveGlobalNetwork(grid, SolverMethod::DynamicProgramming, junctions);
+//     cv::Mat image = drawSeamNetwork(mosaic, grid, seams, junctions, origins, 0.1);
+//     cv::imwrite("reseau.png", image);
+namespace DynamicProgrammingDijkstraNs {
 
     // Dessine sur une copie BGR de `mosaic` : chaque seamline en rouge, chaque jonction en cercle jaune.
     //   origins : position de chaque carte de coût dans la mosaïque (px d'origine). Les adjacences V sont
@@ -25,8 +26,8 @@ namespace DynamicProgrammingDijkstraNS {
     //             Une adjacence sans origine est ignorée.
     //   scale   : facteur d'affichage de la sortie (ex. 0.1 pour une grande mosaïque), dans ]0, 1].
     // Les coordonnées des seamlines sont divisées par EdgeCost::scale pour revenir en pixels d'origine.
-    KIRK_API cv::Mat draw_seam_network(const cv::Mat& mosaic, const SeamGrid& grid,
-        const std::map<std::string, SolveResult>& seams, const JunctionSet& junctions,
-        const std::map<std::string, cv::Point2d>& origins, double scale = 1.0);
+    cv::Mat drawSeamNetwork(const cv::Mat& mosaic, const SeamGrid& grid, const std::map<std::string, SolveResult>& seams,
+                            const JunctionSet& junctions, const std::map<std::string, cv::Point2d>& origins,
+                            double scale = 1.0);
 
-}  // namespace seamlib
+}

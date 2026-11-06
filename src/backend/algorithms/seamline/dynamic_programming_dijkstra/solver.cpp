@@ -1,4 +1,3 @@
-
 // src/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
@@ -8,213 +7,115 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
-#include <limits>
 #include <stdexcept>
-#include <utility>
 
 namespace DynamicProgrammingDijkstraNs {
 
     namespace {
 
-        // Durée écoulée depuis startTime, en secondes.
-        double secondsSince(std::chrono::steady_clock::time_point startTime) {
-            return std::chrono::duration<double>(
-                std::chrono::steady_clock::now() - startTime
-            ).count();
+        double computeSecondsSince(std::chrono::steady_clock::time_point startTime) {
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - startTime).count();
         }
 
-    }  // namespace
+    }
 
-    // Noms utilisés pour identifier les méthodes dans les paramètres et résultats.
-    std::string getMethodName(Method method) {
+    std::string getMethodName(SolverMethod method) {
         switch (method) {
-            case Method::DP: return "DP";
-            case Method::Dijkstra8: return "Dijkstra-8";
-            case Method::DPDijkstraLocal: return "DP+Dijkstra-local";
+            case SolverMethod::DynamicProgramming: return "DP";
+            case SolverMethod::Dijkstra8: return "Dijkstra-8";
+            case SolverMethod::DynamicProgrammingDijkstraLocal: return "DP+Dijkstra-local";
         }
         throw std::invalid_argument("Unknown method");
     }
 
-    const std::vector<Method>& getAllMethods() {
-        static const std::vector<Method> methods = {
-            Method::DP,
-            Method::Dijkstra8,
-            Method::DPDijkstraLocal
-        };
-        return methods;
+    const std::vector<SolverMethod>& getAllMethods() {
+        static const std::vector<SolverMethod> allMethods = {SolverMethod::DynamicProgramming, SolverMethod::Dijkstra8,
+                                                             SolverMethod::DynamicProgrammingDijkstraLocal};
+        return allMethods;
     }
 
-    // Retrouver une méthode à partir de son nom exact.
-    Method getMethodFromName(const std::string& methodName) {
-        for (Method method : getAllMethods()) {
-            if (getMethodName(method) == methodName) {
-                return method;
-            }
-        }
-        throw std::invalid_argument("Unknown method: " + methodName);
+    SolverMethod parseMethodName(const std::string& name) {
+        for (SolverMethod method : getAllMethods())
+            if (getMethodName(method) == name) return method;
+        throw std::invalid_argument("Unknown method: " + name);
     }
 
-    // Évaluer un chemin : coût du premier pixel, puis poids de chaque déplacement.
-    // Un chemin vide reçoit un coût infini.
     double computePathObjective(const cv::Mat& inputCost, const std::vector<cv::Point>& path) {
-        if (path.empty()) {
-            return std::numeric_limits<double>::infinity();
-        }
-
-        cv::Mat costMap;
-        inputCost.convertTo(costMap, CV_64F);
-
-        double totalCost = costMap.at<double>(path[0]);
-
-        for (size_t pathIndex = 0; pathIndex + 1 < path.size(); ++pathIndex) {
-            totalCost += edge_weight(
-                costMap,
-                path[pathIndex].y,
-                path[pathIndex].x,
-                path[pathIndex + 1].y,
-                path[pathIndex + 1].x
-            );
-        }
-
-        return totalCost;
+        if (path.empty()) return std::numeric_limits<double>::infinity();
+        cv::Mat cost;
+        inputCost.convertTo(cost, CV_64F);
+        double total = cost.at<double>(path[0]);
+        for (size_t pointIndex = 0; pointIndex + 1 < path.size(); ++pointIndex)
+            total += computeEdgeWeight(cost, path[pointIndex].y, path[pointIndex].x, path[pointIndex + 1].y,
+                                       path[pointIndex + 1].x);
+        return total;
     }
 
-    // Estimation de la mémoire des tableaux principaux et du tas de Dijkstra.
-    // Résultat en Mio, pas une mesure de la mémoire réelle.
-    double estimateSolverMemoryMiB(Method method, const cv::Size& imageSize, long long maxHeap) {
-        const double pixelCount = static_cast<double>(imageSize.area());
-
-        // DP : coût et distance en float64 et parents en int32.
-        const double dpBytes = pixelCount * (8 + 8 + 4);
-
-        // Dijkstra : coût, distances, parents int64, deux masques
-        // et estimation de 16 octets par entrée du tas.
-        const double dijkstraBytes =
-            pixelCount * (8 + 8 + 8 + 1 + 1)
-            + static_cast<double>(maxHeap) * 16;
-
-        constexpr double BYTES_PER_MIB = 1024.0 * 1024.0;
-
-        if (method == Method::DP) {
-            return dpBytes / BYTES_PER_MIB;
-        }
-
-        if (method == Method::Dijkstra8) {
-            return dijkstraBytes / BYTES_PER_MIB;
-        }
-
-        // Les tableaux de travail de la DP sont libérés avant Dijkstra.
-        return std::max(dpBytes, dijkstraBytes) / BYTES_PER_MIB;
+    double estimateSolverMemoryMegabytes(SolverMethod method, const cv::Size& size, long long maximumHeapSize) {
+        const double pixelCount = double(size.area());
+        // Tableaux de taille h × w alloués par chaque solveur (le chemin lui-même est négligeable).
+        // DP : coût f64 + distance f64 + parent int32
+        const double dynamicProgrammingBytes = pixelCount * (8 + 8 + 4);
+        // Dijkstra : coût, distance, parent int64, settled, allowed + tas
+        const double dijkstraBytes = pixelCount * (8 + 8 + 8 + 1 + 1) + double(maximumHeapSize) * 16;
+        const double bytesPerMegabyte = 1024.0 * 1024.0;
+        if (method == SolverMethod::DynamicProgramming) return dynamicProgrammingBytes / bytesPerMegabyte;
+        if (method == SolverMethod::Dijkstra8) return dijkstraBytes / bytesPerMegabyte;
+        // Hybride : la DP est libérée avant Dijkstra
+        return std::max(dynamicProgrammingBytes, dijkstraBytes) / bytesPerMegabyte;
     }
 
-    // Chercher un chemin dans la carte de coût avec la méthode demandée.
-    // startPoint et goalPoint sont facultatifs : nullptr laisse l'extrémité libre.
-    // En mode hybride, corridorRadius règle la largeur du corridor autour du chemin DP.
-    SolveResult solveEdge(
-        const cv::Mat& costMap,
-        Method method,
-        const cv::Point* startPoint,
-        const cv::Point* goalPoint,
-        int corridorRadius
-    ) {
-        SolveResult solveResult;
-        solveResult.method = method;
+    SolveResult solveEdge(const cv::Mat& cost, SolverMethod method, const cv::Point* start, const cv::Point* goal,
+                          int corridorRadius) {
+        SolveResult output;
+        output.method = method;
+        PathResult result;
 
-        PathResult pathResult;
-
-        // La DP avance d'une ligne par pas et d'au plus une colonne latéralement.
-        // Si les extrémités imposées rendent ce déplacement impossible,
-        // utiliser Dijkstra sur toute la carte.
-        const bool isDpInfeasible =
-            startPoint && goalPoint &&
-            std::abs(goalPoint->x - startPoint->x) >
-            goalPoint->y - startPoint->y;
+        // La DP descend d'une ligne par pas avec ±1 colonne : si les deux extrémités sont imposées et que
+        // l'écart latéral dépasse la hauteur disponible, aucun chemin DP n'existe → repli sur Dijkstra-8.
+        const bool isDynamicProgrammingInfeasible = start && goal && std::abs(goal->x - start->x) > goal->y - start->y;
 
         const auto startTime = std::chrono::steady_clock::now();
-
         switch (method) {
-            case Method::DP:
-                pathResult = isDpInfeasible
-                    ? dijkstra_path(costMap, startPoint, goalPoint)
-                    : dp_constrained(costMap, startPoint, goalPoint);
+            case SolverMethod::DynamicProgramming:
+                result = isDynamicProgrammingInfeasible ? findDijkstraPath(cost, start, goal)
+                                                        : findDynamicProgrammingPath(cost, start, goal);
                 break;
-
-            case Method::Dijkstra8:
-                pathResult = dijkstra_path(costMap, startPoint, goalPoint);
+            case SolverMethod::Dijkstra8:
+                result = findDijkstraPath(cost, start, goal);
                 break;
-
-            case Method::DPDijkstraLocal: {
-
-                // Sans chemin initial réalisable par DP, aucun corridor n'est construit.
-                if (isDpInfeasible) {
-                    const auto refinementStartTime = std::chrono::steady_clock::now();
-
-                    pathResult = dijkstra_path(costMap, startPoint, goalPoint);
-
-                    solveResult.refine_s = secondsSince(refinementStartTime);
-                    solveResult.corridor_ratio = 1.0;
+            case SolverMethod::DynamicProgrammingDijkstraLocal: {
+                if (isDynamicProgrammingInfeasible) {   // pas de graine DP : Dijkstra-8 sur toute la zone
+                    const auto refineStartTime = std::chrono::steady_clock::now();
+                    result = findDijkstraPath(cost, start, goal);
+                    output.refineSeconds = computeSecondsSince(refineStartTime);
+                    output.corridorRatio = 1.0;
                     break;
                 }
-
-                // Obtenir un premier chemin par DP.
+                // Même enchaînement que findDynamicProgrammingDijkstraLocalPath, chronométré étape par étape.
                 const auto seedStartTime = std::chrono::steady_clock::now();
-
-                const PathResult seedPathResult =
-                    dp_constrained(costMap, startPoint, goalPoint);
-
-                solveResult.seed_s = secondsSince(seedStartTime);
-
-                // Limiter Dijkstra à un corridor autour du chemin initial.
-                // Le temps de raffinement inclut la construction du corridor.
-                const auto refinementStartTime = std::chrono::steady_clock::now();
-
-                const cv::Mat allowedCorridorMask = hybrid_corridor(
-                    seedPathResult.path,
-                    costMap.size(),
-                    corridorRadius,
-                    startPoint,
-                    goalPoint
-                );
-
-                pathResult = dijkstra_path(
-                    costMap,
-                    startPoint,
-                    goalPoint,
-                    allowedCorridorMask
-                );
-
-                solveResult.refine_s = secondsSince(refinementStartTime);
-
-                // Part des pixels autorisés dans le corridor.
-                solveResult.corridor_ratio =
-                    static_cast<double>(cv::countNonZero(allowedCorridorMask)) /
-                    static_cast<double>(allowedCorridorMask.total());
-
+                const PathResult seed = findDynamicProgrammingPath(cost, start, goal);
+                output.seedSeconds = computeSecondsSince(seedStartTime);
+                const auto refineStartTime = std::chrono::steady_clock::now();
+                const cv::Mat allowedMask = buildHybridCorridor(seed.path, cost.size(), corridorRadius, start, goal);
+                result = findDijkstraPath(cost, start, goal, allowedMask);
+                output.refineSeconds = computeSecondsSince(refineStartTime);
+                output.corridorRatio = double(cv::countNonZero(allowedMask)) / double(allowedMask.total());
                 break;
             }
-
             default:
                 throw std::invalid_argument("Unknown method");
         }
+        output.wallSeconds = computeSecondsSince(startTime);
 
-        solveResult.wall_s = secondsSince(startTime);
-
-        // Regrouper le chemin, son coût et les statistiques de recherche.
-        // method conserve la méthode demandée, même après un repli sur Dijkstra.
-        solveResult.path = std::move(pathResult.path);
-        solveResult.objective = pathResult.objective;
-        solveResult.expanded = pathResult.expanded;
-        solveResult.pushes = pathResult.pushes;
-        solveResult.max_heap = pathResult.max_heap;
-        solveResult.cells = static_cast<long long>(costMap.total());
-
-        solveResult.mem_est_mb = estimateSolverMemoryMiB(
-            method,
-            costMap.size(),
-            pathResult.max_heap
-        );
-
-        return solveResult;
+        output.path = std::move(result.path);
+        output.objective = result.objective;
+        output.expandedCount = result.expandedCount;
+        output.pushCount = result.pushCount;
+        output.maximumHeapSize = result.maximumHeapSize;
+        output.cellCount = static_cast<long long>(cost.total());
+        output.estimatedMemoryMegabytes = estimateSolverMemoryMegabytes(method, cost.size(), result.maximumHeapSize);
+        return output;
     }
 
-}  // namespace DynamicProgrammingDijkstraNs
+}

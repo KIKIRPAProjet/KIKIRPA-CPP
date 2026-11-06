@@ -1,199 +1,211 @@
+// src/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/cost_catalog.h"
 
-#include <opencv2/imgproc.h>
+#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <vector>
 
-namespace DynamicProgrammingDijkstraNS {
+namespace DynamicProgrammingDijkstraNs {
 
     namespace {
 
-        // --- Outils de la section 3 nécessaires au catalogue -----------------------------------
+        // Outils de la section 3 nécessaires au catalogue
 
         // Valeur maximale positive du type (np.iinfo(dtype).max), 1 pour les flottants.
-        double dtype_max(const cv::Mat& img) {
-            switch (img.depth()) {
-            case CV_8U: return 255.0;
-            case CV_8S: return 127.0;
-            case CV_16U: return 65535.0;
-            case CV_16S: return 32767.0;
-            case CV_32S: return 2147483647.0;
-            default: return 1.0;
+        double getMaximumValueOfType(const cv::Mat& image) {
+            switch (image.depth()) {
+                case CV_8U: return 255.0;
+                case CV_8S: return 127.0;
+                case CV_16U: return 65535.0;
+                case CV_16S: return 32767.0;
+                case CV_32S: return 2147483647.0;
+                default: return 1.0;
             }
         }
 
         // to_float01 puis passage en gris : CV_32F, valeurs dans [0, 1].
-        cv::Mat to_gray(const cv::Mat& img) { //converts image into floating-point grayscale values 0=<x=<1
-            cv::Mat f;
-            img.convertTo(f, CV_MAKETYPE(CV_32F, img.channels()), 1.0 / dtype_max(img));
-            f = cv::max(f, 0.0);
-            f = cv::min(f, 1.0);
-            if (f.channels() == 1) return f;
-            cv::Mat g;
-            cv::cvtColor(f, g, cv::COLOR_RGB2GRAY); //converts from RGB to grayscale
-            return g;
+        cv::Mat convertToUnitGrey(const cv::Mat& image) {
+            cv::Mat floatImage;
+            image.convertTo(floatImage, CV_MAKETYPE(CV_32F, image.channels()), 1.0 / getMaximumValueOfType(image));
+            floatImage = cv::max(floatImage, 0.0);
+            floatImage = cv::min(floatImage, 1.0);
+            if (floatImage.channels() == 1) return floatImage;
+            cv::Mat grey;
+            cv::cvtColor(floatImage, grey, cv::COLOR_RGB2GRAY);   // RGB vers niveaux de gris
+            return grey;
         }
 
         // Équivalent de np.percentile (interpolation linéaire) : renvoie la valeur.
-        double percentile_value(const cv::Mat& m, double q) {
-            cv::Mat d;
-            m.reshape(1, 1).convertTo(d, CV_64F); //flatten the matrix into a list + converts its value to double
-            std::vector<double> v(d.begin<double>(), d.end<double>());
-            const double idx = q / 100.0 * double(v.size() - 1); //calculate the percentile's position
-            const size_t lo = size_t(std::floor(idx));
-            const size_t hi = std::min(lo + 1, v.size() - 1);
-            std::nth_element(v.begin(), v.begin() + lo, v.end()); //finds surrounding values
-            const double a = v[lo];
-            const double b = (hi == lo) ? a : *std::min_element(v.begin() + lo + 1, v.end()); //finds surrounding values
-            return a + (b - a) * (idx - double(lo)); //interpolates if necessary
+        double computePercentileValue(const cv::Mat& matrix, double percentileRank) {
+            cv::Mat flatValues;
+            matrix.reshape(1, 1).convertTo(flatValues, CV_64F);   // matrice aplatie en une liste de doubles
+            std::vector<double> values(flatValues.begin<double>(), flatValues.end<double>());
+            const double rank = percentileRank / 100.0 * double(values.size() - 1);   // position du percentile
+            const size_t lowerIndex = size_t(std::floor(rank));
+            const size_t upperIndex = std::min(lowerIndex + 1, values.size() - 1);
+            std::nth_element(values.begin(), values.begin() + lowerIndex, values.end());   // valeurs encadrantes
+            const double lowerValue = values[lowerIndex];
+            const double upperValue = (upperIndex == lowerIndex)
+                                          ? lowerValue
+                                          : *std::min_element(values.begin() + lowerIndex + 1, values.end());
+            return lowerValue + (upperValue - lowerValue) * (rank - double(lowerIndex));   // interpolation si besoin
         }
 
         // Ajoute une pénalité au coût traité, en restant en CV_32F comme le Python.
-        CostMaps add_to_treated(CostMaps m, const cv::Mat& penalty) {
-            cv::Mat p;
-            penalty.convertTo(p, CV_32F);
-            m.treated = m.treated + p;
-            return m;
+        CostMaps addToTreated(CostMaps maps, const cv::Mat& penalty) {
+            cv::Mat floatPenalty;
+            penalty.convertTo(floatPenalty, CV_32F);
+            maps.treated = maps.treated + floatPenalty;
+            return maps;
         }
 
-        // express each pixel relative to the brightness and contrast of its neighborhood
-        cv::Mat local_normalize(const cv::Mat& g, int win) {
-            cv::Mat mu, mu2;
-            cv::blur(g, mu, cv::Size(win, win)); //computes the local average
-            cv::blur(g.mul(g), mu2, cv::Size(win, win)); //computes the local mean square value
-            cv::Mat var = mu2 - mu.mul(mu); //computes the local variance
-            var = cv::max(var, 1e-4); //prevents the variance from becoming too small
-            cv::Mat sd;
-            cv::sqrt(var, sd);
-            return (g - mu) / sd; //returns the locally normalized image
+        // Exprime chaque pixel par rapport à la luminosité et au contraste de son voisinage.
+        cv::Mat normalizeLocally(const cv::Mat& grey, int windowSize) {
+            cv::Mat localMean, localMeanSquare;
+            cv::blur(grey, localMean, cv::Size(windowSize, windowSize));                      // moyenne locale
+            cv::blur(grey.mul(grey), localMeanSquare, cv::Size(windowSize, windowSize));      // moyenne locale des carrés
+            cv::Mat localVariance = localMeanSquare - localMean.mul(localMean);              // variance locale
+            localVariance = cv::max(localVariance, 1e-4);   // empêche la variance de devenir trop petite
+            cv::Mat localStandardDeviation;
+            cv::sqrt(localVariance, localStandardDeviation);
+            return (grey - localMean) / localStandardDeviation;   // image normalisée localement
         }
 
-    }  // namespace
-
-    // --- Fonctions du catalogue ---------------------------------------------------------------
-    // a = first image
-    // b = corresponding region from the second image
-    // params = settings controlling the cost calculation
-    CostMaps cost_color_gradient(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params) {
-        return compute_cost_maps(a, b, params); //defined elsewhere
-    } // uses the standard cost calculation with supplied settings
-
-    CostMaps cost_color_only(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params) {
-        CostMapParams p = params; //copies the parameters
-        p.w_color = 1.0; //set color weight to 1
-        return compute_cost_maps(a, b, p);
     }
 
-    CostMaps cost_gradient_only(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params) {
-        CostMapParams p = params;
-        p.w_color = 0.0; //set color weight to 0
-        return compute_cost_maps(a, b, p); //call the standard calculator
+    // Fonctions du catalogue : overlapA = première image, overlapB = zone correspondante de la seconde,
+    // parameters = réglages du calcul de coût.
+
+    // Calcul de coût standard avec les réglages fournis.
+    CostMaps computeColorGradientCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters) {
+        return computeCostMaps(overlapA, overlapB, parameters);
     }
 
-    //Blurs both images before calculating the standard cost -> stop small variations (sensor noise, grain) from controlling the seam
-    CostMaps cost_grain_robust(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params, double sigma) {
-        // Flou en unités brutes : le grain du capteur ne guide plus le chemin.
-        // sigma controls the amount of blur
-        cv::Mat fa, fb;
-        a.convertTo(fa, CV_MAKETYPE(CV_32F, a.channels())); //converts to floating-point
-        b.convertTo(fb, CV_MAKETYPE(CV_32F, b.channels())); //converts to floating-point
-        cv::GaussianBlur(fa, fa, cv::Size(0, 0), sigma); //smooth
-        cv::GaussianBlur(fb, fb, cv::Size(0, 0), sigma); //smooth
-        return compute_cost_maps(fa, fb, params);
+    CostMaps computeColorOnlyCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters) {
+        CostMapParameters colorOnlyParameters = parameters;
+        colorOnlyParameters.colorWeight = 1.0;   // poids de la couleur à 1
+        return computeCostMaps(overlapA, overlapB, colorOnlyParameters);
     }
 
-    CostMaps cost_local_norm(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params) {
+    CostMaps computeGradientOnlyCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters) {
+        CostMapParameters gradientOnlyParameters = parameters;
+        gradientOnlyParameters.colorWeight = 0.0;   // poids de la couleur à 0
+        return computeCostMaps(overlapA, overlapB, gradientOnlyParameters);
+    }
+
+    // Floute les deux images avant le coût standard : les petites variations (bruit du capteur, grain) ne guident
+    // plus la couture.
+    CostMaps computeGrainRobustCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters,
+                                    double blurSigma) {
+        // Flou en unités brutes : le grain du capteur ne guide plus le chemin. blurSigma règle la force du flou.
+        cv::Mat floatOverlapA, floatOverlapB;
+        overlapA.convertTo(floatOverlapA, CV_MAKETYPE(CV_32F, overlapA.channels()));
+        overlapB.convertTo(floatOverlapB, CV_MAKETYPE(CV_32F, overlapB.channels()));
+        cv::GaussianBlur(floatOverlapA, floatOverlapA, cv::Size(0, 0), blurSigma);
+        cv::GaussianBlur(floatOverlapB, floatOverlapB, cv::Size(0, 0), blurSigma);
+        return computeCostMaps(floatOverlapA, floatOverlapB, parameters);
+    }
+
+    CostMaps computeLocalNormalizationCost(const cv::Mat& overlapA, const cv::Mat& overlapB,
+                                           const CostMapParameters& parameters) {
         // Égalisation locale (moyenne et écart-type par fenêtre) : insensible aux variations d'éclairage.
-        const cv::Mat ga = to_gray(a), gb = to_gray(b); //converts to grayscale
-        const int win = std::max(5, (std::min(ga.rows, ga.cols) / 8) | 1); //choose a neighborhood size
-        const cv::Mat na = local_normalize(ga, win), nb = local_normalize(gb, win); //normalize both images
+        const cv::Mat greyA = convertToUnitGrey(overlapA), greyB = convertToUnitGrey(overlapB);
+        const int windowSize = std::max(5, (std::min(greyA.rows, greyA.cols) / 8) | 1);   // taille du voisinage
+        const cv::Mat normalizedA = normalizeLocally(greyA, windowSize), normalizedB = normalizeLocally(greyB, windowSize);
 
-        cv::Mat e_color = cv::abs(na - nb); //calculate difference between normalized grayscale images
-        e_color = cv::min(e_color, percentile_value(e_color, 99));    // écrête les valeurs aberrantes
-        cv::Mat e_grad = 0.5 * (gradient_magnitude(na) + gradient_magnitude(nb)); // measures average gradient strength
-        e_grad = cv::min(e_grad, percentile_value(e_grad, 99));
-        e_color = minmax(e_color); //limit value
-        e_grad = minmax(e_grad); //limit value
+        cv::Mat colorTerm = cv::abs(normalizedA - normalizedB);   // écart entre les deux images normalisées
+        colorTerm = cv::min(colorTerm, computePercentileValue(colorTerm, 99));   // écrête les valeurs aberrantes
+        // Force moyenne du gradient
+        cv::Mat gradientTerm = 0.5 * (computeGradientMagnitude(normalizedA) + computeGradientMagnitude(normalizedB));
+        gradientTerm = cv::min(gradientTerm, computePercentileValue(gradientTerm, 99));
+        colorTerm = normalizeMinMax(colorTerm);
+        gradientTerm = normalizeMinMax(gradientTerm);
 
-        cv::Mat wc;
-        cv::Mat(e_color * params.w_color).convertTo(wc, CV_64F);
-        const cv::Mat combined = wc + (1.0 - params.w_color) * e_grad;
+        cv::Mat weightedColorTerm;
+        cv::Mat(colorTerm * parameters.colorWeight).convertTo(weightedColorTerm, CV_64F);
+        const cv::Mat combined = weightedColorTerm + (1.0 - parameters.colorWeight) * gradientTerm;
 
-        CostMaps out;
-        out.e_color = e_color;                       // CV_32F, map mesuring appearance differences
-        e_grad.convertTo(out.e_gradient, CV_32F);    // map related to changes in image intensity
-        combined.convertTo(out.treated, CV_32F);    // final cost map used for choosing the seam
-        return out;
+        CostMaps maps;
+        maps.colorTerm = colorTerm;                            // CV_32F, écarts d'apparence
+        gradientTerm.convertTo(maps.gradientTerm, CV_32F);     // variations d'intensité
+        combined.convertTo(maps.treated, CV_32F);              // carte de coût finale, qui guide la couture
+        return maps;
     }
 
-    // adds penalty in bright area to discourage the seam from crossing highlights
-    CostMaps cost_highlight_penalty(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params, double threshold,
-        double weight) {
+    // Pénalité dans les zones claires : la couture évite de traverser les reflets.
+    CostMaps computeHighlightPenaltyCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters,
+                                         double threshold, double weight) {
         // Pénalité sur les pixels proches de la saturation dans A ou B : la seamline contourne les reflets de vernis.
         cv::Mat brightest;
-        cv::max(to_gray(a), to_gray(b), brightest); //at each pixels : keeps the brighter grayscale value from either image
-        cv::Mat penalty = (brightest - threshold) / (1.0 - threshold); //penalty clipped to [0,1]
+        cv::max(convertToUnitGrey(overlapA), convertToUnitGrey(overlapB), brightest);   // gris le plus clair des deux
+        cv::Mat penalty = (brightest - threshold) / (1.0 - threshold);                 // pénalité ramenée dans [0, 1]
         penalty = cv::max(penalty, 0.0);
         penalty = cv::min(penalty, 1.0);
-        return add_to_treated(compute_cost_maps(a, b, params), weight * penalty);
+        return addToTreated(computeCostMaps(overlapA, overlapB, parameters), weight * penalty);
     }
 
-    // adds penalty that grows toward the left and right edges
-    CostMaps cost_center_prior(const cv::Mat& a, const cv::Mat& b, const CostMapParams& params, double weight) {
+    // Pénalité qui croît vers les bords gauche et droit.
+    CostMaps computeCenterPriorCost(const cv::Mat& overlapA, const cv::Mat& overlapB, const CostMapParameters& parameters,
+                                    double weight) {
         // Pénalité quadratique de l'écart au centre : sur un fond uni, la seamline reste droite et centrée.
-        const int w = a.cols;
-        cv::Mat prior(1, w, CV_32F);
-        for (int x = 0; x < w; ++x) {
-            // for every column : calculates a position between -1 and 1
-            const float xv = (w == 1) ? -1.0f : float(-1.0 + 2.0 * x / (w - 1));   // np.linspace(-1, 1, w)
-            prior.at<float>(0, x) = xv * xv; //squares that position
+        const int width = overlapA.cols;
+        cv::Mat prior(1, width, CV_32F);
+        for (int column = 0; column < width; ++column) {
+            // Pour chaque colonne : position entre -1 et 1, au carré
+            const float position = (width == 1) ? -1.0f : float(-1.0 + 2.0 * column / (width - 1));   // np.linspace(-1, 1, w)
+            prior.at<float>(0, column) = position * position;
         }
-        return add_to_treated(compute_cost_maps(a, b, params), weight * cv::repeat(prior, a.rows, 1)); // panalty row is repeated over the image height
+        // La ligne de pénalité est répétée sur toute la hauteur de l'image
+        return addToTreated(computeCostMaps(overlapA, overlapB, parameters), weight * cv::repeat(prior, overlapA.rows, 1));
     }
 
-    // --- Sélection du mode ----------------------------------------------------------------------
+    // Sélection du mode
 
-    CostMaps compute_cost(const cv::Mat& a, const cv::Mat& b, CostFunction fn, const CostMapParams& params) {
-        switch (fn) {
-        case CostFunction::ColorGradient: return cost_color_gradient(a, b, params);
-        case CostFunction::ColorOnly: return cost_color_only(a, b, params);
-        case CostFunction::GradientOnly: return cost_gradient_only(a, b, params);
-        case CostFunction::GrainRobust: return cost_grain_robust(a, b, params);
-        case CostFunction::LocalNorm: return cost_local_norm(a, b, params);
-        case CostFunction::HighlightPenalty: return cost_highlight_penalty(a, b, params);
-        case CostFunction::CenterPrior: return cost_center_prior(a, b, params);
+    CostMaps computeCost(const cv::Mat& overlapA, const cv::Mat& overlapB, CostFunction costFunction,
+                         const CostMapParameters& parameters) {
+        switch (costFunction) {
+            case CostFunction::ColorGradient: return computeColorGradientCost(overlapA, overlapB, parameters);
+            case CostFunction::ColorOnly: return computeColorOnlyCost(overlapA, overlapB, parameters);
+            case CostFunction::GradientOnly: return computeGradientOnlyCost(overlapA, overlapB, parameters);
+            case CostFunction::GrainRobust: return computeGrainRobustCost(overlapA, overlapB, parameters);
+            case CostFunction::LocalNormalization: return computeLocalNormalizationCost(overlapA, overlapB, parameters);
+            case CostFunction::HighlightPenalty: return computeHighlightPenaltyCost(overlapA, overlapB, parameters);
+            case CostFunction::CenterPrior: return computeCenterPriorCost(overlapA, overlapB, parameters);
         }
-        throw std::invalid_argument("Fonction de coût inconnue"); 
+        throw std::invalid_argument("Unknown cost function");
     }
 
-    const std::vector<CostFunction>& all_cost_functions() { //returns a list containing all 7 modes available
-        static const std::vector<CostFunction> all = {
-            CostFunction::ColorGradient, CostFunction::ColorOnly,        CostFunction::GradientOnly,
-            CostFunction::GrainRobust,   CostFunction::LocalNorm,        CostFunction::HighlightPenalty,
-            CostFunction::CenterPrior };
-        return all;
+    // Les 7 modes disponibles.
+    const std::vector<CostFunction>& getAllCostFunctions() {
+        static const std::vector<CostFunction> allCostFunctions = {
+            CostFunction::ColorGradient, CostFunction::ColorOnly,          CostFunction::GradientOnly,
+            CostFunction::GrainRobust,   CostFunction::LocalNormalization, CostFunction::HighlightPenalty,
+            CostFunction::CenterPrior};
+        return allCostFunctions;
     }
 
-    std::string cost_function_name(CostFunction fn) { //converts a mode into its text name
-        switch (fn) {
-        case CostFunction::ColorGradient: return "color_gradient";
-        case CostFunction::ColorOnly: return "color_only";
-        case CostFunction::GradientOnly: return "gradient_only";
-        case CostFunction::GrainRobust: return "grain_robust";
-        case CostFunction::LocalNorm: return "local_norm";
-        case CostFunction::HighlightPenalty: return "highlight_penalty";
-        case CostFunction::CenterPrior: return "center_prior";
+    // Nom d'un mode dans le notebook.
+    std::string getCostFunctionName(CostFunction costFunction) {
+        switch (costFunction) {
+            case CostFunction::ColorGradient: return "color_gradient";
+            case CostFunction::ColorOnly: return "color_only";
+            case CostFunction::GradientOnly: return "gradient_only";
+            case CostFunction::GrainRobust: return "grain_robust";
+            case CostFunction::LocalNormalization: return "local_norm";
+            case CostFunction::HighlightPenalty: return "highlight_penalty";
+            case CostFunction::CenterPrior: return "center_prior";
         }
-        throw std::invalid_argument("Fonction de coût inconnue");
+        throw std::invalid_argument("Unknown cost function");
     }
 
-    CostFunction cost_function_from_name(const std::string& name) { //performs the reverse conversion
-        for (CostFunction fn : all_cost_functions())
-            if (cost_function_name(fn) == name) return fn;
-        throw std::invalid_argument("Fonction de coût inconnue : " + name);
+    // Conversion inverse : nom du notebook vers le mode.
+    CostFunction parseCostFunctionName(const std::string& name) {
+        for (CostFunction costFunction : getAllCostFunctions())
+            if (getCostFunctionName(costFunction) == name) return costFunction;
+        throw std::invalid_argument("Unknown cost function: " + name);
     }
 
-}  // namespace seamlib
+}

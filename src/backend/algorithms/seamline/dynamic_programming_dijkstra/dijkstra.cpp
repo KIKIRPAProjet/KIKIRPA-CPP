@@ -1,6 +1,7 @@
+// src/backend/algorithms/seamline/dynamic_programming_dijkstra/dijkstra.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.h"
 
-#include <opencv2/imgproc.h>
+#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
 #include <functional>
@@ -10,153 +11,157 @@
 #include <string>
 #include <utility>
 
-namespace DynamicProgrammingDijkstraNS {
+namespace DynamicProgrammingDijkstraNs {
 
     namespace {
 
-        const double INF = std::numeric_limits<double>::infinity();
+        const double INFINITE_DISTANCE = std::numeric_limits<double>::infinity();
 
         // Même ordre que NEIGHBORS en Python : (dy, dx).
-        const int NEIGHBORS[8][2] = { {-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1} };
+        const int NEIGHBOUR_OFFSETS[8][2] = {{-1, -1}, {-1, 0}, {-1, 1}, {0, -1}, {0, 1}, {1, -1}, {1, 0}, {1, 1}};
 
-        struct DijkstraOut {
-            cv::Mat dist;                     // CV_64F
-            std::vector<long long> parent;    // indice y * w + x du prédécesseur, -1 sinon
-            long long goal_node = -1;
-            long long expanded = 0, pushes = 0, max_heap = 0;
-            cv::Mat settled;                  // CV_8U
+        struct DijkstraOutput {
+            cv::Mat distances;                // CV_64F
+            std::vector<long long> parents;   // indice row * width + column du prédécesseur, -1 sinon
+            long long goalNode = -1;
+            long long expandedCount = 0, pushCount = 0, maximumHeapSize = 0;
+            cv::Mat settledMask;              // CV_8U
         };
 
-        void check_inside(const cv::Point* p, const cv::Mat& cost, const char* name) {
-            if (p && !cv::Rect(0, 0, cost.cols, cost.rows).contains(*p))
-                throw std::invalid_argument(std::string("Dijkstra : ") + name + " hors de la carte de coût");
+        void checkInside(const cv::Point* point, const cv::Mat& cost, const char* pointName) {
+            if (point && !cv::Rect(0, 0, cost.cols, cost.rows).contains(*point))
+                throw std::invalid_argument(std::string("Dijkstra: ") + pointName + " is outside the cost map");
         }
 
-        // Équivalent de _dijkstra_core. exhaustive = true : on n'arrête pas à l'objectif (carte complète).
-        DijkstraOut dijkstra_core(const cv::Mat& cost_in, const cv::Point* start, const cv::Point* goal,
-            const cv::Mat& allowed, bool exhaustive) {
-            CV_Assert(cost_in.channels() == 1 && !cost_in.empty());
+        // Équivalent de _dijkstra_core. isExhaustive = true : on n'arrête pas à l'objectif (carte complète).
+        DijkstraOutput runDijkstra(const cv::Mat& inputCost, const cv::Point* start, const cv::Point* goal,
+                                   const cv::Mat& allowedMask, bool isExhaustive) {
+            CV_Assert(inputCost.channels() == 1 && !inputCost.empty());
             cv::Mat cost;
-            cost_in.convertTo(cost, CV_64F);
-            const int h = cost.rows, w = cost.cols;
-            const long long n = static_cast<long long>(h) * w;
-            if (!allowed.empty()) CV_Assert(allowed.size() == cost.size() && allowed.type() == CV_8U);
-            check_inside(start, cost, "start");
-            check_inside(goal, cost, "goal");
-            auto is_allowed = [&](int y, int x) { return allowed.empty() || allowed.at<uchar>(y, x) != 0; };
+            inputCost.convertTo(cost, CV_64F);
+            const int height = cost.rows, width = cost.cols;
+            const long long nodeCount = static_cast<long long>(height) * width;
+            if (!allowedMask.empty()) CV_Assert(allowedMask.size() == cost.size() && allowedMask.type() == CV_8U);
+            checkInside(start, cost, "start");
+            checkInside(goal, cost, "goal");
+            auto isAllowed = [&](int row, int column) { return allowedMask.empty() || allowedMask.at<uchar>(row, column) != 0; };
 
-            // Les pixels sont numérotés node = y * w + x pour tenir dans un tableau 1D (comme le Python).
-            DijkstraOut out;
-            out.dist = cv::Mat(cost.size(), CV_64F, cv::Scalar(INF));
-            out.parent.assign(static_cast<size_t>(n), -1);
-            out.settled = cv::Mat::zeros(cost.size(), CV_8U);
-            double* dist = out.dist.ptr<double>();
-            uchar* settled = out.settled.ptr<uchar>();
+            // Les pixels sont numérotés node = row * width + column pour tenir dans un tableau 1D (comme le Python).
+            DijkstraOutput output;
+            output.distances = cv::Mat(cost.size(), CV_64F, cv::Scalar(INFINITE_DISTANCE));
+            output.parents.assign(static_cast<size_t>(nodeCount), -1);
+            output.settledMask = cv::Mat::zeros(cost.size(), CV_8U);
+            double* distances = output.distances.ptr<double>();
+            uchar* settled = output.settledMask.ptr<uchar>();
 
             // Tas min sur (distance, nœud) : même départage que heapq sur des tuples Python.
-            using Item = std::pair<double, long long>;
-            std::priority_queue<Item, std::vector<Item>, std::greater<Item>> pq;
+            using HeapItem = std::pair<double, long long>;
+            std::priority_queue<HeapItem, std::vector<HeapItem>, std::greater<HeapItem>> heap;
 
-            auto push_start = [&](int y, int x) {
-                if (!is_allowed(y, x)) return;
-                const long long node = static_cast<long long>(y) * w + x;
-                dist[node] = cost.at<double>(y, x);
-                pq.push({ dist[node], node });
-                ++out.pushes;
+            auto pushStart = [&](int row, int column) {
+                if (!isAllowed(row, column)) return;
+                const long long node = static_cast<long long>(row) * width + column;
+                distances[node] = cost.at<double>(row, column);
+                heap.push({distances[node], node});
+                ++output.pushCount;
             };
             // Départ : le point imposé, ou tous les pixels du bord haut (source multiple).
             if (start)
-                push_start(start->y, start->x);
+                pushStart(start->y, start->x);
             else
-                for (int x = 0; x < w; ++x) push_start(0, x);
-            out.max_heap = static_cast<long long>(pq.size());
+                for (int column = 0; column < width; ++column) pushStart(0, column);
+            output.maximumHeapSize = static_cast<long long>(heap.size());
 
-            while (!pq.empty()) {
-                const auto [d, node] = pq.top();
-                pq.pop();
+            while (!heap.empty()) {
+                const auto [distance, node] = heap.top();
+                heap.pop();
                 // Entrée périmée : le nœud a été réinséré depuis avec une distance plus courte.
-                if (settled[node] || d != dist[node]) continue;
+                if (settled[node] || distance != distances[node]) continue;
                 settled[node] = 1;
-                ++out.expanded;
-                const int y = static_cast<int>(node / w), x = static_cast<int>(node % w);
+                ++output.expandedCount;
+                const int row = static_cast<int>(node / width), column = static_cast<int>(node % width);
                 // Premier pixel d'arrivée fixé = le moins cher (propriété de Dijkstra). En mode
                 // exhaustif, on continue pour remplir toute la carte des distances.
-                if ((!goal && y == h - 1) || (goal && goal->y == y && goal->x == x)) {
-                    out.goal_node = node;
-                    if (!exhaustive) break;
+                if ((!goal && row == height - 1) || (goal && goal->y == row && goal->x == column)) {
+                    output.goalNode = node;
+                    if (!isExhaustive) break;
                 }
                 // Relâchement des 8 voisins avec la même règle de pas que la DP.
-                for (const auto& nb : NEIGHBORS) {
-                    const int ny = y + nb[0], nx = x + nb[1];
-                    if (ny < 0 || ny >= h || nx < 0 || nx >= w || !is_allowed(ny, nx)) continue;
-                    const long long nn = static_cast<long long>(ny) * w + nx;
-                    if (settled[nn]) continue;
-                    const double nd = d + edge_weight(cost, y, x, ny, nx);
-                    if (nd < dist[nn]) {
-                        dist[nn] = nd;
-                        out.parent[static_cast<size_t>(nn)] = node;
-                        pq.push({ nd, nn });
-                        ++out.pushes;
-                        out.max_heap = std::max(out.max_heap, static_cast<long long>(pq.size()));
+                for (const auto& neighbourOffset : NEIGHBOUR_OFFSETS) {
+                    const int neighbourRow = row + neighbourOffset[0], neighbourColumn = column + neighbourOffset[1];
+                    if (neighbourRow < 0 || neighbourRow >= height || neighbourColumn < 0 || neighbourColumn >= width ||
+                        !isAllowed(neighbourRow, neighbourColumn))
+                        continue;
+                    const long long neighbourNode = static_cast<long long>(neighbourRow) * width + neighbourColumn;
+                    if (settled[neighbourNode]) continue;
+                    const double neighbourDistance =
+                        distance + computeEdgeWeight(cost, row, column, neighbourRow, neighbourColumn);
+                    if (neighbourDistance < distances[neighbourNode]) {
+                        distances[neighbourNode] = neighbourDistance;
+                        output.parents[static_cast<size_t>(neighbourNode)] = node;
+                        heap.push({neighbourDistance, neighbourNode});
+                        ++output.pushCount;
+                        output.maximumHeapSize = std::max(output.maximumHeapSize, static_cast<long long>(heap.size()));
                     }
                 }
             }
-            return out;
+            return output;
         }
 
-    }  // namespace
+    }
 
-    PathResult dijkstra_path(const cv::Mat& cost, const cv::Point* start, const cv::Point* goal, const cv::Mat& allowed,
-        bool keep_settled) {
-        DijkstraOut d = dijkstra_core(cost, start, goal, allowed, false);
-        if (d.goal_node < 0) throw std::runtime_error("Pas de chemin Dijkstra");
+    PathResult findDijkstraPath(const cv::Mat& cost, const cv::Point* start, const cv::Point* goal, const cv::Mat& allowedMask,
+                                bool keepSettled) {
+        DijkstraOutput dijkstraOutput = runDijkstra(cost, start, goal, allowedMask, false);
+        if (dijkstraOutput.goalNode < 0) throw std::runtime_error("no Dijkstra path");
 
         // Remontée des parents depuis l'arrivée, puis inversion pour aller du départ à l'arrivée.
-        PathResult res;
-        const int w = cost.cols;
-        for (long long node = d.goal_node; node != -1; node = d.parent[static_cast<size_t>(node)])
-            res.path.push_back(cv::Point(static_cast<int>(node % w), static_cast<int>(node / w)));
-        std::reverse(res.path.begin(), res.path.end());
-        res.objective = d.dist.ptr<double>()[d.goal_node];
-        res.expanded = d.expanded;
-        res.pushes = d.pushes;
-        res.max_heap = d.max_heap;
-        if (keep_settled) res.settled = d.settled;
-        return res;
+        PathResult result;
+        const int width = cost.cols;
+        for (long long node = dijkstraOutput.goalNode; node != -1; node = dijkstraOutput.parents[static_cast<size_t>(node)])
+            result.path.push_back(cv::Point(static_cast<int>(node % width), static_cast<int>(node / width)));
+        std::reverse(result.path.begin(), result.path.end());
+        result.objective = dijkstraOutput.distances.ptr<double>()[dijkstraOutput.goalNode];
+        result.expandedCount = dijkstraOutput.expandedCount;
+        result.pushCount = dijkstraOutput.pushCount;
+        result.maximumHeapSize = dijkstraOutput.maximumHeapSize;
+        if (keepSettled) result.settledMask = dijkstraOutput.settledMask;
+        return result;
     }
 
-    cv::Mat dijkstra_distance_map(const cv::Mat& cost) {
-        return dijkstra_core(cost, nullptr, nullptr, cv::Mat(), true).dist;
+    cv::Mat computeDijkstraDistanceMap(const cv::Mat& cost) {
+        return runDijkstra(cost, nullptr, nullptr, cv::Mat(), true).distances;
     }
 
-    cv::Mat corridor_mask_from_path(const std::vector<cv::Point>& path, const cv::Size& size, int radius) {
-        cv::Mat seed = cv::Mat::zeros(size, CV_8U);
-        for (const cv::Point& p : path) seed.at<uchar>(p) = 1;
-        const int k = 2 * radius + 1;
-        cv::Mat mask;
-        cv::dilate(seed, mask, cv::Mat::ones(k, k, CV_8U));
-        return mask;
+    cv::Mat buildCorridorMask(const std::vector<cv::Point>& path, const cv::Size& size, int radius) {
+        cv::Mat seedMask = cv::Mat::zeros(size, CV_8U);
+        for (const cv::Point& point : path) seedMask.at<uchar>(point) = 1;
+        const int kernelSize = 2 * radius + 1;
+        cv::Mat corridorMask;
+        cv::dilate(seedMask, corridorMask, cv::Mat::ones(kernelSize, kernelSize, CV_8U));
+        return corridorMask;
     }
 
-    cv::Mat hybrid_corridor(const std::vector<cv::Point>& seed_path, const cv::Size& size, int radius, const cv::Point* start,
-        const cv::Point* goal) {
-        cv::Mat allowed = corridor_mask_from_path(seed_path, size, radius);
+    cv::Mat buildHybridCorridor(const std::vector<cv::Point>& seedPath, const cv::Size& size, int radius, const cv::Point* start,
+                                const cv::Point* goal) {
+        cv::Mat allowedMask = buildCorridorMask(seedPath, size, radius);
         if (start)
-            allowed.at<uchar>(*start) = 1;
+            allowedMask.at<uchar>(*start) = 1;
         else
-            allowed.row(0).setTo(1);
+            allowedMask.row(0).setTo(1);
         if (goal)
-            allowed.at<uchar>(*goal) = 1;
+            allowedMask.at<uchar>(*goal) = 1;
         else
-            allowed.row(allowed.rows - 1).setTo(1);
-        return allowed;
+            allowedMask.row(allowedMask.rows - 1).setTo(1);
+        return allowedMask;
     }
 
-    PathResult dp_dijkstra_local(const cv::Mat& cost, int radius, const cv::Point* start, const cv::Point* goal) {
+    PathResult findDynamicProgrammingDijkstraLocalPath(const cv::Mat& cost, int radius, const cv::Point* start,
+                                                       const cv::Point* goal) {
         // 1. graine DP (rapide)  2. corridor autour d'elle  3. Dijkstra exact, mais seulement dans le corridor.
-        const PathResult seed = dp_constrained(cost, start, goal);
-        const cv::Mat allowed = hybrid_corridor(seed.path, cost.size(), radius, start, goal);
-        return dijkstra_path(cost, start, goal, allowed);
+        const PathResult seed = findDynamicProgrammingPath(cost, start, goal);
+        const cv::Mat allowedMask = buildHybridCorridor(seed.path, cost.size(), radius, start, goal);
+        return findDijkstraPath(cost, start, goal, allowedMask);
     }
 
-}  // namespace seamlib
+}

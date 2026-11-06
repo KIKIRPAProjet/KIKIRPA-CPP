@@ -1,74 +1,73 @@
-// =====================================================================================
+// include/backend/algorithms/seamline/dynamic_programming_dijkstra/cost_map.h
+#pragma once
+
+#include <opencv2/core.hpp>
+
+#include <string>
+
 // Section 5 · Carte de coût
 // Conversion C++ de la cellule « def gradient(gray): ... compute_cost_maps(...) » du notebook
 // Projet_KIK_IRPA_Montauban_final_CostMapComputed.ipynb.
 //
 // Convention : comme dans le notebook (lecture par tifffile), les images couleur sont en
 // ordre RGB. Une image lue avec cv::imread est en BGR : la convertir avec
-// cv::cvtColor(img, img, cv::COLOR_BGR2RGB) avant d'appeler ces fonctions.
-// =====================================================================================
-#pragma once
+// cv::cvtColor(image, image, cv::COLOR_BGR2RGB) avant d'appeler ces fonctions.
+namespace DynamicProgrammingDijkstraNs {
 
-#include <opencv2/core.h>
-
-#include <string>
-
-#include "algorithms/seamline/dynamic_programming_dijkstra/export.h"
-
-namespace DynamicProgrammingDijkstraNS {
-
-    // Sortie de gradient() : équivalent du triplet Python (Gx, Gy, √(Gx² + Gy²)), tout en CV_64F.
+    // Sortie de computeGradients() : équivalent du triplet Python (Gx, Gy, √(Gx² + Gy²)), tout en CV_64F.
     struct Gradients {
-        cv::Mat Gx;
-        cv::Mat Gy;
+        cv::Mat gradientX;
+        cv::Mat gradientY;
         cv::Mat magnitude;
     };
 
     // Calcul des gradients à l'aide du filtre de Sobel 3×3 : √(Gx² + Gy²).
-    // `gray` : image à un canal.
-    KIRK_API Gradients gradient(const cv::Mat& gray);
+    // `grey` : image à un canal.
+    Gradients computeGradients(const cv::Mat& grey);
 
     // Raccourci : renvoie seulement la norme du gradient.
-    KIRK_API cv::Mat gradient_magnitude(const cv::Mat& gray);
+    cv::Mat computeGradientMagnitude(const cv::Mat& grey);
 
     // Normalisation min-max sur [0, 1] (tableau nul si l'image est constante).
-    KIRK_API cv::Mat minmax(const cv::Mat& x);
+    cv::Mat normalizeMinMax(const cv::Mat& values);
 
-    // MAD : médiane des écarts absolus à la médiane, sur toutes les valeurs de `img`.
-    KIRK_API double mad_calculator(const cv::Mat& img);
+    // MAD : médiane des écarts absolus à la médiane, sur toutes les valeurs de `image`.
+    double computeMedianAbsoluteDeviation(const cv::Mat& image);
 
-    // Calcule le n_eme percentile de `img` (même définition que np.percentile), plafonne puis divise par lui.
-    KIRK_API cv::Mat percentile(const cv::Mat& img, double n_eme);
+    // Calcule le percentileRank-ième percentile de `image` (même définition que np.percentile), plafonne puis divise
+    // par lui.
+    cv::Mat normalizeByPercentile(const cv::Mat& image, double percentileRank);
 
-    // Niveaux de gris en float32, sans division par dtype_max pour garder l'intégrité des unités.
-    // Garde le signe si l'entrée est une différence. `img` : image RGB à 3 canaux, ou déjà en gris
+    // Niveaux de gris en float32, sans division par la valeur maximale du type pour garder l'intégrité des unités.
+    // Garde le signe si l'entrée est une différence. `image` : image RGB à 3 canaux, ou déjà en gris
     // (1 canal, renvoyée telle quelle en float32).
-    KIRK_API cv::Mat gray_raw(const cv::Mat& img);
+    cv::Mat convertToRawGrey(const cv::Mat& image);
 
-    // Paramètres de compute_cost_maps (mêmes noms et mêmes valeurs par défaut qu'en Python).
-    struct CostMapParams {
-        double w_color = 0.7;
+    // Paramètres de computeCostMaps (mêmes valeurs par défaut qu'en Python ; nom Python entre parenthèses).
+    struct CostMapParameters {
+        double colorWeight = 0.7;               // (w_color)
         std::string normalization = "noise";    // "noise" ou "percentile"
-        std::string color_norm = "manhattan";   // "manhattan" ou "euclidian"
+        std::string colorNorm = "manhattan";    // (color_norm) "manhattan" ou "euclidian"
         std::string treatment = "sigmoid";      // "sigmoid", "linear", "squared" ou "caped"
         bool recall = false;                    // rappel vers le centre
-        double lam = 0.05;                      // poids du rappel vers le centre
+        double recallWeight = 0.05;             // (lam) poids du rappel vers le centre
     };
 
-    // Sortie de compute_cost_maps. Types identiques au Python :
-    //   e_color    CV_32F
-    //   e_gradient CV_64F
-    //   treated    CV_32F  (seule carte utilisée par les solveurs)
+    // Sortie de computeCostMaps. Types identiques au Python :
+    //   colorTerm    CV_32F   (e_color)
+    //   gradientTerm CV_64F   (e_gradient)
+    //   treated      CV_32F   (seule carte utilisée par les solveurs)
     struct CostMaps {
-        cv::Mat e_color;
-        cv::Mat e_gradient;
+        cv::Mat colorTerm;
+        cv::Mat gradientTerm;
         cv::Mat treated;
     };
 
     // Construit les cartes de coût d'une zone d'overlap.
-    // `crop_a`, `crop_b` : overlaps RGB à 3 canaux ou en gris à 1 canal (ex. IRR), de même taille, même
+    // `overlapA`, `overlapB` : overlaps RGB à 3 canaux ou en gris à 1 canal (ex. IRR), de même taille, même
     // nombre de canaux et même type (uint8, uint16 ou float). En gris, le terme couleur vaut |A − B|.
     // Lève std::invalid_argument si un paramètre n'est pas une valeur autorisée.
-    KIRK_API CostMaps compute_cost_maps(const cv::Mat& crop_a, const cv::Mat& crop_b, const CostMapParams& params = CostMapParams());
+    CostMaps computeCostMaps(const cv::Mat& overlapA, const cv::Mat& overlapB,
+                             const CostMapParameters& parameters = CostMapParameters());
 
-}  // namespace seamlib
+}
