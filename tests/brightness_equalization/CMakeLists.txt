@@ -1,5 +1,6 @@
 add_executable(brightness_equalization_tests test_brightness_equalization.cpp)
 
+kikirpa_copy_onnxruntime_dlls(brightness_equalization_tests)
 target_link_libraries(brightness_equalization_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
