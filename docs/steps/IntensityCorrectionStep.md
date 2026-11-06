@@ -88,4 +88,4 @@ Les tests reprennent les cas initiaux et les complètent : gain connu sur de vra
 ctest --test-dir build --output-on-failure -R IntensityCorrectionStepTest
 ```
 
-Cette branche reprend l'implémentation d'Amory707 sur `fe/intensity-correction-step` ; son historique est conservé. L'issue #19 ne fournit pas de description supplémentaire : le contrat existant est donc maintenu.
+Cette branche réunit les deux versions du step : celle d'Amory707 (`fe/intensity-correction-step`, PR #72), dont l'historique est conservé, et les vérifications et tests ajoutés par Mghiiii (PR #80). L'issue #19 ne fournit pas de description supplémentaire : le contrat existant est donc maintenu.
