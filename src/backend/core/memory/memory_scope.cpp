@@ -12,6 +12,7 @@
     #include <psapi.h>
 #endif
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -107,35 +108,37 @@ namespace MemoryNs {
         isSampling = false;
         if (samplingThread.joinable()) samplingThread.join();
         try {
-            updatePeak();
+            // Une seule lecture finale, qui compte aussi pour le pic : sinon la RSS peut grimper entre deux lectures
+            // et donner peak < after.
             const MemoryUsage usageAfter = getCurrentUsage().value_or(MemoryUsage{});
+            recordPeak(usageAfter.rssBytes);
+            const std::size_t peakBytes = rssPeakBytes.load();
+            // Sous Linux, VmRSS est approché (compteurs par CPU) et VmHWM mis à jour en retard : un échantillon peut
+            // dépasser le VmHWM lu ensuite. Le pic du processus ne peut pas être inférieur au pic du bloc.
+            const std::size_t processPeakBytes = std::max(usageAfter.peakRssBytes, peakBytes);
             outputJson[scopeName] = {
                 {"beforeMib", toMebibytes(rssBeforeBytes)},
-                {"peakMib", toMebibytes(rssPeakBytes.load())},
+                {"peakMib", toMebibytes(peakBytes)},
                 {"afterMib", toMebibytes(usageAfter.rssBytes)},
-                {"processPeakMib", toMebibytes(usageAfter.peakRssBytes)}};
+                {"processPeakMib", toMebibytes(processPeakBytes)}};
         } catch (const std::exception&) {   // NOLINT(bugprone-empty-catch) : un destructeur ne doit pas lever ;
         }                                    // la mesure est alors simplement absente du JSON
     }
 
     void MemoryScopeClass::sampleUntilStopped() {
         while (isSampling) {
-            updatePeak();
+            if (const std::optional<MemoryUsage> usage = getCurrentUsage())
+                recordPeak(usage->rssBytes);
             std::this_thread::sleep_for(SAMPLING_PERIOD);
         }
     }
 
-    void MemoryScopeClass::updatePeak() {
-        const std::optional<MemoryUsage> usage = getCurrentUsage();
-        if (!usage)
-            return;
-
+    void MemoryScopeClass::recordPeak(std::size_t rssBytes) {
         std::size_t knownPeakBytes = rssPeakBytes.load();
 
         // compare_exchange_weak recharge knownPeakBytes quand il échoue : on retente
         // tant que la valeur actuelle reste supérieure au pic enregistré.
-        while (usage->rssBytes > knownPeakBytes &&
-               !rssPeakBytes.compare_exchange_weak(knownPeakBytes, usage->rssBytes)) {
+        while (rssBytes > knownPeakBytes && !rssPeakBytes.compare_exchange_weak(knownPeakBytes, rssBytes)) {
         }
     }
 

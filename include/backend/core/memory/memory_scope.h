@@ -21,6 +21,7 @@ namespace MemoryNs {
     // dans un step, passer getResult() en targetJson pour que le logger du pipeline montre les valeurs.
     //   peakMib        : pic de RSS pendant le bloc (mesuré par un thread d'échantillonnage)
     //   processPeakMib : pic de RSS depuis le lancement du processus
+    // Garanti : peakMib >= beforeMib, peakMib >= afterMib et processPeakMib >= peakMib.
     // Toutes les valeurs sont en MiB, arrondies à 3 décimales. Sur une plateforme non gérée, elles valent 0.
     // targetJson doit vivre plus longtemps que l'objet.
     class MemoryScopeClass {
@@ -38,8 +39,8 @@ namespace MemoryNs {
             MemoryScopeClass& operator=(const MemoryScopeClass&) = delete;
 
         private:
-            // Met à jour le pic de RSS si la valeur actuelle le dépasse.
-            void updatePeak();
+            // Met à jour le pic de RSS si rssBytes le dépasse.
+            void recordPeak(std::size_t rssBytes);
 
             // Corps du thread d'échantillonnage : mesure régulièrement jusqu'à l'arrêt demandé par le destructeur.
             void sampleUntilStopped();
