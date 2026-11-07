@@ -477,7 +477,7 @@ Les trois branches de fin de chaîne (`feature/fusion-step`, `fe/export`, `featu
 | `frontendMathias`               | 04/11          | `frontend` + étape courante, journal et aperçu de mosaïque (image factice).                                                                                                               |
 | `frontend` (#9, fermée)         | 03/11          | Tronc commun des trois précédentes, parti de `main` du 20/10.                                                                                                                             |
 
-⚠️ `Valerie`, `frontendJonas`, `frontendMathias` et `frontend` contiennent `datasetdetest/` (4 TIFF, environ 165 Mo) : à retirer avant tout merge.
+⚠️ `datasetdetest/` (4 TIFF, environ 167 Mo, commit `5615d48`) a été retiré de `Valerie`, `frontendJonas`, `frontendMathias` et `frontend` le 07/11, et ajouté à leur `.gitignore`. Les fichiers restent dans l'historique de ces branches : les merger dans `main` uniquement en « Squash and merge ».
 
 Pour voir un fichier d'une branche sans changer de branche :
 
