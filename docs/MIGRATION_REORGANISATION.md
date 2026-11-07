@@ -1,6 +1,6 @@
 # Migration : réorganisation du code (nov. 2026)
 
-Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
+Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions), et les changements apportés depuis par les PR mergées du 04 au 06/11 au [§13](#13-depuis-la-migration-04-au-06112026). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
 
 ## Résumé
 
@@ -262,6 +262,8 @@ Step `phase-correlation` : `PhaseCorrelationInput::parametres` → `parameters`,
 
 ### Rejet des outliers
 
+RANSAC a été supprimé ensuite par #63, et le vote a changé de dossier : voir [§13](#13-depuis-la-migration-04-au-06112026).
+
 | Avant | Après |
 |---|---|
 | `rejection::RansacRejector`, `rejection::VoteRejector` | `RansacNs::RansacRejectorClass`, `RansacNs::VoteRejectorClass` |
@@ -340,4 +342,48 @@ Les valeurs texte (`"noise"`, `"percentile"`, `"manhattan"`, `"euclidian"`, `"si
 1. `git fetch && git merge origin/main`.
 2. Remplacer les includes et les noms d'après les tableaux ci-dessus. Plus d'`#include "algorithms/legacy_type_aliases.h"` : qualifier les types partagés (`DataNs::Matches`, `DataNs::PairContext`…) et déclarer `using Json = nlohmann::json;` dans son propre namespace si besoin.
 3. Dans les `CMakeLists.txt` de tests, `tests/correlation_phase` et `tests/egalisation` deviennent `tests/phase_correlation` et `tests/brightness_equalization`.
-4. Compiler et lancer `ctest`. Une branche qui touche LightGlue doit être compilée avec ONNX Runtime : la CI ne le fait pas.
+4. Compiler et lancer `ctest`. Une branche qui touche LightGlue doit être compilée avec ONNX Runtime (depuis #27, CMake le télécharge et la CI le compile : voir §13).
+
+## 13. Depuis la migration (04 au 06/11/2026)
+
+Les PR mergées après #76 n'ont pas fait de réorganisation d'ensemble, mais certaines suppriment ou déplacent du code. Une branche partie de `main` avant le 04/11 doit en tenir compte.
+
+### Rejet des outliers (#63)
+
+| Avant | Après |
+|---|---|
+| `algorithms/rejection/ransac/ransac_{algorithm,preprocessor,rejector,types}.h` (`RansacNs`) | **supprimés** : RANSAC n'existe plus |
+| `RansacNs::VoteRejectorClass` (dans `ransac_rejector.h`) | `stitching::rejection::VoteRejectorClass` dans `algorithms/rejection/vote_2d/vote_rejector.h`, avec les alias `RejectionNs::VoteRejectorClass` et `RejectionNs::VoteRejector` |
+| — | `VoteRejectorClass::filterMatches`, `filterPairMatches`, `toEqualizationJson` |
+| `PositioningSettings::rejectorName = "ransac"` | valeurs acceptées : `"vote"` (par défaut) ou `"vote_2d"` |
+
+### Positionnement (#77)
+
+| Avant | Après |
+|---|---|
+| `solvePositions` (namespace anonyme de `tile_positioner.cpp`) | `PositioningNs::solveRelativePositions(tileCount, offsets, …)` dans `algorithms/stitching/positioning/position_solver.h`, partagé par `computeTilePositions` et le step `absolute-pos` |
+
+### Steps et types ajoutés (#27, #32, #77, #80)
+
+- Registre : `sift`, `lightglue`, `absolute-pos` et `intensity-correction` s'ajoutent à `import`, `phase-correlation` et `graphcut`. Un nouveau step doit aussi augmenter `REGISTERED_STEP_COUNT` dans `tests/core/test_pipeline.cpp` (7 au 07/11).
+- Code commun aux steps d'appariement : `steps/matching_step_utils.h` (`collectPairs`, `readImage`, `restoreCoordinates`…).
+- `DataNs::IntensityCorrection` est dans **`core/data/intensity_correction.h`**, pas dans `algorithm_types.h`. Sa sérialisation est enregistrée par `CheckpointClass::registerType` (`core/checkpoint/intensity_correction_checkpoint.cpp`), pas dans `checkpoint_types.cpp`. Une branche partie de la PR #72 (`fe/intensity-correction-step`, `fe/dp-dijkstrat`) le déclare encore dans `algorithm_types.h` : retirer cette déclaration et inclure le nouveau header.
+
+### Seamline DP / Dijkstra (#66, #68)
+
+| Avant | Après |
+|---|---|
+| `corridorRadius = 18` écrit en dur (`solveEdge`, `SeamFinderClass`) | constante `DEFAULT_CORRIDOR_RADIUS` (`solver.h`), même valeur |
+| `enum class SolverMethod` | `enum class SolverMethod : std::uint8_t` |
+
+Le comportement de `solveEdge` ne change pas : le corps est seulement découpé en fonctions internes.
+
+### Mémoire (#93)
+
+Nouveau dossier `core/memory/` (`MemoryNs::MemoryScopeClass`). Il n'écrit plus rien sur la console : les mesures vont seulement dans le JSON passé au constructeur.
+
+### Build (#27, #89)
+
+- ONNX Runtime est maintenant **téléchargé à la configuration** s'il n'est pas fourni (`-DONNXRUNTIME_ROOT`) : LightGlue est toujours compilé, y compris par la CI. Le modèle du test `lightglue_model` est aussi téléchargé (`-DLIGHTGLUE_TEST_MODEL` pour en fournir un).
+- Sous Windows, tout nouvel exécutable de test lié à `kikirpa_backend` appelle `kikirpa_copy_onnxruntime_dlls(<cible>)` dans son `CMakeLists.txt`.
+- La CI compile aussi sous Windows (MSVC, `build-test-windows.yml`).
