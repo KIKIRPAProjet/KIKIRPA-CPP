@@ -13,7 +13,7 @@ src/backend/algorithms/rejection/
 ```
 
 - **Dépendances** : OpenCV (`opencv2/core.hpp`), STL C++17 (`<vector>`, `<map>`, `<cmath>`, `<algorithm>`), `nlohmann/json.hpp`.
-- **Statut** : Méthode par défaut dans le pipeline (`settings.rejectorName = "vote"`).
+- **Statut** : implémenté et testé, mais **non branché dans le pipeline**. Seul l'ancien positionneur `PositioningNs::computeTilePositions` (`tile_positioner.cpp`) l'appelle (`settings.rejectorName = "vote"`), et aucun step ni aucun test n'appelle ce positionneur. Les steps d'appariement (`phase-correlation`, `sift`, `lightglue`) publient leurs `matches` sans rejet ; leur translation est une médiane, ce qui limite l'effet des faux appariements sans les éliminer. Brancher ce rejet dans le pipeline est une tâche à faire.
 
 ---
 
@@ -278,8 +278,8 @@ void testerAlignement(const DataNs::Matches& matches) {
 }
 ```
 
-### Exemple 2 : Sélection dans le placement global (`tile_positioner.cpp`)
-Dans [`tile_positioner.cpp`](file:///C:/Users/Hp/OneDrive%20-%20UMONS/UMONS/Ma1/Projet/Branche%20%20main/KIKIRPA-CPP/src/backend/algorithms/stitching/positioning/tile_positioner.cpp), le choix du rejector est configuré via `settings.rejectorName` :
+### Exemple 2 : Sélection dans l'ancien placement global (`tile_positioner.cpp`)
+Dans [`tile_positioner.cpp`](../../../../src/backend/algorithms/stitching/positioning/tile_positioner.cpp), le choix du rejector est configuré via `settings.rejectorName`. Ce positionneur n'est plus appelé par le pipeline (voir **Statut** en tête de page) :
 
 ```cpp
 std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
