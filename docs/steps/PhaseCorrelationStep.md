@@ -74,4 +74,6 @@ Une paire non mesurable, ou rejetée par un contrôle de confiance, est ignorée
 
 ## Lecture des pixels
 
-Seul accès aux pixels : `readPixels(tile, level)`. Elle lit aujourd'hui le fichier source, réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`). Elle sera remplacée par `readRegion(tile, level, rectangle)` (Mathias B.) dès que cette fonction existe.
+Seul accès aux pixels : `readPixels(tile, level)`. Elle lit **l'image source entière** (`cv::imread`), puis la réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`).
+
+La lecture directe d'un niveau dans le TIFF pyramidal existe maintenant : `IONs::PyramidalTiffReaderClass::readRegion(level, rectangle, output, error)` ([PyramidalTiff.md](../core/PyramidalTiff.md)). Le step ne l'utilise pas encore. Remplacer `readPixels` par `readRegion` sur `tile.getTiff()` est une tâche à faire : le step ne chargerait plus que le niveau et la bande nécessaires.

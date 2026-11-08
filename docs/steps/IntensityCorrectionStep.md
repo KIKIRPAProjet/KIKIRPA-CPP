@@ -49,7 +49,7 @@ Les tuiles isolées gardent un gain de 1. Le consommateur doit les laisser non c
 
 Les images sont lues depuis `TileClass::getSource()` avec `IMREAD_UNCHANGED`. Le step vérifie leurs dimensions et leur type par rapport aux métadonnées d'import. Une seule image pleine résolution est chargée à la fois ; seules les luminances réduites de toutes les tuiles sont conservées pour l'estimation.
 
-La réduction utilise directement `BrightnessEqualizerClass::reduceTile()`, qui préserve la dynamique des images 8/16 bits. Le step ne dépend pas des fonctions internes de `PhaseCorrelationStepClass`. Il ne lit pas encore les régions TIFF ni un niveau réduit directement sur disque ; cette optimisation pourra utiliser une API de lecture commune lorsqu'elle sera disponible sur main.
+La réduction utilise directement `BrightnessEqualizerClass::reduceTile()`, qui préserve la dynamique des images 8/16 bits. Le step ne dépend pas des fonctions internes de `PhaseCorrelationStepClass`. Il ne lit pas encore le niveau réduit directement sur disque. L'API existe sur main (`IONs::PyramidalTiffReaderClass::readRegion`, voir [PyramidalTiff.md](../core/PyramidalTiff.md)) : lire le niveau 3 (1/8) du TIFF pyramidal éviterait de charger l'image pleine résolution. C'est une tâche à faire.
 
 ## Erreurs et résultats partiels
 
