@@ -9,7 +9,8 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | trouver un fichier dans le code | [CARTE_ARCHITECTURE.md](CARTE_ARCHITECTURE.md) |
 | écrire du code et ouvrir une PR | [CONVENTIONS.md](CONVENTIONS.md) |
 | le format du script et les checkpoints en détail | [core/Pipeline.md](core/Pipeline.md) |
-| un step précis | [steps/](steps/) |
+| un step précis : ses entrées, ses sorties, ses paramètres | [steps/](steps/) |
+| ajouter un step | [steps/AJOUTER_UN_STEP.md](steps/AJOUTER_UN_STEP.md) |
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 

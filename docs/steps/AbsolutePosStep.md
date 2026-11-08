@@ -2,13 +2,17 @@
 
 `StepsNs::AbsolutePosStepClass`, enregistré sous `absolute-pos`, convertit les translations relatives des appariements en positions absolues dans le repère d'une tuile de référence. Il ne charge aucune image et ne relance ni le matcher ni le rejet des aberrants.
 
-## Contrat
+## Entrées et sorties
 
-| Sens | Clé | Type JSON | Type C++ |
-|---|---|---|---|
-| Entrée | `tiles` | `Tiles` | `DataNs::TileList` |
-| Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` |
-| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` |
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
+| Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
+| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` |
+
+- **Lit** dans `tiles` l'identifiant et le nom du fichier source, d'où il tire la ligne et la colonne. Aucune image n'est relue.
+- **Lit** dans `matches` seulement `tileIdA`, `tileIdB`, `translationX` et `translationY`. Les points et les scores ne servent pas.
+- **Écrit** dans `positions` une entrée par tuile : `tileId` (`rLL_cCC`, ligne et colonne) ; `position`, le coin haut-gauche de la tuile en pixels de pleine résolution, dans le repère de la tuile de référence placée en (0, 0) (les valeurs négatives sont possibles) ; et `rotationRadians`, toujours 0.
 
 `AbsolutePosOutput` regroupe `key`, `value`, `type`. `getOutput()` donne les positions détaillées ; `getResult()` ne contient qu'un résumé (`pairs`, `positions`, `failures`, `error`). Le type `Positions` est déjà pris en charge par les checkpoints et consommé par GraphCut.
 

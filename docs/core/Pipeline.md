@@ -121,10 +121,6 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 
 ## Ajouter un step
 
-1. La classe hérite de `StepNs::StepClass`, dans le namespace `StepsNs` (`include/backend/steps/<nom>_step.h`). Son **constructeur par défaut** remplit `configJson` à partir d'un `ConfigNs::StepConfig` : `name`, `parameters` avec leurs valeurs par défaut, `inputs` et `outputs`. Prendre `PhaseCorrelationStepClass` pour modèle.
-2. `execute()` relit ses paramètres avec `getParameter("nom")`, lit ses entrées avec `dataStore->get<T>("clé")` et écrit ses sorties avec `dataStore->replace("clé", …)`. En cas d'échec, il renvoie `false` avec la raison dans `result["error"]`.
-3. Ajouter une ligne dans `stepRegistry()` (`src/backend/core/pipeline/pipeline_builder.cpp`).
-4. **Le type C++ derrière une clé doit être le même pour tous les steps** : `tiles` est toujours un `DataNs::TileList`, `matches` toujours un `std::vector<DataNs::PairMatches>`. Sinon, `get<T>` lève `std::bad_any_cast` à l'exécution.
-5. Augmenter `REGISTERED_STEP_COUNT` dans `tests/core/test_pipeline.cpp`, sinon le test du registre échoue.
-6. Si une sortie a un nouveau type, lui donner une sérialisation (voir « Sérialisation des sorties » plus haut), sinon le step est refait à chaque reprise.
-7. Écrire sa fiche dans `docs/steps/`.
+Marche à suivre complète, avec un exemple compilé et testé (en-tête, constructeur, `execute()`, registre, nouveau type et checkpoint, test GoogleTest, fiche) : [steps/AJOUTER_UN_STEP.md](../steps/AJOUTER_UN_STEP.md).
+
+En bref : une classe qui hérite de `StepNs::StepClass`, dont le constructeur par défaut fixe `name`, `parameters`, `inputs` et `outputs` ; une ligne dans `stepRegistry()` ; `REGISTERED_STEP_COUNT` + 1 dans `tests/core/test_pipeline.cpp`. **Le type C++ derrière une clé est le même pour tous les steps**, sinon `get<T>` lève `std::bad_any_cast` à l'exécution.

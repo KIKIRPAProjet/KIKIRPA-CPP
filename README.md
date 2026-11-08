@@ -19,7 +19,8 @@ import → appariement → positionnement → intensité → seamline → assemb
 | se repérer dans le code | [docs/CARTE_ARCHITECTURE.md](docs/CARTE_ARCHITECTURE.md) |
 | écrire du code, ouvrir une pull request | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) |
 | le script JSON, la reprise et les checkpoints | [docs/core/Pipeline.md](docs/core/Pipeline.md) |
-| un step ou un algorithme en détail | [docs/steps/](docs/steps/), [docs/algorithms/](docs/algorithms/) |
+| un step ou un algorithme en détail : ses entrées, ses sorties, ses paramètres | [docs/steps/](docs/steps/), [docs/algorithms/](docs/algorithms/) |
+| ajouter un step | [docs/steps/AJOUTER_UN_STEP.md](docs/steps/AJOUTER_UN_STEP.md) |
 
 ## Compiler en bref
 
