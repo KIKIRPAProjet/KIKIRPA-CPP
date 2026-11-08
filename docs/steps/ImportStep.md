@@ -4,12 +4,16 @@ Code : `steps/import_step.h` / `.cpp` (namespace `StepsNs`). Écriture du TIFF :
 
 Premier step de tout pipeline. Il repère les images d'un dossier, lit la ligne et la colonne de chacune dans son nom, crée sa fiche (`DataNs::TileClass`) et relie chaque tuile à ses voisines. Pour chaque image, il écrit aussi un TIFF pyramidal tuilé. Il ne modifie jamais les images d'origine.
 
-## Contrat
+## Entrées et sorties
 
-| Sens | Clé | Type JSON | Type C++ |
-|---|---|---|---|
-| Entrée | — | — | (lit le disque) |
-| Sortie | `tiles` | `Tiles` | `DataNs::TileList` = `std::vector<std::shared_ptr<DataNs::TileClass>>` |
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | — | — | — | les images du dossier `path`, lues sur le disque |
+| Sortie | `tiles` | `Tiles` | `DataNs::TileList` = `std::vector<std::shared_ptr<DataNs::TileClass>>` | tous les autres steps |
+
+- **Lit** les fichiers du dossier `path` dont le nom correspond à `format`. Le step n'a aucune entrée dans le DataStore : c'est le premier.
+- **Écrit** dans `tiles` une fiche par image, dans l'ordre ligne puis colonne. Une fiche ne contient aucun pixel : seulement les chemins de la source et du TIFF pyramidal, les dimensions, le type OpenCV et les voisines (voir « Ce que contient une fiche »).
+- **Écrit aussi sur le disque**, hors du DataStore, un TIFF pyramidal par image : `<path>/.cache/pyramids/<nom>_pyramid.tif`.
 
 `getResult()` : `tiles` (nombre de tuiles créées) ou `error`.
 

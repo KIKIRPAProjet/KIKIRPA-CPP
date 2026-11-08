@@ -4,6 +4,18 @@ Appariement SIFT des voisines droite et inférieure, enregistré sous `sift` dan
 `core/pipeline/pipeline_builder.cpp`. Classe : `StepsNs::SiftStepClass`, fichiers
 `steps/sift_step.h` et `steps/sift_step.cpp`.
 
+## Entrées et sorties
+
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
+| Sortie | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `absolute-pos`, `intensity-correction` |
+
+- **Lit** dans chaque fiche de `tiles` : l'identifiant, les voisines de droite et du dessous, et le chemin de l'image source, relue en entier (8/16 bits non signés, 1, 3 ou 4 canaux).
+- **Écrit** dans `matches` une entrée par paire réussie (une tuile A et sa voisine de droite ou du dessous, B) : `tileIdA`, `tileIdB`, `direction`, au moins `minMatches` points SIFT appariés `pointsInA` ↔ `pointsInB`, avec un score entre 0 et 1 par point dans `confidenceScores`, et la translation de B dans A (`translationX`, `translationY`). Les coordonnées sont en pixels de pleine résolution, dans le repère de chaque tuile entière. Une paire en échec n'y figure pas : elle est dans `failures`.
+
+`getResult()` : `pairs`, `failures` (`{idA, idB, reason}`), et `error` en cas d'échec.
+
 ## Script JSON
 
 ```json

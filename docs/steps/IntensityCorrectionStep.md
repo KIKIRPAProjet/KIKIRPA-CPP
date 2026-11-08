@@ -2,13 +2,17 @@
 
 `StepsNs::IntensityCorrectionStepClass`, enregistré sous `intensity-correction`, estime la luminosité relative des tuiles dans leurs zones de recouvrement. Il réutilise `BrightnessEqualizationNs::BrightnessEqualizerClass` et ne modifie aucun pixel des sources. Les gains et le champ d'éclairage sont appliqués ensuite, lors de l'assemblage.
 
-## Contrat
+## Entrées et sorties
 
-| Sens | Clé | Type JSON | Type C++ |
-|---|---|---|---|
-| Entrée | `tiles` | `Tiles` | `DataNs::TileList` |
-| Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` |
-| Sortie | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` |
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
+| Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
+| Sortie | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | aucun step sur main : l'assemblage devra l'appliquer |
+
+- **Lit** dans `tiles` l'ordre des tuiles, leurs dimensions et leur type, et le chemin de chaque image source, relue en entier, une à la fois (voir « Lecture et mémoire »).
+- **Lit** dans `matches` les identifiants et la translation de chaque paire, qui situent la zone de recouvrement.
+- **Écrit** `intensityCorrection`, décrit ci-dessous.
 
 Le type partagé est déclaré dans `core/data/intensity_correction.h`. Il contient :
 

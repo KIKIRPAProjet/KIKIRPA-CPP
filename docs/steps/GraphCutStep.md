@@ -4,13 +4,17 @@ Code : `steps/graph_cut_step.h` / `.cpp` (namespace `StepsNs`). Algorithme : `al
 
 Calcule les **lignes de raccord** (seamlines) entre les tuiles déjà placées, puis en déduit le **territoire** de chaque tuile : les polygones de la mosaïque dont les pixels seront pris dans cette tuile à l'assemblage. Le step ne produit pas d'image.
 
-## Contrat
+## Entrées et sorties
 
-| Sens | Clé | Type JSON | Type C++ |
-|---|---|---|---|
-| Entrée | `tiles` | `Tiles` | `DataNs::TileList` |
-| Entrée | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` |
-| Sortie | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` |
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
+| Entrée | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `absolute-pos` |
+| Sortie | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | aucun step sur main : l'assemblage (PR #69) |
+
+- **Lit** dans `tiles` le chemin de chaque image source, relue deux à la fois puis réduite de `scale`.
+- **Lit** dans `positions` la position de chaque tuile, retrouvée par le nom `rLL_cCC` tiré du nom de fichier. La rotation est ignorée.
+- **Écrit** dans `territories` une entrée par tuile : `tileIndex` (sa place dans `tiles`), `polygons` et `holes`, en pixels entiers de la mosaïque pleine résolution (voir « Ce qui est écrit dans le checkpoint »).
 
 `getResult()` : `territories` (nombre de territoires) ou `error`. Les erreurs sont aussi écrites sur `std::cerr`, en français.
 
