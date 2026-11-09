@@ -141,7 +141,7 @@ namespace {
         EXPECT_FALSE(step.execute());
         EXPECT_TRUE(step.getOutput().value.empty());
         EXPECT_TRUE(store.get<std::vector<DataNs::TilePositionData>>("positions").empty());
-        EXPECT_TRUE(store.get<std::vector<DataNs::PairResidual>>("pairResiduals").empty());
+        EXPECT_TRUE(store.get<std::vector<DataNs::PairResidual>>("pairResiduals").empty());   // résidus vidés aussi après l'échec
         EXPECT_FALSE(step.getResult()["error"].get<std::string>().empty());
     }
 
@@ -266,6 +266,7 @@ namespace {
         EXPECT_THROW(PipelineNs::buildPipeline({{"pipeline", {{"steps", {{{"name", "absolute-pos"}}}}}}}), std::invalid_argument);
     }
 
+    // Boucle incohérente 10 / 10 / 23 : positions ajustées 0, 11, 22, d'où les résidus −1, −1 et +1 px.
     TEST(AbsolutePosStep, PublishesResidualOfEachPairAfterAdjustment) {
         StepNs::DataStoreClass store;
         fillStore(store);
@@ -284,6 +285,7 @@ namespace {
         EXPECT_EQ(step.getConfigJson()["outputs"][1]["dataType"], "PairResiduals");
     }
 
+    // Les résidus sont sauvegardés puis relus par le checkpoint (chaîne sans boucle : résidus nuls).
     TEST(AbsolutePosStep, RestoresResidualsFromCheckpoint) {
         TestDirectory directory;
         StepNs::DataStoreClass store;

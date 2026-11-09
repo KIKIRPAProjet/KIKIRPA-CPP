@@ -19,6 +19,7 @@ namespace StepsNs {
         std::string key = "positions";
         std::vector<DataNs::TilePositionData> value;
         std::string type = "Positions";
+        // 2e sortie : l'écart de chaque paire après ajustement (clé, valeur et type, comme pour les positions).
         std::string residualsKey = "pairResiduals";
         std::vector<DataNs::PairResidual> residuals;   // écart de chaque paire après ajustement, dans l'ordre des paires utilisées
         std::string residualsType = "PairResiduals";

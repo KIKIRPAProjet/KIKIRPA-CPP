@@ -55,7 +55,7 @@ namespace StepsNs {
                     throw std::invalid_argument("absolute-pos: tile filename must end in _r<row>_c<column>.tif[f]");
                 if (!names.insert(name).second) throw std::invalid_argument("absolute-pos: duplicate tile grid position");
                 index.names.push_back(std::move(name));
-                index.ids.push_back(tile->getId());
+                index.ids.push_back(tile->getId());   // pour retrouver l'id d'une tuile à partir de son indice (résidus)
             }
             return index;
         }
@@ -155,7 +155,7 @@ namespace StepsNs {
         stepConfig.name = "absolute-pos";
         stepConfig.parameters = {{"int", "referenceTileId", input.referenceTileId}};
         stepConfig.inputs = {{"Tiles", "tiles"}, {"PairMatches", "matches"}};
-        stepConfig.outputs = {{"Positions", "positions"}, {"PairResiduals", "pairResiduals"}};
+        stepConfig.outputs = {{"Positions", "positions"}, {"PairResiduals", "pairResiduals"}};   // pairResiduals : écart par paire
         configJson = stepConfig;
     }
 
@@ -165,16 +165,16 @@ namespace StepsNs {
         try {
             if (!dataStore) throw std::invalid_argument("absolute-pos: DataStore is not attached");
             dataStore->replace(output.key, std::vector<DataNs::TilePositionData>{});
-            dataStore->replace(output.residualsKey, std::vector<DataNs::PairResidual>{});
+            dataStore->replace(output.residualsKey, std::vector<DataNs::PairResidual>{});   // aucun ancien résidu publié après un échec
             auto index = indexTiles(dataStore->get<DataNs::TileList>("tiles"));
             auto referenceIndex = selectReference(index, readReferenceId(getParameter("referenceTileId")));
             auto offsets = collectOffsets(dataStore->get<std::vector<DataNs::PairMatches>>("matches"), index, result["failures"]);
             result["pairs"] = offsets.size();
             auto solution = PositioningNs::solveRelativePositions(index.names.size(), offsets, referenceIndex);
             output.value = makePositions(index, solution);
-            output.residuals = computeResiduals(index, offsets, solution);
+            output.residuals = computeResiduals(index, offsets, solution);   // écart de chaque paire après ajustement
             dataStore->replace(output.key, output.value);
-            dataStore->replace(output.residualsKey, output.residuals);
+            dataStore->replace(output.residualsKey, output.residuals);       // publié seulement en cas de succès
             result["positions"] = output.value.size();
             return true;
         } catch (const std::exception& exception) {
