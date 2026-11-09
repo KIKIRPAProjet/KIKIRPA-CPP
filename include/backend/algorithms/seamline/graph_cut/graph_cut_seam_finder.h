@@ -55,12 +55,9 @@ namespace GraphCutNs {
             // Renvoie false si les entrées sont incohérentes (tailles de listes, nombre de tuiles) ou si une tuile ne peut
             // pas être relue : la cause est alors dans getErrorMessage(). Les exceptions d'OpenCV ne sont pas interceptées.
             bool computeSeamline(const std::vector<std::string>& tilePaths,
-                                 const std::vector<cv::Size>& tileSizes,
-                                 const std::vector<cv::Point>& originalCorners,
-                                 double scale,
-                                 const std::vector<cv::Point>& cornersSmall,
-                                 std::vector<cv::UMat>& masksUmatSmall,
-                                 cv::Mat& indexMatrix);
+                                const FullResolutionGeometry& fullResolution,
+                                ReducedGrid& reducedGrid,
+                                cv::Mat& indexMatrix);
 
             // Polygones de chaque territoire, trous compris (RETR_CCOMP), sans filtre d'aire : le pavage doit rester exact.
             std::vector<DataNs::TileTerritory> extractPolygons(const cv::Mat& indexMatrix, std::size_t tileCount) const;
