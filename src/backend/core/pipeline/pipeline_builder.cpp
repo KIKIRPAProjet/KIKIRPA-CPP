@@ -12,6 +12,7 @@
 #include "steps/sift_step.h"
 #include "steps/absolute_pos_step.h"
 #include "steps/lightglue_step.h"
+#include "steps/manual_matches_step.h"
 #include "steps/phase_correlation_step.h"
 
 #include <cstddef>
@@ -43,6 +44,7 @@ namespace PipelineNs {
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
+                {"manual-matches", [] { return std::make_unique<StepsNs::ManualMatchesStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
             };
             return registry;

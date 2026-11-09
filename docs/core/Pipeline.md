@@ -36,6 +36,7 @@ const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   //
 | `int` | entier (2.5 refusé) |
 | `float` | nombre (2 accepté) |
 | `bool` | `true` / `false` |
+| `json` | tableau ou objet, dont le step vérifie le contenu |
 
 - **`inputs`** et **`outputs`** (`{ "dataType": "Tiles", "key": "tiles" }`) peuvent figurer dans le JSON, par exemple quand il est écrit par `PipelineClass::exportConfig` ou par la GUI. Ils sont **ignorés** à la lecture : c'est le step qui les fixe.
 
@@ -114,6 +115,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `sift` | `StepsNs::SiftStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `lightglue` | `StepsNs::LightGlueStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `manual-matches` | `StepsNs::ManualMatchesStepClass` | `matches` : `PairMatches` | `matches` : `PairMatches` |
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |

@@ -18,6 +18,7 @@ namespace StepNs {
             if (valueType == "int") return value.is_number_integer();
             if (valueType == "float") return value.is_number();
             if (valueType == "bool") return value.is_boolean();
+            if (valueType == "json") return value.is_array() || value.is_object();   // données structurées, vérifiées par le step
             return false;
         }
 

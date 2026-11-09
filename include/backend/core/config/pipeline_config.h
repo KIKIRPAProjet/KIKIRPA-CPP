@@ -14,7 +14,8 @@ namespace ConfigNs {
     // Le nom de chaque champ C++ est sa clé JSON.
 
     // Réglage d'un step, ex. { "valueType": "int", "name": "maxPoints", "value": 5000 }.
-    // valueType : "string", "int", "float" (double en C++) ou "bool" ; value doit y correspondre (voir StepClass::importConfig).
+    // valueType : "string", "int", "float" (double en C++), "bool" ou "json" (tableau ou objet, dont le step vérifie
+    // le contenu) ; value doit y correspondre (voir StepClass::importConfig).
     struct StepParameter {
         std::string valueType;
         std::string name;
