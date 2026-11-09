@@ -108,7 +108,10 @@ Json build2x2PipelineScript(const fs::path& imagesDir, const fs::path& outputDir
                     {"name", "absolute-pos"}
                 },
                 {
-                    {"name", "intensity-correction"}
+                    {"name", "intensity-correction"},
+                    {"parameters", Json::array({
+                        {{"valueType", "int"}, {"name", "borderMargin"}, {"value", 5}}
+                    })}
                 },
                 {
                     {"name", "graphcut"},

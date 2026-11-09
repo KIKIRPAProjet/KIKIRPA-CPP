@@ -10,7 +10,6 @@
 #include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
-#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -18,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <stdexcept>
@@ -163,27 +163,33 @@ namespace StepsNs {
 
         std::vector<double> computeTileGains(const StepNs::DataStoreClass& store, std::size_t tileCount) {
             std::vector<double> tileGains(tileCount, 1.0);
-            if (store.has("intensityCorrection")) {
-                const auto& intensityCorrection = store.get<DataNs::IntensityCorrection>("intensityCorrection");
-                for (std::size_t gainIndex = 0; gainIndex < tileCount && gainIndex < intensityCorrection.tileGains.size(); ++gainIndex) {
-                    if (intensityCorrection.tileGains[gainIndex] > MIN_GAIN_THRESHOLD) {
-                        tileGains[gainIndex] = 1.0 / intensityCorrection.tileGains[gainIndex];
-                    }
+            if (!store.has("intensityCorrection")) {
+                return tileGains;
+            }
+            const auto& intensityCorrection = store.get<DataNs::IntensityCorrection>("intensityCorrection");
+            const std::size_t count = std::min(tileCount, intensityCorrection.tileGains.size());
+            for (std::size_t gainIndex = 0; gainIndex < count; ++gainIndex) {
+                const double gain = intensityCorrection.tileGains[gainIndex];
+                if (gain > MIN_GAIN_THRESHOLD) {
+                    tileGains[gainIndex] = 1.0 / gain;
                 }
             }
             return tileGains;
         }
 
-        const DataNs::TilePositionData* findTilePosition(const std::string& filename, int tileId,
-                                                         std::size_t index,
+        const DataNs::TilePositionData* findTilePosition(const DataNs::TileClass& tile,
                                                          const std::vector<DataNs::TilePositionData>& positions) {
+            const std::string filename = tile.getSource().filename().string();
+            const std::string tileIdStr = std::to_string(tile.getId());
             for (const auto& candidate : positions) {
                 if (filename.find(candidate.tileId) != std::string::npos ||
-                    candidate.tileId == std::to_string(tileId)) {
+                    candidate.tileId == tileIdStr) {
                     return &candidate;
                 }
             }
-            if (index < positions.size()) return &positions[index];
+            if (static_cast<std::size_t>(tile.getId()) < positions.size()) {
+                return &positions[tile.getId()];
+            }
             return nullptr;
         }
 
@@ -208,7 +214,7 @@ namespace StepsNs {
                 if (!tile) throw std::runtime_error("null tile in tiles list");
 
                 const std::string filename = tile->getSource().filename().string();
-                const auto* position = findTilePosition(filename, tile->getId(), tileIndex, positions);
+                const auto* position = findTilePosition(*tile, positions);
                 if (!position) throw std::runtime_error("cannot find position for " + filename);
                 if (std::abs(position->rotationRadians) > ROTATION_TOLERANCE) {
                     throw std::runtime_error("rotations are not supported yet");
