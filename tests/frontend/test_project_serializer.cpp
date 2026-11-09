@@ -1,6 +1,9 @@
 #include "project_serializer.h"
+#include "projectgrid.h"
 
 #include <gtest/gtest.h>
+
+#include <nlohmann/json.hpp>
 
 #include <QDir>
 #include <QFile>
@@ -11,7 +14,9 @@
 
 namespace {
 
-class ProjectSerializerTest : public ::testing::Test
+constexpr int QUARTER_TURN_DEGREES = 90;
+
+class ProjectSerializerTestClass : public ::testing::Test
 {
 protected:
     void SetUp() override
@@ -30,7 +35,7 @@ protected:
         state.gridRows = 1;
         state.gridColumns = 2;
         state.gridTiles = {
-            GridTile{firstTile, 90, true, false},
+            GridTile{firstTile, QUARTER_TURN_DEGREES, true, false},
             GridTile{secondTile, 0, false, false}
         };
         projectPath = directory.filePath(QStringLiteral("study.kikproj"));
@@ -82,7 +87,7 @@ protected:
     ProjectGrid::State state;
 };
 
-TEST_F(ProjectSerializerTest, RoundTripsGridAndBackendConfiguration)
+TEST_F(ProjectSerializerTestClass, RoundTripsGridAndBackendConfiguration)
 {
     ASSERT_TRUE(save());
     ProjectData loaded;
@@ -93,7 +98,7 @@ TEST_F(ProjectSerializerTest, RoundTripsGridAndBackendConfiguration)
     EXPECT_EQ(loaded.gridState.gridColumns, 2);
     ASSERT_EQ(loaded.gridState.gridTiles.size(), 2);
     EXPECT_EQ(loaded.gridState.gridTiles.at(0).path, firstTile);
-    EXPECT_EQ(loaded.gridState.gridTiles.at(0).rotation, 90);
+    EXPECT_EQ(loaded.gridState.gridTiles.at(0).rotation, QUARTER_TURN_DEGREES);
     EXPECT_TRUE(loaded.gridState.gridTiles.at(0).flipped);
     EXPECT_EQ(loaded.backendScript["pipeline"]["steps"].size(), 2);
     EXPECT_TRUE(loaded.missingFiles.isEmpty());
@@ -105,7 +110,7 @@ TEST_F(ProjectSerializerTest, RoundTripsGridAndBackendConfiguration)
               QStringList({QStringLiteral("import"), QStringLiteral("phase-correlation")}));
 }
 
-TEST_F(ProjectSerializerTest, DetectsChangedAndMissingSourceFiles)
+TEST_F(ProjectSerializerTestClass, DetectsChangedAndMissingSourceFiles)
 {
     ASSERT_TRUE(save());
     writeFile(firstTile, "changed");
@@ -119,7 +124,7 @@ TEST_F(ProjectSerializerTest, DetectsChangedAndMissingSourceFiles)
     EXPECT_FALSE(ProjectSerializer::summarize(loaded).canResume());
 }
 
-TEST_F(ProjectSerializerTest, RejectsUnsupportedVersionAndIncoherentGrid)
+TEST_F(ProjectSerializerTestClass, RejectsUnsupportedVersionAndIncoherentGrid)
 {
     ASSERT_TRUE(save());
     QFile file(projectPath);
@@ -146,7 +151,7 @@ TEST_F(ProjectSerializerTest, RejectsUnsupportedVersionAndIncoherentGrid)
     EXPECT_TRUE(error.contains(QStringLiteral("cases")));
 }
 
-TEST_F(ProjectSerializerTest, RejectsMalformedJson)
+TEST_F(ProjectSerializerTestClass, RejectsMalformedJson)
 {
     QFile file(projectPath);
     ASSERT_TRUE(file.open(QIODevice::WriteOnly));
@@ -158,7 +163,7 @@ TEST_F(ProjectSerializerTest, RejectsMalformedJson)
     EXPECT_TRUE(error.contains(QStringLiteral("JSON valide")));
 }
 
-TEST_F(ProjectSerializerTest, RejectsDuplicateTilePaths)
+TEST_F(ProjectSerializerTestClass, RejectsDuplicateTilePaths)
 {
     ASSERT_TRUE(save());
     QFile file(projectPath);
@@ -176,7 +181,7 @@ TEST_F(ProjectSerializerTest, RejectsDuplicateTilePaths)
     EXPECT_TRUE(error.contains(QStringLiteral("double")));
 }
 
-TEST_F(ProjectSerializerTest, SummarizesSavedResultsAndErrors)
+TEST_F(ProjectSerializerTestClass, SummarizesSavedResultsAndErrors)
 {
     ASSERT_TRUE(save());
     ProjectData loaded;
@@ -194,7 +199,7 @@ TEST_F(ProjectSerializerTest, SummarizesSavedResultsAndErrors)
     EXPECT_TRUE(summary.errors.first().contains(QStringLiteral("image illisible")));
 }
 
-TEST_F(ProjectSerializerTest, RejectsBackendGridMismatch)
+TEST_F(ProjectSerializerTestClass, RejectsBackendGridMismatch)
 {
     nlohmann::json script = backendScript();
     const nlohmann::json mismatchedTiles = nlohmann::json::array({

@@ -11,14 +11,21 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/pipeline/pipeline.h"
+#include "core/pipeline/run_state.h"
 #include "core/data/tile.h"
+#include <opencv2/core.hpp>
+
 #include <gtest/gtest.h>
+
 #include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -28,6 +35,24 @@ using Json = nlohmann::json;
 
 constexpr int VALEUR_A = 10;
 constexpr int VALEUR_B = 5;
+constexpr int VALEUR_MODIFIEE = 20;
+constexpr int EXECUTIONS_A_APRES_DEPART_A = 3;
+constexpr int EXECUTIONS_B_APRES_DEPART_A = 5;
+constexpr int EXECUTIONS_A_APRES_RECALCUL = 4;
+constexpr int EXECUTIONS_B_APRES_RECALCUL = 6;
+constexpr int LARGEUR_TUILE = 400;
+constexpr int HAUTEUR_TUILE = 300;
+constexpr int BORD_TUILE = 10;
+constexpr float POINT_A_X = 1.25F;
+constexpr float POINT_A_Y = 2.5F;
+constexpr float POINT_B_X = 3.125F;
+constexpr float POINT_B_Y = 4.F;
+constexpr float SCORE_CONFIANCE = 0.75F;
+constexpr double TRANSLATION_X = 319.875;
+constexpr double TRANSLATION_Y = -0.03125;
+constexpr double POSITION_X = 320.123456789;
+constexpr double POSITION_Y = -0.5;
+constexpr double ROTATION_RADIANS = 0.001;
 
 // Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
@@ -109,10 +134,7 @@ void testerSansCheckpoint() {
     verifier(b.y() == VALEUR_A + VALEUR_B, "sortie finale correcte");
 }
 
-void testerEchecPuisReprise(const fs::path& dossier) {
-    std::cout << "Échec puis reprise\n";
-    fs::remove_all(dossier);
-    Banc b(dossier);
+void testerEchecInitial(Banc& b, const fs::path& dossier) {
     b.option(1, "echoue", true);
     verifier(!b.lancer(), "run 1 en échec au step b");
     verifier(b.p.getRunState().status == PipelineNs::RunStatus::Failed, "statut failed");
@@ -127,18 +149,17 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     verifier(b.execA == 1, "a sauté à la reprise");
     verifier(b.execB == 2, "b refait");
     verifier(b.y() == VALEUR_A + VALEUR_B, "sortie de a restaurée depuis le checkpoint");
+}
 
-    std::cout << "Options modifiées\n";
-    b.option(0, "valeur", 20);
+void testerOptionsModifieesEtDepart(Banc& b) {
+    b.option(0, "valeur", VALEUR_MODIFIEE);
     verifier(b.lancer(), "run 3 réussi");
     verifier(b.execA == 2 && b.execB == 3, "a et b refaits (checkpoint de a périmé)");
-    verifier(b.y() == 20 + VALEUR_B, "nouvelle valeur prise en compte");
+    verifier(b.y() == VALEUR_MODIFIEE + VALEUR_B, "nouvelle valeur prise en compte");
 
-    std::cout << "Tout est déjà fait\n";
     verifier(b.lancer() && b.execA == 2 && b.execB == 3, "aucun step refait");
-    verifier(b.y() == 20 + VALEUR_B, "sorties restaurées");
+    verifier(b.y() == VALEUR_MODIFIEE + VALEUR_B, "sorties restaurées");
 
-    std::cout << "run.from et skip\n";
     PipelineNs::RunState r = b.p.getRunState();
     r.startFromStep = "b";
     b.p.setRunState(r);
@@ -146,14 +167,18 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     r = b.p.getRunState();
     r.startFromStep = "a";
     b.p.setRunState(r);
-    verifier(b.lancer() && b.execA == 3 && b.execB == 5, "from=a : a et b refaits");
+    verifier(b.lancer() && b.execA == EXECUTIONS_A_APRES_DEPART_A &&
+             b.execB == EXECUTIONS_B_APRES_DEPART_A, "from=a : a et b refaits");
     r = b.p.getRunState();
     r.skipCompletedSteps = false;
     b.p.setRunState(r);
-    verifier(b.lancer() && b.execA == 4 && b.execB == 6, "skip=false : tout refait");
+    verifier(b.lancer() && b.execA == EXECUTIONS_A_APRES_RECALCUL &&
+             b.execB == EXECUTIONS_B_APRES_RECALCUL, "skip=false : tout refait");
     verifier(b.p.getRunState().skipCompletedSteps, "consigne skip remise à true après le run");
+}
 
-    r = b.p.getRunState();
+void testerDepartInvalide(Banc& b, const fs::path& dossier) {
+    PipelineNs::RunState r = b.p.getRunState();
     r.startFromStep = "inconnu";
     b.p.setRunState(r);
     bool leve = false;
@@ -168,6 +193,15 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     leve = false;
     try { vide.lancer(); } catch (const std::invalid_argument&) { leve = true; }
     verifier(leve, "from=b sans checkpoint de a : std::invalid_argument");
+}
+
+void testerEchecPuisReprise(const fs::path& dossier) {
+    std::cout << "Échec puis reprise\n";
+    fs::remove_all(dossier);
+    Banc b(dossier);
+    testerEchecInitial(b, dossier);
+    testerOptionsModifieesEtDepart(b);
+    testerDepartInvalide(b, dossier);
 }
 
 void testerPause(const fs::path& dossier) {
@@ -223,7 +257,79 @@ void testerScript(const fs::path& dossier) {
     verifier(leve, "skip non booléen refusé");
 }
 
-// Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
+void creerDonneesDeTypes(StepNs::DataStoreClass& donnees) {
+    auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
+    auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
+    t0->setNeighbours(nullptr, t1.get(), nullptr, nullptr);
+    t1->setNeighbours(t0.get(), nullptr, nullptr, nullptr);
+    donnees.replace("tiles", DataNs::TileList{t0, t1});
+    DataNs::PairMatches pm{0, 1, DataNs::Direction::Bottom, {}};
+    pm.featureMatches.pointsInA = {{POINT_A_X, POINT_A_Y}};
+    pm.featureMatches.pointsInB = {{POINT_B_X, POINT_B_Y}};
+    pm.featureMatches.confidenceScores = {SCORE_CONFIANCE};
+    pm.featureMatches.translationX = TRANSLATION_X;
+    pm.featureMatches.translationY = TRANSLATION_Y;
+    donnees.replace("matches", std::vector<DataNs::PairMatches>{pm});
+    donnees.replace("positions", std::vector<DataNs::TilePositionData>{
+        {"r00_c01", {POSITION_X, POSITION_Y}, ROTATION_RADIANS}});
+    DataNs::TileTerritory territory;
+    territory.tileIndex = 1;
+    territory.polygons = {{{0, 0}, {BORD_TUILE, 0}, {BORD_TUILE, BORD_TUILE}}};
+    territory.holes = {{{{2, 2}, {3, 2}, {3, 3}}}};
+    donnees.replace("territories", std::vector<DataNs::TileTerritory>{territory});
+}
+
+void serialiserEtRelireTypes(const fs::path& dossier, const StepNs::DataStoreClass& avant,
+                            StepNs::DataStoreClass& apres) {
+    const auto types = CheckpointNs::pipelineTypes();
+    const std::pair<const char*, const char*> cles[] = {
+        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"}};
+    for (const auto& [type, cle] : cles) {
+        types.at(type).first(avant, cle, dossier);
+        types.at(type).second(apres, cle, dossier);
+    }
+}
+
+void verifierTuilesSerialisees(const StepNs::DataStoreClass& donnees) {
+    const auto& tuiles = donnees.get<DataNs::TileList>("tiles");
+    verifier(tuiles.size() == 2 && tuiles[0]->getSource() == "a.tif" &&
+             tuiles[0]->getType() == CV_16UC3 &&
+             tuiles[0]->getLevel(0).width == LARGEUR_TUILE &&
+             tuiles[0]->getRight() == tuiles[1].get() &&
+             tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
+             "Tiles : fiches et voisins");
+}
+
+void verifierCorrespondancesSerialisees(const StepNs::DataStoreClass& donnees) {
+    const auto& correspondances = donnees.get<std::vector<DataNs::PairMatches>>("matches");
+    const auto& match = correspondances.at(0);
+    verifier(correspondances.size() == 1 && match.direction == DataNs::Direction::Bottom &&
+             match.featureMatches.translationX == TRANSLATION_X &&
+             match.featureMatches.translationY == TRANSLATION_Y &&
+             match.featureMatches.pointsInA == std::vector<cv::Point2f>{{POINT_A_X, POINT_A_Y}} &&
+             match.featureMatches.pointsInB == std::vector<cv::Point2f>{{POINT_B_X, POINT_B_Y}} &&
+             match.featureMatches.confidenceScores == std::vector<float>{SCORE_CONFIANCE},
+             "PairMatches : valeurs exactes");
+}
+
+void verifierPositionsEtTerritoiresSerialises(const StepNs::DataStoreClass& donnees) {
+    const auto& positions = donnees.get<std::vector<DataNs::TilePositionData>>("positions");
+    verifier(positions.size() == 1 && positions[0].tileId == "r00_c01" &&
+             positions[0].position == cv::Point2d(POSITION_X, POSITION_Y) &&
+             positions[0].rotationRadians == ROTATION_RADIANS,
+             "Positions : valeurs exactes");
+    const auto& territoires = donnees.get<std::vector<DataNs::TileTerritory>>("territories");
+    const std::vector<std::vector<cv::Point>> polygonesAttendus = {
+        {{0, 0}, {BORD_TUILE, 0}, {BORD_TUILE, BORD_TUILE}}};
+    const std::vector<std::vector<std::vector<cv::Point>>> trousAttendus = {
+        {{{2, 2}, {3, 2}, {3, 3}}}};
+    verifier(territoires.size() == 1 && territoires[0].tileIndex == 1 &&
+             territoires[0].polygons == polygonesAttendus &&
+             territoires[0].holes == trousAttendus,
+             "Territories : polygones et trous");
+}
+
+// Aller-retour save → load des types du pipeline sans passer par un step.
 void testerTypesDuPipeline(const fs::path& dossier) {
     std::cout << "Sérialisation des types du pipeline\n";
     fs::remove_all(dossier);
@@ -232,56 +338,17 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     verifier(types.size() == 4 && CheckpointNs::CheckpointClass::hasType("Tiles") && CheckpointNs::CheckpointClass::hasType("PairMatches") &&
                  CheckpointNs::CheckpointClass::hasType("Positions") && CheckpointNs::CheckpointClass::hasType("Territories"),
              "4 types déclarés d'office");
-
     StepNs::DataStoreClass avant, apres;
-    auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", 400, 300, CV_16UC3);
-    auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", 400, 300, CV_16UC3);
-    t0->setNeighbours(nullptr, t1.get(), nullptr, nullptr);
-    t1->setNeighbours(t0.get(), nullptr, nullptr, nullptr);
-    avant.replace("tiles", DataNs::TileList{t0, t1});
-    DataNs::PairMatches pm{0, 1, DataNs::Direction::Bottom, {}};
-    pm.featureMatches.pointsInA = {{1.25f, 2.5f}};
-    pm.featureMatches.pointsInB = {{3.125f, 4.f}};
-    pm.featureMatches.confidenceScores = {0.75f};
-    pm.featureMatches.translationX = 319.875f;
-    pm.featureMatches.translationY = -0.03125f;
-    avant.replace("matches", std::vector<DataNs::PairMatches>{pm});
-    avant.replace("positions", std::vector<DataNs::TilePositionData>{{"r00_c01", {320.123456789, -0.5}, 0.001}});
-    DataNs::TileTerritory terr;
-    terr.tileIndex = 1;
-    terr.polygons = {{{0, 0}, {10, 0}, {10, 10}}};
-    terr.holes = {{{{2, 2}, {3, 2}, {3, 3}}}};
-    avant.replace("territories", std::vector<DataNs::TileTerritory>{terr});
-
-    const std::pair<const char*, const char*> cles[] = {
-        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"}};
-    for (const auto& [type, cle] : cles) {
-        types.at(type).first(avant, cle, dossier);
-        types.at(type).second(apres, cle, dossier);
-    }
-
-    const auto& tuiles = apres.get<DataNs::TileList>("tiles");
-    verifier(tuiles.size() == 2 && tuiles[0]->getSource() == "a.tif" && tuiles[0]->getType() == CV_16UC3 &&
-                 tuiles[0]->getLevel(0).width == 400 && tuiles[0]->getRight() == tuiles[1].get() &&
-                 tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
-             "Tiles : fiches et voisins");
-    const auto& m = apres.get<std::vector<DataNs::PairMatches>>("matches");
-    verifier(m.size() == 1 && m[0].direction == DataNs::Direction::Bottom && m[0].featureMatches.translationX == pm.featureMatches.translationX &&
-                 m[0].featureMatches.translationY == pm.featureMatches.translationY && m[0].featureMatches.pointsInA == pm.featureMatches.pointsInA &&
-                 m[0].featureMatches.pointsInB == pm.featureMatches.pointsInB && m[0].featureMatches.confidenceScores == pm.featureMatches.confidenceScores,
-             "PairMatches : valeurs exactes");
-    const auto& pos = apres.get<std::vector<DataNs::TilePositionData>>("positions");
-    verifier(pos.size() == 1 && pos[0].tileId == "r00_c01" && pos[0].position == cv::Point2d(320.123456789, -0.5) &&
-                 pos[0].rotationRadians == 0.001,
-             "Positions : valeurs exactes");
-    const auto& tr = apres.get<std::vector<DataNs::TileTerritory>>("territories");
-    verifier(tr.size() == 1 && tr[0].tileIndex == 1 && tr[0].polygons == terr.polygons && tr[0].holes == terr.holes,
-             "Territories : polygones et trous");
+    creerDonneesDeTypes(avant);
+    serialiserEtRelireTypes(dossier, avant, apres);
+    verifierTuilesSerialisees(apres);
+    verifierCorrespondancesSerialisees(apres);
+    verifierPositionsEtTerritoiresSerialises(apres);
 }
 
 // Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en
 // parallèle) et déclare le type "Compteur" dans son processus
-class Reprise : public ::testing::Test {
+class RepriseClass : public ::testing::Test {
 protected:
     fs::path dossier;
     void SetUp() override {
@@ -292,11 +359,11 @@ protected:
     void TearDown() override { fs::remove_all(dossier); }
 };
 
-TEST_F(Reprise, SansCheckpoint) { testerSansCheckpoint(); }
-TEST_F(Reprise, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
-TEST_F(Reprise, Pause) { testerPause(dossier); }
-TEST_F(Reprise, CheckpointCorrompu) { testerCheckpointCorrompu(dossier); }
-TEST_F(Reprise, Script) { testerScript(dossier); }
-TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
+TEST_F(RepriseClass, SansCheckpoint) { testerSansCheckpoint(); }
+TEST_F(RepriseClass, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
+TEST_F(RepriseClass, Pause) { testerPause(dossier); }
+TEST_F(RepriseClass, CheckpointCorrompu) { testerCheckpointCorrompu(dossier); }
+TEST_F(RepriseClass, Script) { testerScript(dossier); }
+TEST_F(RepriseClass, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
 
 }
