@@ -6,7 +6,7 @@
 |---|---|---|
 | CMake ≥ 3.21 (presets) et Ninja | oui | build |
 | Compilateur C++17 | oui | MSVC 2022 sous Windows, GCC ou Clang sous Linux |
-| OpenCV 4, avec le module `dnn` | oui | images, algorithmes |
+| OpenCV 4, avec le module `dnn` | oui | images, algorithmes ; OpenCV 5 n'est pas pris en charge |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
 | ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
@@ -58,6 +58,9 @@ Installer les dépendances une seule fois :
 brew install cmake opencv libtiff qtbase googletest
 ```
 
+La formule `opencv` doit fournir OpenCV 4.x ; OpenCV 5 n'est pas encore pris en
+charge et sera refusé par CMake.
+
 Dans VS Code, choisir le preset **macos** lorsqu'il est demandé, ou utiliser :
 
 ```bash
@@ -79,7 +82,9 @@ cmake --build --preset linux
 ctest --preset linux
 ```
 
-C'est la configuration de la CI (`.github/workflows/build-test.yml`).
+`libopencv-dev` doit fournir OpenCV 4.x. La configuration CMake refuse OpenCV 5,
+qui n'est pas pris en charge. C'est la configuration de la CI
+(`.github/workflows/build-test.yml`).
 
 ### Vérifications clang-tidy
 
