@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,18 @@ namespace fs = std::filesystem;
 using Json = nlohmann::json;
 
 namespace {
+
+    struct TiffMetadata {
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        std::uint16_t bitsPerSample = 0;
+        std::uint16_t sampleCount = 0;
+    };
+
+    struct TiffTileReadResult {
+        TiffMetadata metadata;
+        cv::Mat tile;
+    };
 
     class TemporaryDirectory {
         public:
@@ -57,24 +70,37 @@ namespace {
         step.importConfig(config);
     }
 
-    void readFirstTiffTile(const fs::path& path, cv::Mat& tile, std::uint32_t& width, std::uint32_t& height,
-                           std::uint16_t& bitsPerSample, std::uint16_t& sampleCount) {
-        TIFF* rawTiff = TIFFOpen(path.string().c_str(), "r");
-        ASSERT_NE(rawTiff, nullptr) << path.string();
-        const std::unique_ptr<TIFF, decltype(&TIFFClose)> tiff(rawTiff, &TIFFClose);
-        ASSERT_TRUE(TIFFGetField(tiff.get(), TIFFTAG_IMAGEWIDTH, &width));
-        ASSERT_TRUE(TIFFGetField(tiff.get(), TIFFTAG_IMAGELENGTH, &height));
-        ASSERT_TRUE(TIFFGetField(tiff.get(), TIFFTAG_BITSPERSAMPLE, &bitsPerSample));
-        ASSERT_TRUE(TIFFGetField(tiff.get(), TIFFTAG_SAMPLESPERPIXEL, &sampleCount));
-        const ttile_t tileIndex = TIFFComputeTile(tiff.get(), 0, 0, 0, 0);
-        const tmsize_t tileBytes = TIFFTileSize(tiff.get());
-        ASSERT_GT(tileBytes, 0);
+    TiffMetadata readTiffMetadata(TIFF* tiff) {
+        TiffMetadata metadata;
+        if (!TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &metadata.width) ||
+            !TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &metadata.height) ||
+            !TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &metadata.bitsPerSample) ||
+            !TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &metadata.sampleCount)) {
+            throw std::runtime_error("cannot read TIFF image metadata");
+        }
+        return metadata;
+    }
+
+    cv::Mat readFirstTiffTile(TIFF* tiff, const TiffMetadata& metadata) {
+        const ttile_t tileIndex = TIFFComputeTile(tiff, 0, 0, 0, 0);
+        const tmsize_t tileBytes = TIFFTileSize(tiff);
+        if (tileBytes <= 0) throw std::runtime_error("invalid TIFF tile size");
         std::vector<std::uint8_t> bytes(static_cast<std::size_t>(tileBytes));
-        ASSERT_GT(TIFFReadEncodedTile(tiff.get(), tileIndex, bytes.data(), tileBytes), 0);
-        const int type = bitsPerSample == 16 && sampleCount == 3 ? CV_16UC3 :
-                         bitsPerSample == 16 ? CV_16UC1 : CV_8UC1;
-        tile = cv::Mat(static_cast<int>(DataNs::BLOCK_SIZE), static_cast<int>(DataNs::BLOCK_SIZE), type);
+        if (TIFFReadEncodedTile(tiff, tileIndex, bytes.data(), tileBytes) <= 0)
+            throw std::runtime_error("cannot read TIFF tile");
+        const int type = metadata.bitsPerSample == 16 && metadata.sampleCount == 3 ? CV_16UC3 :
+                         metadata.bitsPerSample == 16 ? CV_16UC1 : CV_8UC1;
+        cv::Mat tile(static_cast<int>(DataNs::BLOCK_SIZE), static_cast<int>(DataNs::BLOCK_SIZE), type);
         std::copy(bytes.begin(), bytes.end(), tile.data);
+        return tile;
+    }
+
+    TiffTileReadResult readFirstTiffTile(const fs::path& path) {
+        TIFF* rawTiff = TIFFOpen(path.string().c_str(), "r");
+        if (!rawTiff) throw std::runtime_error("cannot open TIFF " + path.string());
+        const std::unique_ptr<TIFF, decltype(&TIFFClose)> tiff(rawTiff, &TIFFClose);
+        const TiffMetadata metadata = readTiffMetadata(tiff.get());
+        return {metadata, readFirstTiffTile(tiff.get(), metadata)};
     }
 
 }
@@ -98,15 +124,12 @@ TEST(ExportStepTest, WritesOnlyTheCompositeMosaic) {
     EXPECT_EQ(output.imagePath, temporaryDirectory.path / "mosaic.tif");
     EXPECT_FALSE(output.isBigTiff);
 
-    cv::Mat imageTile;
-    std::uint32_t imageWidth = 0, imageHeight = 0;
-    std::uint16_t imageBits = 0, imageChannels = 0;
-    readFirstTiffTile(output.imagePath, imageTile, imageWidth, imageHeight, imageBits, imageChannels);
-    EXPECT_EQ(imageWidth, 2u);
-    EXPECT_EQ(imageHeight, 2u);
-    EXPECT_EQ(imageBits, 16);
-    EXPECT_EQ(imageChannels, 3);
-    const cv::Vec<std::uint16_t, 3> pixel = imageTile.at<cv::Vec<std::uint16_t, 3>>(0, 1);
+    const TiffTileReadResult tiff = readFirstTiffTile(output.imagePath);
+    EXPECT_EQ(tiff.metadata.width, 2u);
+    EXPECT_EQ(tiff.metadata.height, 2u);
+    EXPECT_EQ(tiff.metadata.bitsPerSample, 16);
+    EXPECT_EQ(tiff.metadata.sampleCount, 3);
+    const cv::Vec<std::uint16_t, 3> pixel = tiff.tile.at<cv::Vec<std::uint16_t, 3>>(0, 1);
     EXPECT_EQ(pixel[0], 400);
     EXPECT_EQ(pixel[1], 500);
     EXPECT_EQ(pixel[2], 600);

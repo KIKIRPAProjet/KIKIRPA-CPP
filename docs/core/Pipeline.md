@@ -116,8 +116,10 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. Une fiche par step dans [docs/steps/](../steps/).
+`export` est terminal : il attend des blocs composites, mais aucun step de fusion ne les produit encore dans ce dépôt.
 
 ## Ajouter un step
 
