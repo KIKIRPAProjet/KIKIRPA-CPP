@@ -160,6 +160,7 @@ namespace GraphCutNs {
         std::vector<cv::Point> toMosaicCorners(const std::vector<cv::Point2d>& rawCorners) {
             double minimumX = std::numeric_limits<double>::max();
             double minimumY = std::numeric_limits<double>::max();
+
             for (const cv::Point2d& corner : rawCorners) {
                 minimumX = std::min(minimumX, corner.x);
                 minimumY = std::min(minimumY, corner.y);
@@ -167,6 +168,8 @@ namespace GraphCutNs {
             const double offsetX = std::floor(minimumX);
             const double offsetY = std::floor(minimumY);
             std::vector<cv::Point> originalCorners;
+            // Réserve la taille, sinon clang-tidy est pas content
+            originalCorners.reserve(rawCorner.size());
             for (const cv::Point2d& corner : rawCorners)
                 originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
             return originalCorners;
