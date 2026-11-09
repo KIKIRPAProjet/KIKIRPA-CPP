@@ -158,6 +158,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         workspaceUI, &WorkspaceUI::appendLog);
     connect(simulationRunner, &SimulationRunner::mosaicReady,
         this, [this](const QImage &image) {
+            finalMosaic = image;
             if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                 canvas->setMosaicPreview(image);
                 setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
@@ -239,6 +240,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QStringList &newTilePaths)
 {
+    finalMosaic = QImage();
     projectName = name;
     outputDirectory.clear();
     projectPath.clear();
@@ -267,6 +269,7 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     }
 
+    finalMosaic = QImage();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();

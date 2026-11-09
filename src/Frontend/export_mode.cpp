@@ -25,8 +25,10 @@
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QDir>
+#include <QFileInfo>
 #include <QLabel>
 #include <QPushButton>
+#include <QImageWriter>
 #include <QSaveFile>
 #include <QVBoxLayout>
 
@@ -40,19 +42,73 @@ void MainWindow::showExportDialog()
                       tr("PSB"), tr("JPEG — perte de précision")});
     auto *report = new QCheckBox(tr("Générer le rapport d'assemblage (HTML)"), &dialog);
     report->setChecked(true);
+    auto *exportHint = makeMutedLabel(QString(), &dialog);
     layout.addWidget(new QLabel(tr("Format de sortie"), &dialog));
     layout.addWidget(format);
     layout.addWidget(new QLabel(tr("Profil ICC des tuiles conservé"), &dialog));
     layout.addWidget(report);
-    layout.addWidget(makeMutedLabel(
-        tr("L'export de la mosaïque nécessite le backend, non connecté dans ce prototype."),
-        &dialog));
+    layout.addWidget(exportHint);
+    const auto updateExportHint = [format, report, exportHint]() {
+        const bool jpegSelected = format->currentText().contains(QObject::tr("JPEG"));
+        report->setEnabled(!jpegSelected);
+        exportHint->setText(jpegSelected
+            ? QObject::tr("Le JPEG exporte le résultat final généré par l'assemblage.")
+            : QObject::tr("Les autres formats restent disponibles dans le rapport HTML."));
+    };
+    connect(format, &QComboBox::currentTextChanged, &dialog, updateExportHint);
+    updateExportHint();
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
-    auto *exportReport = buttons->addButton(tr("Enregistrer le rapport…"),
+    auto *exportReport = buttons->addButton(tr("Enregistrer…"),
                                             QDialogButtonBox::AcceptRole);
     layout.addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
     connect(exportReport, &QPushButton::clicked, this, [this, &dialog, format, report]() {
+        const bool jpegSelected = format->currentText().contains(tr("JPEG"));
+        if (jpegSelected) {
+            if (finalMosaic.isNull()) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Aucun résultat final n'est disponible. Lancez l'assemblage avant "
+                       "d'exporter l'image."));
+                return;
+            }
+
+            const QString imageName = projectName + QStringLiteral(".jpg");
+            const QString defaultPath = outputDirectory.isEmpty()
+                ? imageName : QDir(outputDirectory).filePath(imageName);
+            QString path = QFileDialog::getSaveFileName(&dialog, tr("Enregistrer le résultat JPEG"),
+                defaultPath, tr("Image JPEG (*.jpg *.jpeg)"));
+            if (path.isEmpty())
+                return;
+            if (QFileInfo(path).suffix().isEmpty())
+                path += QStringLiteral(".jpg");
+
+            QSaveFile file(path);
+            QImageWriter writer(&file, QByteArrayLiteral("jpeg"));
+            writer.setQuality(95);
+            QString errorMessage;
+            bool exportSucceeded = false;
+            if (!file.open(QIODevice::WriteOnly))
+                errorMessage = file.errorString();
+            else if (!writer.write(finalMosaic))
+                errorMessage = writer.errorString();
+            else
+                exportSucceeded = file.commit();
+            if (!exportSucceeded) {
+                if (errorMessage.isEmpty())
+                    errorMessage = file.errorString();
+                if (errorMessage.isEmpty())
+                    errorMessage = tr("Erreur inconnue.");
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Le résultat JPEG n'a pas pu être enregistré : %1")
+                        .arg(errorMessage));
+                return;
+            }
+
+            updateStatus(tr("Résultat final exporté en JPEG."));
+            dialog.accept();
+            return;
+        }
+
         if (!report->isChecked()) {
             QMessageBox::information(&dialog, tr("Backend requis"),
                 tr("La génération de l'image mosaïque sera disponible une fois le backend connecté."));

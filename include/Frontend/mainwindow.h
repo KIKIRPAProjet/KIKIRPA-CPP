@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QImage>
 #include <QString>
 #include <QStringList>
 
@@ -11,7 +12,6 @@ class ProjectGrid;
 class SimulationRunner;
 class WorkspaceUI;
 class MenuBarManager;
-class QImage;
 
 class MainWindow : public QMainWindow
 {
@@ -71,6 +71,7 @@ private:
     int zoomPercent = 12;
     bool panelsVisible = true;
     bool maskVisible = true;
+    QImage finalMosaic;
 };
 
 #endif

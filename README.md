@@ -26,8 +26,8 @@ Garder les fichiers fournis avec l’exécutable dans le même dossier : les bib
 4. Parcourir les six modes à l’aide de la barre d’étapes et inspecter les panneaux.
 5. Utiliser **Tout lancer** ou `F5` pour voir la démonstration de progression. Cette
    action ne calcule pas l’assemblage.
-6. Utiliser **Fichier → Exporter / rapport…** pour créer le rapport HTML de
-   démonstration. L’image mosaïque n’est pas exportée dans cette version.
+6. Utiliser **Fichier → Exporter / rapport…** pour exporter le résultat final en
+   JPEG après l’exécution, ou pour créer le rapport HTML de démonstration.
 
 Les images sources ne sont pas modifiées par l’import. L’interface conserve seulement
 les chemins des fichiers sélectionnés dans le projet.
@@ -277,15 +277,17 @@ pour la mosaïque sont :
 - **PSB** : format envisagé pour les très grandes images ;
 - **JPEG** : compression avec perte.
 
-Le profil ICC est indiqué comme conservé dans la maquette. Toutefois, l’export de la
-mosaïque n’est pas implémenté. Le choix du format est seulement inscrit dans le rapport
-HTML.
+Le profil ICC est indiqué comme conservé dans la maquette. Le résultat final disponible
+dans l’interface peut être exporté en JPEG après l’exécution de l’assemblage.
 
-Pour enregistrer le rapport :
+Pour exporter le résultat final :
 
-1. Laisser cochée **Générer le rapport d’assemblage (HTML)**.
-2. Cliquer **Enregistrer le rapport…**.
-3. Choisir le chemin du fichier `.html`.
+1. Sélectionner **JPEG — perte de précision**.
+2. Cliquer **Enregistrer…**.
+3. Choisir le chemin du fichier `.jpg` ou `.jpeg`.
+
+Pour enregistrer le rapport HTML, sélectionner un autre format, laisser cochée
+**Générer le rapport d’assemblage (HTML)**, puis cliquer **Enregistrer…**.
 
 Le rapport généré contient le nom du projet, la date, le format demandé et le nombre de
 chemins de tuiles référencés. Il précise que les mesures sont celles de la maquette ;
