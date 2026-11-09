@@ -38,8 +38,8 @@ public:
         std::filesystem::create_directories(path);
     }
     ~TempDirClass() {
-        std::error_code ec;
-        std::filesystem::remove_all(path, ec);
+        std::error_code errorCode;
+        std::filesystem::remove_all(path, errorCode);
     }
     std::filesystem::path path;
 };

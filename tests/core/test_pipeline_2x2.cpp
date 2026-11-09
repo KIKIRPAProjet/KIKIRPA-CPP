@@ -54,8 +54,8 @@ struct TempWorkspace {
     }
 
     ~TempWorkspace() {
-        std::error_code ec;
-        fs::remove_all(root, ec);
+        std::error_code errorCode;
+        fs::remove_all(root, errorCode);
     }
 
     fs::path root;
@@ -73,17 +73,17 @@ void createSyntheticTiles2x2(const fs::path& imagesDir) {
     cv::Mat canvas16u;
     canvas32f.convertTo(canvas16u, CV_16UC3);
 
-    cv::Mat t00 = canvas16u(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r00_c00.tif").string(), t00);
+    cv::Mat tileImage00 = canvas16u(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT));
+    cv::imwrite((imagesDir / "img_r00_c00.tif").string(), tileImage00);
 
-    cv::Mat t01 = canvas16u(cv::Rect(SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r00_c01.tif").string(), t01);
+    cv::Mat tileImage01 = canvas16u(cv::Rect(SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT));
+    cv::imwrite((imagesDir / "img_r00_c01.tif").string(), tileImage01);
 
-    cv::Mat t10 = canvas16u(cv::Rect(0, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r01_c00.tif").string(), t10);
+    cv::Mat tileImage10 = canvas16u(cv::Rect(0, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
+    cv::imwrite((imagesDir / "img_r01_c00.tif").string(), tileImage10);
 
-    cv::Mat t11 = canvas16u(cv::Rect(SHIFT_X, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r01_c01.tif").string(), t11);
+    cv::Mat tileImage11 = canvas16u(cv::Rect(SHIFT_X, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
+    cv::imwrite((imagesDir / "img_r01_c01.tif").string(), tileImage11);
 }
 
 Json build2x2PipelineScript(const fs::path& imagesDir, const fs::path& outputDir) {
@@ -136,16 +136,16 @@ Json build2x2PipelineScript(const fs::path& imagesDir, const fs::path& outputDir
 } // namespace
 
 TEST(Pipeline2x2Test, RejectsInvalidConfigurationWithSpecificCause) {
-    const Json scriptInconnu = {
+    const Json unknownScript = {
         {"pipeline", {
             {"steps", Json::array({
                 {{"name", "step_inexistant"}}
             })}
         }}
     };
-    EXPECT_THROW(PipelineNs::buildPipeline(scriptInconnu), std::invalid_argument);
+    EXPECT_THROW(PipelineNs::buildPipeline(unknownScript), std::invalid_argument);
 
-    const Json scriptChaineInvalide = {
+    const Json invalidChainScript = {
         {"pipeline", {
             {"steps", Json::array({
                 {
@@ -158,20 +158,20 @@ TEST(Pipeline2x2Test, RejectsInvalidConfigurationWithSpecificCause) {
             })}
         }}
     };
-    EXPECT_THROW(PipelineNs::buildPipeline(scriptChaineInvalide), std::invalid_argument);
+    EXPECT_THROW(PipelineNs::buildPipeline(invalidChainScript), std::invalid_argument);
 }
 
 TEST(Pipeline2x2Test, ExecutesFullChainOnReal2x2DatasetUntilExport) {
-    TempWorkspace ws;
-    createSyntheticTiles2x2(ws.imagesDir);
+    TempWorkspace workspace;
+    createSyntheticTiles2x2(workspace.imagesDir);
 
-    const Json script = build2x2PipelineScript(ws.imagesDir, ws.outputDir);
+    const Json script = build2x2PipelineScript(workspace.imagesDir, workspace.outputDir);
     PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(script);
 
     std::vector<std::string> logs;
-    const bool success = pipeline.run([&logs](const std::string& msg) {
-        logs.push_back(msg);
-        std::cout << "    [pipeline 2x2] " << msg << std::endl;
+    const bool success = pipeline.run([&logs](const std::string& message) {
+        logs.push_back(message);
+        std::cout << "    [pipeline 2x2] " << message << std::endl;
     });
 
     EXPECT_TRUE(success);
@@ -191,8 +191,8 @@ TEST(Pipeline2x2Test, ExecutesFullChainOnReal2x2DatasetUntilExport) {
     EXPECT_EQ(positions.size(), EXPECTED_TILE_COUNT);
 
     ASSERT_TRUE(store.has("intensityCorrection"));
-    const auto& ic = store.get<DataNs::IntensityCorrection>("intensityCorrection");
-    EXPECT_EQ(ic.tileGains.size(), EXPECTED_TILE_COUNT);
+    const auto& intensityCorrection = store.get<DataNs::IntensityCorrection>("intensityCorrection");
+    EXPECT_EQ(intensityCorrection.tileGains.size(), EXPECTED_TILE_COUNT);
 
     ASSERT_TRUE(store.has("territories"));
     const auto& territories = store.get<std::vector<DataNs::TileTerritory>>("territories");
@@ -202,7 +202,7 @@ TEST(Pipeline2x2Test, ExecutesFullChainOnReal2x2DatasetUntilExport) {
     const auto& blocks = store.get<DataNs::CompositeBlockList>("compositeBlocks");
     EXPECT_FALSE(blocks.empty());
 
-    const fs::path expectedMosaicPath = ws.outputDir / "mosaic.tif";
+    const fs::path expectedMosaicPath = workspace.outputDir / "mosaic.tif";
     EXPECT_TRUE(fs::exists(expectedMosaicPath));
     EXPECT_GT(fs::file_size(expectedMosaicPath), 0u);
 
