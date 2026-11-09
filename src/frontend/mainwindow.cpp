@@ -26,39 +26,17 @@
 #include "workspace_ui.h"
 
 #include <QApplication>
-#include <QButtonGroup>
-#include <QCheckBox>
 #include <QComboBox>
-#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFormLayout>
-#include <QGraphicsDropShadowEffect>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
 #include <QKeyEvent>
 #include <QImage>
 #include <QLabel>
-#include <QLineEdit>
-#include <QLineF>
 #include <QMenuBar>
-#include <QMouseEvent>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPolygonF>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QSpinBox>
-#include <QSplitter>
 #include <QStackedWidget>
-#include <QTabWidget>
-#include <QTableWidget>
-#include <QToolButton>
-#include <QVBoxLayout>
 #include <QStatusBar>
 #include <QAbstractItemView>
 #include <QFontMetrics>
@@ -76,11 +54,30 @@
 #include <windows.h>
 #endif
 
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("KIK-IRPA Assemblage"));
     resize(1228, 780);
     setMinimumSize(920, 600);
+    applyStyleSheet();
+
+    projectGrid = new ProjectGrid(this);
+    simulationRunner = new SimulationRunner(this);
+    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
+    menuBarManager = new MenuBarManager(this);
+    menuBarManager->setupMenus(menuBar());
+    refreshGrid();
+    refreshProjectInfo();
+    setupProjectGridConnections();
+    setupSimulationConnections();
+    setupHomePageConnections();
+    setupMenuConnections();
+    setupPageConnections();
+}
+
+void MainWindow::applyStyleSheet()
+{
     setStyleSheet(QStringLiteral(
         "QMainWindow,QWidget { background:#303030; color:#d5d5d5; font-size:12px; }"
         "QMenuBar,QMenu { background:#242424; color:#dedede; }"
@@ -105,14 +102,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
         "QCheckBox { spacing:7px; }"));
+}
 
-    projectGrid = new ProjectGrid(this);
-    simulationRunner = new SimulationRunner(this);
-    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
-    menuBarManager = new MenuBarManager(this);
-    menuBarManager->setupMenus(menuBar());
-    refreshGrid();
-    refreshProjectInfo();
+void MainWindow::setupProjectGridConnections()
+{
     connect(projectGrid, &ProjectGrid::gridUpdated,
             this, &MainWindow::refreshProjectInfo);
     connect(projectGrid, &ProjectGrid::gridValidated,
@@ -133,6 +126,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showReferenceComparison);
     connect(projectGrid, &ProjectGrid::gridValidationCompleted,
             this, &MainWindow::handleGridValidation);
+}
+
+void MainWindow::setupSimulationConnections()
+{
     connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
@@ -154,13 +151,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
+}
+
+void MainWindow::setupHomePageConnections()
+{
     connect(workspaceUI->homePage(), &HomePage::projectCreationRequested,
             this, &MainWindow::initializeNewProject);
     connect(workspaceUI->homePage(), &HomePage::projectLoaded,
             this, &MainWindow::applyLoadedProject);
     connect(workspaceUI->homePage(), &HomePage::currentProjectRequested,
             this, &MainWindow::openCurrentProjectFromHome);
+}
 
+void MainWindow::setupMenuConnections()
+{
     connect(menuBarManager, &MenuBarManager::newProjectRequested,
             workspaceUI->homePage(), &HomePage::createProject);
     connect(menuBarManager, &MenuBarManager::openProjectRequested,
@@ -218,7 +222,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             tr("KIK-IRPA Assemblage — prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
+}
 
+void MainWindow::setupPageConnections()
+{
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
     });
