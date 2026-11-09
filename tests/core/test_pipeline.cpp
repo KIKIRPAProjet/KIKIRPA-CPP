@@ -36,8 +36,8 @@ namespace fs = std::filesystem;
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
-constexpr int PHASE_PARAMETER_COUNT = 12;
-constexpr std::size_t REGISTERED_STEP_COUNT = 6;   // import, phase-correlation, graphcut, lightglue, dynamic-programming-dijkstra, intensity-correction
+constexpr int PHASE_PARAMETER_COUNT = 15;
+constexpr std::size_t REGISTERED_STEP_COUNT = 8;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -89,7 +89,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == REGISTERED_STEP_COUNT, "6 steps enregistrés");
+    verifier(noms.size() == REGISTERED_STEP_COUNT, "8 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -109,7 +109,7 @@ void testerDefaults() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 12 options");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 15 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());
@@ -141,6 +141,7 @@ void testerValidation() {
     verifier(leveInvalidArgument([] { PipelineNs::buildPipeline(script({etape("import"), etape("graphcut")})); },
                                  "input 'positions' is not produced"),
              "graphcut sans step qui produit les positions");
+
 
     testerDefaults();
 }

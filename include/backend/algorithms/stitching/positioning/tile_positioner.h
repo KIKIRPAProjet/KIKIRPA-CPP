@@ -1,6 +1,9 @@
 // include/backend/algorithms/stitching/positioning/tile_positioner.h
 #pragma once
 
+// Règles de style 'misc-include-cleaner' et 'readability-magic-numbers' neutralisées ici :
+// json.hpp fournit l'API publique de nlohmann::json ; 0.3f est la fraction nominale de recouvrement.
+// NOLINTBEGIN(misc-include-cleaner,readability-magic-numbers)
 #include "core/data/algorithm_types.h"
 
 #include <nlohmann/json.hpp>
@@ -18,8 +21,8 @@ namespace PositioningNs {
         // Méthode d'appariement : "sift", "correlation_phase" (corrélation de phase) ou "lightglue" (si LightGlue est
         // compilé)
         std::string matcherName = "sift";
-        // Rejet des aberrants par défaut : "vote" (Hough 2D déterministe O(N), sans fausse rotation sur bande étroite).
-        // "ransac" (estimateAffinePartial2D) reste disponible.
+        // Rejet des aberrants : "vote" (Vote de Hough 2D déterministe O(N), sans fausse rotation sur bande étroite).
+
         std::string rejectorName = "vote";
         Json matcherParameters = Json::object();
         Json rejectorParameters = Json::object();
@@ -27,11 +30,11 @@ namespace PositioningNs {
 
     // Calcule la position (coin haut-gauche) de chaque tuile à partir des seules images :
     //   pour chaque paire de voisins directs (droite, dessous ; pas de diagonale) :
-    //     SIFT (lecture 16 bits sans perte) -> RANSAC -> translation = médiane de (pointInA - pointInB) sur les INLIERS
+    //     SIFT (lecture 16 bits sans perte) -> Vote 2D -> translation = médiane de (pointInA - pointInB) sur les INLIERS
     //   puis ajustement global par moindres carrés de toutes les translations.
     //
     // tilePaths : tuiles nommées "..._rLL_cCC.tif(f)". La première tuile (plus petite ligne, puis colonne) sert de
-    //             référence en (0, 0). Une paire dont SIFT ou RANSAC échoue est ignorée (la grille reste connectée par
+    //             référence en (0, 0). Une paire dont SIFT ou le Vote 2D échoue est ignorée (la grille reste connectée par
     //             les autres paires si possible).
     // positions : une entrée par tuile reliée à la référence ; identifiant "rLL_cCC" (le même que
     //             ImagePretreatmentClass). Si positions.size() != tilePaths.size(), certaines tuiles ne sont pas reliées :
@@ -42,3 +45,4 @@ namespace PositioningNs {
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log);
 
 }
+// NOLINTEND(misc-include-cleaner,readability-magic-numbers)
