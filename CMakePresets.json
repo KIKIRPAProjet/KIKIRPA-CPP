@@ -61,7 +61,9 @@
       "name": "windows-aqt",
       "configurePreset": "windows-aqt",
       "output": { "outputOnFailure": true },
-      "environment": { "PATH": "$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}" }
+      "environment": {
+        "PATH": "$env{QT_ROOT}/bin;$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}"
+      }
     },
     {
       "name": "linux",

@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 
 #include <QtCore/QString>
+#include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
 
 #include <cstdlib>
@@ -18,6 +19,9 @@ namespace {
 
 		MainWindow window;
 		window.show();
+		if (std::getenv("KIKIRPA_FRONTEND_STARTUP_TEST") != nullptr) {
+			QTimer::singleShot(0, &application, &QApplication::quit);
+		}
 		return QApplication::exec();
 	}
 
