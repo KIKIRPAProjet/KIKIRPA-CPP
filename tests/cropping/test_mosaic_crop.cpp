@@ -3,6 +3,10 @@
 
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/matx.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <array>
@@ -12,6 +16,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <limits>
 #include <string>
@@ -23,6 +28,13 @@ namespace CroppingTestsNs {
 
         constexpr int BLOCK_SIZE = 4;
         constexpr int MOSAIC_SIZE = BLOCK_SIZE * 2;
+        constexpr int BLOCK_ROW_OR_COLUMN_COUNT = 2;
+        constexpr unsigned short RGB_RED_BASE = 1000;
+        constexpr unsigned short RGB_GREEN_BASE = 2000;
+        constexpr unsigned short RGB_BLUE_BASE = 3000;
+        constexpr unsigned short PROVENANCE_BASE = RGB_RED_BASE;
+        constexpr unsigned char MASK_ON = 255;
+        constexpr int PREVIOUS_RESULT_BLOCK_COUNT = 10;
 
         const std::array<std::string, 3> FILE_PREFIXES{
             "rgb", "provenance", "mask"
@@ -30,6 +42,13 @@ namespace CroppingTestsNs {
 
         constexpr std::streamoff PNG_DEPTH_OFFSET = 24;
         constexpr std::streamoff PNG_COLOR_TYPE_OFFSET = 25;
+
+        struct HeaderBytePatch {
+
+            std::streamoff offset;
+            unsigned char value;
+
+        };
 
         std::string getSuffix(const cv::Point& position) {
             return "_x" + std::to_string(position.x) +
@@ -43,22 +62,21 @@ namespace CroppingTestsNs {
                 std::istreambuf_iterator<char>());
         }
 
-        bool overwriteHeaderByte(
+        bool applyHeaderBytePatch(
             const std::filesystem::path& path,
-            std::streamoff offset,
-            unsigned char value
+            const HeaderBytePatch& patch
         ) {
             std::fstream stream(path, std::ios::binary | std::ios::in | std::ios::out);
             if (!stream) {
                 return false;
             }
 
-            stream.seekp(offset);
+            stream.seekp(patch.offset);
             if (!stream.good()) {
                 return false;
             }
 
-            stream.put(static_cast<char>(value));
+            stream.put(static_cast<char>(patch.value));
             return stream.good();
         }
 
@@ -104,43 +122,68 @@ namespace CroppingTestsNs {
 
                     images[0].at<cv::Vec3w>(rowIndex, columnIndex) =
                         cv::Vec3w(
-                            static_cast<unsigned short>(1000 + value),
-                            static_cast<unsigned short>(2000 + value),
-                            static_cast<unsigned short>(3000 + value));
+                            static_cast<unsigned short>(RGB_RED_BASE + value),
+                            static_cast<unsigned short>(RGB_GREEN_BASE + value),
+                            static_cast<unsigned short>(RGB_BLUE_BASE + value));
 
                     images[1].at<unsigned short>(rowIndex, columnIndex) =
-                        static_cast<unsigned short>(1000 + value);
+                        static_cast<unsigned short>(PROVENANCE_BASE + value);
 
                     images[2].at<unsigned char>(rowIndex, columnIndex) =
                         static_cast<unsigned char>(
-                            (rowIndex + columnIndex) % 2 == 0 ? 255 : 0);
+                            (rowIndex + columnIndex) % 2 == 0 ? MASK_ON : 0);
                 }
             }
         }
 
-        bool writeSource(const cv::Point& origin) {
-            for (int rowIndex = 0; rowIndex < 2; ++rowIndex) {
+        bool writeRegionFiles(
+            const cv::Rect& region,
+            const std::string& suffix
+        ) const {
+            for (std::size_t fileIndex = 0;
+                fileIndex < images.size(); ++fileIndex) {
+                const auto path = sourceDirectory /
+                    (FILE_PREFIXES[fileIndex] + suffix);
+
+                if (!cv::imwrite(path.string(), images[fileIndex](region))) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        std::array<cv::Rect, BLOCK_ROW_OR_COLUMN_COUNT * BLOCK_ROW_OR_COLUMN_COUNT>
+            getSourceRegions(const cv::Point& origin) const {
+            std::array<cv::Rect,
+                BLOCK_ROW_OR_COLUMN_COUNT * BLOCK_ROW_OR_COLUMN_COUNT> regions{};
+            int regionIndex = 0;
+
+            for (int rowIndex = 0; rowIndex < BLOCK_ROW_OR_COLUMN_COUNT; ++rowIndex) {
                 for (int columnIndex = 0;
-                    columnIndex < 2; ++columnIndex) {
-                    const cv::Rect region(
-                        columnIndex * BLOCK_SIZE,
-                        rowIndex * BLOCK_SIZE,
+                    columnIndex < BLOCK_ROW_OR_COLUMN_COUNT; ++columnIndex) {
+                    regions[regionIndex++] = cv::Rect(
+                        origin.x + columnIndex * BLOCK_SIZE,
+                        origin.y + rowIndex * BLOCK_SIZE,
                         BLOCK_SIZE,
                         BLOCK_SIZE);
+                }
+            }
 
-                    const std::string suffix =
-                        getSuffix(region.tl() + origin);
+            return regions;
+        }
 
-                    for (std::size_t fileIndex = 0;
-                        fileIndex < images.size(); ++fileIndex) {
-                        const auto path = sourceDirectory /
-                            (FILE_PREFIXES[fileIndex] + suffix);
+        bool writeSource(const cv::Point& origin) {
+            const cv::Point localOrigin(0, 0);
+            for (const auto& sourceRegion : getSourceRegions(localOrigin)) {
+                const cv::Rect localRegion(
+                    sourceRegion.tl(),
+                    sourceRegion.size());
+                const std::string suffix =
+                    getSuffix(sourceRegion.tl() + origin);
 
-                        if (!cv::imwrite(
-                            path.string(), images[fileIndex](region))) {
-                            return false;
-                        }
-                    }
+                if (!writeRegionFiles(localRegion, suffix)) {
+                    return false;
                 }
             }
 
@@ -164,31 +207,19 @@ namespace CroppingTestsNs {
         ) const {
             int expectedBlockCount = 0;
 
-            for (int rowIndex = 0; rowIndex < 2; ++rowIndex) {
-                for (int columnIndex = 0;
-                    columnIndex < 2; ++columnIndex) {
-                    const cv::Rect sourceRegion(
-                        origin.x + columnIndex * BLOCK_SIZE,
-                        origin.y + rowIndex * BLOCK_SIZE,
-                        BLOCK_SIZE,
-                        BLOCK_SIZE);
-
-                    const cv::Rect intersection =
-                        sourceRegion & input.rectangle;
-                    if (intersection.empty()) {
-                        continue;
-                    }
-
-                    ++expectedBlockCount;
-                    const cv::Point outputPosition =
-                        intersection.tl() - input.rectangle.tl();
-                    const cv::Rect expectedRegion(
-                        intersection.tl() - origin,
-                        intersection.size());
-
-                    verifyBlock(
-                        output, outputPosition, expectedRegion);
+            for (const auto& sourceRegion : getSourceRegions(origin)) {
+                const cv::Rect intersection = sourceRegion & input.rectangle;
+                if (intersection.empty()) {
+                    continue;
                 }
+
+                ++expectedBlockCount;
+                const cv::Point outputPosition =
+                    intersection.tl() - input.rectangle.tl();
+                const cv::Rect expectedRegion(
+                    intersection.tl() - origin,
+                    intersection.size());
+                verifyBlock(output, outputPosition, expectedRegion);
             }
 
             EXPECT_EQ(output.totalBlocks, expectedBlockCount);
@@ -309,7 +340,9 @@ namespace CroppingTestsNs {
 
     TEST_F(MosaicCropTestClass, RejectsEmptyRectangle) {
         const auto input = makeInput(cv::Rect(0, 0, 0, BLOCK_SIZE));
-        DataNs::MosaicFiles output{ "previous_result", 10 };
+        DataNs::MosaicFiles output{
+            "previous_result", PREVIOUS_RESULT_BLOCK_COUNT
+        };
         std::string errorMessage;
 
         EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
@@ -333,8 +366,8 @@ namespace CroppingTestsNs {
     }
 
     TEST_F(MosaicCropTestClass, RejectsUnexpectedColorDepth) {
-        ASSERT_TRUE(overwriteHeaderByte(
-            sourceDirectory / "rgb_x0_y0.png", PNG_DEPTH_OFFSET, 8));
+        ASSERT_TRUE(applyHeaderBytePatch(
+            sourceDirectory / "rgb_x0_y0.png", { PNG_DEPTH_OFFSET, 8 }));
 
         const auto input = makeInput(
             cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
@@ -350,8 +383,8 @@ namespace CroppingTestsNs {
     }
 
     TEST_F(MosaicCropTestClass, RejectsUnexpectedMaskChannelLayout) {
-        ASSERT_TRUE(overwriteHeaderByte(
-            sourceDirectory / "mask_x0_y0.png", PNG_COLOR_TYPE_OFFSET, 2));
+        ASSERT_TRUE(applyHeaderBytePatch(
+            sourceDirectory / "mask_x0_y0.png", { PNG_COLOR_TYPE_OFFSET, 2 }));
 
         const auto input = makeInput(
             cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
@@ -386,8 +419,8 @@ namespace CroppingTestsNs {
     }
 
     TEST_F(MosaicCropTestClass, RejectsInvalidPngSignature) {
-        ASSERT_TRUE(overwriteHeaderByte(
-            sourceDirectory / "rgb_x0_y0.png", 0, 0));
+        ASSERT_TRUE(applyHeaderBytePatch(
+            sourceDirectory / "rgb_x0_y0.png", { 0, 0 }));
 
         const auto input = makeInput(
             cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));

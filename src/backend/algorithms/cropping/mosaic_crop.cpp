@@ -2,6 +2,7 @@
 #include "algorithms/cropping/mosaic_crop.h"
 
 #include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
@@ -14,6 +15,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -123,37 +125,36 @@ namespace CroppingNs {
             return true;
         }
 
+        bool parseCoordinate(
+            const std::string& coordinateText,
+            int& coordinate
+        ) {
+            const auto result = std::from_chars(
+                coordinateText.data(),
+                coordinateText.data() + coordinateText.size(),
+                coordinate
+            );
+
+            return result.ec == std::errc{};
+        }
+
         std::optional<cv::Point> getBlockPosition(
             const std::filesystem::path& filePath
         ) {
-            static const std::regex BLOCK_FILENAME_PATTERN(
+            static const std::regex blockFilenamePattern(
                 R"(^rgb_x(-?[0-9]+)_y(-?[0-9]+)\.png$)"
             );
 
             const std::string filename = filePath.filename().string();
             std::smatch matchedParts;
             if (!std::regex_match(
-                filename, matchedParts, BLOCK_FILENAME_PATTERN)) {
+                filename, matchedParts, blockFilenamePattern)) {
                 return std::nullopt;
             }
 
-            const std::string positionXText = matchedParts[1].str();
-            const std::string positionYText = matchedParts[2].str();
             cv::Point position;
-
-            const auto positionXResult = std::from_chars(
-                positionXText.data(),
-                positionXText.data() + positionXText.size(),
-                position.x
-            );
-            const auto positionYResult = std::from_chars(
-                positionYText.data(),
-                positionYText.data() + positionYText.size(),
-                position.y
-            );
-
-            if (positionXResult.ec != std::errc{} ||
-                positionYResult.ec != std::errc{}) {
+            if (!parseCoordinate(matchedParts[1].str(), position.x) ||
+                !parseCoordinate(matchedParts[2].str(), position.y)) {
                 return std::nullopt;
             }
 
@@ -240,6 +241,32 @@ namespace CroppingNs {
             return true;
         }
 
+        bool readBlockSizes(
+            const BlockFiles& block,
+            const std::filesystem::path& colorPath,
+            cv::Size& colorSize,
+            std::string& errorMessage
+        ) {
+            for (std::size_t fileIndex = 0;
+                fileIndex < FILE_COUNT; ++fileIndex) {
+                cv::Size size;
+                if (!readPngSize(
+                    block.paths[fileIndex], fileIndex, size, errorMessage)) {
+                    return false;
+                }
+                if (fileIndex == 0) {
+                    colorSize = size;
+                }
+                if (size != colorSize) {
+                    return fail(errorMessage,
+                        "Block files have different dimensions: " +
+                        colorPath.string());
+                }
+            }
+
+            return true;
+        }
+
         bool getBlockFiles(
             const std::filesystem::path& colorPath,
             BlockFiles& block,
@@ -277,21 +304,9 @@ namespace CroppingNs {
             }
 
             cv::Size colorSize;
-            for (std::size_t fileIndex = 0;
-                fileIndex < FILE_COUNT; ++fileIndex) {
-                cv::Size size;
-                if (!readPngSize(
-                    block.paths[fileIndex], fileIndex, size, errorMessage)) {
-                    return false;
-                }
-                if (fileIndex == 0) {
-                    colorSize = size;
-                }
-                if (size != colorSize) {
-                    return fail(errorMessage,
-                        "Block files have different dimensions: " +
-                        colorPath.string());
-                }
+            if (!readBlockSizes(
+                block, colorPath, colorSize, errorMessage)) {
+                return false;
             }
 
             block.rectangle.width = colorSize.width;
@@ -395,9 +410,8 @@ namespace CroppingNs {
             return true;
         }
 
-        bool validateCoverage(
-            const std::vector<CropBlock>& blocks,
-            std::string& errorMessage
+        std::vector<CoverageEvent> collectCoverageEvents(
+            const std::vector<CropBlock>& blocks
         ) {
             std::vector<CoverageEvent> events;
             for (const auto& block : blocks) {
@@ -408,6 +422,10 @@ namespace CroppingNs {
                     });
             }
 
+            return events;
+        }
+
+        void sortCoverageEvents(std::vector<CoverageEvent>& events) {
             // Les fins précèdent les débuts à la même abscisse :
             // deux blocs peuvent se toucher sans se chevaucher.
             std::sort(events.begin(), events.end(),
@@ -417,6 +435,14 @@ namespace CroppingNs {
                     }
                     return left.isStart < right.isStart;
                 });
+        }
+
+        bool validateCoverage(
+            const std::vector<CropBlock>& blocks,
+            std::string& errorMessage
+        ) {
+            auto events = collectCoverageEvents(blocks);
+            sortCoverageEvents(events);
 
             std::map<int, int> bottomByTop;
             for (const auto& event : events) {
@@ -575,6 +601,7 @@ namespace CroppingNs {
 
         namespace WritingModuleNs {
 
+            // NOLINTNEXTLINE(readability-function-size)
             bool write(
                 const CropInput& input,
                 const std::vector<CropBlock>& selectedBlocks,
@@ -605,6 +632,7 @@ namespace CroppingNs {
 
     }
 
+    // NOLINTNEXTLINE(readability-function-size)
     bool cropMosaic(
         const CropInput& input,
         DataNs::MosaicFiles& output,
@@ -612,6 +640,7 @@ namespace CroppingNs {
     ) {
         // Copie des descriptions uniquement : protège aussi le cas où
         // output désigne input.mosaic.
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
         const CropInput request = input;
         output = {};
         errorMessage.clear();
