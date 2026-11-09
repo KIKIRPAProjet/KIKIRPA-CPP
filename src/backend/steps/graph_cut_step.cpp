@@ -61,8 +61,7 @@ namespace StepsNs {
         bool preprocessTiles(const GraphCutInput& resolvedInput, PreprocessedTiles& tiles, StepNs::Json& result) {
             GraphCutNs::ImagePretreatmentClass imagePretreatment;
             const int status = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
-                                                               tiles.tileSizes, tiles.masksUmatSmall, tiles.originalCorners,
-                                                               tiles.cornersSmall);
+                                                               tiles);
             if (status < 0) {
                 result["error"] = "Image pretreatment error: " + imagePretreatment.getErrorMessage();
                 return false;

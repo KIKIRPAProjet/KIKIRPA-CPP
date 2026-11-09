@@ -6,7 +6,9 @@
 #include <opencv2/core/types.hpp> // Pour cv::Size, cv::Point
 #include <opencv2/core/mat.hpp>   // Pour cv::Mat, cv::UMat
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
+#include <opencv2/core/fast_math.hpp>     // Pour cvRound, cvFloor
+#include <opencv2/core/hal/interface.h>   // Pour CV_8U, CV_16UC3, CV_32FC3...
+#include <opencv2/core/saturate.hpp>      // Pour cv::saturate_cast
 #include <algorithm>
 #include "core/data/algorithm_types.h"
 #include <cmath>
@@ -96,94 +98,118 @@ namespace GraphCutNs {
         return true;
     }
 
+    namespace {
+
+        // Positions des tuiles, retrouvées par l'identifiant "rLL_cCC" tiré du nom de fichier.
+        using PositionByTileId = std::map<std::string, cv::Point2d>;
+
+        // Table temporaire construite à partir de la structure d'entrée, pour une recherche rapide.
+        PositionByTileId indexPositionsByTileId(const std::vector<DataNs::TilePositionData>& inputPositions) {
+            PositionByTileId positionByTileId;
+            for (const auto& tilePosition : inputPositions)
+                positionByTileId[tilePosition.tileId] = tilePosition.position;
+            return positionByTileId;
+        }
+
+        // Lit la taille d'une tuile et ajoute son masque réduit à `tiles`. L'image pleine résolution n'est conservée que
+        // le temps de lire ses dimensions. Renvoie false si elle est illisible ou vide une fois réduite (cause dans
+        // errorMessage).
+        bool addTileSizeAndMask(const std::string& imagePath, double scale, PreprocessedTiles& tiles, std::string& errorMessage) {
+            const cv::Mat image = ImagePretreatmentClass::read16Bit(imagePath);
+            if (image.empty()) {
+                errorMessage = "Impossible to read tile: " + imagePath;
+                return false;
+            }
+            const cv::Size fullSize = image.size();
+            const cv::Size smallSize(cv::saturate_cast<int>(fullSize.width * scale),
+                                     cv::saturate_cast<int>(fullSize.height * scale));
+            if (smallSize.width < 1 || smallSize.height < 1) {
+                errorMessage = "Tile is empty after reduction (" + std::to_string(fullSize.width) + "x" +
+                               std::to_string(fullSize.height) + " pixels at scale " + std::to_string(scale) + "): " + imagePath;
+                return false;
+            }
+            // Tous les pixels sont initialement utilisables. Le calcul de la ligne de raccord modifiera ensuite ces masques.
+            tiles.masksUmatSmall.push_back(cv::UMat(smallSize, CV_8U, cv::Scalar(MASK_FILLED)));
+            tiles.tileSizes.push_back(fullSize);
+            return true;
+        }
+
+        // Associe le fichier à sa position grâce à l'identifiant extrait de son nom. Renvoie false si le nom n'est pas
+        // reconnu ou si la position manque (cause dans errorMessage).
+        bool findRawCorner(const PositionByTileId& positionByTileId, const std::string& imagePath, cv::Point2d& rawCorner,
+                           std::string& errorMessage) {
+            int row = 0;
+            int column = 0;
+            std::string tileId;
+            if (!ImagePretreatmentClass::parseTileName(imagePath, row, column, tileId)) {
+                errorMessage = "Tile file name must end with _r<row>_c<column>.tif or .tiff: " + imagePath;
+                return false;
+            }
+            const auto tilePosition = positionByTileId.find(tileId);
+            if (tilePosition == positionByTileId.end()) {
+                errorMessage = "No position provided for tile " + tileId + " (" + imagePath + ")";
+                return false;
+            }
+            rawCorner = tilePosition->second;
+            return true;
+        }
+
+        // Déplace les positions dans un repère de mosaïque à coordonnées positives ou nulles.
+        // Soustrait les minima arrondis vers le bas, puis arrondit les positions au pixel.
+        // Toutes les tuiles subissent la même translation avant cet arrondi.
+        std::vector<cv::Point> toMosaicCorners(const std::vector<cv::Point2d>& rawCorners) {
+            double minimumX = std::numeric_limits<double>::max();
+            double minimumY = std::numeric_limits<double>::max();
+            for (const cv::Point2d& corner : rawCorners) {
+                minimumX = std::min(minimumX, corner.x);
+                minimumY = std::min(minimumY, corner.y);
+            }
+            const double offsetX = std::floor(minimumX);
+            const double offsetY = std::floor(minimumY);
+            std::vector<cv::Point> originalCorners;
+            for (const cv::Point2d& corner : rawCorners)
+                originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
+            return originalCorners;
+        }
+
+        // Convertit les positions pleine résolution vers la grille réduite.
+        // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
+        std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
+            std::vector<cv::Point> smallCorners;
+            for (size_t tileIndex = 0; tileIndex < originalCorners.size(); ++tileIndex)
+                smallCorners.push_back(cv::Point(cvFloor(originalCorners[tileIndex].x * scale),
+                                                 cvFloor(originalCorners[tileIndex].y * scale)));
+            return smallCorners;
+        }
+
+    }
+
     // Prépare les dimensions, les masques réduits et les positions des tuiles aux deux résolutions.
     // Les positions sont fournies par inputPositions, et non calculées à partir des images.
     // En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
     int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
                                               const std::vector<std::string>& tilePaths, double scale,
-                                              std::vector<cv::Size>& tileSizes, std::vector<cv::UMat>& smallMasks,
-                                              std::vector<cv::Point>& originalCorners, std::vector<cv::Point>& smallCorners) {
+                                              PreprocessedTiles& tiles) {
         errorMessage.clear();
-
-        // 1. Vérifier le facteur de réduction et indexer les positions fournies
         if (!(scale > 0.0 && scale <= 1.0)) {
             errorMessage = "Reduction scale must be greater than 0 and at most 1, got " + std::to_string(scale);
             return -1;
         }
-
-        // Table temporaire construite à partir de la structure, pour une recherche rapide
-        std::map<std::string, cv::Point2d> positionByTileId;
-        for (const auto& tilePosition : inputPositions) positionByTileId[tilePosition.tileId] = tilePosition.position;
-
+        const PositionByTileId positionByTileId = indexPositionsByTileId(inputPositions);
         std::vector<cv::Point2d> rawCorners;
-
-        // 2. Lire les dimensions, initialiser les masques et retrouver les positions
-        for (size_t tileIndex = 0; tileIndex < tilePaths.size(); ++tileIndex) {
-            const std::string& imagePath = tilePaths[tileIndex];
-            cv::Size fullSize;
-            // Ne conserver l'image pleine résolution que le temps de lire ses dimensions
-            {
-                const cv::Mat image = read16Bit(imagePath);
-                if (image.empty()) {
-                    errorMessage = "Impossible to read tile: " + imagePath;
-                    return -1;
-                }
-                fullSize = image.size();
-
-                const cv::Size smallSize(cv::saturate_cast<int>(fullSize.width * scale),
-                                         cv::saturate_cast<int>(fullSize.height * scale));
-                if (smallSize.width < 1 || smallSize.height < 1) {
-                    errorMessage = "Tile is empty after reduction (" + std::to_string(fullSize.width) + "x" +
-                                   std::to_string(fullSize.height) + " pixels at scale " + std::to_string(scale) + "): " + imagePath;
-                    return -1;
-                }
-                // Tous les pixels sont initialement utilisables. Le calcul de la ligne de raccord modifiera ensuite
-                // ces masques.
-                smallMasks.push_back(cv::UMat(smallSize, CV_8U, cv::Scalar(MASK_FILLED)));
-            }
-            tileSizes.push_back(fullSize);
-
-            // Associer le fichier à sa position grâce à l'identifiant extrait de son nom
-            int row = 0, column = 0;
-            std::string tileId;
-            if (!parseTileName(imagePath, row, column, tileId)) {
-                errorMessage = "Tile file name must end with _r<row>_c<column>.tif or .tiff: " + imagePath;
+        for (const std::string& imagePath : tilePaths) {
+            cv::Point2d rawCorner;
+            if (!addTileSizeAndMask(imagePath, scale, tiles, errorMessage) ||
+                !findRawCorner(positionByTileId, imagePath, rawCorner, errorMessage))
                 return -1;
-            }
-
-            // Recherche dans la structure d'entrée
-            const auto tilePosition = positionByTileId.find(tileId);
-            if (tilePosition == positionByTileId.end()) {
-                errorMessage = "No position provided for tile " + tileId + " (" + imagePath + ")";
-                return -1;
-            }
-            rawCorners.push_back(tilePosition->second);
+            rawCorners.push_back(rawCorner);
         }
-
-        if (tileSizes.empty()) {
+        if (tiles.tileSizes.empty()) {
             errorMessage = "No tile provided for image pretreatment";
             return -1;
         }
-
-        // 3. Déplacer les positions dans un repère de mosaïque à coordonnées positives ou nulles.
-        // Soustraire les minima arrondis vers le bas, puis arrondir les positions au pixel.
-        // Toutes les tuiles subissent la même translation avant cet arrondi.
-        double minimumX = std::numeric_limits<double>::max();
-        double minimumY = std::numeric_limits<double>::max();
-        for (const cv::Point2d& corner : rawCorners) {
-            minimumX = std::min(minimumX, corner.x);
-            minimumY = std::min(minimumY, corner.y);
-        }
-        const double offsetX = std::floor(minimumX), offsetY = std::floor(minimumY);
-        for (const cv::Point2d& corner : rawCorners)
-            originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
-
-        // 4. Convertir les positions pleine résolution vers la grille réduite.
-        // Arrondir vers le bas pour obtenir des coordonnées entières sur cette grille.
-        for (size_t tileIndex = 0; tileIndex < originalCorners.size(); ++tileIndex)
-            smallCorners.push_back(cv::Point(cvFloor(originalCorners[tileIndex].x * scale),
-                                             cvFloor(originalCorners[tileIndex].y * scale)));
-
+        tiles.originalCorners = toMosaicCorners(rawCorners);
+        tiles.cornersSmall = toSmallCorners(tiles.originalCorners, scale);
         return 1;
     }
 

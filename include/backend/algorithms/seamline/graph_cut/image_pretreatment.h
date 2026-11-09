@@ -3,12 +3,19 @@
 
 #include "core/data/algorithm_types.h"
 
-#include <opencv2/core.hpp>
-
+// Inclusions directes des types OpenCV pour satisfaire misc-include-cleaner
+#include <opencv2/core/types.hpp> // Pour cv::Size, cv::Point
+#include <opencv2/core/mat.hpp>   // Pour cv::Mat, cv::UMat
 #include <string>
 #include <vector>
 
 namespace GraphCutNs {
+    struct PreprocessedTiles {
+        std::vector<cv::Size> tileSizes;
+        std::vector<cv::Umat>& smallMasks;
+        std::vector<cv::Point> originalCorners;
+        std::vector<cv::Point> smallCorners;
+    }
 
     class ImagePretreatmentClass {
 
@@ -19,10 +26,9 @@ namespace GraphCutNs {
             // Renvoie 1 en cas de succès, ou -1 lorsqu'une erreur est détectée (les vecteurs peuvent alors être
             // partiellement remplis).
             const std::string& getErrorMessage() const{ return errorMessage;}
-            int processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
-                              const std::vector<std::string>& tilePaths, double scale, std::vector<cv::Size>& tileSizes,
-                              std::vector<cv::UMat>& smallMasks, std::vector<cv::Point>& originalCorners,
-                              std::vector<cv::Point>& smallCorners);
+            int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
+                                                    const std::vector<std::string>& tilePaths, double scale,
+                                                    PreprocessedTiles& tiles);
 
             // Extrait (ligne, colonne) d'un nom de fichier "..._rLL_cCC.tif(f)" et fabrique l'identifiant "rLL_cCC"
             // (2 chiffres minimum). Source unique de l'identifiant : utilisée par le positionnement (SIFT + RANSAC) ET par
