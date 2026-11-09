@@ -42,10 +42,6 @@ target_link_libraries(kikirpa_backend PUBLIC
     TIFF::TIFF
 )
 
-if(WIN32)
-    target_link_libraries(kikirpa_backend PUBLIC shell32 ole32)
-endif()
-
 # Ajoute les options de compilation spécifiques au compilateur.
 #
 # MSVC : /utf-8 force l'interprétation des fichiers sources et des chaînes

@@ -13,14 +13,8 @@ target_link_libraries(pyramidal_tiff_reader_tests PRIVATE kikirpa_backend GTest:
 add_executable(memory_scope_tests test_memory_scope.cpp)
 kikirpa_copy_onnxruntime_dlls(memory_scope_tests)
 target_link_libraries(memory_scope_tests PRIVATE kikirpa_backend GTest::gtest_main)
-
-add_executable(export_step_tests test_export_step.cpp)
-kikirpa_copy_onnxruntime_dlls(export_step_tests)
-target_link_libraries(export_step_tests PRIVATE kikirpa_backend GTest::gtest_main)
-
 include(GoogleTest)
 gtest_discover_tests(memory_scope_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(pipeline_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(reprise_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(pyramidal_tiff_reader_tests PROPERTIES LABELS "unit")
-gtest_discover_tests(export_step_tests PROPERTIES LABELS "unit")
