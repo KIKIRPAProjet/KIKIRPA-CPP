@@ -26,8 +26,27 @@ public slots:
 
 private:
     friend class WorkspaceUI;
+    friend class GridTab;
+    friend class AssemblyTab;
+    friend class AlignmentTab;
+    friend class MasksTab;
+    friend class BottomTabs;
+    friend class LeftToolbar;
+    friend class RightPanel;
+    friend class TopToolbars;
+    friend class WorkspaceCenter;
+    friend class WorkspaceStatusBar;
 
     void keyPressEvent(QKeyEvent *event) override;
+
+    // Initialisation (appelées par le constructeur)
+    void applyStyleSheet();
+    void setupProjectGridConnections();
+    void setupSimulationConnections();
+    void setupHomePageConnections();
+    void setupMenuConnections();
+    void setupPageConnections();
+
     void refreshGrid();
     void refreshGridControls();
     void chooseTilesDirectory();
