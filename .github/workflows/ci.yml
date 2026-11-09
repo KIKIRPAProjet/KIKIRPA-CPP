@@ -51,6 +51,7 @@ jobs:
             push)
               # Comme pour une pull request : seulement ce que la branche change par rapport à main,
               # pour qu'une fusion de main dans la branche ne fasse pas analyser tout le code de main.
+              git fetch --no-tags origin main:refs/remotes/origin/main
               changed_files=$(git diff --name-only "origin/main...$PUSH_AFTER_SHA")
               ;;
             workflow_dispatch)
