@@ -13,12 +13,12 @@ namespace {
 
 	int runFrontend(int argumentCount, char** arguments) {
 		QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
-		application.setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
-		application.setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
+		QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
+		QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
 
 		MainWindow window;
 		window.show();
-		return application.exec();
+		return QApplication::exec();
 	}
 
     int runPipeline(const std::string& scriptPath) {
