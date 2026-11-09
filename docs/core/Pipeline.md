@@ -94,6 +94,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Positions` | `tileId`, `position`, `rotationRadians` |
 | `Territories` | `tileIndex`, `polygons`, `holes` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
+| `VerificationReport` | rapport JSON de dimensions et métadonnées (enregistré par `registerType`, voir `core/checkpoint/final_verification_checkpoint.cpp`) |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
@@ -116,8 +117,10 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `final-verification` | `StepsNs::FinalVerificationStepClass` | — (chemins configurés) | `verificationReport` : `VerificationReport` |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. Une fiche par step dans [docs/steps/](../steps/).
+`final-verification` est facultatif et s'ajoute après la production de l'image reconstruite; voir [FinalVerificationStep.md](../steps/FinalVerificationStep.md).
 
 ## Ajouter un step
 

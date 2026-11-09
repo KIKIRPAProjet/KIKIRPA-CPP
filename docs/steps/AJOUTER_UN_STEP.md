@@ -197,7 +197,7 @@ const std::map<std::string, StepCreator>& stepRegistry() {
 
 C'est le seul endroit où le moteur connaît la liste des steps. Le nom doit être exactement celui de `stepConfig.name`. `tests/core/test_pipeline.cpp` vérifie que chaque nom du registre crée un step de ce nom.
 
-Dans `tests/core/test_pipeline.cpp`, augmenter `REGISTERED_STEP_COUNT` (7 → 8) et le message à côté (`"7 steps enregistrés"`). Sinon, le test du registre échoue.
+Dans `tests/core/test_pipeline.cpp`, augmenter `REGISTERED_STEP_COUNT` (8 → 9) et le message à côté (`"8 steps enregistrés"`). Sinon, le test du registre échoue.
 
 ## 6. Si la sortie est d'un nouveau type
 

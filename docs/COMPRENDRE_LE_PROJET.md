@@ -36,7 +36,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
 | 9 | Export | Écrire le fichier final | ❌ branche `fe/export` |
 
-**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Aucun step ne produit d'image.
+**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step facultatif `final-verification` peut comparer des fichiers fournis explicitement; l'assemblage et l'export du pipeline restent à réaliser.
 
 ---
 
@@ -208,10 +208,12 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
+`final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
 
-### Les cinq types de données, et leur JSON
+### Les types de données, et leur JSON
 
 Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` et `intensity_correction_checkpoint.cpp` ; les valeurs sont inventées.
 
@@ -285,6 +287,12 @@ C++ : `DataNs::IntensityCorrection` (`core/data/intensity_correction.h`).
 - Les bords entre territoires **sont** les seamlines.
 
 C++ : `std::vector<DataNs::TileTerritory>`.
+
+#### `VerificationReport` (clé `verificationReport`) : rapport de vérification finale
+
+Un objet JSON contenant les dimensions, écarts, rapports largeur/hauteur et métadonnées comparées de l'image de référence et du TIFF reconstruit. Les pixels et les DPI/PPI ne sont pas comparés.
+
+C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 
 #### Les deux fichiers du moteur
 
