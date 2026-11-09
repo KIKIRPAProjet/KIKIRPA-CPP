@@ -1,8 +1,10 @@
 // include/backend/core/data/algorithm_types.h
 #pragma once
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -11,7 +13,7 @@
 namespace DataNs {
 
     // Position de la tuile B par rapport à la tuile A. PairMatches n'utilise que Right (B à droite de A) et Bottom (B sous A).
-    enum class Direction {
+    enum class Direction : std::uint8_t {
         Top,
         Bottom,
         Left,
@@ -31,19 +33,19 @@ namespace DataNs {
     struct PairContext {
         Direction direction = Direction::Right;
         float overlapFraction = 0.f;   // recouvrement en fraction de la tuile : nominal, ou réel une fois estimé
-        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe (EstimationRecouvrement).
+        // Coin haut-gauche de B dans le repère de A, au pixel près, mesuré par la première passe (OverlapEstimationNs::OverlapEstimatorClass).
         // Absent : l'algorithme part du recouvrement nominal overlapFraction.
         std::optional<cv::Point2d> estimatedTranslation;
     };
 
-    // Sortie de la première passe (EstimationRecouvrement), commune à toutes les méthodes d'appariement.
+    // Sortie de la première passe (OverlapEstimationNs::OverlapEstimatorClass), commune à toutes les méthodes d'appariement.
     struct OverlapEstimate {
         cv::Point2d translationBInA;   // coin haut-gauche de B dans le repère de A, au pixel près
         float overlapFraction = 0.f;   // recouvrement réel, en fraction de la tuile dans le sens du déplacement
         double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
-    // Sortie d'un FeatureMatcher : pointsInA[i] correspond à pointsInB[i].
+    // Sortie d'un StitchingNs::FeatureMatcherClass : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;
         std::vector<cv::Point2f> pointsInB;
@@ -61,18 +63,28 @@ namespace DataNs {
         Matches featureMatches;
     };
 
-    // Sortie d'un OutlierRejector.
+    // Sortie d'un RejectionNs::OutlierRejectorClass.
     struct Alignment {
         cv::Mat transformBToA;           // transformation de B vers A (3x3, CV_64F)
-        std::vector<uchar> inlierMask;   // 1 = inlier ; même taille que les points de Matches
+        std::vector<std::uint8_t> inlierMask;   // 1 = inlier ; même taille que les points de Matches
     };
 
-    // Position finale d'une tuile, calculée par le placement global (TilePositioner).
+    // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
         std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
+
+    // Coutures calculées entre deux tuiles. Les points sont en pixels de pleine résolution,
+    // dans le repère absolu de la mosaïque.
+    struct Seamline {
+        int tileIdA = 0;   // TileClass::getId() des deux tuiles adjacentes
+        int tileIdB = 0;
+        Direction direction = Direction::Right;   // position de B par rapport à A
+        std::vector<cv::Point2d> points;   // chemin de couture dans le repère de la mosaïque
+    };
+    using Seamlines = std::vector<Seamline>;
 
     // Territoire d'une tuile : polygones, dans le repère de la mosaïque, délimitant les pixels pris dans cette tuile.
     // polygons[i] = contour extérieur ; holes[i] = trous du polygone i.
@@ -80,6 +92,14 @@ namespace DataNs {
         int tileIndex = 0;   // indice de la tuile dans la liste des tuiles
         std::vector<std::vector<cv::Point>> polygons;
         std::vector<std::vector<std::vector<cv::Point>>> holes;
+    };
+
+    // Correction d'intensité de chaque tuile (type "IntensityCorrection", clé "intensityCorrection"),
+    // produite par le step intensity-correction. Le gain d'une tuile est sa luminosité relative (la correction divise par le gain), de moyenne géométrique 1.
+    struct IntensityCorrection {
+        std::vector<double> tileGains;           // un gain par tuile, dans l'ordre de la TileList
+        double fieldStrength = 0.0;              // force c du champ d'éclairage exp(c · r²) ; 0 si seuls les gains sont utilisés
+        std::vector<int> isolatedTileIndices;    // tuiles sans voisine exploitable : gain 1, non égalisées
     };
 
 }
