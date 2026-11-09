@@ -74,16 +74,16 @@ void createSyntheticTiles2x2(const fs::path& imagesDir) {
     canvas32f.convertTo(canvas16u, CV_16UC3);
 
     cv::Mat tileImage00 = canvas16u(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r00_c00.tif").string(), tileImage00);
+    cv::imwrite((imagesDir / "img_c00_r00_c00.tif").string(), tileImage00);
 
     cv::Mat tileImage01 = canvas16u(cv::Rect(SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r00_c01.tif").string(), tileImage01);
+    cv::imwrite((imagesDir / "img_c01_r00_c01.tif").string(), tileImage01);
 
     cv::Mat tileImage10 = canvas16u(cv::Rect(0, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r01_c00.tif").string(), tileImage10);
+    cv::imwrite((imagesDir / "img_c00_r01_c00.tif").string(), tileImage10);
 
     cv::Mat tileImage11 = canvas16u(cv::Rect(SHIFT_X, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT));
-    cv::imwrite((imagesDir / "img_r01_c01.tif").string(), tileImage11);
+    cv::imwrite((imagesDir / "img_c01_r01_c01.tif").string(), tileImage11);
 }
 
 Json build2x2PipelineScript(const fs::path& imagesDir, const fs::path& outputDir) {
@@ -94,7 +94,7 @@ Json build2x2PipelineScript(const fs::path& imagesDir, const fs::path& outputDir
                     {"name", "import"},
                     {"parameters", Json::array({
                         {{"valueType", "string"}, {"name", "path"}, {"value", imagesDir.string()}},
-                        {{"valueType", "string"}, {"name", "format"}, {"value", ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?"}}
+                        {{"valueType", "string"}, {"name", "format"}, {"value", ".*_c(\\d+)_r(\\d+)_c\\d+\\.tiff?"}}
                     })}
                 },
                 {

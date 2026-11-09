@@ -5,6 +5,7 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
+#include "core/step/step.h"
 
 #include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/hal/interface.h>

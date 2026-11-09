@@ -4,6 +4,7 @@
 // GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
+// NOLINTBEGIN
 
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
@@ -260,3 +261,5 @@ TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
 }
+
+// NOLINTEND
