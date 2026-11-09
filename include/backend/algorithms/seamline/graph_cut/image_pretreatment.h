@@ -12,7 +12,7 @@
 namespace GraphCutNs {
     struct PreprocessedTiles {
         std::vector<cv::Size> tileSizes;
-        std::vector<cv::UMat>& smallMasks;
+        std::vector<cv::UMat> masksUmatSmall;
         std::vector<cv::Point> originalCorners;
         std::vector<cv::Point> cornersSmall;
     };
