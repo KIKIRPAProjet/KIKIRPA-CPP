@@ -11,6 +11,7 @@
 #include "steps/intensity_correction_step.h"
 #include "steps/sift_step.h"
 #include "steps/absolute_pos_step.h"
+#include "steps/export_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
 #include "steps/FusionStep.h"
@@ -46,6 +47,7 @@ namespace PipelineNs {
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
+                {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
             };
             return registry;
         }
