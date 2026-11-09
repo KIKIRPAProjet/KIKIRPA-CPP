@@ -15,7 +15,7 @@ namespace GraphCutNs {
         std::vector<cv::Umat>& smallMasks;
         std::vector<cv::Point> originalCorners;
         std::vector<cv::Point> smallCorners;
-    }
+    };
 
     class ImagePretreatmentClass {
 
