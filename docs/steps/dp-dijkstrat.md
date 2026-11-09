@@ -39,15 +39,13 @@ Exemple de configuration du step :
 ```
 
 Le pipeline vérifie que les entrées déclarées sont produites par des steps précédents et que leurs types correspondent.
-Le step d'égalisation n'étant pas encore enregistré dans le projet, un pipeline qui utilise ce step ne peut être construit
-qu'une fois qu'un producteur de `intensityCorrection` aura été intégré. Il faut également un producteur de `positions`.
-La note d'intégration fournie propose :
+Un pipeline qui utilise ce step doit donc contenir, avant lui, `absolute-pos` (qui produit `positions`) et
+`intensity-correction` (qui produit `intensityCorrection`). Par exemple :
 
 ```text
-import → phase-correlation → intensity-correction → (positions) → dynamic-programming-dijkstra
+import → phase-correlation → absolute-pos → intensity-correction → dynamic-programming-dijkstra
 ```
 
-Les parenthèses signalent que le placement exact de l'étape qui produit `positions` reste à confirmer avec son contrat.
 Quel que soit cet ordre, les trois données `tiles`, `positions` et `intensityCorrection` doivent exister avant ce step.
 
 ## Traitement effectué
@@ -76,7 +74,7 @@ résolution sont configurables dans ce step. Les fonctions de coût connues du c
 
 ## Donnée d'égalisation attendue
 
-Le futur step `intensity-correction` doit publier sous la clé `intensityCorrection` un objet
+Le step `intensity-correction` publie sous la clé `intensityCorrection` un objet
 `DataNs::IntensityCorrection` contenant :
 
 - `tileGains` : un gain `double` strictement positif par tuile, dans le même ordre que `tiles`. Le pixel corrigé est
