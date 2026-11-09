@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 #include <tiff.h>
 #include <tiffio.h>

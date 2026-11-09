@@ -215,8 +215,8 @@ namespace StepsNs {
         bool shouldUseBigTiff(cv::Size canvasSize, const cv::Mat& sampleImage) {
             const long double pixelCount = static_cast<long double>(canvasSize.width) * canvasSize.height;
             const long double bytesPerPixel = sampleImage.elemSize();
-            const std::size_t columnCount = static_cast<std::size_t>(1 + (canvasSize.width - 1) / DataNs::BLOCK_SIZE);
-            const std::size_t rowCount = static_cast<std::size_t>(1 + (canvasSize.height - 1) / DataNs::BLOCK_SIZE);
+            const int columnCount = 1 + (canvasSize.width - 1) / DataNs::BLOCK_SIZE;
+            const int rowCount = 1 + (canvasSize.height - 1) / DataNs::BLOCK_SIZE;
             const long double tileCount = static_cast<long double>(columnCount) * rowCount;
             const long double conservativeFileSize = pixelCount * bytesPerPixel * 1.5L + tileCount * 256 + 1024 * 1024;
             return conservativeFileSize >= std::numeric_limits<std::uint32_t>::max();
