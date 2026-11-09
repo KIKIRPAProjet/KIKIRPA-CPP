@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <system_error>
 
@@ -27,6 +28,9 @@ namespace CroppingTestsNs {
             "rgb", "provenance", "mask"
         };
 
+        constexpr std::streamoff PNG_DEPTH_OFFSET = 24;
+        constexpr std::streamoff PNG_COLOR_TYPE_OFFSET = 25;
+
         std::string getSuffix(const cv::Point& position) {
             return "_x" + std::to_string(position.x) +
                 "_y" + std::to_string(position.y) + ".png";
@@ -37,6 +41,25 @@ namespace CroppingTestsNs {
             return std::string(
                 std::istreambuf_iterator<char>(stream),
                 std::istreambuf_iterator<char>());
+        }
+
+        bool overwriteHeaderByte(
+            const std::filesystem::path& path,
+            std::streamoff offset,
+            unsigned char value
+        ) {
+            std::fstream stream(path, std::ios::binary | std::ios::in | std::ios::out);
+            if (!stream) {
+                return false;
+            }
+
+            stream.seekp(offset);
+            if (!stream.good()) {
+                return false;
+            }
+
+            stream.put(static_cast<char>(value));
+            return stream.good();
         }
 
     }
@@ -309,6 +332,76 @@ namespace CroppingTestsNs {
         EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
     }
 
+    TEST_F(MosaicCropTestClass, RejectsUnexpectedColorDepth) {
+        ASSERT_TRUE(overwriteHeaderByte(
+            sourceDirectory / "rgb_x0_y0.png", PNG_DEPTH_OFFSET, 8));
+
+        const auto input = makeInput(
+            cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, RejectsUnexpectedMaskChannelLayout) {
+        ASSERT_TRUE(overwriteHeaderByte(
+            sourceDirectory / "mask_x0_y0.png", PNG_COLOR_TYPE_OFFSET, 2));
+
+        const auto input = makeInput(
+            cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, RejectsInconsistentBlockDimensions) {
+        const cv::Mat invalidMask(
+            BLOCK_SIZE - 1, BLOCK_SIZE, CV_8UC1, cv::Scalar(255));
+        ASSERT_TRUE(cv::imwrite(
+            (sourceDirectory / "mask_x0_y0.png").string(), invalidMask));
+
+        const auto input = makeInput(
+            cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, RejectsInvalidPngSignature) {
+        ASSERT_TRUE(overwriteHeaderByte(
+            sourceDirectory / "rgb_x0_y0.png", 0, 0));
+
+        const auto input = makeInput(
+            cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
     TEST_F(MosaicCropTestClass, RejectsMissingMaskFile) {
         ASSERT_TRUE(std::filesystem::remove(
             sourceDirectory / "mask_x0_y0.png"));
@@ -320,6 +413,86 @@ namespace CroppingTestsNs {
         EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
 
         EXPECT_FALSE(errorMessage.empty());
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, SupportsRectangleAtIntegerCoordinateLimit) {
+        std::filesystem::remove_all(sourceDirectory);
+        ASSERT_TRUE(std::filesystem::create_directory(sourceDirectory));
+
+        const int originValue =
+            std::numeric_limits<int>::max() - MOSAIC_SIZE;
+        const cv::Point origin(originValue, originValue);
+        ASSERT_TRUE(writeSource(origin));
+
+        const auto input = makeInput(cv::Rect(
+            originValue + 1,
+            originValue + 2,
+            BLOCK_SIZE,
+            BLOCK_SIZE));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        ASSERT_TRUE(CroppingNs::cropMosaic(input, output, errorMessage))
+            << errorMessage;
+
+        verifyPixels(input, output, origin);
+    }
+
+    TEST_F(MosaicCropTestClass, RejectsRectangleOverflowingIntegerLimit) {
+        const int maximum = std::numeric_limits<int>::max();
+        const auto input = makeInput(
+            cv::Rect(maximum - 1, maximum - 1, 2, 1));
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, RejectsMissingOutputParentDirectory) {
+        auto input = makeInput(
+            cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        input.outputDirectory = directory / "missing_parent" / "cropped";
+
+        DataNs::MosaicFiles output;
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, output, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(output.mosaicPath.empty());
+        EXPECT_EQ(output.totalBlocks, 0);
+        EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
+    }
+
+    TEST_F(MosaicCropTestClass, SupportsOutputAliasingInputMosaicOnSuccess) {
+        auto input = makeInput(cv::Rect(0, 0, MOSAIC_SIZE, MOSAIC_SIZE));
+        std::string errorMessage;
+
+        ASSERT_TRUE(CroppingNs::cropMosaic(
+            input, input.mosaic, errorMessage))
+            << errorMessage;
+
+        EXPECT_TRUE(errorMessage.empty());
+        EXPECT_EQ(input.mosaic.mosaicPath, input.outputDirectory.string());
+        EXPECT_EQ(input.mosaic.totalBlocks, 4);
+        verifyPixels(input, input.mosaic);
+    }
+
+    TEST_F(MosaicCropTestClass, SupportsOutputAliasingInputMosaicOnFailure) {
+        auto input = makeInput(cv::Rect(0, 0, 0, BLOCK_SIZE));
+        std::string errorMessage;
+
+        EXPECT_FALSE(CroppingNs::cropMosaic(input, input.mosaic, errorMessage));
+
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_TRUE(input.mosaic.mosaicPath.empty());
+        EXPECT_EQ(input.mosaic.totalBlocks, 0);
         EXPECT_FALSE(std::filesystem::exists(input.outputDirectory));
     }
 

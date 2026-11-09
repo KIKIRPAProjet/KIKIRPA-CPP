@@ -537,6 +537,72 @@ namespace CroppingNs {
             }
         }
 
+        namespace PreparationModuleNs {
+
+            struct PreparedCrop {
+
+                std::vector<BlockFiles> blocks;
+                std::vector<CropBlock> selectedBlocks;
+
+            };
+
+            bool prepare(
+                const CropInput& input,
+                PreparedCrop& prepared,
+                std::string& errorMessage
+            ) {
+                return validateInput(input, errorMessage) &&
+                    collectBlocks(input.mosaic, prepared.blocks, errorMessage) &&
+                    selectBlocks(
+                        prepared.blocks,
+                        input.rectangle,
+                        prepared.selectedBlocks,
+                        errorMessage);
+            }
+
+        }
+
+        namespace CoverageModuleNs {
+
+            bool verify(
+                const std::vector<CropBlock>& selectedBlocks,
+                std::string& errorMessage
+            ) {
+                return validateCoverage(selectedBlocks, errorMessage);
+            }
+
+        }
+
+        namespace WritingModuleNs {
+
+            bool write(
+                const CropInput& input,
+                const std::vector<CropBlock>& selectedBlocks,
+                DataNs::MosaicFiles& output,
+                std::string& errorMessage,
+                bool& hasCreatedDirectory
+            ) {
+                if (!createOutputDirectory(
+                    input.outputDirectory, errorMessage)) {
+                    return false;
+                }
+                hasCreatedDirectory = true;
+
+                for (const auto& block : selectedBlocks) {
+                    if (!writeBlock(block, input, errorMessage)) {
+                        removeIncompleteOutput(
+                            input.outputDirectory, errorMessage);
+                        return false;
+                    }
+                }
+
+                output.mosaicPath = input.outputDirectory.string();
+                output.totalBlocks = static_cast<int>(selectedBlocks.size());
+                return true;
+            }
+
+        }
+
     }
 
     bool cropMosaic(
@@ -552,34 +618,23 @@ namespace CroppingNs {
         bool hasCreatedDirectory = false;
 
         try {
-            std::vector<BlockFiles> blocks;
-            std::vector<CropBlock> selectedBlocks;
-
-            if (!validateInput(request, errorMessage) ||
-                !collectBlocks(request.mosaic, blocks, errorMessage) ||
-                !selectBlocks(
-                    blocks, request.rectangle, selectedBlocks, errorMessage) ||
-                !validateCoverage(selectedBlocks, errorMessage)) {
+            PreparationModuleNs::PreparedCrop prepared;
+            if (!PreparationModuleNs::prepare(
+                request, prepared, errorMessage)) {
                 return false;
             }
 
-            if (!createOutputDirectory(
-                request.outputDirectory, errorMessage)) {
+            if (!CoverageModuleNs::verify(
+                prepared.selectedBlocks, errorMessage)) {
                 return false;
             }
-            hasCreatedDirectory = true;
 
-            for (const auto& block : selectedBlocks) {
-                if (!writeBlock(block, request, errorMessage)) {
-                    removeIncompleteOutput(
-                        request.outputDirectory, errorMessage);
-                    return false;
-                }
-            }
-
-            output.mosaicPath = request.outputDirectory.string();
-            output.totalBlocks = static_cast<int>(selectedBlocks.size());
-            return true;
+            return WritingModuleNs::write(
+                request,
+                prepared.selectedBlocks,
+                output,
+                errorMessage,
+                hasCreatedDirectory);
         }
         catch (const std::exception& exception) {
             output = {};

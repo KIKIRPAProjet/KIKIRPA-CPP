@@ -81,6 +81,15 @@ hauteur du rectangle demandé.
 
 ## Traitement
 
+L’implémentation est organisée en trois modules internes :
+
+- **préparation** : validation des entrées, lecture des blocs et sélection
+  des intersections avec le rectangle demandé ;
+- **vérification de couverture** : détection des chevauchements et validation
+  de la couverture complète de la zone rognée ;
+- **écriture** : création du dossier de sortie, copie des blocs complets,
+  découpe des blocs partiels et nettoyage en cas d’échec.
+
 Pour chaque bloc source :
 
 1. Calculer son intersection avec le rectangle.
@@ -170,7 +179,13 @@ Ils couvrent notamment :
 - recalage des positions et coordonnées sources négatives ;
 - conservation des pixels couleur, de provenance et de masque ;
 - entrées invalides et fichiers manquants ;
+- profondeurs et canaux PNG invalides ;
+- dimensions incohérentes entre fichiers d’un même bloc ;
+- signature PNG invalide ;
+- limites des coordonnées entières ;
 - protection d'un dossier de sortie existant ;
+- parent de sortie absent ;
+- alias où `output` désigne `input.mosaic`, en succès et en échec ;
 - nettoyage après échec de décodage ;
 - trous et chevauchements dans la zone conservée.
 
