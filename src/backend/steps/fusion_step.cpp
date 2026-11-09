@@ -80,8 +80,8 @@ namespace StepsNs {
 
         cv::Mat makeTerritoryMask(const cv::Rect& block, const DataNs::TileTerritory& territory) {
             cv::Mat mask(block.size(), CV_8UC1, cv::Scalar(0));
-            for (std::size_t p = 0; p < territory.polygons.size(); ++p) {
-                const auto& outer = territory.polygons[p];
+            for (std::size_t polygonIndex = 0; polygonIndex < territory.polygons.size(); ++polygonIndex) {
+                const auto& outer = territory.polygons[polygonIndex];
                 if (outer.size() < MIN_POLYGON_VERTICES) continue;
 
                 std::vector<cv::Point> shifted;
@@ -91,8 +91,8 @@ namespace StepsNs {
                 }
                 cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shifted}, cv::Scalar(VALID_MASK_VALUE));
 
-                if (p < territory.holes.size()) {
-                    applyHolesToMask(mask, block, territory.holes[p]);
+                if (polygonIndex < territory.holes.size()) {
+                    applyHolesToMask(mask, block, territory.holes[polygonIndex]);
                 }
             }
             return mask;
@@ -163,10 +163,10 @@ namespace StepsNs {
         std::vector<double> computeTileGains(const StepNs::DataStoreClass& store, std::size_t tileCount) {
             std::vector<double> tileGains(tileCount, 1.0);
             if (store.has("intensityCorrection")) {
-                const auto& ic = store.get<DataNs::IntensityCorrection>("intensityCorrection");
-                for (std::size_t i = 0; i < tileCount && i < ic.tileGains.size(); ++i) {
-                    if (ic.tileGains[i] > MIN_GAIN_THRESHOLD) {
-                        tileGains[i] = 1.0 / ic.tileGains[i];
+                const auto& intensityCorrection = store.get<DataNs::IntensityCorrection>("intensityCorrection");
+                for (std::size_t gainIndex = 0; gainIndex < tileCount && gainIndex < intensityCorrection.tileGains.size(); ++gainIndex) {
+                    if (intensityCorrection.tileGains[gainIndex] > MIN_GAIN_THRESHOLD) {
+                        tileGains[gainIndex] = 1.0 / intensityCorrection.tileGains[gainIndex];
                     }
                 }
             }
@@ -202,12 +202,12 @@ namespace StepsNs {
             const cv::Point2d offset = computePlacementsOffset(positions);
             std::vector<TilePlacement> placements;
             placements.reserve(tiles.size());
-            for (std::size_t i = 0; i < tiles.size(); ++i) {
-                const auto& tile = tiles[i];
+            for (std::size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex) {
+                const auto& tile = tiles[tileIndex];
                 if (!tile) throw std::runtime_error("null tile in tiles list");
 
                 const std::string filename = tile->getSource().filename().string();
-                const auto* position = findTilePosition(filename, tile->getId(), i, positions);
+                const auto* position = findTilePosition(filename, tile->getId(), tileIndex, positions);
                 if (!position) throw std::runtime_error("cannot find position for " + filename);
                 if (std::abs(position->rotationRadians) > ROTATION_TOLERANCE) {
                     throw std::runtime_error("rotations are not supported yet");
@@ -219,7 +219,7 @@ namespace StepsNs {
                 const cv::Rect box(cvRound(position->position.x - offset.x),
                                    cvRound(position->position.y - offset.y),
                                    level.width, level.height);
-                placements.push_back(TilePlacement{static_cast<int>(i), tile->getSource(), box, tileGains[i]});
+                placements.push_back(TilePlacement{static_cast<int>(tileIndex), tile->getSource(), box, tileGains[tileIndex]});
             }
             return placements;
         }
@@ -242,15 +242,15 @@ namespace StepsNs {
                 territoryByIndex[territory.tileIndex] = &territory;
             }
 
-            for (int y = grid.bounds.y; y < grid.bounds.y + grid.bounds.height; y += grid.blockSize) {
-                for (int x = grid.bounds.x; x < grid.bounds.x + grid.bounds.width; x += grid.blockSize) {
-                    const cv::Rect block(x, y,
-                        std::min(grid.blockSize, grid.bounds.x + grid.bounds.width - x),
-                        std::min(grid.blockSize, grid.bounds.y + grid.bounds.height - y));
+            for (int coordY = grid.bounds.y; coordY < grid.bounds.y + grid.bounds.height; coordY += grid.blockSize) {
+                for (int coordX = grid.bounds.x; coordX < grid.bounds.x + grid.bounds.width; coordX += grid.blockSize) {
+                    const cv::Rect block(coordX, coordY,
+                        std::min(grid.blockSize, grid.bounds.x + grid.bounds.width - coordX),
+                        std::min(grid.blockSize, grid.bounds.y + grid.bounds.height - coordY));
 
                     BlockRenderOutput renderOutput;
                     renderBlock(block, placements, territoryByIndex, renderOutput);
-                    saveIntermediateBlockImages(grid.outputDir, x, y, renderOutput);
+                    saveIntermediateBlockImages(grid.outputDir, coordX, coordY, renderOutput);
 
                     DataNs::CompositeBlock compBlock;
                     compBlock.imageRgb = std::move(renderOutput.rgb);
@@ -342,8 +342,8 @@ namespace StepsNs {
             result["mosaicPath"] = output.mosaicPath;
             result["totalBlocks"] = output.totalBlocks;
             return true;
-        } catch (const std::exception& e) {
-            result["error"] = e.what();
+        } catch (const std::exception& exception) {
+            result["error"] = exception.what();
             return false;
         }
     }
