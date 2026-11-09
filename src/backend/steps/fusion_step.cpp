@@ -311,7 +311,13 @@ namespace StepsNs {
         FusionInput resolved = input;
         try {
             resolved.blockSize = getParameter("blockSize").get<int>();
+        } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+        }
+        try {
             resolved.outputPath = getParameter("outputPath").get<std::string>();
+        } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+        }
+        try {
             resolved.enableBlending = getParameter("enableBlending").get<bool>();
         } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
         }
