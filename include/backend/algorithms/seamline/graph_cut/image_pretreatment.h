@@ -15,7 +15,7 @@ namespace GraphCutNs {
         std::vector<cv::Umat>& smallMasks;
         std::vector<cv::Point> originalCorners;
         std::vector<cv::Point> smallCorners;
-    };
+    }
 
     class ImagePretreatmentClass {
 
@@ -26,9 +26,7 @@ namespace GraphCutNs {
             // Renvoie 1 en cas de succès, ou -1 lorsqu'une erreur est détectée (les vecteurs peuvent alors être
             // partiellement remplis).
             const std::string& getErrorMessage() const{ return errorMessage;}
-            int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
-                                                    const std::vector<std::string>& tilePaths, double scale,
-                                                    PreprocessedTiles& tiles);
+            int processImages(const std::vector<DataNs::TilePositionData>& inputPositions, const std::vector<std::string>& tilePaths, double scale, PreprocessedTiles& tiles) ;
 
             // Extrait (ligne, colonne) d'un nom de fichier "..._rLL_cCC.tif(f)" et fabrique l'identifiant "rLL_cCC"
             // (2 chiffres minimum). Source unique de l'identifiant : utilisée par le positionnement (SIFT + RANSAC) ET par
