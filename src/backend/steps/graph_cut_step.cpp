@@ -23,14 +23,6 @@ namespace StepsNs {
         // La carte de provenance est sur 8 bits et réserve une valeur à « aucune tuile » : il reste NO_TILE tuiles possibles.
         constexpr std::size_t MAX_TILE_COUNT = static_cast<std::size_t>(GraphCutNs::NO_TILE) - 1;
 
-        // Résultat du prétraitement des images : tailles, coins dans la mosaïque (pleine résolution et réduits) et
-        // masques réduits.
-        struct PreprocessedTiles {
-            std::vector<cv::Size> tileSizes;
-            std::vector<cv::Point> originalCorners;
-            std::vector<cv::Point> cornersSmall;
-            std::vector<cv::UMat> masksUmatSmall;
-        };
 
         // Contrôles : au moins une tuile, pas trop de tuiles, une position par tuile, facteur de réduction valide.
         // Renvoie false au premier problème, avec la cause dans result["error"].
@@ -58,7 +50,7 @@ namespace StepsNs {
 
         // Prétraitement : tailles des tuiles, coins dans la mosaïque et masques réduits.
         // Renvoie false en cas d'échec, avec la cause dans result["error"].
-        bool preprocessTiles(const GraphCutInput& resolvedInput, PreprocessedTiles& tiles, StepNs::Json& result) {
+        bool preprocessTiles(const GraphCutInput& resolvedInput, GraphCutNs::PreprocessedTiles& tiles, StepNs::Json& result) {
             GraphCutNs::ImagePretreatmentClass imagePretreatment;
             const int status = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
                                                                tiles);
@@ -108,7 +100,7 @@ namespace StepsNs {
         if (!checkInputs(resolvedInput, result))
             return false;
 
-        PreprocessedTiles tiles;
+        GraphCutNs::PreprocessedTiles tiles;
         if (!preprocessTiles(resolvedInput, tiles, result))
             return false;
 
