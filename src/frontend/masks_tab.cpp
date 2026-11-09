@@ -19,11 +19,19 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
         layersLayout->addWidget(check);
         connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
             m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
+            if (name == tr("Tuiles")) {
+                m_mainWindow->tileContoursVisible = checked;
+                m_canvas->setTileContoursVisible(checked);
+            }
             if (name == tr("Masques")) {
                 m_mainWindow->maskVisible = checked;
-                static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(checked);
+                m_canvas->setMaskVisible(checked);
             }
         });
+        if (name == tr("Tuiles"))
+            check->setChecked(m_mainWindow->tileContoursVisible);
+        else if (name == tr("Masques"))
+            check->setChecked(m_mainWindow->maskVisible);
     }
     layersLayout->addStretch();
 }

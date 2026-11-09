@@ -175,9 +175,117 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.setBrush(Qt::NoBrush);
         p.drawRect(QRect(x0, y0, imageW, imageH));
         p.drawRect(QRect(x0 + imageW * .58, y0, imageW * .20, imageH));
+        if (tileContoursVisible)
+            drawTileContours(p, firstImageRect);
     }
 
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                QString::number(zoomPercent) + QStringLiteral(" %"));
+}
+
+QVector<ArtworkCanvas::TileContour> ArtworkCanvas::computeTileContours(
+    const QRectF &mosaicRect) const
+{
+    QVector<TileContour> contours;
+    if (mosaicRect.width() <= 0.0 || mosaicRect.height() <= 0.0)
+        return contours;
+
+    if (!tilePositions.isEmpty()) {
+        double minX = tilePositions.first().x;
+        double minY = tilePositions.first().y;
+        double maxX = minX;
+        double maxY = minY;
+        for (const TilePosition &position : tilePositions) {
+            const double tileWidth = position.width > 0.0 ? position.width : 4000.0;
+            const double tileHeight = position.height > 0.0 ? position.height : 4000.0;
+            minX = qMin(minX, position.x);
+            minY = qMin(minY, position.y);
+            maxX = qMax(maxX, position.x + tileWidth);
+            maxY = qMax(maxY, position.y + tileHeight);
+        }
+
+        const double spanX = qMax(1.0, maxX - minX);
+        const double spanY = qMax(1.0, maxY - minY);
+        for (const TilePosition &position : tilePositions) {
+            const double tileWidth = position.width > 0.0 ? position.width : 4000.0;
+            const double tileHeight = position.height > 0.0 ? position.height : 4000.0;
+            const double x = (position.x - minX) / spanX;
+            const double y = (position.y - minY) / spanY;
+            contours.append({
+                position.tileId,
+                QRectF(mosaicRect.x() + x * mosaicRect.width(),
+                       mosaicRect.y() + y * mosaicRect.height(),
+                       tileWidth / spanX * mosaicRect.width(),
+                       tileHeight / spanY * mosaicRect.height())
+            });
+        }
+        return contours;
+    }
+
+    const int rows = qMax(1, gridRows);
+    const int columns = qMax(1, gridColumns);
+    const double overlapX = qBound(0.0, horizontalOverlapPercent / 100.0, 0.90);
+    const double overlapY = qBound(0.0, verticalOverlapPercent / 100.0, 0.90);
+    const double stepX = 1.0 - overlapX;
+    const double stepY = 1.0 - overlapY;
+    const double totalWidth = 1.0 + (columns - 1) * stepX;
+    const double totalHeight = 1.0 + (rows - 1) * stepY;
+    const double tileWidth = 1.0 / totalWidth;
+    const double tileHeight = 1.0 / totalHeight;
+
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            const int index = row * columns + column;
+            if (index < gridTiles.size() && gridTiles.at(index).empty)
+                continue;
+
+            const QString tileId = QStringLiteral("r%1_c%2")
+                .arg(row, 2, 10, QLatin1Char('0'))
+                .arg(column, 2, 10, QLatin1Char('0'));
+            contours.append({
+                tileId,
+                QRectF(mosaicRect.x() + column * stepX / totalWidth * mosaicRect.width(),
+                       mosaicRect.y() + row * stepY / totalHeight * mosaicRect.height(),
+                       tileWidth * mosaicRect.width(),
+                       tileHeight * mosaicRect.height())
+            });
+        }
+    }
+    return contours;
+}
+
+void ArtworkCanvas::drawTileContours(QPainter &p, const QRect &mosaicRect)
+{
+    const QVector<TileContour> contours = computeTileContours(QRectF(mosaicRect));
+    if (contours.isEmpty())
+        return;
+
+    p.save();
+    p.setClipRect(mosaicRect);
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(QColor(0, 0, 0, 180), 4));
+    for (const TileContour &contour : contours)
+        p.drawRect(contour.rect);
+
+    const QFont labelFont = p.font();
+    const QFontMetrics metrics(labelFont);
+    p.setPen(QPen(QColor("#f4cc4a"), 2));
+    for (const TileContour &contour : contours) {
+        p.drawRect(contour.rect);
+        const int padding = 4;
+        const int textWidth = metrics.horizontalAdvance(contour.tileId);
+        const int textHeight = metrics.height();
+        const QRectF badge(contour.rect.x() + 3, contour.rect.y() + 3,
+                           textWidth + 2 * padding, textHeight + 2 * padding);
+        if (badge.right() > contour.rect.right() || badge.bottom() > contour.rect.bottom())
+            continue;
+        p.fillRect(badge, QColor(20, 20, 20, 200));
+        p.setPen(QPen(QColor("#f4cc4a"), 1));
+        p.drawRect(badge);
+        p.setPen(QColor("#ffffff"));
+        p.drawText(badge, Qt::AlignCenter, contour.tileId);
+        p.setPen(QPen(QColor("#f4cc4a"), 2));
+    }
+    p.restore();
 }

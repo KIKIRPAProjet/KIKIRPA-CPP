@@ -4,6 +4,7 @@
 #include "projectgrid.h"
 
 #include <QRect>
+#include <QRectF>
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
@@ -36,6 +37,38 @@ public:
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
 
+    struct TilePosition
+    {
+        QString tileId;
+        double x = 0.0;
+        double y = 0.0;
+        double width = 0.0;
+        double height = 0.0;
+    };
+
+    struct TileContour
+    {
+        QString tileId;
+        QRectF rect;
+    };
+
+    void setTileContoursVisible(bool visible) { tileContoursVisible = visible; update(); }
+    bool isTileContoursVisible() const { return tileContoursVisible; }
+    void toggleTileContours() { tileContoursVisible = !tileContoursVisible; update(); }
+    void setOverlap(int horizontal, int vertical)
+    {
+        horizontalOverlapPercent = horizontal;
+        verticalOverlapPercent = vertical;
+        update();
+    }
+    void setTilePositions(const QVector<TilePosition> &positions)
+    {
+        tilePositions = positions;
+        update();
+    }
+    const QVector<TilePosition> &getTilePositions() const { return tilePositions; }
+    QVector<TileContour> computeTileContours(const QRectF &mosaicRect) const;
+
 protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
@@ -47,6 +80,7 @@ private:
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
+    void drawTileContours(QPainter &p, const QRect &mosaicRect);
 
     int gridCellAt(const QPoint &point) const;
 
@@ -64,6 +98,10 @@ private:
     int dragStartCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    bool tileContoursVisible = true;
+    int horizontalOverlapPercent = 20;
+    int verticalOverlapPercent = 20;
+    QVector<TilePosition> tilePositions;
 };
 
 #endif // ARTWORKCANVAS_H
