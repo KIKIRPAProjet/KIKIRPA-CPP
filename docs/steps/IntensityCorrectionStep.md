@@ -101,7 +101,7 @@ Les autres paramètres gardent leur valeur par défaut.
 - les refus : méthode inconnue, `matches` absent, identifiant de tuile inconnu, paramètre de l'algorithme invalide ;
 - l'enchaînement avec `dynamic-programming-dijkstra`.
 
-La sauvegarde et la relecture par checkpoint ne sont pas testées ici. `tests/core/test_reprise.cpp` compte seulement les types déclarés.
+La sauvegarde et la relecture du type `IntensityCorrection` sont vérifiées par `tests/core/test_reprise.cpp` (`Reprise.TypesDuPipeline`), sans passer par le step.
 
 ```sh
 ctest --preset windows-aqt -R IntensityCorrectionStepTest

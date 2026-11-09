@@ -1,6 +1,7 @@
 // include/backend/steps/dynamic_programming_dijkstra_step.h
 #pragma once
 
+#include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 #include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
@@ -11,12 +12,15 @@ namespace StepsNs {
     struct DynamicProgrammingDijkstraInput {
         std::string method = "DP";
         std::string costFunction = "color_gradient";
-        int corridorRadius = 18;
+        int corridorRadius = DynamicProgrammingDijkstraNs::DEFAULT_CORRIDOR_RADIUS;
     };
 
     struct DynamicProgrammingDijkstraOutput {
         DataNs::Seamlines seamlines;
     };
+
+    // Entrées lues par execute() (paramètres et données du DataStore), définies dans le .cpp.
+    struct DynamicProgrammingDijkstraData;
 
     // Calcule une couture par paire de tuiles voisines à partir de leurs pixels, positions et gains d'égalisation.
     // Les coutures produites sont exprimées en pixels de pleine résolution dans le repère de la mosaïque.
@@ -29,6 +33,9 @@ namespace StepsNs {
 
         private:
             DynamicProgrammingDijkstraOutput output;
+
+            // Lit les paramètres et les entrées du DataStore. Renvoie la cause d'un échec, vide si tout est lu.
+            std::string readInputs(DynamicProgrammingDijkstraData& inputs) const;
 
     };
 
