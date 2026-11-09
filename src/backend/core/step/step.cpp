@@ -4,6 +4,7 @@
 #include "core/config/pipeline_config.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <set>
 #include <stdexcept>
 #include <string>
