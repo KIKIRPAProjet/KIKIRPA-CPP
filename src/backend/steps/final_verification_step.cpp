@@ -19,6 +19,7 @@ namespace StepsNs {
     namespace fs = std::filesystem;
 
     FinalVerificationStepClass::FinalVerificationStepClass(const FinalVerificationInput& input) {
+        // Enregistrer le sérialiseur avant qu'un pipeline puisse demander un checkpoint de ce type.
         CheckpointNs::registerFinalVerificationCheckpoint();
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "final-verification";
@@ -31,6 +32,7 @@ namespace StepsNs {
     }
 
     bool FinalVerificationStepClass::execute() {
+        // Publier d'abord un état vide afin d'éviter de laisser un ancien rapport après un échec.
         output.value.details = Json::object();
         result = {{"status", "failed"}, {"error", ""}};
         if (dataStore) dataStore->replace(output.key, output.value);
@@ -50,6 +52,7 @@ namespace StepsNs {
 
     Json FinalVerificationStepClass::externalInputsFingerprint() const {
         Json fingerprint = Json::array();
+        // Le résultat dépend de deux fichiers externes; leur identité invalide le checkpoint s'ils changent.
         for (const char* parameterName : {"inputImagePath", "outputImagePath"}) {
             const fs::path imagePath = getParameter(parameterName).get<std::string>();
             std::error_code errorCode;

@@ -62,6 +62,7 @@ namespace {
     };
 
     void writeTiff(const fs::path& path, const TiffParameters& parameters) {
+        // Générer un TIFF minimal avec les tags demandés par l'algorithme, sans dépendre de données externes.
         TIFF* tiffFile = TIFFOpen(path.string().c_str(), "w");
         ASSERT_NE(tiffFile, nullptr);
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, parameters.width));
@@ -94,6 +95,7 @@ namespace {
         const std::vector<std::uint8_t> iccPayload{
             'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', 0, 1, 1
         };
+        // Insérer un segment APP2 valide après SOI pour tester l'extraction ICC du lecteur JPEG.
         const std::uint16_t segmentLength = static_cast<std::uint16_t>(iccPayload.size() + profile.size() + 2);
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
         output.write(jpegBytes.data(), 2);

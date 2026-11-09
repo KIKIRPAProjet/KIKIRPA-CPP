@@ -1,7 +1,8 @@
 // src/backend/algorithms/verification/final_verification.cpp
 #include "algorithms/verification/final_verification.h"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner): l'algorithme construit et manipule des objets JSON.
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -90,7 +91,7 @@ namespace VerificationNs {
             Json warnings = Json::array();
         };
 
-        // Lit les métadonnées d'une image TIFF ou JPEG, en utilisant libtiff pour les TIFF et une lecture manuelle pour les JPEG.
+        // L'algorithme ne décode pas les pixels : il extrait les métadonnées TIFF ou parcourt les segments JPEG.
         std::string lowerExtension(const std::filesystem::path& path) {
             std::string extension = path.extension().string();
             std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -191,6 +192,7 @@ namespace VerificationNs {
             properties["exifDirectoryPresent"] = exifDirectoryPresent;
             properties["exifParseStatus"] = exifDirectoryPresent ? "unread" : "absent";
             if (exifDirectoryPresent) {
+                // libtiff bascule sur le répertoire EXIF à cet offset pour lire ses tags dédiés.
                 if (TIFFReadEXIFDirectory(tiffFile, exifOffset)) {
                     addTextTag(tiffFile, TIFF_EXIF_DATETIME_ORIGINAL, "dateTimeOriginal", properties);
                     addTextTag(tiffFile, TIFF_EXIF_DATETIME_DIGITIZED, "dateTimeDigitized", properties);
@@ -341,6 +343,7 @@ namespace VerificationNs {
             std::uint16_t entryCount = 0;
             if (!readExif16(payload, ifdOffset, littleEndian, entryCount)) return metadata;
 
+            // Chaque entrée TIFF de l'EXIF est bornée avant d'en extraire orientation ou chaînes texte.
             metadata["parseStatus"] = "parsed";
             for (std::size_t entryIndex = 0; entryIndex < entryCount; ++entryIndex) {
                 const std::size_t entryOffset = ifdOffset + JPEG_LENGTH_FIELD_SIZE + entryIndex * EXIF_ENTRY_SIZE;
@@ -415,6 +418,7 @@ namespace VerificationNs {
 
             const unsigned int chunkIndex = payload[chunkIndexOffset];
             const unsigned int chunkCount = payload[chunkCountOffset];
+            // ICC peut occuper plusieurs APP2 : conserver l'index permet de réassembler le profil dans l'ordre.
             if (chunkIndex == 0 || chunkCount == 0 || chunkIndex > chunkCount ||
                 (state.expectedIccChunks != 0 && state.expectedIccChunks != chunkCount))
                 throw std::runtime_error("invalid JPEG ICC profile segments: " + path.string());
@@ -493,6 +497,7 @@ namespace VerificationNs {
             state.properties["metadataSegments"] = std::move(state.metadataSegments);
 
             if (state.expectedIccChunks != 0) {
+                // Refuser un profil partiel ou désordonné plutôt que de comparer des octets incomplets.
                 if (state.iccChunks.size() != state.expectedIccChunks)
                     throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
                 for (unsigned int index = 1; index <= state.expectedIccChunks; ++index) {
@@ -654,6 +659,7 @@ namespace VerificationNs {
 
         Json createComparisonReport(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath,
                                    const ImageMetadata& input, const ImageMetadata& output) {
+            // Les écarts alimentent le rapport; ils ne constituent jamais un verdict de conformité.
             ComparisonDiagnostics diagnostics;
             Json metadataComparisons = compareMetadata(input, output, diagnostics.differences);
             metadataComparisons["jpegMetadataSegments"] =

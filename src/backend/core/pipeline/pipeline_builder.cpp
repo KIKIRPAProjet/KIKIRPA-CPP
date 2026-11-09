@@ -43,6 +43,7 @@ namespace PipelineNs {
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
+                // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
             };
             return registry;

@@ -19,6 +19,7 @@ namespace CheckpointNs {
     namespace {
 
         void saveReport(const StepNs::DataStoreClass& dataStore, const std::string& key, const std::filesystem::path& directory) {
+            // Le rapport est déjà du JSON; le checkpoint conserve son contenu complet dans un fichier dédié.
             std::ofstream output(directory / (key + ".json"), std::ios::binary);
             output << dataStore.get<DataNs::VerificationReport>(key).details.dump(2);
             if (!output) throw std::runtime_error("cannot write verification report checkpoint");
@@ -27,6 +28,7 @@ namespace CheckpointNs {
         void loadReport(StepNs::DataStoreClass& dataStore, const std::string& key, const std::filesystem::path& directory) {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
             if (!input) throw std::runtime_error("cannot read verification report checkpoint");
+            // Reconstruire le même type que celui publié par le step pour qu'il reste lisible après reprise.
             dataStore.replace(key, DataNs::VerificationReport{nlohmann::json::parse(input)});
         }
 
