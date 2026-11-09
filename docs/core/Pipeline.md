@@ -5,13 +5,13 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-Il n'y a pas d'exécutable en ligne de commande, et la GUI n'appelle pas encore le backend : aujourd'hui, le pipeline se lance seulement depuis le code, par exemple dans un test. Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md).
+L'exécutable peut lancer un script JSON directement :
 
-```cpp
-PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)
-bool ok = pipeline.run([](const std::string& message) { std::cout << message << '\n'; });
-const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   // sorties des steps
+```sh
+build/<preset>/stitching --pipeline pipeline.json
 ```
+
+Ajouter `.exe` au chemin sous Windows. Le processus renvoie un code non nul si le script est invalide ou si un step échoue. Sans `--pipeline`, le point d'entrée réserve le lancement au frontend, qui n'est pas encore intégré sur cette branche.
 
 ## Format du script
 
