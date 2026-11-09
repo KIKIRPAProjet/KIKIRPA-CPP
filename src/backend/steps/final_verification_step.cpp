@@ -6,6 +6,8 @@
 #include "core/config/pipeline_config.h"
 #include "core/step/data_store.h"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <exception>
 #include <stdexcept>

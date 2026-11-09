@@ -1,6 +1,7 @@
 // src/backend/algorithms/verification/final_verification.cpp
 #include "algorithms/verification/final_verification.h"
 
+#include <nlohmann/json.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -9,6 +10,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <ios>
 #include <istream>
@@ -83,6 +85,10 @@ namespace VerificationNs {
             bool hasIccProfile = false;
         };
 
+        struct ComparisonDiagnostics {
+            Json differences = Json::array();
+            Json warnings = Json::array();
+        };
 
         // Lit les métadonnées d'une image TIFF ou JPEG, en utilisant libtiff pour les TIFF et une lecture manuelle pour les JPEG.
         std::string lowerExtension(const std::filesystem::path& path) {
@@ -98,15 +104,27 @@ namespace VerificationNs {
             if (TIFFGetField(tiffFile, tag, &value) && value != nullptr) properties[name] = value;
         }
 
-        // Lit les métadonnées d'une image TIFF, en utilisant libtiff pour extraire les informations pertinentes.
-        ImageMetadata readTiffMetadata(const std::filesystem::path& path) {
+        std::unique_ptr<TIFF, decltype(&TIFFClose)> openTiff(const std::filesystem::path& path) {
             std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(TIFFOpen(path.string().c_str(), "r"), TIFFClose);
-            if (tiffFile == nullptr) throw std::runtime_error("cannot open TIFF: " + path.string());
+            if (!tiffFile) throw std::runtime_error("cannot open TIFF: " + path.string());
+            return tiffFile;
+        }
 
-            ImageMetadata metadata;
-            metadata.format = "TIFF";
+        void addTiffDimensions(TIFF* tiffFile, const std::filesystem::path& path, Json& properties) {
             std::uint32_t width = 0;
             std::uint32_t height = 0;
+            const bool dimensionsRead = TIFFGetField(tiffFile, TIFFTAG_IMAGEWIDTH, &width) &&
+                                        TIFFGetField(tiffFile, TIFFTAG_IMAGELENGTH, &height);
+            if (!dimensionsRead || width == 0 || height == 0)
+                throw std::runtime_error("TIFF has missing or invalid dimensions: " + path.string());
+            const auto maximumDimension = static_cast<std::uint32_t>(std::numeric_limits<int>::max());
+            if (width > maximumDimension || height > maximumDimension)
+                throw std::runtime_error("TIFF dimensions exceed the supported report range: " + path.string());
+            properties["width"] = width;
+            properties["height"] = height;
+        }
+
+        void addTiffTechnicalProperties(TIFF* tiffFile, Json& properties) {
             std::uint16_t samplesPerPixel = 1;
             std::uint16_t bitsPerSample = 1;
             std::uint16_t sampleFormat = SAMPLEFORMAT_UINT;
@@ -114,28 +132,15 @@ namespace VerificationNs {
             std::uint16_t compression = COMPRESSION_NONE;
             std::uint16_t orientation = ORIENTATION_TOPLEFT;
             std::uint16_t planarConfiguration = PLANARCONFIG_CONTIG;
-            bool success =
-                TIFFGetField(tiffFile.get(), TIFFTAG_IMAGEWIDTH, &width) &&
-                TIFFGetField(tiffFile.get(), TIFFTAG_IMAGELENGTH, &height);
-            if (!success || width == 0 || height == 0) {
-                throw std::runtime_error("TIFF has missing or invalid dimensions: " + path.string());
-            }
-            if (width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
-                height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
-                throw std::runtime_error("TIFF dimensions exceed the supported report range: " + path.string());
-            }
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_SAMPLESPERPIXEL, &samplesPerPixel);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_BITSPERSAMPLE, &bitsPerSample);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_SAMPLEFORMAT, &sampleFormat);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_PHOTOMETRIC, &photometric);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_COMPRESSION, &compression);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_ORIENTATION, &orientation);
+            TIFFGetFieldDefaulted(tiffFile, TIFFTAG_PLANARCONFIG, &planarConfiguration);
 
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_SAMPLESPERPIXEL, &samplesPerPixel);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_BITSPERSAMPLE, &bitsPerSample);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_SAMPLEFORMAT, &sampleFormat);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_PHOTOMETRIC, &photometric);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_COMPRESSION, &compression);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_ORIENTATION, &orientation);
-            TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_PLANARCONFIG, &planarConfiguration);
-
-            metadata.properties = {
-                {"width", width},
-                {"height", height},
+            properties.update({
                 {"bitsPerSample", bitsPerSample},
                 {"samplesPerPixel", samplesPerPixel},
                 {"sampleFormat", sampleFormat},
@@ -143,48 +148,69 @@ namespace VerificationNs {
                 {"compression", compression},
                 {"orientation", orientation},
                 {"planarConfiguration", planarConfiguration}
-            };
+            });
+        }
 
+        void addTiffExtraSamples(TIFF* tiffFile, Json& properties) {
             std::uint16_t extraSampleCount = 0;
             std::uint16_t* extraSamples = nullptr;
-            if (TIFFGetField(tiffFile.get(), TIFFTAG_EXTRASAMPLES, &extraSampleCount, &extraSamples)) {
+            if (TIFFGetField(tiffFile, TIFFTAG_EXTRASAMPLES, &extraSampleCount, &extraSamples)) {
                 Json values = Json::array();
                 for (std::uint16_t index = 0; index < extraSampleCount; ++index) values.push_back(extraSamples[index]);
-                metadata.properties["extraSamples"] = std::move(values);
+                properties["extraSamples"] = std::move(values);
             } else {
-                metadata.properties["extraSamples"] = Json::array();
+                properties["extraSamples"] = Json::array();
             }
+        }
 
-            addTextTag(tiffFile.get(), TIFFTAG_IMAGEDESCRIPTION, "imageDescription", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_DOCUMENTNAME, "documentName", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_MAKE, "make", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_MODEL, "model", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_SOFTWARE, "software", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_DATETIME, "dateTime", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_ARTIST, "artist", metadata.properties);
-            addTextTag(tiffFile.get(), TIFFTAG_COPYRIGHT, "copyright", metadata.properties);
+        void addTiffTextProperties(TIFF* tiffFile, Json& properties) {
+            addTextTag(tiffFile, TIFFTAG_IMAGEDESCRIPTION, "imageDescription", properties);
+            addTextTag(tiffFile, TIFFTAG_DOCUMENTNAME, "documentName", properties);
+            addTextTag(tiffFile, TIFFTAG_MAKE, "make", properties);
+            addTextTag(tiffFile, TIFFTAG_MODEL, "model", properties);
+            addTextTag(tiffFile, TIFFTAG_SOFTWARE, "software", properties);
+            addTextTag(tiffFile, TIFFTAG_DATETIME, "dateTime", properties);
+            addTextTag(tiffFile, TIFFTAG_ARTIST, "artist", properties);
+            addTextTag(tiffFile, TIFFTAG_COPYRIGHT, "copyright", properties);
+        }
 
+        void addTiffIccProfile(TIFF* tiffFile, ImageMetadata& metadata) {
             std::uint32_t iccSize = 0;
             void* iccBuffer = nullptr;
-            if (TIFFGetField(tiffFile.get(), TIFFTAG_ICCPROFILE, &iccSize, &iccBuffer) &&
+            if (TIFFGetField(tiffFile, TIFFTAG_ICCPROFILE, &iccSize, &iccBuffer) &&
                 iccSize > 0 && iccBuffer != nullptr) {
                 const auto* profile = static_cast<const std::uint8_t*>(iccBuffer);
                 metadata.iccProfile.assign(profile, profile + iccSize);
                 metadata.hasIccProfile = true;
             }
+        }
+
+        void addTiffExifProperties(TIFF* tiffFile, Json& properties) {
             toff_t exifOffset = 0;
-            const bool exifDirectoryPresent = TIFFGetField(tiffFile.get(), TIFFTAG_EXIFIFD, &exifOffset) != 0;
-            metadata.properties["exifDirectoryPresent"] = exifDirectoryPresent;
-            metadata.properties["exifParseStatus"] = exifDirectoryPresent ? "unread" : "absent";
+            const bool exifDirectoryPresent = TIFFGetField(tiffFile, TIFFTAG_EXIFIFD, &exifOffset) != 0;
+            properties["exifDirectoryPresent"] = exifDirectoryPresent;
+            properties["exifParseStatus"] = exifDirectoryPresent ? "unread" : "absent";
             if (exifDirectoryPresent) {
-                if (TIFFReadEXIFDirectory(tiffFile.get(), exifOffset)) {
-                    addTextTag(tiffFile.get(), TIFF_EXIF_DATETIME_ORIGINAL, "dateTimeOriginal", metadata.properties);
-                    addTextTag(tiffFile.get(), TIFF_EXIF_DATETIME_DIGITIZED, "dateTimeDigitized", metadata.properties);
-                    metadata.properties["exifParseStatus"] = "parsed";
+                if (TIFFReadEXIFDirectory(tiffFile, exifOffset)) {
+                    addTextTag(tiffFile, TIFF_EXIF_DATETIME_ORIGINAL, "dateTimeOriginal", properties);
+                    addTextTag(tiffFile, TIFF_EXIF_DATETIME_DIGITIZED, "dateTimeDigitized", properties);
+                    properties["exifParseStatus"] = "parsed";
                 } else {
-                    metadata.properties["exifParseStatus"] = "invalid";
+                    properties["exifParseStatus"] = "invalid";
                 }
             }
+        }
+
+        ImageMetadata readTiffMetadata(const std::filesystem::path& path) {
+            std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile = openTiff(path);
+            ImageMetadata metadata;
+            metadata.format = "TIFF";
+            addTiffDimensions(tiffFile.get(), path, metadata.properties);
+            addTiffTechnicalProperties(tiffFile.get(), metadata.properties);
+            addTiffExtraSamples(tiffFile.get(), metadata.properties);
+            addTiffTextProperties(tiffFile.get(), metadata.properties);
+            addTiffIccProfile(tiffFile.get(), metadata);
+            addTiffExifProperties(tiffFile.get(), metadata.properties);
             return metadata;
         }
 
@@ -575,14 +601,14 @@ namespace VerificationNs {
         }
 
         Json compareIccProfiles(const ImageMetadata& input, const ImageMetadata& output,
-                                Json& differences, Json& warnings) {
+                                ComparisonDiagnostics& diagnostics) {
             const bool identicalBytes = input.hasIccProfile && output.hasIccProfile &&
                                         input.iccProfile == output.iccProfile;
             const std::string comparison =
                 iccComparisonStatus(input.hasIccProfile, output.hasIccProfile, identicalBytes);
             if (input.hasIccProfile != output.hasIccProfile ||
                 (input.hasIccProfile && output.hasIccProfile && !identicalBytes)) {
-                differences.push_back({
+                diagnostics.differences.push_back({
                     {"property", "iccProfile"},
                     {"inputPresent", input.hasIccProfile},
                     {"outputPresent", output.hasIccProfile},
@@ -592,9 +618,10 @@ namespace VerificationNs {
                 });
             }
             if (!input.hasIccProfile || !output.hasIccProfile)
-                warnings.push_back("ICC profile is missing from at least one image");
+                diagnostics.warnings.push_back("ICC profile is missing from at least one image");
             else if (!identicalBytes)
-                warnings.push_back("ICC colorimetric equivalence cannot be determined without a color-management engine");
+                diagnostics.warnings.push_back(
+                    "ICC colorimetric equivalence cannot be determined without a color-management engine");
 
             return {
                 {"inputPresent", input.hasIccProfile},
@@ -627,11 +654,11 @@ namespace VerificationNs {
 
         Json createComparisonReport(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath,
                                    const ImageMetadata& input, const ImageMetadata& output) {
-            Json differences = Json::array();
-            Json warnings = Json::array();
-            Json metadataComparisons = compareMetadata(input, output, differences);
-            metadataComparisons["jpegMetadataSegments"] = compareJpegMetadataSegments(input, output, differences);
-            const Json iccComparison = compareIccProfiles(input, output, differences, warnings);
+            ComparisonDiagnostics diagnostics;
+            Json metadataComparisons = compareMetadata(input, output, diagnostics.differences);
+            metadataComparisons["jpegMetadataSegments"] =
+                compareJpegMetadataSegments(input, output, diagnostics.differences);
+            const Json iccComparison = compareIccProfiles(input, output, diagnostics);
             return {
                 {"status", "report_ready"},
                 {"inputImage", {{"path", inputPath.string()}, {"format", input.format}, {"metadata", input.properties}}},
@@ -639,8 +666,8 @@ namespace VerificationNs {
                 {"dimensions", compareDimensions(input, output)},
                 {"metadataComparisons", metadataComparisons},
                 {"iccProfile", iccComparison},
-                {"differences", differences},
-                {"warnings", warnings}
+                {"differences", diagnostics.differences},
+                {"warnings", diagnostics.warnings}
             };
         }
 

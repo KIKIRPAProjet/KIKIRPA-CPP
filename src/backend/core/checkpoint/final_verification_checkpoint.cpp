@@ -5,7 +5,8 @@
 #include "core/data/verification_report.h"
 #include "core/step/data_store.h"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner): parse nécessite le type JSON complet.
 
 #include <filesystem>
 #include <fstream>

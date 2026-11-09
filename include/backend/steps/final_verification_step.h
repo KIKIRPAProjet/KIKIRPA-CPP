@@ -4,7 +4,7 @@
 #include "core/data/verification_report.h"
 #include "core/step/step.h"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <string>
 
