@@ -11,7 +11,6 @@
 #include "steps/intensity_correction_step.h"
 #include "steps/sift_step.h"
 #include "steps/absolute_pos_step.h"
-#include "steps/export_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
 
@@ -45,7 +44,6 @@ namespace PipelineNs {
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
-                {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
             };
             return registry;
         }

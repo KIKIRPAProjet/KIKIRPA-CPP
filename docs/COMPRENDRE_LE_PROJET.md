@@ -14,7 +14,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **09/11/2026**. La branche `fe/export` ajoute un step d'export, en attente de PR. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **08/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -34,9 +34,9 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
-| 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
+| 9 | Export | Écrire le fichier final | ❌ branche `fe/export` |
 
-**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** La branche `fe/export` ajoute l'écriture TIFF, qui attend les blocs produits par Fusion.
+**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Aucun step ne produit d'image.
 
 ---
 
@@ -211,13 +211,12 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 
-### Les types de données, et leur JSON
+### Les six types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. `CompositeBlocks` est échangé en mémoire et n'est pas encore sérialisé. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -302,12 +301,6 @@ C++ : `std::vector<DataNs::TileTerritory>`.
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
-#### `CompositeBlocks` (clé `compositeBlocks`) : les blocs d'image assemblés
-
-Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
-
-C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints.
-
 #### Les deux fichiers du moteur
 
 `manifest.json`, un par step, sert à décider si le checkpoint est encore valable :
@@ -334,7 +327,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Aucun des deux n'est encore sur `main`.**
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Ni l'un ni l'autre n'est sur main.**
 
 Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 
@@ -344,13 +337,13 @@ Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 4. ne garder que les pixels qui tombent dans son **territoire** ;
 5. écrire le résultat dans l'image finale, **par blocs** et sans jamais garder toute la mosaïque en mémoire (§6).
 
-L'export écrit les blocs composites dans un TIFF tuilé `mosaic.tif`.
+L'export écrit ensuite l'image finale dans le format voulu.
 
 Où en est-on :
 
-- **Assemblage (Fusion)** : PR #69 (brouillon).
-- **Export** : branche `fe/export`, qui ajoute le step `export` et son type partagé.
-- **Contrat entre les deux** : Fusion doit fournir la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque bloc doit contenir `imageRgb` en `CV_16UC3` et un `blockRect` aligné sur `DataNs::BLOCK_SIZE`, avec une grille complète. L'export n'écrit pas `provenance` ni `mask`.
+- **Assemblage** : PR #69 (brouillon).
+- **Export** : branche `fe/export`.
+- Le **contrat entre les deux** (quelle structure l'assemblage passe à l'export) n'est pas encore décidé. Trois branches définissent chacune un type de mosaïque différent : il faut en choisir un avant de coder.
 - `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide en attendant le vrai assemblage.
 
 ---
@@ -472,7 +465,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : faire correspondre les sorties de Fusion au contrat `CompositeBlocks`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
+- **Assemblage et export**, en commençant par le contrat entre les deux (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.
