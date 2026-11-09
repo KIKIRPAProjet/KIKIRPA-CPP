@@ -116,6 +116,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `fusion` | `StepsNs::FusionStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `territories` : `Territories` | `compositeBlocks` : `CompositeBlocks` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — *(terminal)* |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. Une fiche par step dans [docs/steps/](../steps/).
 
@@ -128,10 +130,12 @@ doivent donc employer le même type C++.
 
 | Clé | `dataType` | Type C++ concret | Producteur / consommateur actuel |
 |---|---|---|---|
-| `tiles` | `Tiles` | `DataNs::TileList` | Produit par `import` ; consommé par `phase-correlation` et `graphcut` |
-| `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | Produit par `phase-correlation` ; aucun consommateur de pipeline enregistré |
-| `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Consommé par `graphcut` ; aucun producteur de pipeline enregistré |
-| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` ; aucun consommateur d'assemblage enregistré |
+| `tiles` | `Tiles` | `DataNs::TileList` | Produit par `import` ; consommé par tous les steps suivants |
+| `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | Produit par `phase-correlation`, `sift`, `lightglue` ; consommé par `absolute-pos`, `intensity-correction` |
+| `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Produit par `absolute-pos` ; consommé par `graphcut`, `fusion` |
+| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `fusion` |
+| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` ; consommé par `fusion` |
+| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Produit par `fusion` ; consommé par `export` |
 
 Les contrats suivants ne sont **pas encore définis ni validés** pour les
 échanges entre steps. Les types d'algorithmes existants ne suffisent pas à

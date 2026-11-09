@@ -11,6 +11,8 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `absolute-pos` | `tiles`, `matches` | `positions` | [AbsolutePosStep.md](AbsolutePosStep.md) |
 | `intensity-correction` | `tiles`, `matches` | `intensityCorrection` | [IntensityCorrectionStep.md](IntensityCorrectionStep.md) |
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
+| `fusion` | `tiles`, `positions`, `territories`, *(opt. `intensityCorrection`)* | `compositeBlocks` | [FusionStep.md](FusionStep.md) |
+| `export` | `compositeBlocks` | — *(écrit `mosaic.tif`)* | [ExportStep.md](ExportStep.md) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule.
 

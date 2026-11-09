@@ -82,4 +82,16 @@ namespace DataNs {
         std::vector<std::vector<std::vector<cv::Point>>> holes;
     };
 
+    constexpr int BLOCK_SIZE = 512;
+
+    // Bloc calculé par l'assemblage / fusion ; les matrices ont la taille de blockRect.
+    struct CompositeBlock {
+        cv::Mat imageRgb;       // CV_16UC3, canaux RGB ou BGR
+        cv::Mat provenance;     // CV_16UC1, identifiant de tuile
+        cv::Mat mask;           // CV_8UC1, 255 = pixel valide
+        cv::Rect blockRect;     // rectangle du bloc sur la mosaïque, en pixels
+    };
+
+    using CompositeBlockList = std::vector<CompositeBlock>;
+
 }
