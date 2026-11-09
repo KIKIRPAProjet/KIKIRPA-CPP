@@ -439,21 +439,17 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 
 Presque rien : `src/frontend/PipelineJson.cpp`, qui sait **écrire** un script JSON de pipeline (`FrontendNs::pipelineToJson`, `writePipelineJson`). Aucune fenêtre.
 
-### Ce qu'il y a dans les branches
+### Exécution et rapports dans cette branche
 
-Plusieurs maquettes de l'interface Qt existent en branche (`Valerie`, `frontendJonas`, `frontendMathias`, `fr-rahim` / PR #91…) : page d'accueil, grille du projet, onglets, panneau de journal, aperçu.
+La fenêtre Qt prépare une configuration backend depuis le projet, lance le pipeline réel dans un thread de travail (`QtConcurrent::run`) et archive chaque exécution séparément sous `<dossier-de-sortie>/runs/<identifiant>/`. L'annulation est prise en compte entre les étapes ; le bouton ne prétend pas arrêter une étape en plein calcul.
 
-**Ce sont des maquettes : aucune n'appelle le backend.**
-- L'avancement affiché est simulé par un minuteur (`SimulationRunner`, un `QTimer`).
-- Les boutons qui ont l'air d'agir n'agissent pas. Par exemple, **Annuler / Rétablir** dans la branche `Valerie` affichent seulement « Dernière action annulée. » dans la barre d'état. Il n'y a ni historique, ni annulation réelle.
+Le rapport JSON conserve le statut global, les entrées, sorties et résultats réels, ainsi que l'ordre d'import configuré. Depuis l'export Qt, l'opérateur choisit une exécution archivée et génère son HTML sans relancer le calcul. La configuration générée actuellement par le modèle de projet contient `import` et `phase-correlation` ; les autres steps backend disponibles ne sont pas encore proposés par l'interface de configuration.
 
-### Comment le brancher au backend
-
-Tout ce qu'il faut existe déjà côté backend :
+Les autres interactions non liées au pipeline, comme Annuler / Rétablir, restent des maquettes.
 
 | Le front veut… | Il utilise |
 |---|---|
-| construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
+| construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::ProjectSetupModelClass`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
 | lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
 | afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
@@ -464,7 +460,7 @@ Tout ce qu'il faut existe déjà côté backend :
 | dessiner la vraie seamline | les polygones de `territories` : leurs bords sont les coutures |
 | dessiner le placement des tuiles | `positions` et les dimensions de chaque tuile (`tiles`) |
 
-Il reste à décider quelle maquette devient l'interface unique, puis à remplacer `SimulationRunner` par ce branchement.
+Le rapport est exporté à partir de l'archive JSON existante ; il ne déclenche jamais une nouvelle exécution.
 
 ---
 
@@ -472,10 +468,10 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : faire correspondre les sorties de Fusion au contrat `CompositeBlocks`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
+- **Fusion et Export** : aucun step de fusion ne produit encore `CompositeBlocks`, l'entrée du step `export`; compléter cette chaîne avant de pouvoir joindre une mosaïque finale au rapport (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
-- **Le branchement du front** (§9) et le choix d'une seule interface.
+- **Étendre la configuration du front** (§9) au-delà de `import` et `phase-correlation`, et proposer les autres steps pris en charge.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
 - **Unifier le nommage des fichiers** entre `import` et `absolute-pos` / `graphcut`.
 

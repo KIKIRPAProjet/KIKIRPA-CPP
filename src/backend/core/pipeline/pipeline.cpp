@@ -3,16 +3,29 @@
 
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
+#include "core/pipeline/pipeline_report.h"
 
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+#include <system_error>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace PipelineNs {
 
@@ -59,6 +72,84 @@ namespace PipelineNs {
             throw std::invalid_argument("run.startFromStep: unknown step '" + runState.startFromStep + "'");
         }
 
+        std::string currentTimestamp() {
+            const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::tm utcTime{};
+#ifdef _WIN32
+            gmtime_s(&utcTime, &now);
+#else
+            gmtime_r(&now, &utcTime);
+#endif
+            std::ostringstream timestamp;
+            timestamp << std::put_time(&utcTime, "%Y-%m-%dT%H:%M:%SZ");
+            return timestamp.str();
+        }
+
+        Json createNotReachedStepReport(size_t stepIndex, const StepNs::StepClass& step) {
+            const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
+            return {
+                {"index", stepIndex},
+                {"name", config.name},
+                {"status", "notReached"},
+                {"summary", "Étape non exécutée."},
+                {"reason", nullptr},
+                {"configuration", step.getConfigJson()},
+                {"parameters", step.getConfigJson().value("parameters", Json::array())},
+                {"inputs", Json::array()},
+                {"outputs", Json::array()},
+                {"result", nullptr}
+            };
+        }
+
+        Json createRunReport(size_t startIndex, const std::vector<std::unique_ptr<StepNs::StepClass>>& steps,
+                             const CheckpointNs::CheckpointClass& checkpoint, const Json& metadata,
+                             const fs::path& reportPath) {
+            Json reportJson = {{"metadata", metadata}, {"steps", Json::array()}};
+            if (!reportJson["metadata"].contains("startedAt"))
+                reportJson["metadata"]["startedAt"] = currentTimestamp();
+            reportJson["metadata"]["status"] = "running";
+
+            StepNs::DataStoreClass reportDataStore;
+            for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
+                const StepNs::StepClass& step = *steps[stepIndex];
+                if (reportPath.empty() || stepIndex >= startIndex) {
+                    reportJson["steps"].push_back(createNotReachedStepReport(stepIndex, step));
+                    continue;
+                }
+
+                const Json inputs = createStepInputs(step, reportDataStore);
+                for (const ConfigNs::DataSlot& output : step.getConfigJson().get<ConfigNs::StepConfig>().outputs)
+                    checkpoint.load(stepIndex, step, output.key, output.dataType, reportDataStore);
+                Json stepReport = createStepReport(stepIndex, step, reportDataStore, inputs);
+                stepReport["status"] = "skipped";
+                stepReport["summary"] = "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé.";
+                stepReport["result"] = nullptr;
+                stepReport["reason"] = nullptr;
+                reportJson["steps"].push_back(std::move(stepReport));
+            }
+            return reportJson;
+        }
+
+        void saveReportStatus(Json& reportJson, const std::string& status,
+                              const fs::path& reportPath, const PipelineClass::Logger& log) {
+            if (reportPath.empty()) return;
+            reportJson["metadata"]["status"] = status;
+            if (status != "running") {
+                reportJson["metadata"]["finishedAt"] = currentTimestamp();
+                if (status == "failed" || status == "paused") {
+                    for (Json& step : reportJson["steps"]) {
+                        if (step.value("status", std::string()) == "notReached")
+                            step["reason"] = "Étape non atteinte : l'exécution s'est arrêtée avant cette étape.";
+                    }
+                }
+            }
+            try {
+                writeReport(reportPath, reportJson);
+            } catch (const std::exception& exception) {
+                report(log, std::string("warning: cannot update report: ") + exception.what(), true);
+            }
+        }
+
     }
 
     void PipelineClass::configure(const Json& scriptJson) {
@@ -100,13 +191,21 @@ namespace PipelineNs {
         try {
             if (scriptPath.has_parent_path()) fs::create_directories(scriptPath.parent_path());
             // Fichier temporaire puis renommage : le script n'est jamais écrit à moitié.
-            const fs::path temporaryPath = scriptPath.string() + ".tmp";
+            fs::path temporaryPath = scriptPath;
+            temporaryPath += ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
                 output << exportScript().dump(2) << '\n';
                 if (!output) throw std::runtime_error("write failed");
             }
+#ifdef _WIN32
+            if (!MoveFileExW(temporaryPath.c_str(), scriptPath.c_str(),
+                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
+                                        "cannot replace " + scriptPath.string());
+#else
             fs::rename(temporaryPath, scriptPath);
+#endif
         } catch (const std::exception& exception) {
             report(log, "warning: cannot write " + scriptPath.string() + ": " + exception.what(), true);
         }
@@ -145,21 +244,59 @@ namespace PipelineNs {
             return false;
         }
 
+        Json reportJson;
+        try {
+            reportJson = createRunReport(startIndex, steps, checkpoint, reportMetadata, reportPath);
+        } catch (const std::exception& exception) {
+            report(log, std::string("cannot prepare execution report: ") + exception.what(), true);
+            runState.status = RunStatus::Failed;
+            saveScript(log);
+            return false;
+        }
+
         // 4. Exécution des steps restants.
         runState.status = RunStatus::Running;
         saveScript(log);
         for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex) {
             const auto& step = steps[stepIndex];
             const std::string messagePrefix = "Step " + std::to_string(stepIndex + 1) + "/" + std::to_string(stepCount);
+            Json& stepReport = reportJson["steps"].at(stepIndex);
 
             if (pauseRequested->exchange(false)) {   // pause demandée : arrêt propre entre deux steps
                 runState.status = RunStatus::Paused;
+                saveReportStatus(reportJson, "paused", reportPath, log);
                 saveScript(log);
                 report(log, messagePrefix + " paused", false);
                 return false;
             }
 
             step->setDataStore(dataStore);
+            Json stepInputs;
+            if (!reportPath.empty()) {
+                try {
+                    stepInputs = createStepInputs(*step, dataStore);
+                } catch (const std::exception& exception) {
+                    report(log, messagePrefix + " failed to capture report inputs: " + exception.what(), true);
+                    stepReport["status"] = "failed";
+                    stepReport["summary"] = "Impossible de documenter les entrées de l'étape.";
+                    stepReport["reason"] = exception.what();
+                    saveReportStatus(reportJson, "failed", reportPath, log);
+                    runState.status = RunStatus::Failed;
+                    saveScript(log);
+                    return false;
+                }
+                stepReport["status"] = "running";
+                stepReport["summary"] = "Étape en cours.";
+                stepReport["inputs"] = stepInputs;
+                try {
+                    writeReport(reportPath, reportJson);
+                } catch (const std::exception& exception) {
+                    report(log, messagePrefix + " failed to update execution report: " + exception.what(), true);
+                    runState.status = RunStatus::Failed;
+                    saveScript(log);
+                    return false;
+                }
+            }
             bool succeeded = false;
             std::string errorMessage;
             try {
@@ -168,7 +305,24 @@ namespace PipelineNs {
                 errorMessage = exception.what();
             }
             if (!succeeded) {
-                report(log, messagePrefix + " failed: " + (errorMessage.empty() ? step->getResult().dump() : errorMessage), true);
+                const Json result = step->getResult();
+                std::string failureReason = errorMessage;
+                if (failureReason.empty()) {
+                    if (result.is_object() && result.contains("error")) {
+                        const Json& error = result.at("error");
+                        failureReason = error.is_string() ? error.get<std::string>() : error.dump();
+                    } else {
+                        failureReason = result.dump();
+                    }
+                }
+                report(log, messagePrefix + " failed: " + failureReason, true);
+                if (!reportPath.empty()) {
+                    stepReport["status"] = "failed";
+                    stepReport["summary"] = "L'étape a échoué.";
+                    stepReport["reason"] = failureReason;
+                    stepReport["result"] = result;
+                    saveReportStatus(reportJson, "failed", reportPath, log);
+                }
                 runState.status = RunStatus::Failed;
                 saveScript(log);
                 return false;   // reprise possible : completedSteps et checkpoints sont à jour
@@ -178,12 +332,41 @@ namespace PipelineNs {
             std::string failureReason;
             if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
                 report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
+            if (!reportPath.empty()) {
+                try {
+                    stepReport = createStepReport(stepIndex, *step, dataStore, stepInputs);
+                    if (stepName(*step) == "export" && stepReport["result"].is_object() &&
+                        stepReport["result"].contains("image"))
+                        reportJson["output"] = {
+                            {"path", stepReport["result"]["image"].value("path", std::string())},
+                            {"dimensions", stepReport["result"].value("canvasSize", Json::array())}
+                        };
+                    writeReport(reportPath, reportJson);
+                } catch (const std::exception& exception) {
+                    report(log, messagePrefix + " failed to update execution report: " + exception.what(), true);
+                    runState.status = RunStatus::Failed;
+                    saveScript(log);
+                    return false;
+                }
+            }
             runState.completedSteps.push_back(stepName(*step));
             saveScript(log);
             report(log, messagePrefix + " OK " + step->getResult().dump(), false);
         }
         if (startIndex == stepCount && stepCount > 0) report(log, "nothing to do: all steps are already done", false);
         runState.status = RunStatus::Completed;
+        if (!reportPath.empty()) {
+            try {
+                reportJson["metadata"]["status"] = "completed";
+                reportJson["metadata"]["finishedAt"] = currentTimestamp();
+                writeReport(reportPath, reportJson);
+            } catch (const std::exception& exception) {
+                report(log, std::string("failed to finalize execution report: ") + exception.what(), true);
+                runState.status = RunStatus::Failed;
+                saveScript(log);
+                return false;
+            }
+        }
         saveScript(log);
         return true;
     }

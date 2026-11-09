@@ -27,6 +27,7 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QKeyEvent>
@@ -38,6 +39,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QUuid>
 #include <QAbstractItemView>
 #include <QFontMetrics>
 #include <QFrame>
@@ -54,6 +56,20 @@
 #include <windows.h>
 #endif
 
+namespace {
+
+std::filesystem::path filesystemPath(const QString &path)
+{
+    return std::filesystem::u8path(path.toUtf8().constData());
+}
+
+QString qtPath(const std::filesystem::path &path)
+{
+    const std::string utf8Path = path.u8string();
+    return QString::fromUtf8(utf8Path.data(), static_cast<int>(utf8Path.size()));
+}
+
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -145,6 +161,10 @@ void MainWindow::setupSimulationConnections()
             this, &MainWindow::removeCancelRunButton);
     connect(simulationRunner, &SimulationRunner::runCancelled,
             this, &MainWindow::removeCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::runFailed, this, [this](const QString &message) {
+        removeCancelRunButton();
+        QMessageBox::warning(this, tr("Exécution impossible"), message);
+    });
     connect(simulationRunner, &SimulationRunner::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
     connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
@@ -238,6 +258,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 {
     projectName = name;
     outputDirectory = selectedOutputDirectory;
+    backendScriptPath.clear();
     projectPath.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
@@ -266,6 +287,7 @@ void MainWindow::applyLoadedProject(const QString &path)
 
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
+    backendScriptPath.clear();
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
     projectGrid->setState(projectData.gridState);
     if (!hasSavedGrid)
@@ -383,6 +405,33 @@ void MainWindow::showGridMessage(const QString &title, const QString &message, b
         QMessageBox::information(this, title, message);
 }
 
+QString MainWindow::writeBackendScript() const
+{
+    const ProjectGrid::State &gridState = projectGrid->state();
+    FrontendNs::ProjectSetup setup;
+    setup.projectName = projectName.toUtf8().toStdString();
+    setup.inputDirectory = filesystemPath(gridState.tileDirectory);
+    setup.outputDirectory = filesystemPath(outputDirectory);
+    setup.gridRows = gridState.gridRows;
+    setup.gridColumns = gridState.gridColumns;
+    setup.filenameFormat.clear();
+    setup.overlap = static_cast<double>(gridState.horizontalOverlap) / 100.0;
+    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
+        if (index >= gridState.gridTiles.size())
+            continue;
+        const GridTile &tile = gridState.gridTiles.at(index);
+        if (tile.empty || tile.path.isEmpty())
+            continue;
+        setup.tiles.push_back({filesystemPath(tile.path),
+                               index / gridState.gridColumns,
+                               index % gridState.gridColumns});
+    }
+
+    FrontendNs::ProjectSetupModelClass model;
+    model.setSetup(std::move(setup));
+    return qtPath(model.writeBackendScript());
+}
+
 void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                                       const QStringList &errors)
 {
@@ -402,30 +451,8 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         }
     }
 
-    FrontendNs::ProjectSetup setup;
-    setup.projectName = projectName.toStdString();
-    setup.inputDirectory = gridState.tileDirectory.toStdString();
-    setup.outputDirectory = outputDirectory.toStdString();
-    setup.gridRows = gridState.gridRows;
-    setup.gridColumns = gridState.gridColumns;
-    setup.filenameFormat.clear();
-    setup.overlap = static_cast<double>(gridState.horizontalOverlap) / 100.0;
-    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
-        if (index >= gridState.gridTiles.size())
-            continue;
-        const GridTile &tile = gridState.gridTiles.at(index);
-        if (tile.empty || tile.path.isEmpty())
-            continue;
-        setup.tiles.push_back({std::filesystem::path(tile.path.toStdString()),
-                               index / gridState.gridColumns,
-                               index % gridState.gridColumns});
-    }
-
-    std::filesystem::path scriptPath;
     try {
-        FrontendNs::ProjectSetupModelClass model;
-        model.setSetup(std::move(setup));
-        scriptPath = model.writeBackendScript();
+        backendScriptPath = writeBackendScript();
     } catch (const std::exception &exception) {
         QMessageBox::warning(this, tr("JSON non généré"),
             tr("La grille est valide, mais le JSON backend n'a pas pu être généré :\n%1")
@@ -439,7 +466,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                      .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
-            .arg(QString::fromStdString(scriptPath.string())));
+            .arg(backendScriptPath));
 }
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
@@ -476,21 +503,42 @@ void MainWindow::saveProject()
 void MainWindow::requestRun(int firstStep)
 {
     if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+        updateStatus(tr("Une exécution est déjà en cours."));
+        return;
+    }
+    if (firstStep != 1) {
+        QMessageBox::warning(this, tr("Reprise indisponible"),
+            tr("Une exécution à partir d'une étape nécessite un checkpoint valide. "
+               "Le pipeline doit être lancé depuis la première étape."));
         return;
     }
     if (projectGrid->state().tilePaths.isEmpty()) {
-        const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
-            tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer != QMessageBox::Yes)
-            return;
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Importez et validez les tuiles avant de lancer le pipeline."));
+        return;
     }
-    if (firstStep > 1) {
-        if (!DialogHelpers::confirmRunRestart(this, firstStep))
+    if (outputDirectory.isEmpty()) {
+        outputDirectory = QFileDialog::getExistingDirectory(
+            this, tr("Choisir le dossier de sortie"));
+        if (outputDirectory.isEmpty()) {
+            updateStatus(tr("Exécution annulée : aucun dossier de sortie sélectionné."));
             return;
+        }
     }
-    simulationRunner->startRun(firstStep);
+
+    try {
+        backendScriptPath = writeBackendScript();
+    } catch (const std::exception &exception) {
+        QMessageBox::warning(this, tr("Pipeline invalide"),
+            tr("Impossible de préparer le pipeline :\n%1")
+                .arg(QString::fromUtf8(exception.what())));
+        return;
+    }
+
+    const QString executionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString runDirectory = QDir(outputDirectory).filePath(
+        QStringLiteral("runs/") + executionId);
+    simulationRunner->startRun(1, backendScriptPath, runDirectory, projectName, executionId);
 }
 
 void MainWindow::showComparisonDialog()

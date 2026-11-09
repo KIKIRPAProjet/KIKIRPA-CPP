@@ -13,7 +13,6 @@ void showReferenceComparisonDialog(QWidget *parent, const QString &referencePath
                                    const QString &tilePath, const QImage &referenceImage,
                                    const QImage &tileImage);
 void showComparisonDialog(QWidget *parent, SimulationRunner *simulationRunner);
-bool confirmRunRestart(QWidget *parent, int firstStep);
 }
 
 #endif

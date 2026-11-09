@@ -54,6 +54,9 @@ namespace PipelineNs {
             const RunState& getRunState() const { return runState; }
             // Fichier où le script complet (exportScript) est réécrit après chaque step ; vide : pas d'écriture.
             void setScriptPath(std::filesystem::path newScriptPath) { scriptPath = std::move(newScriptPath); }
+            // Fichier JSON de l'exécution, réécrit après chaque transition ; vide : pas d'archive.
+            void setReportPath(std::filesystem::path newReportPath) { reportPath = std::move(newReportPath); }
+            void setReportMetadata(Json newReportMetadata) { reportMetadata = std::move(newReportMetadata); }
 
             // Sorties des steps déjà exécutés.
             const StepNs::DataStoreClass& getDataStore() const { return dataStore; }
@@ -68,6 +71,8 @@ namespace PipelineNs {
             StepNs::DataStoreClass dataStore;
             RunState runState;
             std::filesystem::path scriptPath;
+            std::filesystem::path reportPath;
+            Json reportMetadata = Json::object();
             // shared_ptr : un std::atomic n'est pas déplaçable, alors que PipelineClass doit l'être (buildPipeline la renvoie).
             std::shared_ptr<std::atomic<bool>> pauseRequested = std::make_shared<std::atomic<bool>>(false);
 

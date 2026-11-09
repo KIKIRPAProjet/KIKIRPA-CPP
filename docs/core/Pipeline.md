@@ -5,7 +5,7 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-Il n'y a pas d'exécutable en ligne de commande, et la GUI n'appelle pas encore le backend : aujourd'hui, le pipeline se lance seulement depuis le code, par exemple dans un test. Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md).
+La GUI génère le script backend à partir du projet et lance le pipeline réel de façon asynchrone. Chaque exécution reçoit son propre dossier sous `<dossier-de-sortie>/runs/<identifiant>/`, avec sa configuration, son état de reprise, ses checkpoints et son archive de rapport.
 
 ```cpp
 PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)
@@ -53,6 +53,14 @@ const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   //
 ## Exécution
 
 `PipelineClass::run` part d'un `DataStoreClass` vide et exécute les steps dans l'ordre. Il s'arrête au premier step qui renvoie `false` **ou lève une exception**, et renvoie `false`. Le message (`getResult()` du step, ou le texte de l'exception) va au logger, ou sur `std::cerr` s'il n'y en a pas.
+
+### Rapport d'exécution
+
+L'appelant active l'archive avec `setReportPath()` et fournit le nom du projet ainsi que l'identifiant d'exécution avec `setReportMetadata()`. Le pipeline écrit un fichier JSON atomique après chaque transition ; il ne crée plus automatiquement un HTML à côté du script. Un chemin de rapport vide désactive l'archivage.
+
+L'archive décrit les étapes dans leur ordre configuré. Elle consigne le statut global, les dates de début et de fin, la configuration, les entrées, les sorties et le résultat de chaque étape. Un arrêt laisse les étapes non exécutées au statut `notReached`; celles déjà réutilisées depuis un checkpoint valide portent `skipped`, et une étape en cours d'exécution porte `running`. Une étape en échec contient le motif disponible. Les tuiles sont documentées par leurs noms, chemins, dimensions et voisinages, sans recopier les pixels ; les autres types sérialisés incluent leurs mesures et géométries.
+
+Depuis le menu d'export Qt, l'opérateur sélectionne une exécution archivée et exporte son rapport HTML. Cette opération lit uniquement le JSON déjà enregistré : elle ne relance aucun calcul. Le rapport détaille aussi les dimensions et le chemin de sortie lorsqu'un step `export` a effectivement produit un fichier. Un type de données sans sérialisation de rapport explicite provoque une erreur visible et le step n'est pas déclaré terminé.
 
 ## Reprise, pause, checkpoints
 

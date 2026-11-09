@@ -56,6 +56,7 @@ private:
     void setMode(int mode);
     void refreshProjectInfo();
     void saveProject();
+    QString writeBackendScript() const;
     void requestRun(int firstStep);
     void showExportDialog();
     void updateStatus(const QString &message);
@@ -82,6 +83,7 @@ private:
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;
+    QString backendScriptPath;
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;
