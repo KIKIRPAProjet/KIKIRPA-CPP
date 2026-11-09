@@ -64,7 +64,7 @@ namespace StepsNs {
                                                                tiles.tileSizes, tiles.masksUmatSmall, tiles.originalCorners,
                                                                tiles.cornersSmall);
             if (status < 0) {
-                result["error"] = "Error while image pretreatment";
+                result["error"] = "Image pretreatment error: " + imagePretreatment.getErrorMessage();
                 return false;
             }
             return true;
@@ -116,8 +116,9 @@ namespace StepsNs {
         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         GraphCutNs::GraphCutSeamFinderClass graphCut;
         cv::Mat indexMatrix;
-        const bool isCutDone = graphCut.computeSeamline(resolvedInput.tilePaths, tiles.tileSizes, tiles.originalCorners, resolvedInput.scale,
-                                                 tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
+        const GraphCutNs::FullResolutionGeometry fullResolution{tiles.tileSizes, tiles.originalCorners};
+        GraphCutNs::ReducedGrid reducedGrid{resolvedInput.scale, tiles.cornersSmall, tiles.masksUmatSmall};
+        const bool isCutDone = graphCut.computeSeamline(resolvedInput.tilePaths, fullResolution, reducedGrid, indexMatrix);
         if (!isCutDone) {
             result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;

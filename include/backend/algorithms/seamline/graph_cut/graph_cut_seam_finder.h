@@ -2,19 +2,31 @@
 #pragma once
 
 #include "core/data/algorithm_types.h"
-
-#include <opencv2/core.hpp>
-
+#include <opencv2/core/hal/interface.h> 
 #include <cstddef>
 #include <string>
 #include <vector>
+// Inclusions directes des types OpenCV pour satisfaire misc-include-cleaner
+#include <opencv2/core/types.hpp> // Pour cv::Size, cv::Point
+#include <opencv2/core/mat.hpp>   // Pour cv::Mat, cv::UMat
 
 namespace GraphCutNs {
 
     // Étiquette d'un pixel couvert par aucune tuile : la carte de provenance est sur 8 bits (comme l'ancien fond à 255).
     constexpr uchar NO_TILE = 255;
 
+    // Géométrie pleine résolution des tuiles (une entrée par tuile).
+    struct FullResolutionGeometry {
+        const std::vector<cv::Size>& tileSizes;
+        const std::vector<cv::Point>& originalCorners;
+    };
 
+    // Tuiles réduites de `scale` : ce que lit la coupe de graphe. Les masques sont mis à jour sur place.
+    struct ReducedGrid {
+        double scale;
+        const std::vector<cv::Point>& cornersSmall;
+        std::vector<cv::UMat>& masksUmatSmall;
+    };
     // Résultat de la vérification du pavage
     struct SeamCheck {
         bool isExactTiling = false;      // les polygones redessinés redonnent exactement la carte de provenance

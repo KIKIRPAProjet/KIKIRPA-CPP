@@ -69,11 +69,11 @@ namespace GraphCutNs {
         // Relit une tuile et la convertit en UMat flottant 0–255 (exigée par le GraphCutSeamFinder d'OpenCV).
         // Renvoie une UMat vide si la lecture échoue ou si la taille ne correspond pas au masque réduit attendu.
         cv::UMat loadSmallUMat(const std::string& path, double scale, const cv::Size& expectedSize) {
-            const cv::Mat SMALL_IMAGE = ImagePretreatmentClass::readSmallFloat(path, scale);
+            const cv::Mat smallImage = ImagePretreatmentClass::readSmallFloat(path, scale);
             cv::UMat smallUMat;
-            if (SMALL_IMAGE.empty() || SMALL_IMAGE.size() != expectedSize)
+            if (smallImage.empty() || smallImage.size() != expectedSize)
                 return smallUMat;
-            SMALL_IMAGE.copyTo(smallUMat);
+            smallImage.copyTo(smallUMat);
             return smallUMat;
         }
 
@@ -96,10 +96,10 @@ namespace GraphCutNs {
             // Le coût couleur place la frontière là où passer d'une image à l'autre se voit le moins.
             cv::Ptr<cv::detail::SeamFinder> seamFinder =
                 cv::makePtr<cv::detail::GraphCutSeamFinder>(cv::detail::GraphCutSeamFinderBase::COST_COLOR);
-            const std::size_t TILE_COUNT = reducedTiles.masks.size();
-            for (std::size_t firstIndex = 0; firstIndex + 1 < TILE_COUNT; ++firstIndex) {
+            const std::size_t tileCount = reducedTiles.masks.size();
+            for (std::size_t firstIndex = 0; firstIndex + 1 < tileCount; ++firstIndex) {
                 cv::UMat firstImage;   // chargée à la première paire qui l'utilise, libérée en fin de tour
-                for (std::size_t secondIndex = firstIndex + 1; secondIndex < TILE_COUNT; ++secondIndex) {
+                for (std::size_t secondIndex = firstIndex + 1; secondIndex < tileCount; ++secondIndex) {
                     cv::Rect overlap;
                     if (!cv::detail::overlapRoi(reducedTiles.corners[firstIndex], reducedTiles.corners[secondIndex],
                                                 reducedTiles.masks[firstIndex].size(), reducedTiles.masks[secondIndex].size(),
@@ -124,10 +124,10 @@ namespace GraphCutNs {
         TileGeometry buildTileGeometry(const std::vector<cv::Point>& originalCorners, const std::vector<cv::Size>& tileSizes) {
             TileGeometry geometry;
             for (std::size_t tileIndex = 0; tileIndex < tileSizes.size(); ++tileIndex) {
-                const cv::Rect TILE_RECT(originalCorners[tileIndex], tileSizes[tileIndex]);
-                geometry.rects.push_back(TILE_RECT);
-                geometry.centers.push_back(cv::Point2f(static_cast<float>(TILE_RECT.x) + static_cast<float>(TILE_RECT.width) * HALF,
-                                                       static_cast<float>(TILE_RECT.y) + static_cast<float>(TILE_RECT.height) * HALF));
+                const cv::Rect tileRect(originalCorners[tileIndex], tileSizes[tileIndex]);
+                geometry.rects.push_back(tileRect);
+                geometry.centers.push_back(cv::Point2f(static_cast<float>(tileRect.x) + static_cast<float>(tileRect.width) * HALF,
+                                                       static_cast<float>(tileRect.y) + static_cast<float>(tileRect.height) * HALF));
             }
             return geometry;
         }
@@ -149,9 +149,9 @@ namespace GraphCutNs {
             int gridWidth = 1;
             int gridHeight = 1;
             for (std::size_t tileIndex = 0; tileIndex < reducedTiles.masks.size(); ++tileIndex) {
-                const cv::Size MASK_SIZE = reducedTiles.masks[tileIndex].size();
-                gridWidth = std::max(gridWidth, reducedTiles.corners[tileIndex].x + MASK_SIZE.width);
-                gridHeight = std::max(gridHeight, reducedTiles.corners[tileIndex].y + MASK_SIZE.height);
+                const cv::Size maskSize = reducedTiles.masks[tileIndex].size();
+                gridWidth = std::max(gridWidth, reducedTiles.corners[tileIndex].x + maskSize.width);
+                gridHeight = std::max(gridHeight, reducedTiles.corners[tileIndex].y + maskSize.height);
             }
             return cv::Size(gridWidth, gridHeight);
         }
@@ -159,15 +159,15 @@ namespace GraphCutNs {
         // Carte de provenance sur la grille réduite : quelle tuile a gardé chaque pixel après la coupe (NO_TILE = aucune).
         // Un pixel gardé par plusieurs tuiles va à la première.
         cv::Mat buildSmallLabelMap(const ReducedTiles& reducedTiles) {
-            const cv::Size GRID_SIZE = computeSmallGridSize(reducedTiles);
-            cv::Mat smallLabelMap(GRID_SIZE.height, GRID_SIZE.width, CV_8U, cv::Scalar(NO_TILE));
+            const cv::Size gridSize = computeSmallGridSize(reducedTiles);
+            cv::Mat smallLabelMap(gridSize.height, gridSize.width, CV_8U, cv::Scalar(NO_TILE));
             for (std::size_t tileIndex = 0; tileIndex < reducedTiles.masks.size(); ++tileIndex) {
                 const cv::Point& corner = reducedTiles.corners[tileIndex];
-                const cv::Mat MASK = reducedTiles.masks[tileIndex].getMat(cv::ACCESS_READ);
-                for (int y = 0; y < MASK.rows; ++y) {
-                    const uchar* maskRow = MASK.ptr<uchar>(y);
+                const cv::Mat mask = reducedTiles.masks[tileIndex].getMat(cv::ACCESS_READ);
+                for (int y = 0; y < mask.rows; ++y) {
+                    const uchar* maskRow = mask.ptr<uchar>(y);
                     uchar* labelRow = smallLabelMap.ptr<uchar>(corner.y + y) + corner.x;
-                    for (int x = 0; x < MASK.cols; ++x)
+                    for (int x = 0; x < mask.cols; ++x)
                         if (maskRow[x] > MASK_KEPT_THRESHOLD && labelRow[x] == NO_TILE)
                             labelRow[x] = static_cast<uchar>(tileIndex);
                 }
@@ -177,15 +177,15 @@ namespace GraphCutNs {
 
         // Pixels réduits qu'aucune tuile n'a gardés (arrondis aux bords) : ils prennent la tuile du pixel gardé le plus proche.
         void assignUnclaimedPixelsToNearestTile(cv::Mat& smallLabelMap) {
-            const cv::Mat UNCLAIMED = (smallLabelMap == NO_TILE);
-            const int UNCLAIMED_COUNT = cv::countNonZero(UNCLAIMED);
+            const cv::Mat unclaimed = (smallLabelMap == NO_TILE);
+            const int unclaimedCount = cv::countNonZero(unclaimed);
             // Sans pixel libre il n'y a rien à faire ; si tous sont libres, il n'y a aucune tuile à copier.
-            if (UNCLAIMED_COUNT == 0 || UNCLAIMED_COUNT >= static_cast<int>(UNCLAIMED.total()))
+            if (unclaimedCount == 0 || unclaimedCount >= static_cast<int>(unclaimed.total()))
                 return;
 
             cv::Mat distances;
             cv::Mat labels;
-            cv::distanceTransform(UNCLAIMED, distances, labels, cv::DIST_L2, cv::DIST_MASK_5, cv::DIST_LABEL_PIXEL);
+            cv::distanceTransform(unclaimed, distances, labels, cv::DIST_L2, cv::DIST_MASK_5, cv::DIST_LABEL_PIXEL);
             double maxLabel = 0;
             cv::minMaxLoc(labels, nullptr, &maxLabel);
 
@@ -193,19 +193,19 @@ namespace GraphCutNs {
             std::vector<uchar> tileByLabel(static_cast<std::size_t>(maxLabel) + 1, NO_TILE);
             for (int y = 0; y < smallLabelMap.rows; ++y)
                 for (int x = 0; x < smallLabelMap.cols; ++x)
-                    if (!UNCLAIMED.at<uchar>(y, x))
+                    if (!unclaimed.at<uchar>(y, x))
                         tileByLabel[labels.at<int>(y, x)] = smallLabelMap.at<uchar>(y, x);
             for (int y = 0; y < smallLabelMap.rows; ++y)
                 for (int x = 0; x < smallLabelMap.cols; ++x)
-                    if (UNCLAIMED.at<uchar>(y, x))
+                    if (unclaimed.at<uchar>(y, x))
                         smallLabelMap.at<uchar>(y, x) = tileByLabel[labels.at<int>(y, x)];
         }
 
         // Facteur de réduction réellement appliqué : mesuré sur la première tuile (même rapport sur le grand côté), car
         // la réduction arrondit les tailles.
         double computeGridScale(const cv::UMat& firstMask, const cv::Size& firstTileSize) {
-            const cv::Size MASK_SIZE = firstMask.size();
-            return static_cast<double>(std::max(MASK_SIZE.width, MASK_SIZE.height)) /
+            const cv::Size maskSize = firstMask.size();
+            return static_cast<double>(std::max(maskSize.width, maskSize.height)) /
                    static_cast<double>(std::max(firstTileSize.width, firstTileSize.height));
         }
 
@@ -265,11 +265,11 @@ namespace GraphCutNs {
                 const cv::Rect& tileRect = geometry.rects[tileIndex];
                 if (pixel.x < tileRect.x || pixel.x >= tileRect.x + tileRect.width)
                     continue;
-                const float DISTANCE = pixel.wantedTile >= geometry.rects.size()
+                const float distance = pixel.wantedTile >= geometry.rects.size()
                     ? 0.F
                     : static_cast<float>(cv::norm(geometry.centers[tileIndex] - geometry.centers[pixel.wantedTile]));
-                if (DISTANCE < nearestDistance) {
-                    nearestDistance = DISTANCE;
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
                     nearestTile = tileIndex;
                 }
             }
@@ -280,16 +280,16 @@ namespace GraphCutNs {
         // plus proche de la tuile désignée par la coupe. Traite la ligne `y` et renvoie le nombre de pixels réattribués.
         long assignUncutPixelsInRow(const TileGeometry& geometry, const SmallGridView& smallGrid, cv::Mat& indexMatrix, int y) {
             long reassignedPixelCount = 0;
-            const std::vector<std::size_t> ROW_TILES = findTilesCoveringRow(geometry.rects, y);
+            const std::vector<std::size_t> rowTiles = findTilesCoveringRow(geometry.rects, y);
             uchar* indexRow = indexMatrix.ptr<uchar>(y);
             const uchar* labelRow = smallGrid.labelMap.ptr<uchar>(smallGrid.smallYByFullY[y]);
             for (int x = 0; x < indexMatrix.cols; ++x) {
                 if (indexRow[x] != NO_TILE)
                     continue;
-                const std::size_t WANTED_TILE = labelRow[smallGrid.smallXByFullX[x]];   // ne couvre pas ce pixel
-                const std::optional<std::size_t> NEAREST_TILE = findNearestCoveringTile(geometry, UncutPixel{ROW_TILES, x, WANTED_TILE});
-                if (NEAREST_TILE) {
-                    indexRow[x] = static_cast<uchar>(*NEAREST_TILE);
+                const std::size_t wantedTile = labelRow[smallGrid.smallXByFullX[x]];   // ne couvre pas ce pixel
+                const std::optional<std::size_t> nearestTile = findNearestCoveringTile(geometry, UncutPixel{rowTiles, x, wantedTile});
+                if (nearestTile) {
+                    indexRow[x] = static_cast<uchar>(*nearestTile);
                     ++reassignedPixelCount;
                 }
             }
@@ -307,33 +307,33 @@ namespace GraphCutNs {
         // Carte de provenance exacte en pleine résolution : un seul numéro par pixel, parmi les tuiles qui le couvrent.
         // Renvoie le nombre de pixels réattribués à une tuile voisine (arrondis de la grille réduite).
         long buildIndexMatrix(const TileGeometry& geometry, const cv::Mat& smallLabelMap, double gridScale, cv::Mat& indexMatrix) {
-            const cv::Size CANVAS_SIZE = computeCanvasSize(geometry.rects);
-            const std::vector<int> SMALL_X_BY_FULL_X = buildSmallCoordinateMap({CANVAS_SIZE.width, smallLabelMap.cols, gridScale});
-            const std::vector<int> SMALL_Y_BY_FULL_Y = buildSmallCoordinateMap({CANVAS_SIZE.height, smallLabelMap.rows, gridScale});
-            const SmallGridView SMALL_GRID{smallLabelMap, SMALL_X_BY_FULL_X, SMALL_Y_BY_FULL_Y};
+            const cv::Size canvasSize = computeCanvasSize(geometry.rects);
+            const std::vector<int> smallXByFullX = buildSmallCoordinateMap({canvasSize.width, smallLabelMap.cols, gridScale});
+            const std::vector<int> smallYByFullY = buildSmallCoordinateMap({canvasSize.height, smallLabelMap.rows, gridScale});
+            const SmallGridView smallGrid{smallLabelMap, smallXByFullX, smallYByFullY};
 
-            indexMatrix = cv::Mat(CANVAS_SIZE, CV_8U, cv::Scalar(NO_TILE));
-            assignCutTiles(geometry.rects, SMALL_GRID, indexMatrix);
-            return assignUncutPixels(geometry, SMALL_GRID, indexMatrix);
+            indexMatrix = cv::Mat(canvasSize, CV_8U, cv::Scalar(NO_TILE));
+            assignCutTiles(geometry.rects, smallGrid, indexMatrix);
+            return assignUncutPixels(geometry, smallGrid, indexMatrix);
         }
 
         // Dessine dans un masque local (rectangle `box`) les polygones du territoire, trous vidés, et compte polygones,
         // trous et sommets dans `check`.
         cv::Mat drawTerritoryMask(const DataNs::TileTerritory& territory, const cv::Rect& box, SeamCheck& check) {
             cv::Mat mask = cv::Mat::zeros(box.size(), CV_8U);
-            const cv::Point OFFSET(-box.x, -box.y);
+            const cv::Point offset(-box.x, -box.y);
             for (std::size_t polygonIndex = 0; polygonIndex < territory.polygons.size(); ++polygonIndex) {
                 const std::vector<cv::Point>& polygon = territory.polygons[polygonIndex];
                 cv::drawContours(mask, std::vector<std::vector<cv::Point>>{polygon}, -1, cv::Scalar(MASK_FILLED), cv::FILLED,
-                                 cv::LINE_8, cv::noArray(), INT_MAX, OFFSET);
+                                 cv::LINE_8, cv::noArray(), INT_MAX, offset);
                 for (const std::vector<cv::Point>& hole : territory.holes[polygonIndex]) {
-                    const std::vector<std::vector<cv::Point>> HOLE_CONTOURS{hole};
+                    const std::vector<std::vector<cv::Point>> holeContours{hole};
                     // Le trou est vidé…
-                    cv::drawContours(mask, HOLE_CONTOURS, -1, cv::Scalar(MASK_EMPTY), cv::FILLED, cv::LINE_8, cv::noArray(),
-                                     INT_MAX, OFFSET);
+                    cv::drawContours(mask, holeContours, -1, cv::Scalar(MASK_EMPTY), cv::FILLED, cv::LINE_8, cv::noArray(),
+                                     INT_MAX, offset);
                     // …mais son contour appartient au territoire.
-                    cv::drawContours(mask, HOLE_CONTOURS, -1, cv::Scalar(MASK_FILLED), CONTOUR_THICKNESS, cv::LINE_8,
-                                     cv::noArray(), INT_MAX, OFFSET);
+                    cv::drawContours(mask, holeContours, -1, cv::Scalar(MASK_FILLED), CONTOUR_THICKNESS, cv::LINE_8,
+                                     cv::noArray(), INT_MAX, offset);
                     ++check.holeCount;
                     check.vertexCount += static_cast<long>(hole.size());
                 }
@@ -349,18 +349,18 @@ namespace GraphCutNs {
             std::vector<cv::Point> allPoints;
             for (const std::vector<cv::Point>& polygon : territory.polygons)
                 allPoints.insert(allPoints.end(), polygon.begin(), polygon.end());
-            const cv::Rect CANVAS(0, 0, recomposed.cols, recomposed.rows);
-            const cv::Rect BOX = cv::boundingRect(allPoints) & CANVAS;
-            if (BOX.area() <= 0)
+            const cv::Rect canvas(0, 0, recomposed.cols, recomposed.rows);
+            const cv::Rect box = cv::boundingRect(allPoints) & canvas;
+            if (box.area() <= 0)
                 return;
 
-            const cv::Mat TERRITORY_MASK = drawTerritoryMask(territory, BOX, check);
+            const cv::Mat territoryMask = drawTerritoryMask(territory, box, check);
             check.polygonCount += static_cast<int>(territory.polygons.size());
-            cv::Mat recomposedPart = recomposed(BOX);
+            cv::Mat recomposedPart = recomposed(box);
             cv::Mat alreadyDrawn;
             cv::compare(recomposedPart, cv::Scalar(NO_TILE), alreadyDrawn, cv::CMP_NE);
-            check.overlapPixelCount += cv::countNonZero(alreadyDrawn & TERRITORY_MASK);
-            recomposedPart.setTo(territory.tileIndex, TERRITORY_MASK);
+            check.overlapPixelCount += cv::countNonZero(alreadyDrawn & territoryMask);
+            recomposedPart.setTo(territory.tileIndex, territoryMask);
         }
 
         // Nombre de pixels couverts par le rectangle d'une tuile mais attribués à aucune.
@@ -375,21 +375,24 @@ namespace GraphCutNs {
 
     }
 
-    bool GraphCutSeamFinderClass::computeSeamline(const std::vector<std::string>& tilePaths,
-                                        const std::vector<cv::Size>& tileSizes,
-                                        const std::vector<cv::Point>& originalCorners,
-                                        double scale,
-                                        const std::vector<cv::Point>& cornersSmall,
-                                        std::vector<cv::UMat>& masksUmatSmall,
-                                        cv::Mat& indexMatrix) {
-        errorMessage.clear();
-        const std::size_t TILE_COUNT = tileSizes.size();
-        if (TILE_COUNT == 0 || TILE_COUNT >= static_cast<std::size_t>(NO_TILE)) {
-            errorMessage = "Tile count must be between 1 and " + std::to_string(NO_TILE - 1) + ", got " + std::to_string(TILE_COUNT);
+bool GraphCutSeamFinderClass::computeSeamline(const std::vector<std::string>& tilePaths,
+                                              const FullResolutionGeometry& fullResolution,
+                                              ReducedGrid& reducedGrid,
+                                              cv::Mat& indexMatrix) {
+    const std::vector<cv::Size>& tileSizes = fullResolution.tileSizes;
+    const std::vector<cv::Point>& originalCorners = fullResolution.originalCorners;
+    const double scale = reducedGrid.scale;
+    const std::vector<cv::Point>& cornersSmall = reducedGrid.cornersSmall;
+    std::vector<cv::UMat>& masksUmatSmall = reducedGrid.masksUmatSmall;
+
+    errorMessage.clear();
+        const std::size_t tileCount = tileSizes.size();
+        if (tileCount == 0 || tileCount >= static_cast<std::size_t>(NO_TILE)) {
+            errorMessage = "Tile count must be between 1 and " + std::to_string(NO_TILE - 1) + ", got " + std::to_string(tileCount);
             return false;
         }
-        if (tilePaths.size() != TILE_COUNT || masksUmatSmall.size() != TILE_COUNT ||
-            originalCorners.size() != TILE_COUNT || cornersSmall.size() != TILE_COUNT) {
+        if (tilePaths.size() != tileCount || masksUmatSmall.size() != tileCount ||
+            originalCorners.size() != tileCount || cornersSmall.size() != tileCount) {
             errorMessage = "Tile paths, corners and masks must have one entry per tile size";
             return false;
         }
@@ -401,9 +404,9 @@ namespace GraphCutNs {
         cv::Mat smallLabelMap = buildSmallLabelMap(reducedTiles);
         assignUnclaimedPixelsToNearestTile(smallLabelMap);
 
-        const TileGeometry GEOMETRY = buildTileGeometry(originalCorners, tileSizes);
-        const double GRID_SCALE = computeGridScale(masksUmatSmall[0], tileSizes[0]);
-        fallbackPixelCount = buildIndexMatrix(GEOMETRY, smallLabelMap, GRID_SCALE, indexMatrix);
+        const TileGeometry geometry = buildTileGeometry(originalCorners, tileSizes);
+        const double gridScale = computeGridScale(masksUmatSmall[0], tileSizes[0]);
+        fallbackPixelCount = buildIndexMatrix(geometry, smallLabelMap, gridScale, indexMatrix);
         return true;
     }
 
@@ -411,12 +414,12 @@ namespace GraphCutNs {
         std::vector<DataNs::TileTerritory> territories;
         for (std::size_t tileIndex = 0; tileIndex < tileCount; ++tileIndex) {
             // Masque binaire strictement dédié à la tuile courante.
-            const cv::Mat TILE_MASK = (indexMatrix == static_cast<int>(tileIndex));
+            const cv::Mat tileMask = (indexMatrix == static_cast<int>(tileIndex));
 
             // Contours extérieurs ET trous (RETR_CCOMP) : sans les trous, le pavage ne serait pas exact.
             std::vector<std::vector<cv::Point>> contours;
             std::vector<cv::Vec4i> hierarchy;
-            cv::findContours(TILE_MASK, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
+            cv::findContours(tileMask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
 
             DataNs::TileTerritory territory;
             territory.tileIndex = static_cast<int>(tileIndex);
@@ -434,7 +437,7 @@ namespace GraphCutNs {
         }
         return territories;
     }
-
+// Fonction pour vérification qu'il n'y ait pas de problèmes (surtout pour le débug)
     SeamCheck GraphCutSeamFinderClass::verifyTiling(const std::vector<DataNs::TileTerritory>& territories,
                                           const cv::Mat& indexMatrix,
                                           const std::vector<cv::Size>& tileSizes,

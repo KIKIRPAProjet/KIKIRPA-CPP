@@ -3,20 +3,33 @@
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-
+#include <opencv2/core/types.hpp> // Pour cv::Size, cv::Point
+#include <opencv2/core/mat.hpp>   // Pour cv::Mat, cv::UMat
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
 #include <algorithm>
+#include "core/data/algorithm_types.h"
 #include <cmath>
 #include <cstdio>
-#include <iostream>
+#include <string>
 #include <map>
 #include <regex>
-#include <stdexcept>
+#include <vector>
+#include <limits>
+
 
 namespace GraphCutNs {
 
     // Charge une image et la convertit en BGR à trois canaux, en entiers non signés sur 16 bits.
     // La transparence est supprimée, les niveaux de gris sont dupliqués sur trois canaux.
     // Renvoie une image vide si la lecture échoue.
+    
+    constexpr double SCALE_8BIT_TO_16BIT = 257.0; // 255 -> 65535
+    constexpr double SCALE_16S_TO_16U = 2.0;
+    constexpr double MAX_16BIT_VAL = 65535.0;
+    constexpr double SCALE_16BIT_TO_FLOAT = 255.0 / 65535.0;
+    constexpr int BUFFER_SIZE = 32;
+    constexpr int MASK_FILLED = 255;
     cv::Mat ImagePretreatmentClass::read16Bit(const std::string& path) {
         cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
         if (rawImage.empty()) return rawImage;
@@ -38,9 +51,9 @@ namespace GraphCutNs {
         cv::Mat image16Bit;
         switch (rawImage.depth()) {
             case CV_16U: image16Bit = rawImage; break;
-            case CV_8U:  rawImage.convertTo(image16Bit, CV_16UC3, 257.0); break;     // 255 -> 65535
-            case CV_16S: rawImage.convertTo(image16Bit, CV_16UC3, 2.0); break;
-            default:     rawImage.convertTo(image16Bit, CV_16UC3, 65535.0); break;   // flottant 0–1
+            case CV_8U:  rawImage.convertTo(image16Bit, CV_16UC3, SCALE_8BIT_TO_16BIT); break;     // 255 -> 65535
+            case CV_16S: rawImage.convertTo(image16Bit, CV_16UC3, SCALE_16S_TO_16U); break;
+            default:     rawImage.convertTo(image16Bit, CV_16UC3, MAX_16BIT_VAL); break;   // flottant 0–1
         }
         return image16Bit;
     }
@@ -56,7 +69,7 @@ namespace GraphCutNs {
         if (scale < 1.0) cv::resize(image, smallImage16Bit, cv::Size(), scale, scale, cv::INTER_LINEAR);
         image.release();
         cv::Mat floatImage;
-        smallImage16Bit.convertTo(floatImage, CV_32FC3, 255.0 / 65535.0);
+        smallImage16Bit.convertTo(floatImage, CV_32FC3, SCALE_16BIT_TO_FLOAT);
         return floatImage;
     }
 
@@ -77,7 +90,7 @@ namespace GraphCutNs {
         column = std::stoi(matchGroups[2].str());
 
         // Utiliser au moins deux chiffres par coordonnée pour former l'identifiant
-        char buffer[32];
+        char buffer[BUFFER_SIZE];
         std::snprintf(buffer, sizeof(buffer), "r%02d_c%02d", row, column);
         tileId = buffer;
         return true;
@@ -85,13 +98,16 @@ namespace GraphCutNs {
 
     // Prépare les dimensions, les masques réduits et les positions des tuiles aux deux résolutions.
     // Les positions sont fournies par inputPositions, et non calculées à partir des images.
+    // En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
     int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
                                               const std::vector<std::string>& tilePaths, double scale,
                                               std::vector<cv::Size>& tileSizes, std::vector<cv::UMat>& smallMasks,
                                               std::vector<cv::Point>& originalCorners, std::vector<cv::Point>& smallCorners) {
+        errorMessage.clear();
+
         // 1. Vérifier le facteur de réduction et indexer les positions fournies
         if (!(scale > 0.0 && scale <= 1.0)) {
-            std::cout << "Scale expected below 1.0 : " << scale << std::endl;
+            errorMessage = "Reduction scale must be greater than 0 and at most 1, got " + std::to_string(scale);
             return -1;
         }
 
@@ -109,7 +125,7 @@ namespace GraphCutNs {
             {
                 const cv::Mat image = read16Bit(imagePath);
                 if (image.empty()) {
-                    std::cout << "No images found : " << imagePath << std::endl;
+                    errorMessage = "Impossible to read tile: " + imagePath;
                     return -1;
                 }
                 fullSize = image.size();
@@ -117,12 +133,13 @@ namespace GraphCutNs {
                 const cv::Size smallSize(cv::saturate_cast<int>(fullSize.width * scale),
                                          cv::saturate_cast<int>(fullSize.height * scale));
                 if (smallSize.width < 1 || smallSize.height < 1) {
-                    std::cout << "tile quality too low : " << imagePath << std::endl;
+                    errorMessage = "Tile is empty after reduction (" + std::to_string(fullSize.width) + "x" +
+                                   std::to_string(fullSize.height) + " pixels at scale " + std::to_string(scale) + "): " + imagePath;
                     return -1;
                 }
                 // Tous les pixels sont initialement utilisables. Le calcul de la ligne de raccord modifiera ensuite
                 // ces masques.
-                smallMasks.push_back(cv::UMat(smallSize, CV_8U, cv::Scalar(255)));
+                smallMasks.push_back(cv::UMat(smallSize, CV_8U, cv::Scalar(MASK_FILLED)));
             }
             tileSizes.push_back(fullSize);
 
@@ -130,28 +147,29 @@ namespace GraphCutNs {
             int row = 0, column = 0;
             std::string tileId;
             if (!parseTileName(imagePath, row, column, tileId)) {
-                std::cout << "wrong tile name: " << imagePath << std::endl;
+                errorMessage = "Tile file name must end with _r<row>_c<column>.tif or .tiff: " + imagePath;
                 return -1;
             }
 
             // Recherche dans la structure d'entrée
             const auto tilePosition = positionByTileId.find(tileId);
             if (tilePosition == positionByTileId.end()) {
-                std::cout << "Position missing for " << tileId << " in the input structure" << std::endl;
+                errorMessage = "No position provided for tile " + tileId + " (" + imagePath + ")";
                 return -1;
             }
             rawCorners.push_back(tilePosition->second);
         }
 
         if (tileSizes.empty()) {
-            std::cout << "No images found" << std::endl;
+            errorMessage = "No tile provided for image pretreatment";
             return -1;
         }
 
         // 3. Déplacer les positions dans un repère de mosaïque à coordonnées positives ou nulles.
         // Soustraire les minima arrondis vers le bas, puis arrondir les positions au pixel.
         // Toutes les tuiles subissent la même translation avant cet arrondi.
-        double minimumX = 1e300, minimumY = 1e300;
+        double minimumX = std::numeric_limits<double>::max();
+        double minimumY = std::numeric_limits<double>::max();
         for (const cv::Point2d& corner : rawCorners) {
             minimumX = std::min(minimumX, corner.x);
             minimumY = std::min(minimumY, corner.y);
@@ -170,4 +188,3 @@ namespace GraphCutNs {
     }
 
 }
-

@@ -18,6 +18,7 @@ namespace GraphCutNs {
             // Les vecteurs de sortie doivent être vides avant l'appel ; ils suivent l'ordre des fichiers de tilePaths.
             // Renvoie 1 en cas de succès, ou -1 lorsqu'une erreur est détectée (les vecteurs peuvent alors être
             // partiellement remplis).
+            const std::string& getErrorMessage() const{ return errorMessage;}
             int processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
                               const std::vector<std::string>& tilePaths, double scale, std::vector<cv::Size>& tileSizes,
                               std::vector<cv::UMat>& smallMasks, std::vector<cv::Point>& originalCorners,
@@ -33,6 +34,8 @@ namespace GraphCutNs {
 
             // Image lue sans perte en CV_16UC3
             static cv::Mat read16Bit(const std::string& path);
+        private:
+        std::string errorMessage;
 
     };
 
