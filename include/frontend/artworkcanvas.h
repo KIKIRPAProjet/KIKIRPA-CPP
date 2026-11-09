@@ -7,6 +7,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
+#include <QImage>
 
 #include <functional>
 
@@ -35,6 +36,10 @@ public:
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
+    void setMosaicPreview(const QImage &image) {
+        m_mosaicPreview = image;
+        update(); // Demande à Qt de redessiner le canevas immédiatement
+    }
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -64,6 +69,7 @@ private:
     int dragStartCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    QImage m_mosaicPreview;
 };
 
 #endif // ARTWORKCANVAS_H
