@@ -5,12 +5,12 @@
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
-#include "core/pipeline/pipeline.h"
-#include "core/pipeline/pipeline_builder.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
-#include "core/step/step.h"
+#include "core/pipeline/pipeline.h"
+#include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/step.h"
 #include "steps/import_step.h"
 #include <gtest/gtest.h>
 #include <nlohmann/json_fwd.hpp>
