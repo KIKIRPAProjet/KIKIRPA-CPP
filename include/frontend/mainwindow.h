@@ -63,6 +63,7 @@ private:
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;
+    QString backendScriptJson;
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;

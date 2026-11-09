@@ -30,6 +30,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
@@ -114,7 +115,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     refreshGrid();
     refreshProjectInfo();
     connect(projectGrid, &ProjectGrid::gridUpdated,
-            this, &MainWindow::refreshProjectInfo);
+            this, [this]() {
+        backendScriptJson.clear();
+        refreshProjectInfo();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
             this, &MainWindow::refreshProjectInfo);
     connect(projectGrid, &ProjectGrid::referenceImageLoaded,
@@ -146,6 +150,32 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showCancelRunButton);
     connect(simulationRunner, &SimulationRunner::runFinished,
             this, &MainWindow::removeCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::runFinished, this, [this]() {
+        QFile runFile(QDir(outputDirectory).filePath(
+            QStringLiteral("checkpoints/run.json")));
+        if (!runFile.open(QIODevice::ReadOnly))
+            return;
+        try {
+            nlohmann::json script = nlohmann::json::parse(runFile.readAll().toStdString());
+            backendScriptJson = QString::fromStdString(script.dump(2));
+            if (!projectPath.isEmpty()) {
+                QString saveError;
+                if (!ProjectSerializer::saveToFile(
+                        projectPath, projectName, outputDirectory, currentMode,
+                        projectGrid->state(), &saveError, script))
+                    updateStatus(tr("L'état a été écrit dans les checkpoints, mais pas dans le "
+                                    "projet : %1").arg(saveError));
+            }
+            ProjectData projectData;
+            projectData.outputDirectory = outputDirectory;
+            projectData.backendScript = std::move(script);
+            workspaceUI->setResumeSummary(
+                ProjectSerializer::summarize(projectData).toText());
+        } catch (const std::exception &exception) {
+            updateStatus(tr("L'état de reprise n'a pas pu être relu : %1")
+                             .arg(QString::fromUtf8(exception.what())));
+        }
+    });
     connect(simulationRunner, &SimulationRunner::runCancelled,
             this, &MainWindow::removeCancelRunButton);
     connect(simulationRunner, &SimulationRunner::comparisonRequested,
@@ -215,8 +245,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             simulationRunner, &SimulationRunner::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage — prototype d'interface.\n"
-               "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
+            tr("KIK-IRPA Assemblage.\n"
+               "Les traitements d'image sont exécutés par le pipeline backend et ses checkpoints."));
     });
 
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
@@ -232,12 +262,14 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
+    backendScriptJson.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
     refreshProjectInfo();
+    workspaceUI->setResumeSummary(tr("Aucune étape exécutée."));
     const int tileCount = projectGrid->state().tilePaths.size();
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, tileCount);
@@ -257,12 +289,40 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     }
 
+    const ProjectResumeSummary resumeSummary = ProjectSerializer::summarize(projectData);
+    QMessageBox resumeDialog(QMessageBox::Information, tr("Reprendre le projet ?"),
+        resumeSummary.toText(), QMessageBox::NoButton, this);
+    QPushButton *openButton = resumeDialog.addButton(tr("Ouvrir"), QMessageBox::AcceptRole);
+    QPushButton *resumeButton = resumeDialog.addButton(
+        tr("Ouvrir et reprendre"), QMessageBox::ActionRole);
+    QPushButton *cancelButton = resumeDialog.addButton(QMessageBox::Cancel);
+    resumeButton->setEnabled(resumeSummary.canResume());
+    if (!resumeSummary.canResume())
+        resumeButton->setToolTip(tr("Corrigez les fichiers, le pipeline ou le dossier de sortie "
+                                   "avant de reprendre."));
+    resumeDialog.exec();
+    const bool resume = resumeDialog.clickedButton() == resumeButton;
+    if (resumeDialog.clickedButton() != openButton && !resume)
+        return;
+    Q_UNUSED(cancelButton)
+
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
     projectGrid->setState(projectData.gridState);
     if (!hasSavedGrid)
         projectGrid->initializeGridFromPaths();
+    backendScriptJson = projectData.backendScript.is_null() ||
+                                projectData.backendScript.empty()
+        ? QString()
+        : QString::fromStdString(projectData.backendScript.dump(2));
+    if (resume && (!projectData.modifiedFiles.isEmpty() ||
+                   !projectData.unverifiedFiles.isEmpty())) {
+        nlohmann::json script = nlohmann::json::parse(backendScriptJson.toStdString());
+        script["run"]["completedSteps"] = nlohmann::json::array();
+        script["run"]["status"] = "idle";
+        backendScriptJson = QString::fromStdString(script.dump(2));
+    }
     projectPath = path;
     projectCreated = true;
     refreshProjectInfo();
@@ -271,7 +331,12 @@ void MainWindow::applyLoadedProject(const QString &path)
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
-    updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    workspaceUI->setResumeSummary(resumeSummary.toText());
+    updateStatus(resume
+        ? tr("Projet restauré. Reprise à la première étape incomplète.")
+        : tr("Projet ouvert sans lancer de traitement."));
+    if (resume)
+        requestRun(1);
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -386,11 +451,12 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         return;
     }
 
-    if (outputDirectory.isEmpty()) {
+    if (outputDirectory.isEmpty() || !QFileInfo(outputDirectory).isDir() ||
+        !QFileInfo(outputDirectory).isWritable()) {
         outputDirectory = QFileDialog::getExistingDirectory(
-            this, tr("Choisir le dossier de sortie"));
+            this, tr("Choisir un dossier de sortie accessible"));
         if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
+            updateStatus(tr("Validation annulée : aucun dossier de sortie accessible."));
             return;
         }
     }
@@ -418,6 +484,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     try {
         FrontendNs::ProjectSetupModelClass model;
         model.setSetup(std::move(setup));
+        backendScriptJson = QString::fromStdString(model.createBackendScript().dump(2));
         scriptPath = model.writeBackendScript();
     } catch (const std::exception &exception) {
         QMessageBox::warning(this, tr("JSON non généré"),
@@ -451,9 +518,21 @@ void MainWindow::saveProject()
             projectName + QStringLiteral(".kikproj"), tr("Projet KIK-IRPA (*.kikproj);;JSON (*.json)"));
     if (path.isEmpty())
         return;
+    nlohmann::json backendScript;
+    if (!backendScriptJson.isEmpty()) {
+        try {
+            backendScript = nlohmann::json::parse(backendScriptJson.toStdString());
+        } catch (const std::exception &exception) {
+            QMessageBox::warning(this, tr("Enregistrement impossible"),
+                tr("La configuration du pipeline est invalide : %1")
+                    .arg(QString::fromUtf8(exception.what())));
+            return;
+        }
+    }
     QString errorMessage;
     if (!ProjectSerializer::saveToFile(
-            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage,
+            backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
@@ -469,21 +548,93 @@ void MainWindow::saveProject()
 void MainWindow::requestRun(int firstStep)
 {
     if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+        updateStatus(tr("Un traitement est déjà en cours."));
         return;
     }
-    if (projectGrid->state().tilePaths.isEmpty()) {
-        const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
-            tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer != QMessageBox::Yes)
+    if (!QFileInfo(outputDirectory).isDir() || !QFileInfo(outputDirectory).isWritable()) {
+        QMessageBox::warning(this, tr("Dossier de sortie inaccessible"),
+            tr("Sélectionnez un dossier de sortie accessible, puis validez à nouveau la grille."));
+        return;
+    }
+    if (backendScriptJson.isEmpty()) {
+        const ProjectGrid::State &gridState = projectGrid->state();
+        FrontendNs::ProjectSetup setup;
+        setup.projectName = projectName.toStdString();
+        setup.inputDirectory = gridState.tileDirectory.toStdString();
+        setup.outputDirectory = outputDirectory.toStdString();
+        setup.gridRows = gridState.gridRows;
+        setup.gridColumns = gridState.gridColumns;
+        setup.filenameFormat.clear();
+        setup.overlap = static_cast<double>(gridState.horizontalOverlap) / 100.0;
+        for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
+            if (index >= gridState.gridTiles.size())
+                continue;
+            const GridTile &tile = gridState.gridTiles.at(index);
+            if (tile.empty || tile.path.isEmpty())
+                continue;
+            setup.tiles.push_back({std::filesystem::path(tile.path.toStdString()),
+                                   index / gridState.gridColumns,
+                                   index % gridState.gridColumns});
+        }
+        try {
+            FrontendNs::ProjectSetupModelClass model;
+            model.setSetup(std::move(setup));
+            backendScriptJson = QString::fromStdString(model.createBackendScript().dump(2));
+        } catch (const std::exception &exception) {
+            QMessageBox::warning(this, tr("Pipeline invalide"),
+                tr("Le pipeline ne peut pas être préparé :\n%1")
+                    .arg(QString::fromUtf8(exception.what())));
             return;
+        }
     }
     if (firstStep > 1) {
         if (!DialogHelpers::confirmRunRestart(this, firstStep))
             return;
+        try {
+            nlohmann::json script = nlohmann::json::parse(backendScriptJson.toStdString());
+            const nlohmann::json &steps = script.at("pipeline").at("steps");
+            const int index = firstStep - 1;
+            if (index >= static_cast<int>(steps.size())) {
+                QMessageBox::warning(this, tr("Étape inconnue"),
+                    tr("Cette position ne correspond à aucune étape du pipeline sauvegardé."));
+                return;
+            }
+            script["run"]["startFromStep"] = steps.at(static_cast<std::size_t>(index))
+                                                     .at("name").get<std::string>();
+            backendScriptJson = QString::fromStdString(script.dump(2));
+        } catch (const std::exception &exception) {
+            QMessageBox::warning(this, tr("Reprise impossible"),
+                QString::fromUtf8(exception.what()));
+            return;
+        }
     }
-    simulationRunner->startRun(firstStep);
+    nlohmann::json script;
+    try {
+        script = nlohmann::json::parse(backendScriptJson.toStdString());
+        script["run"]["checkpointDirectory"] = QFileInfo(
+            QDir(outputDirectory).filePath(QStringLiteral("checkpoints")))
+                                                    .absoluteFilePath().toStdString();
+        backendScriptJson = QString::fromStdString(script.dump(2));
+    } catch (const std::exception &exception) {
+        QMessageBox::warning(this, tr("Pipeline invalide"),
+            tr("La configuration du pipeline est invalide : %1")
+                .arg(QString::fromUtf8(exception.what())));
+        return;
+    }
+    if (!projectPath.isEmpty()) {
+        QString saveError;
+        if (!ProjectSerializer::saveToFile(
+                projectPath, projectName, outputDirectory, currentMode,
+                projectGrid->state(), &saveError, script)) {
+            QMessageBox::warning(this, tr("Enregistrement impossible"),
+                tr("Le projet doit être enregistré avant le traitement : %1")
+                    .arg(saveError));
+            return;
+        }
+    }
+    const QString scriptPath = QDir(outputDirectory).filePath(
+        QStringLiteral("checkpoints/run.json"));
+    simulationRunner->startPipelineRun(backendScriptJson, scriptPath);
 }
 
 void MainWindow::showComparisonDialog()

@@ -34,6 +34,9 @@ namespace PipelineNs {
     struct RunState {
         RunStatus status = RunStatus::Idle;
         std::vector<std::string> completedSteps;   // noms des steps terminés : un préfixe du pipeline, dans l'ordre
+        Json stepResults = Json::object();          // résultats disponibles par nom de step
+        std::string failedStep;                     // nom du dernier step en échec, s'il y en a un
+        std::string error;                          // dernier message d'erreur du pipeline
         bool skipCompletedSteps = true;            // vrai : saute les steps déjà faits dont le checkpoint est valide ; faux : repart du premier
         std::string startFromStep;                 // nom du step où (re)démarrer ; ne peut pas être après le premier step à refaire
         std::string checkpointDirectory;           // dossier des checkpoints ; vide : pas de checkpoint, donc pas de reprise
@@ -43,6 +46,6 @@ namespace PipelineNs {
         static RunState fromJson(const Json& runJson);
     };
 
-    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RunState, status, completedSteps, skipCompletedSteps, startFromStep, checkpointDirectory)
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RunState, status, completedSteps, stepResults, failedStep, error, skipCompletedSteps, startFromStep, checkpointDirectory)
 
 }

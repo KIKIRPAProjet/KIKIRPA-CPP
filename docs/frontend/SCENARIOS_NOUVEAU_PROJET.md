@@ -23,11 +23,21 @@ Créer également un dossier de sortie vide.
 4. Réorganiser les tuiles par glisser-déposer si nécessaire.
 5. Vérifier que les six noms sont affichés à la bonne ligne et à la bonne colonne.
 6. Cliquer sur **Valider la grille**.
-7. Vérifier qu'un fichier `<nom-du-projet>.json` apparaît dans le dossier de sortie.
+7. Enregistrer le projet au format `.kikproj` ; vérifier que le script backend `<nom-du-projet>.json` apparaît également dans le dossier de sortie.
 8. Vérifier dans le JSON : les deux chemins absolus, `grid.rows = 3`, `grid.columns = 2`, les six tuiles, le recouvrement `0.2`, le step `import`, le step `phase-correlation` et `run.checkpointDirectory`.
 
 Résultat attendu : un message confirme que le JSON a été validé par le backend
 et affiche son chemin. L'utilisateur reste dans l'interface complète.
+
+## Ouvrir et reprendre un projet
+
+1. Choisir **Fichier → Ouvrir un projet…** ou le bouton **Ouvrir un projet…** de l'accueil.
+2. Sélectionner le `.kikproj`. Vérifier que le résumé distingue les checkpoints valides, les étapes à vérifier, les étapes jamais lancées et les images absentes ou modifiées.
+3. Choisir **Ouvrir** pour restaurer la grille et ses paramètres sans calcul, ou **Ouvrir et reprendre** pour lancer le pipeline à la première étape incomplète.
+4. Modifier une image source avant une seconde ouverture : le résumé doit la signaler et la reprise doit refaire l'import et les étapes dépendantes.
+
+Une image manquante, un pipeline invalide ou un dossier de sortie inaccessible empêchent
+la reprise, mais n'empêchent pas d'ouvrir le projet pour consulter ses réglages.
 
 ## Scénarios d'erreur
 
@@ -54,9 +64,3 @@ Résultat attendu : la génération est bloquée avec le nombre de cases et de t
 Ne pas sélectionner le dossier de sortie, ou déplacer le dossier d'entrée après l'import.
 
 Résultat attendu : la génération est bloquée et le dossier concerné est indiqué.
-
-## Point hors périmètre de ce parcours
-
-La validation génère et valide le script ; elle ne lance pas encore le calcul.
-Le raccordement de **Lancer** au backend dans un thread séparé constitue
-l'étape suivante, après validation de ce parcours par Nathan.

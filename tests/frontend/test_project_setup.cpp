@@ -67,6 +67,11 @@ TEST_F(ProjectSetupTestClass, CreatesBackendAcceptedJsonForThreeByTwoGrid) {
   EXPECT_EQ(parameterValue(importStep, "path"),
             fs::absolute(root / "input").string());
   EXPECT_EQ(parameterValue(importStep, "format"), R"(img_C(\d+)_R(\d+)\.tif)");
+  const FrontendNs::Json explicitTiles =
+      FrontendNs::Json::parse(parameterValue(importStep, "tiles").get<std::string>());
+  ASSERT_EQ(explicitTiles.size(), 6);
+  EXPECT_EQ(explicitTiles.at(5).at("row"), 2);
+  EXPECT_EQ(explicitTiles.at(5).at("column"), 1);
   EXPECT_EQ(phaseStep.at("name"), "phase-correlation");
   EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "overlap"), 0.2);
   EXPECT_EQ(parameterValue(phaseStep, "niveau"), 0);

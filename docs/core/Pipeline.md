@@ -20,7 +20,10 @@ const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   //
   "pipeline": {
     "steps": [
       { "name": "import",
-        "parameters": [ { "valueType": "string", "name": "path", "value": "images/" } ] },
+        "parameters": [
+          { "valueType": "string", "name": "path", "value": "images/" },
+          { "valueType": "string", "name": "tiles", "value": "[]" }
+        ] },
       { "name": "phase-correlation" }
     ]
   }
@@ -29,6 +32,7 @@ const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   //
 
 - **`name`** : le nom d'un step du registre (voir plus bas).
 - **`parameters`** : un paramètre absent garde sa **valeur par défaut**. Un paramètre fourni doit exister dans le step, avec le même `valueType`.
+- `import.tiles` peut contenir un tableau JSON encodé en chaîne, avec les chemins et coordonnées explicites des images. Une liste vide conserve l'import par expression régulière. La GUI l'utilise pour respecter l'ordre de grille même si les noms des fichiers ne portent pas de coordonnées.
 
 | `valueType` | Valeurs acceptées |
 |---|---|
@@ -72,6 +76,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 **L'état, écrit par le pipeline :**
 - `status` : `idle`, `running`, `paused`, `failed` ou `completed` ;
 - `completedSteps` : les noms des steps déjà faits, dans l'ordre.
+- `stepResults` : résultats JSON par step ; `failedStep` et `error` conservent le dernier échec.
 
 **Les consignes, écrites par l'appelant (la GUI), et remises à leur défaut au démarrage :**
 - `skipCompletedSteps` (`true` par défaut) : saute les steps déjà faits dont le checkpoint est valide ; `false` : repart de zéro ;
@@ -101,6 +106,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 **Empreinte des entrées.**
 - `StepClass::externalInputsFingerprint()` décrit ce que le step lit hors du pipeline. Elle est gardée dans le manifest.
 - `ImportStepClass` y met le nom, la taille et la date de chaque image source. Une image ajoutée, retirée ou modifiée périme donc le checkpoint de l'import, et toute la suite est refaite.
+- Le fichier `.kikproj` garde aussi l'empreinte SHA-256 des images. À l'ouverture, les chemins manquants ou modifiés sont signalés ; si une source a changé, la reprise invalide les étapes terminées et recalcule depuis l'import.
 
 **Pause** : `PipelineClass::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
 

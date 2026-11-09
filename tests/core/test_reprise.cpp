@@ -117,6 +117,9 @@ void testerEchecPuisReprise(const fs::path& dossier) {
     verifier(!b.lancer(), "run 1 en échec au step b");
     verifier(b.p.getRunState().status == PipelineNs::RunStatus::Failed, "statut failed");
     verifier(b.p.getRunState().completedSteps == std::vector<std::string>{"a"}, "completedSteps = [a]");
+    verifier(b.p.getRunState().failedStep == "b", "le step en échec est sauvegardé");
+    verifier(b.p.getRunState().stepResults.at("a").at("valeur") == VALEUR_A,
+             "le résultat du step terminé est sauvegardé");
     verifier(fs::exists(dossier / "00_a" / "manifest.json"), "checkpoint de a écrit");
 
     b.option(1, "echoue", false);
@@ -183,6 +186,16 @@ void testerPause(const fs::path& dossier) {
     suite.p.setRunState(r);
     verifier(suite.lancer() && suite.execA == 0 && suite.execB == 1, "reprise : seul b exécuté");
     verifier(suite.y() == VALEUR_A + VALEUR_B, "sortie finale correcte");
+}
+
+void testerCheckpointCorrompu(const fs::path& dossier) {
+    std::cout << "Checkpoint de sortie absent\n";
+    fs::remove_all(dossier);
+    Banc b(dossier);
+    verifier(b.lancer(), "premier run terminé");
+    fs::remove(dossier / "00_a" / "x.txt");
+    verifier(b.lancer(), "la reprise recalcule après une sortie de checkpoint absente");
+    verifier(b.execA == 2 && b.execB == 2, "le step corrompu et sa suite sont recalculés");
 }
 
 void testerScript(const fs::path& dossier) {
@@ -282,6 +295,7 @@ protected:
 TEST_F(Reprise, SansCheckpoint) { testerSansCheckpoint(); }
 TEST_F(Reprise, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
 TEST_F(Reprise, Pause) { testerPause(dossier); }
+TEST_F(Reprise, CheckpointCorrompu) { testerCheckpointCorrompu(dossier); }
 TEST_F(Reprise, Script) { testerScript(dossier); }
 TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
 

@@ -117,9 +117,45 @@ namespace CheckpointNs {
         if (!enabled()) return false;
         const std::string stepName = step.getConfigJson().value("name", "");
         const Json manifest = readManifest(stepDir(stepIndex, stepName));
-        return manifest.is_object() && manifest.value("complete", false) && manifest.value("step", "") == stepName &&
-            manifest.value("parameters", Json()) == step.getConfigJson().value("parameters", Json::array()) &&   // paramètres inchangés
-            manifest.value("inputs", Json()) == step.externalInputsFingerprint();                               // sources externes inchangées
+        if (!manifest.is_object())
+            return false;
+
+        try {
+            if (!manifest.value("complete", false) ||
+                manifest.value("step", "") != stepName ||
+                manifest.value("parameters", Json()) != step.getConfigJson().value("parameters", Json::array()) ||
+                manifest.value("inputs", Json()) != step.externalInputsFingerprint())
+                return false;
+
+            const Json outputs = manifest.value("outputs", Json());
+            if (!outputs.is_array())
+                return false;
+            const ConfigNs::StepConfig stepConfig = step.getConfigJson().get<ConfigNs::StepConfig>();
+            const fs::path directory = stepDir(stepIndex, stepName);
+            for (const ConfigNs::DataSlot& output : stepConfig.outputs) {
+                bool outputSaved = false;
+                for (const Json& savedOutput : outputs) {
+                    if (!savedOutput.is_object() || savedOutput.value("key", "") != output.key)
+                        continue;
+                    if (savedOutput.value("dataType", "") != output.dataType)
+                        return false;
+                    outputSaved = true;
+                    break;
+                }
+                if (!outputSaved)
+                    return false;
+                const auto serializer = serializers().find(output.dataType);
+                if (serializer == serializers().end())
+                    return false;
+                StepNs::DataStoreClass probe;
+                serializer->second.loader(probe, output.key, directory);
+                if (!probe.has(output.key))
+                    return false;
+            }
+        } catch (const std::exception&) {
+            return false;
+        }
+        return true;
     }
 
     // Retrouve la sortie dans le manifest du step, puis délègue la lecture au chargeur de son type.

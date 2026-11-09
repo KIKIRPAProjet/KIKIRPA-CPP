@@ -3,3 +3,8 @@ target_link_libraries(test_frontend_project_setup PRIVATE kikirpa_frontend GTest
 target_compile_features(test_frontend_project_setup PRIVATE cxx_std_17)
 include(GoogleTest)
 gtest_discover_tests(test_frontend_project_setup)
+
+add_executable(test_frontend_project_serializer test_project_serializer.cpp)
+target_link_libraries(test_frontend_project_serializer PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_project_serializer PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_project_serializer)

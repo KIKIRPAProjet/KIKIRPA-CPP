@@ -1,21 +1,13 @@
-/*
- * .cpp : le POURQUOI
- * - choix de conception : un QTimer simule l'avancement sans bloquer la boucle d'événements ;
- * - cas limite : un second lancement est refusé tant que le premier n'est pas terminé ;
- * - unité ou repère : la progression est exprimée en pourcentage de 0 à 100 ;
- * - raison non évidente : les signaux permettent à l'interface de rester réactive pendant l'exécution.
- */
-/*
- * Header : le QUOI
- * Simule le lancement et le suivi d'une exécution.
- * - ce que ça fait : démarre une progression temporisée et informe l'interface de son avancement ;
- * - ce que ça renvoie : true ou false selon l'état de l'exécution, avec des signaux de progression ;
- * - quand ça lève une exception : si la création ou le démarrage du minuteur échoue.
- */
-//  simule le lancement et le suivi dune execution
 #include "simulationrunner.h"
 
-#include <QTimer>
+#include "core/pipeline/pipeline_builder.h"
+
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+
+#include <exception>
+#include <filesystem>
+#include <utility>
 
 SimulationRunner::SimulationRunner(QObject *parent)
     : QObject(parent)
@@ -27,50 +19,62 @@ bool SimulationRunner::isRunning() const
     return running;
 }
 
-void SimulationRunner::startRun(int firstStep)
+void SimulationRunner::startPipelineRun(const QString &scriptJson, const QString &scriptPath)
 {
     if (running) {
-        emit statusChanged(tr("Une démonstration de progression est déjà en cours."));
+        emit statusChanged(tr("Un traitement est déjà en cours."));
         return;
     }
 
-    firstStepNumber = firstStep;
-    progress = 0;
+    try {
+        const nlohmann::json script = nlohmann::json::parse(scriptJson.toStdString());
+        pipeline = std::make_shared<PipelineNs::PipelineClass>(
+            PipelineNs::buildPipeline(script));
+        pipeline->setScriptPath(std::filesystem::path(scriptPath.toStdString()));
+    } catch (const std::exception &exception) {
+        emit statusChanged(tr("Le pipeline ne peut pas être chargé : %1")
+                               .arg(QString::fromUtf8(exception.what())));
+        return;
+    }
+
+    pauseRequested = false;
     running = true;
     emit runStarted();
-    emit stepChanged(tr("Démonstration"));
-    emit statusChanged(
-        tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
+    emit stepChanged(tr("Préparation du pipeline"));
+    emit statusChanged(tr("Démarrage du pipeline…"));
 
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, [this]() {
-        progress = qMin(100, progress + 4);
-        emit progressAdvanced(progress);
-        if (progress >= 100)
-            finishRun();
-    });
-    timer->start(100);
-
-    QTimer::singleShot(150, this, [this]() {
-        if (running && timer && timer->isActive())
-            emit cancellationAvailable();
-    });
+    watcher = new QFutureWatcher<bool>(this);
+    connect(watcher, &QFutureWatcher<bool>::finished,
+            this, &SimulationRunner::finishPipelineRun);
+    const std::shared_ptr<PipelineNs::PipelineClass> activePipeline = pipeline;
+    watcher->setFuture(QtConcurrent::run([this, activePipeline]() {
+        try {
+            return activePipeline->run([this](const std::string &message) {
+                const QString text = QString::fromStdString(message);
+                emit statusChanged(text);
+                if (text.startsWith(QStringLiteral("Step ")))
+                    emit stepChanged(text);
+            });
+        } catch (const std::exception &exception) {
+            PipelineNs::RunState state = activePipeline->getRunState();
+            state.status = PipelineNs::RunStatus::Failed;
+            state.error = exception.what();
+            activePipeline->setRunState(state);
+            emit statusChanged(tr("Le pipeline a échoué : %1")
+                                   .arg(QString::fromUtf8(exception.what())));
+            return false;
+        }
+    }));
+    emit cancellationAvailable();
 }
 
 void SimulationRunner::cancelRun()
 {
-    if (!running)
+    if (!running || !pipeline)
         return;
-
-    running = false;
-    if (timer) {
-        timer->stop();
-        timer->deleteLater();
-        timer = nullptr;
-    }
-    emit stepChanged(tr("Annulée"));
-    emit statusChanged(tr("Démonstration annulée."));
-    emit runCancelled();
+    pauseRequested = true;
+    pipeline->requestPause();
+    emit statusChanged(tr("Pause demandée ; l'étape en cours va se terminer."));
 }
 
 void SimulationRunner::showComparison()
@@ -97,17 +101,30 @@ void SimulationRunner::keepComparisonB()
     emit statusChanged(tr("Résultat B conservé; les étapes suivantes sont à refaire."));
 }
 
-void SimulationRunner::finishRun()
+void SimulationRunner::finishPipelineRun()
 {
-    if (timer) {
-        timer->stop();
-        timer->deleteLater();
-        timer = nullptr;
-    }
+    if (!watcher)
+        return;
+    const bool success = watcher->result();
+    const PipelineNs::RunStatus status = pipeline
+        ? pipeline->getRunState().status : PipelineNs::RunStatus::Failed;
+    watcher->deleteLater();
+    watcher = nullptr;
     running = false;
-    emit stepChanged(tr("Terminé"));
-    emit statusChanged(
-        tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
-            .arg(firstStepNumber));
+    emit progressAdvanced(success ? 100 : 0);
+
+    if (pauseRequested || status == PipelineNs::RunStatus::Paused) {
+        emit stepChanged(tr("En pause"));
+        emit statusChanged(tr("Pipeline mis en pause. Les checkpoints permettent de reprendre."));
+        emit runCancelled();
+    } else if (success) {
+        emit stepChanged(tr("Terminé"));
+        emit statusChanged(tr("Pipeline terminé."));
+    } else {
+        emit stepChanged(tr("Échec"));
+        emit statusChanged(tr("Le pipeline a échoué. Consultez le journal pour le détail."));
+    }
     emit runFinished();
+    pipeline.reset();
+    pauseRequested = false;
 }

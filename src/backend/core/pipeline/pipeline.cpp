@@ -127,6 +127,10 @@ namespace PipelineNs {
         // 2. État propre : les checkpoints des steps à refaire sont périmés, les consignes sont consommées.
         checkpoint.removeFrom(startIndex);
         runState.completedSteps.resize(startIndex);
+        for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex)
+            runState.stepResults.erase(stepName(*steps[stepIndex]));
+        runState.failedStep.clear();
+        runState.error.clear();
         runState.skipCompletedSteps = true;
         runState.startFromStep.clear();
         dataStore = StepNs::DataStoreClass();
@@ -136,13 +140,32 @@ namespace PipelineNs {
         for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
             for (const ConfigNs::DataSlot& outputSlot : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
                 latestOutputByKey[outputSlot.key] = {stepIndex, outputSlot.dataType};
-        try {
-            for (const auto& [key, producer] : latestOutputByKey) checkpoint.load(producer.first, *steps[producer.first], key, producer.second, dataStore);
-        } catch (const std::exception& exception) {
-            report(log, std::string("cannot restore checkpoint: ") + exception.what(), true);
-            runState.status = RunStatus::Failed;
-            saveScript(log);
-            return false;
+        while (true) {
+            dataStore = StepNs::DataStoreClass();
+            size_t brokenCheckpointStep = startIndex;
+            bool restoreFailed = false;
+            for (const auto& [key, producer] : latestOutputByKey) {
+                if (producer.first >= startIndex)
+                    continue;
+                try {
+                    checkpoint.load(producer.first, *steps[producer.first], key,
+                                    producer.second, dataStore);
+                } catch (const std::exception& exception) {
+                    report(log, "checkpoint of step " + std::to_string(producer.first + 1) +
+                                    " is unreadable: " + exception.what() +
+                                    "; recomputing from that step", false);
+                    brokenCheckpointStep = producer.first;
+                    restoreFailed = true;
+                    break;
+                }
+            }
+            if (!restoreFailed)
+                break;
+            startIndex = brokenCheckpointStep;
+            checkpoint.removeFrom(startIndex);
+            runState.completedSteps.resize(startIndex);
+            for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex)
+                runState.stepResults.erase(stepName(*steps[stepIndex]));
         }
 
         // 4. Exécution des steps restants.
@@ -168,8 +191,18 @@ namespace PipelineNs {
                 errorMessage = exception.what();
             }
             if (!succeeded) {
-                report(log, messagePrefix + " failed: " + (errorMessage.empty() ? step->getResult().dump() : errorMessage), true);
+                const std::string name = stepName(*step);
+                const Json result = step->getResult();
+                const std::string failure = errorMessage.empty() ? result.dump() : errorMessage;
+                report(log, messagePrefix + " failed: " + failure, true);
                 runState.status = RunStatus::Failed;
+                runState.failedStep = name;
+                const Json stepError = result.is_object()
+                    ? result.value("error", Json()) : Json();
+                runState.error = !errorMessage.empty()
+                    ? errorMessage
+                    : (stepError.is_string() ? stepError.get<std::string>() : failure);
+                runState.stepResults[name] = result;
                 saveScript(log);
                 return false;   // reprise possible : completedSteps et checkpoints sont à jour
             }
@@ -178,7 +211,9 @@ namespace PipelineNs {
             std::string failureReason;
             if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
                 report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
-            runState.completedSteps.push_back(stepName(*step));
+            const std::string name = stepName(*step);
+            runState.completedSteps.push_back(name);
+            runState.stepResults[name] = step->getResult();
             saveScript(log);
             report(log, messagePrefix + " OK " + step->getResult().dump(), false);
         }

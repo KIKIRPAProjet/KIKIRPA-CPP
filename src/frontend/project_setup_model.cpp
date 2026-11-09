@@ -318,6 +318,13 @@ Json ProjectSetupModelClass::createBackendScript() const {
       fs::absolute(setup.inputDirectory).lexically_normal().string());
   if (!setup.filenameFormat.empty())
     replaceParameter(importStep, "format", setup.filenameFormat);
+  Json explicitTiles = Json::array();
+  for (const ProjectTile &tile : setup.tiles)
+    explicitTiles.push_back(
+        {{"path", fs::absolute(tile.path).lexically_normal().string()},
+         {"row", tile.row},
+         {"column", tile.column}});
+  replaceParameter(importStep, "tiles", explicitTiles.dump());
 
   Json phaseCorrelationStep =
       PipelineNs::createStep("phase-correlation")->getConfigJson();

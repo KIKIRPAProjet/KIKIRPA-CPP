@@ -17,6 +17,8 @@ namespace StepsNs {
         std::string path = "images/";   // dossier contenant les images
         // Expression régulière sur le nom du fichier : groupe 1 = colonne, groupe 2 = ligne (insensible à la casse)
         std::string format = R"(img_C(\d+)_R(\d+)\.tif)";
+        // Tableau JSON facultatif de chemins/positions explicites ; [] conserve l'import par expression régulière.
+        std::string tiles = "[]";
     };
 
     // Sortie du step.

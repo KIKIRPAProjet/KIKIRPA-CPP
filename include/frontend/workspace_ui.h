@@ -32,6 +32,7 @@ public:
 
     void updateFromGridState(const QString &projectName,
                              const ProjectGrid::State &gridState);
+    void setResumeSummary(const QString &summary);
 
     HomePage *homePage() const { return m_homePage; }
     QStackedWidget *pages() const { return m_pages; }
@@ -115,7 +116,9 @@ private:
     QLabel *m_projectNameLabel = nullptr;
     QLineEdit *m_projectNameEdit = nullptr;
     QLabel *m_projectFolderLabel = nullptr;
+    QLabel *m_outputDirectoryLabel = nullptr;
     QLabel *m_projectFormatLabel = nullptr;
+    QLabel *m_resumeSummaryLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_currentStepLabel = nullptr;
     QLabel *m_zoomLabel = nullptr;

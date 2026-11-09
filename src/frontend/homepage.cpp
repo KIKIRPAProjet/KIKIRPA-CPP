@@ -60,7 +60,7 @@ HomePage::HomePage(QWidget *parent)
     sideLayout->addSpacing(16);
     auto *newProject = FrontendUtils::makeButton(tr("+ Nouveau projet…"), side, true);
     sideLayout->addWidget(newProject);
-    auto *open = FrontendUtils::makeButton(tr("Importer un projet…"), side);
+    auto *open = FrontendUtils::makeButton(tr("Ouvrir un projet…"), side);
     sideLayout->addWidget(open);
     sideLayout->addStretch();
     sideLayout->addWidget(FrontendUtils::mutedLabel(

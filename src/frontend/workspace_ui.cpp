@@ -98,6 +98,12 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
     m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
 
+void WorkspaceUI::setResumeSummary(const QString &summary)
+{
+    if (m_resumeSummaryLabel)
+        m_resumeSummaryLabel->setText(summary);
+}
+
 /** 
  * Met à jour les informations du projet dans l'interface utilisateur.
  * @param projectName Le nom du projet.
@@ -111,6 +117,10 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
     m_projectFolderLabel->setText(gridState.tileDirectory.isEmpty()
             ? tr("Dossier sélectionné : aucun dossier")
             : tr("Dossier sélectionné :\n%1").arg(gridState.tileDirectory));
+    if (m_outputDirectoryLabel)
+        m_outputDirectoryLabel->setText(m_mainWindow->outputDirectory.isEmpty()
+            ? tr("Dossier de sortie : aucun dossier")
+            : tr("Dossier de sortie :\n%1").arg(m_mainWindow->outputDirectory));
     
     const QFileInfoList folderFiles = gridState.tileDirectory.isEmpty()
             ? QFileInfoList()
@@ -340,9 +350,17 @@ void WorkspaceUI::createProjectMode(QWidget *center)
     m_projectFolderLabel = makeMutedLabel(QString(), m_projectInfoPanel);
     m_projectFolderLabel->setWordWrap(true);
     projectInfoLayout->addWidget(m_projectFolderLabel);
+    m_outputDirectoryLabel = makeMutedLabel(QString(), m_projectInfoPanel);
+    m_outputDirectoryLabel->setObjectName(QStringLiteral("outputDirectoryLabel"));
+    m_outputDirectoryLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(m_outputDirectoryLabel);
     m_projectFormatLabel = new QLabel(m_projectInfoPanel);
     m_projectFormatLabel->setWordWrap(true);
     projectInfoLayout->addWidget(m_projectFormatLabel);
+    m_resumeSummaryLabel = makeMutedLabel(tr("Aucune étape exécutée."), m_projectInfoPanel);
+    m_resumeSummaryLabel->setObjectName(QStringLiteral("resumeSummaryLabel"));
+    m_resumeSummaryLabel->setWordWrap(true);
+    projectInfoLayout->addWidget(m_resumeSummaryLabel);
     projectInfoLayout->addStretch();
     static_cast<QVBoxLayout *>(center->layout())->addWidget(m_projectInfoPanel, 1);
 

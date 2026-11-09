@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <regex>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -21,12 +22,14 @@ namespace StepsNs {
 
     namespace fs = std::filesystem;
 
-    // Déclare l'identité du step : son nom, ses deux paramètres (valeurs par défaut = celles de l'entrée) et la donnée
+    // Déclare l'identité du step : son nom, ses paramètres (valeurs par défaut = celles de l'entrée) et la donnée
     // qu'il produit. Il n'a pas d'entrée : il lit directement le disque.
     ImportStepClass::ImportStepClass(const ImportInput& initialInput) {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "import";
-        stepConfig.parameters = {{"string", "path", initialInput.path}, {"string", "format", initialInput.format}};
+        stepConfig.parameters = {{"string", "path", initialInput.path},
+                                {"string", "format", initialInput.format},
+                                {"string", "tiles", initialInput.tiles}};
         stepConfig.outputs = {{"Tiles", "tiles"}};
         configJson = stepConfig;
     }
@@ -38,6 +41,22 @@ namespace StepsNs {
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
             const fs::path directory = getParameter("path").get<std::string>();
+            const Json explicitTiles = Json::parse(getParameter("tiles").get<std::string>());
+            if (explicitTiles.is_array() && !explicitTiles.empty()) {
+                Json fingerprint = Json::array();
+                for (const Json& tile : explicitTiles) {
+                    if (!tile.is_object() || !tile.contains("path") || !tile["path"].is_string())
+                        return Json();
+                    const fs::path path = tile["path"].get<std::string>();
+                    if (!fs::is_regular_file(path)) return Json();
+                    fingerprint.push_back({
+                        fs::absolute(path).lexically_normal().string(),
+                        static_cast<long long>(fs::file_size(path)),
+                        static_cast<long long>(fs::last_write_time(path).time_since_epoch().count())
+                    });
+                }
+                return fingerprint;
+            }
             const std::regex filenamePattern(getParameter("format").get<std::string>(), std::regex::icase);
             std::map<std::string, Json> filesByName;
             for (const auto& entry : fs::directory_iterator(directory)) {
@@ -58,7 +77,9 @@ namespace StepsNs {
     // chaque image, créer son TIFF pyramidal et sa fiche ; 5. relier les voisines ; 6. publier les tuiles.
     bool ImportStepClass::execute() {
         // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
-        const ImportInput input{getParameter("path").get<std::string>(), getParameter("format").get<std::string>()};
+        const ImportInput input{getParameter("path").get<std::string>(),
+                                getParameter("format").get<std::string>(),
+                                getParameter("tiles").get<std::string>()};
         const fs::path directory = input.path;
 
         if (!fs::is_directory(directory)) {
@@ -66,26 +87,62 @@ namespace StepsNs {
             return false;
         }
 
-        std::regex filenamePattern;
-        try {
-            filenamePattern = std::regex(input.format, std::regex::icase);   // .tif et .TIF
-        } catch (const std::regex_error& exception) {
-            result["error"] = "invalid format '" + input.format + "': " + exception.what();
-            return false;
-        }
-        if (filenamePattern.mark_count() < 2) {
-            result["error"] = "format '" + input.format + "' needs 2 groups: (column) and (row)";
-            return false;
-        }
-
-        // Fichiers dont le nom correspond au format ; groupe 1 = colonne, groupe 2 = ligne.
         struct ImageFile { fs::path filePath; int column, row; };
         std::vector<ImageFile> imageFiles;
-        for (const auto& entry : fs::directory_iterator(directory)) {
-            const std::string fileName = entry.path().filename().string();
-            std::smatch nameMatch;
-            if (!entry.is_regular_file() || !std::regex_match(fileName, nameMatch, filenamePattern)) continue;
-            imageFiles.push_back({entry.path(), std::stoi(nameMatch[1].str()), std::stoi(nameMatch[2].str())});
+        Json explicitTiles;
+        try {
+            explicitTiles = Json::parse(input.tiles);
+        } catch (const Json::exception& exception) {
+            result["error"] = std::string("invalid explicit tile list: ") + exception.what();
+            return false;
+        }
+        if (!explicitTiles.is_array()) {
+            result["error"] = "explicit tile list must be a JSON array";
+            return false;
+        }
+        if (!explicitTiles.empty()) {
+            std::set<fs::path> paths;
+            std::set<std::pair<int, int>> positions;
+            for (const Json& tile : explicitTiles) {
+                if (!tile.is_object() || !tile.contains("path") || !tile["path"].is_string() ||
+                    !tile.contains("row") || !tile["row"].is_number_integer() ||
+                    !tile.contains("column") || !tile["column"].is_number_integer()) {
+                    result["error"] = "each explicit tile needs string path and integer row/column";
+                    return false;
+                }
+                const fs::path tilePath = tile["path"].get<std::string>();
+                const int row = tile["row"].get<int>();
+                const int column = tile["column"].get<int>();
+                if (row < 0 || column < 0 || !fs::is_regular_file(tilePath)) {
+                    result["error"] = "explicit tile path is missing or its position is invalid: " +
+                                      tilePath.string();
+                    return false;
+                }
+                if (!paths.insert(fs::absolute(tilePath).lexically_normal()).second ||
+                    !positions.insert({row, column}).second) {
+                    result["error"] = "explicit tile list contains duplicate paths or positions";
+                    return false;
+                }
+                imageFiles.push_back({tilePath, column, row});
+            }
+        } else {
+            std::regex filenamePattern;
+            try {
+                filenamePattern = std::regex(input.format, std::regex::icase);   // .tif et .TIF
+            } catch (const std::regex_error& exception) {
+                result["error"] = "invalid format '" + input.format + "': " + exception.what();
+                return false;
+            }
+            if (filenamePattern.mark_count() < 2) {
+                result["error"] = "format '" + input.format + "' needs 2 groups: (column) and (row)";
+                return false;
+            }
+            for (const auto& entry : fs::directory_iterator(directory)) {
+                const std::string fileName = entry.path().filename().string();
+                std::smatch nameMatch;
+                if (!entry.is_regular_file() || !std::regex_match(fileName, nameMatch, filenamePattern)) continue;
+                imageFiles.push_back({entry.path(), std::stoi(nameMatch[1].str()), std::stoi(nameMatch[2].str())});
+            }
         }
 
         if (imageFiles.empty()) {
@@ -124,7 +181,11 @@ namespace StepsNs {
             }
 
             // Un TIFF par image, nommé d'après l'image d'origine : <nom>_pyramid.tif.
-            const fs::path pyramidPath = outputDirectory / (imageFile.filePath.stem().string() + "_pyramid.tif");
+            const std::string pyramidName = explicitTiles.empty()
+                ? imageFile.filePath.stem().string() + "_pyramid.tif"
+                : imageFile.filePath.stem().string() + "_r" + std::to_string(imageFile.row) +
+                      "_c" + std::to_string(imageFile.column) + "_pyramid.tif";
+            const fs::path pyramidPath = outputDirectory / pyramidName;
 
             std::string errorMessage;
             if (!IONs::createPyramidalTiledTiff(image, pyramidPath, errorMessage)) {

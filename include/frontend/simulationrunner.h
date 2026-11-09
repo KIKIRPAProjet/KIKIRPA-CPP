@@ -4,7 +4,13 @@
 #include <QObject>
 #include <QString>
 
-class QTimer;
+#include <memory>
+
+template <typename T>
+class QFutureWatcher;
+namespace PipelineNs {
+class PipelineClass;
+}
 
 class SimulationRunner : public QObject
 {
@@ -16,7 +22,7 @@ public:
     bool isRunning() const;
 
 public slots:
-    void startRun(int firstStep);
+    void startPipelineRun(const QString &scriptJson, const QString &scriptPath);
     void cancelRun();
     void showComparison();
     void toggleComparison();
@@ -35,12 +41,12 @@ signals:
     void comparisonVisibilityChanged(bool visible);
 
 private:
-    void finishRun();
+    void finishPipelineRun();
 
-    QTimer *timer = nullptr;
-    int firstStepNumber = 1;
-    int progress = 0;
+    QFutureWatcher<bool> *watcher = nullptr;
+    std::shared_ptr<PipelineNs::PipelineClass> pipeline;
     bool running = false;
+    bool pauseRequested = false;
     bool comparisonVisible = false;
 };
 

@@ -32,6 +32,11 @@ namespace PipelineNs {
         for (const char* field : {"startFromStep", "checkpointDirectory"})
             if (runJson.contains(field) && !runJson.at(field).is_string())
                 throw std::invalid_argument(std::string("field 'run.") + field + "' must be a string");
+        for (const char* field : {"failedStep", "error"})
+            if (runJson.contains(field) && !runJson.at(field).is_string())
+                throw std::invalid_argument(std::string("field 'run.") + field + "' must be a string");
+        if (runJson.contains("stepResults") && !runJson.at("stepResults").is_object())
+            throw std::invalid_argument("field 'run.stepResults' must be an object");
 
         // Le JSON est valide : la conversion automatique (macro de run_state.h) ne peut plus échouer.
         return runJson.get<RunState>();

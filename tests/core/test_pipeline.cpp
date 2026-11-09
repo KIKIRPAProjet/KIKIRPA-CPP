@@ -173,7 +173,12 @@ void creerTuiles(const fs::path& dossier) {
 }
 
 Json scriptReel(const fs::path& dossier) {
-    return script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", dossier.string()}}}),
+    const Json explicitTiles = Json::array({
+        {{"path", (dossier / "img_C00_R00.tif").string()}, {"row", 0}, {"column", 0}},
+        {{"path", (dossier / "img_C01_R00.tif").string()}, {"row", 0}, {"column", 1}}
+    });
+    return script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", dossier.string()}},
+                                   {{"valueType", "string"}, {"name", "tiles"}, {"value", explicitTiles.dump()}}}),
                    etape("phase-correlation")});
 }
 
