@@ -3,7 +3,6 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
-#include "core/data/intensity_correction.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
 

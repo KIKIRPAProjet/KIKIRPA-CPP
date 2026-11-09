@@ -33,6 +33,7 @@ Il faut décider de cinq choses.
 | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `absolute-pos` |
 | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | `intensity-correction` |
 | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | `graphcut` |
+| `seamlines` | `Seamlines` | `DataNs::Seamlines` | `dynamic-programming-dijkstra` |
 
 Ce que contient chaque donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 
@@ -197,18 +198,18 @@ const std::map<std::string, StepCreator>& stepRegistry() {
 
 C'est le seul endroit où le moteur connaît la liste des steps. Le nom doit être exactement celui de `stepConfig.name`. `tests/core/test_pipeline.cpp` vérifie que chaque nom du registre crée un step de ce nom.
 
-Dans `tests/core/test_pipeline.cpp`, augmenter `REGISTERED_STEP_COUNT` (7 → 8) et le message à côté (`"7 steps enregistrés"`). Sinon, le test du registre échoue.
+Dans `tests/core/test_pipeline.cpp`, augmenter `REGISTERED_STEP_COUNT` (8 → 9) et le message à côté (`"8 steps enregistrés"`). Sinon, le test du registre échoue.
 
 ## 6. Si la sortie est d'un nouveau type
 
 `match-filter` réutilise `PairMatches`. Un step qui produit une donnée d'un genre nouveau, par exemple la taille de la mosaïque, doit faire trois choses de plus.
 
-**1. Déclarer le type** dans `include/backend/core/data/`, namespace `DataNs`. Les types partagés par plusieurs steps vont dans `algorithm_types.h`, et un type plus gros dans son propre fichier, comme `intensity_correction.h`. Le `dataType` des `inputs` et `outputs` est son nom en `PascalCase` : `"MosaicBounds"`.
+**1. Déclarer le type** dans `include/backend/core/data/`, namespace `DataNs`. Les types partagés par plusieurs steps vont dans `algorithm_types.h`, comme `IntensityCorrection` et `Seamlines` ; un type plus gros peut avoir son propre fichier. Le `dataType` des `inputs` et `outputs` est son nom en `PascalCase` : `"MosaicBounds"`.
 
 **2. Lui donner une sérialisation pour les checkpoints.** Sans elle, le pipeline marche, mais le step est **refait à chaque reprise**, avec le message `checkpoint incomplete` dans le journal. Il y a deux façons de faire :
 
-- une ligne dans `pipelineTypes()` (`src/backend/core/checkpoint/checkpoint_types.cpp`), pour un type du cœur du pipeline ;
-- un appel à `CheckpointClass::registerType` depuis le constructeur du step. C'est ce que fait `intensity-correction`, avec `core/checkpoint/intensity_correction_checkpoint.cpp`.
+- une ligne dans `pipelineTypes()` (`src/backend/core/checkpoint/checkpoint_types.cpp`). C'est le cas de tous les types actuels, `IntensityCorrection` et `Seamlines` compris ;
+- un appel à `CheckpointClass::registerType` depuis le constructeur du step, pour garder la sérialisation à côté du step. Aucun step ne le fait sur main ; `tests/core/test_reprise.cpp` le fait pour son type de test `Compteur`.
 
 Esquisse de la seconde façon (compilée, non testée) :
 
@@ -263,7 +264,7 @@ namespace CheckpointNs {
 }
 ```
 
-Dans un vrai fichier, `MosaicBounds` est déclaré dans `core/data/`, et `registerMosaicBoundsCheckpoint` dans un en-tête de `include/backend/core/checkpoint/`. Le constructeur du step commence par l'appeler, comme celui de `IntensityCorrectionStepClass`.
+Dans un vrai fichier, `MosaicBounds` est déclaré dans `core/data/`, et `registerMosaicBoundsCheckpoint` dans un en-tête de `include/backend/core/checkpoint/`. Le constructeur du step commence par l'appeler.
 
 **3. Le documenter** : une ligne dans le tableau « Sérialisation des sorties » de [core/Pipeline.md](../core/Pipeline.md#reprise-pause-checkpoints), et son JSON dans [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 

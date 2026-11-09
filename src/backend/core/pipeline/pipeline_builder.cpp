@@ -6,6 +6,7 @@
 #include "core/pipeline/run_state.h"
 #include "core/step/step.h"
 #include "steps/absolute_pos_step.h"
+#include "steps/dynamic_programming_dijkstra_step.h"
 #include "steps/export_step.h"
 #include "steps/fusion_step.h"
 #include "steps/graph_cut_step.h"
@@ -42,6 +43,7 @@ namespace PipelineNs {
                 {"lightglue", [] { return std::make_unique<StepsNs::LightGlueStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
+                {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
                 {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},

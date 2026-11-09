@@ -1,15 +1,19 @@
 // src/backend/core/checkpoint/checkpoint_types.cpp
 #include "core/checkpoint/checkpoint_types.h"
 
+#include "core/checkpoint/checkpoint.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/types.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -173,6 +177,32 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(positions));
         }
 
+        // Sauvegarde des chemins de couture dans le repère de la mosaïque.
+        void saveSeamlines(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json seamlinesJson = Json::array();
+            for (const DataNs::Seamline& seamline : dataStore.get<DataNs::Seamlines>(key)) {
+                Json pointsJson = Json::array();
+                for (const cv::Point2d& seamPoint : seamline.points) pointsJson.push_back(point(seamPoint));
+                seamlinesJson.push_back({{"tileIdA", seamline.tileIdA}, {"tileIdB", seamline.tileIdB},
+                                         {"direction", directionName(seamline.direction)}, {"points", pointsJson}});
+            }
+            writeJson(directory, key, seamlinesJson);
+        }
+
+        void loadSeamlines(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            DataNs::Seamlines seamlines;
+            for (const Json& seamlineJson : readJson(directory, key)) {
+                DataNs::Seamline seamline;
+                seamline.tileIdA = seamlineJson.at("tileIdA").get<int>();
+                seamline.tileIdB = seamlineJson.at("tileIdB").get<int>();
+                seamline.direction = readDirection(seamlineJson.at("direction").get<std::string>());
+                for (const Json& pointJson : seamlineJson.at("points"))
+                    seamline.points.emplace_back(pointJson.at(0).get<double>(), pointJson.at(1).get<double>());
+                seamlines.push_back(std::move(seamline));
+            }
+            dataStore.replace(key, std::move(seamlines));
+        }
+
         // Sauvegarde du type "Territories" (std::vector<TileTerritory>), une entrée par tuile : { tileIndex, polygons, holes }.
         // polygons est une liste de lignes brisées ; holes[i] liste les trous du polygone i (même indexation que TileTerritory).
         void saveTerritories(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
@@ -207,6 +237,22 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(territories));
         }
 
+        // Sauvegarde du type "IntensityCorrection" : { tileGains, fieldStrength, isolatedTileIndices }.
+        void saveIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const auto& correction = dataStore.get<DataNs::IntensityCorrection>(key);
+            writeJson(directory, key, { {"tileGains", correction.tileGains}, {"fieldStrength", correction.fieldStrength},
+                                       {"isolatedTileIndices", correction.isolatedTileIndices} });
+        }
+
+        // Chargement du type "IntensityCorrection" : relit les champs écrits par saveIntensityCorrection.
+        void loadIntensityCorrection(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const Json correctionJson = readJson(directory, key);
+            DataNs::IntensityCorrection correction;
+            correction.tileGains = correctionJson.at("tileGains").get<std::vector<double>>();
+            correction.fieldStrength = correctionJson.at("fieldStrength").get<double>();
+            correction.isolatedTileIndices = correctionJson.at("isolatedTileIndices").get<std::vector<int>>();
+            dataStore.replace(key, std::move(correction));
+        }
     }
 
     // Un type de donnée du pipeline -> sa paire (sauvegarde, chargement).
@@ -215,7 +261,9 @@ namespace CheckpointNs {
             {"Tiles", {saveTiles, loadTiles}},
             {"PairMatches", {savePairMatches, loadPairMatches}},
             {"Positions", {savePositions, loadPositions}},
+            {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
+            {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
         };
     }
 

@@ -38,7 +38,7 @@ namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
 constexpr int PHASE_PARAMETER_COUNT = 15;
-constexpr std::size_t REGISTERED_STEP_COUNT = 9;
+constexpr std::size_t REGISTERED_STEP_COUNT = 10;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -90,7 +90,7 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == REGISTERED_STEP_COUNT, "9 steps enregistrés");
+    verifier(noms.size() == REGISTERED_STEP_COUNT, "10 steps enregistrés");
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");

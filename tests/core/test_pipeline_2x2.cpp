@@ -3,7 +3,6 @@
 #include <gtest/gtest.h>
 
 #include "core/data/algorithm_types.h"
-#include "core/data/intensity_correction.h"
 #include "core/data/tile.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
