@@ -29,6 +29,9 @@ namespace CroppingTestsNs {
         constexpr int BLOCK_SIZE = 4;
         constexpr int MOSAIC_SIZE = BLOCK_SIZE * 2;
         constexpr int BLOCK_ROW_OR_COLUMN_COUNT = 2;
+        constexpr std::size_t SOURCE_REGION_COUNT =
+            static_cast<std::size_t>(BLOCK_ROW_OR_COLUMN_COUNT) *
+            static_cast<std::size_t>(BLOCK_ROW_OR_COLUMN_COUNT);
         constexpr unsigned short RGB_RED_BASE = 1000;
         constexpr unsigned short RGB_GREEN_BASE = 2000;
         constexpr unsigned short RGB_BLUE_BASE = 3000;
@@ -153,11 +156,10 @@ namespace CroppingTestsNs {
             return true;
         }
 
-        std::array<cv::Rect, BLOCK_ROW_OR_COLUMN_COUNT * BLOCK_ROW_OR_COLUMN_COUNT>
+        std::array<cv::Rect, SOURCE_REGION_COUNT>
             getSourceRegions(const cv::Point& origin) const {
-            std::array<cv::Rect,
-                BLOCK_ROW_OR_COLUMN_COUNT * BLOCK_ROW_OR_COLUMN_COUNT> regions{};
-            int regionIndex = 0;
+            std::array<cv::Rect, SOURCE_REGION_COUNT> regions{};
+            std::size_t regionIndex = 0;
 
             for (int rowIndex = 0; rowIndex < BLOCK_ROW_OR_COLUMN_COUNT; ++rowIndex) {
                 for (int columnIndex = 0;
