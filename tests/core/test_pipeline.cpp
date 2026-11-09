@@ -1,4 +1,5 @@
-// test_pipeline.cpp
+// tests/core/test_pipeline.cpp
+// NOLINTBEGIN
 // Construction et exécution d'un pipeline à partir du script JSON (core/PipelineBuilder, Step::importConfig).
 //
 // GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
@@ -30,8 +31,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-// NOLINTBEGIN
 
 namespace fs = std::filesystem;
 

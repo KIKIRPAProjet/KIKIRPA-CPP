@@ -1,4 +1,5 @@
 // tests/core/test_pipeline_2x2.cpp
+// NOLINTBEGIN
 #include <gtest/gtest.h>
 
 #include "core/data/algorithm_types.h"
@@ -18,8 +19,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-
-// NOLINTBEGIN
 
 namespace {
 

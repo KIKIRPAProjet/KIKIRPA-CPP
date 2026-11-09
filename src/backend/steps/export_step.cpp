@@ -26,6 +26,7 @@
 
 namespace StepsNs {
 
+    using Json = StepNs::Json;
     namespace fs = std::filesystem;
 
     namespace {

@@ -1,4 +1,5 @@
 // tests/steps/test_fusion_step.cpp
+// NOLINTBEGIN
 #include "steps/fusion_step.h"
 
 #include "core/data/algorithm_types.h"
@@ -13,8 +14,6 @@
 #include <filesystem>
 #include <memory>
 #include <vector>
-
-// NOLINTBEGIN
 
 namespace {
 

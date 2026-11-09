@@ -26,6 +26,8 @@
 
 namespace StepsNs {
 
+    using Json = StepNs::Json;
+
     namespace {
 
         constexpr int VALID_MASK_VALUE = 255;
@@ -63,6 +65,19 @@ namespace StepsNs {
             return result;
         }
 
+        void applyHolesToMask(cv::Mat& mask, const cv::Rect& block,
+                              const std::vector<std::vector<cv::Point>>& holes) {
+            for (const auto& hole : holes) {
+                if (hole.size() < MIN_POLYGON_VERTICES) continue;
+                std::vector<cv::Point> shiftedHole;
+                shiftedHole.reserve(hole.size());
+                for (const auto& point : hole) {
+                    shiftedHole.emplace_back(point.x - block.x, point.y - block.y);
+                }
+                cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shiftedHole}, cv::Scalar(0));
+            }
+        }
+
         cv::Mat makeTerritoryMask(const cv::Rect& block, const DataNs::TileTerritory& territory) {
             cv::Mat mask(block.size(), CV_8UC1, cv::Scalar(0));
             for (std::size_t p = 0; p < territory.polygons.size(); ++p) {
@@ -77,15 +92,7 @@ namespace StepsNs {
                 cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shifted}, cv::Scalar(VALID_MASK_VALUE));
 
                 if (p < territory.holes.size()) {
-                    for (const auto& hole : territory.holes[p]) {
-                        if (hole.size() < MIN_POLYGON_VERTICES) continue;
-                        std::vector<cv::Point> shiftedHole;
-                        shiftedHole.reserve(hole.size());
-                        for (const auto& point : hole) {
-                            shiftedHole.emplace_back(point.x - block.x, point.y - block.y);
-                        }
-                        cv::fillPoly(mask, std::vector<std::vector<cv::Point>>{shiftedHole}, cv::Scalar(0));
-                    }
+                    applyHolesToMask(mask, block, territory.holes[p]);
                 }
             }
             return mask;
@@ -179,18 +186,20 @@ namespace StepsNs {
             return nullptr;
         }
 
-        std::vector<TilePlacement> buildTilePlacements(const DataNs::TileList& tiles,
-                                                       const std::vector<DataNs::TilePositionData>& positions,
-                                                       const std::vector<double>& tileGains) {
+        cv::Point2d computePlacementsOffset(const std::vector<DataNs::TilePositionData>& positions) {
             double minX = INITIAL_MIN_COORDINATE;
             double minY = INITIAL_MIN_COORDINATE;
             for (const auto& pos : positions) {
                 minX = std::min(minX, pos.position.x);
                 minY = std::min(minY, pos.position.y);
             }
-            const double offsetX = std::floor(minX);
-            const double offsetY = std::floor(minY);
+            return {std::floor(minX), std::floor(minY)};
+        }
 
+        std::vector<TilePlacement> buildTilePlacements(const DataNs::TileList& tiles,
+                                                       const std::vector<DataNs::TilePositionData>& positions,
+                                                       const std::vector<double>& tileGains) {
+            const cv::Point2d offset = computePlacementsOffset(positions);
             std::vector<TilePlacement> placements;
             placements.reserve(tiles.size());
             for (std::size_t i = 0; i < tiles.size(); ++i) {
@@ -207,8 +216,8 @@ namespace StepsNs {
                 const auto& level = tile->getLevel(0);
                 if (level.width <= 0 || level.height <= 0) throw std::runtime_error("invalid tile dimensions");
 
-                const cv::Rect box(cvRound(position->position.x - offsetX),
-                                   cvRound(position->position.y - offsetY),
+                const cv::Rect box(cvRound(position->position.x - offset.x),
+                                   cvRound(position->position.y - offset.y),
                                    level.width, level.height);
                 placements.push_back(TilePlacement{static_cast<int>(i), tile->getSource(), box, tileGains[i]});
             }
@@ -299,6 +308,17 @@ namespace StepsNs {
         configJson = stepConfig;
     }
 
+    FusionInput FusionStepClass::resolveParameters() const {
+        FusionInput resolved = input;
+        try {
+            resolved.blockSize = getParameter("blockSize").get<int>();
+            resolved.outputPath = getParameter("outputPath").get<std::string>();
+            resolved.enableBlending = getParameter("enableBlending").get<bool>();
+        } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+        }
+        return resolved;
+    }
+
     bool FusionStepClass::execute() {
         output = {};
         result = Json::object();
@@ -308,26 +328,17 @@ namespace StepsNs {
                 throw std::runtime_error("missing required input 'tiles', 'positions', or 'territories'");
             }
 
-            int blockSize = input.blockSize;
-            std::string outputPath = input.outputPath;
-            bool enableBlending = input.enableBlending;
-            try {
-                blockSize = getParameter("blockSize").get<int>();
-                outputPath = getParameter("outputPath").get<std::string>();
-                enableBlending = getParameter("enableBlending").get<bool>();
-            } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
-            }
-
-            if (blockSize <= 0) throw std::runtime_error("blockSize must be positive");
-            if (enableBlending) throw std::runtime_error("blending is not implemented yet");
+            const FusionInput params = resolveParameters();
+            if (params.blockSize <= 0) throw std::runtime_error("blockSize must be positive");
+            if (params.enableBlending) throw std::runtime_error("blending is not implemented yet");
 
             DataNs::CompositeBlockList compositeBlocks;
-            const GridContext requestedGrid{{}, blockSize, outputPath};
+            const GridContext requestedGrid{{}, params.blockSize, params.outputPath};
             prepareAndRenderMosaic(*dataStore, requestedGrid, compositeBlocks);
 
             output.totalBlocks = static_cast<int>(compositeBlocks.size());
             dataStore->replace("compositeBlocks", compositeBlocks);
-            output.mosaicPath = outputPath;
+            output.mosaicPath = params.outputPath;
             result["mosaicPath"] = output.mosaicPath;
             result["totalBlocks"] = output.totalBlocks;
             return true;

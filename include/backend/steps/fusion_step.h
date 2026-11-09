@@ -8,6 +8,8 @@
 
 namespace StepsNs {
 
+    using Json = StepNs::Json;
+
 /**
  * @brief Paramètres d'entrée du step de fusion (assemblage).
  *
@@ -73,6 +75,8 @@ public:
     const FusionOutput& getOutput() const { return output; }
 
 private:
+    FusionInput resolveParameters() const;
+
     FusionInput input;
     FusionOutput output;
 };

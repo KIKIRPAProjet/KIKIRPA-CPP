@@ -11,6 +11,8 @@
 
 namespace StepsNs {
 
+    using Json = StepNs::Json;
+
 /**
  * @brief Paramètres d'entrée du step d'export.
  */

@@ -1,4 +1,5 @@
 // tests/steps/test_export_step.cpp
+// NOLINTBEGIN
 #include "steps/export_step.h"
 
 #include "core/data/algorithm_types.h"
@@ -10,8 +11,6 @@
 #include <chrono>
 #include <filesystem>
 #include <vector>
-
-// NOLINTBEGIN
 
 namespace {
 
