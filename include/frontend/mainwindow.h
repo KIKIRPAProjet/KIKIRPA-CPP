@@ -87,6 +87,7 @@ private:
     int zoomPercent = 12;
     bool panelsVisible = true;
     bool maskVisible = true;
+    bool tileContoursVisible = true;
 };
 
 #endif
