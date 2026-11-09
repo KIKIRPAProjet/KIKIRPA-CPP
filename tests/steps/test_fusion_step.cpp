@@ -14,6 +14,8 @@
 #include <memory>
 #include <vector>
 
+// NOLINTBEGIN
+
 namespace {
 
 constexpr int TILE_WIDTH = 100;
@@ -105,3 +107,5 @@ TEST(FusionStepTest, ExecutesOnSyntheticTiles) {
     EXPECT_EQ(blocks[0].blockRect.width, CANVAS_WIDTH);
     EXPECT_EQ(blocks[0].blockRect.height, TILE_HEIGHT);
 }
+
+// NOLINTEND

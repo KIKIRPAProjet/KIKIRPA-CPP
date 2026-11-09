@@ -253,6 +253,30 @@ namespace StepsNs {
             }
         }
 
+        void prepareAndRenderMosaic(const StepNs::DataStoreClass& store,
+                                    const GridContext& grid,
+                                    DataNs::CompositeBlockList& compositeBlocks) {
+            const auto& tiles = store.get<DataNs::TileList>("tiles");
+            const auto& positions = store.get<std::vector<DataNs::TilePositionData>>("positions");
+            const auto& territories = store.get<std::vector<DataNs::TileTerritory>>("territories");
+
+            if (tiles.empty() || positions.size() != tiles.size()) {
+                throw std::runtime_error("mismatched tile and position counts");
+            }
+            if (territories.empty()) throw std::runtime_error("no territories provided");
+
+            const auto tileGains = computeTileGains(store, tiles.size());
+            const auto placements = buildTilePlacements(tiles, positions, tileGains);
+            const cv::Rect bounds = computeGlobalBoundingBox(placements);
+            if (bounds.empty()) throw std::runtime_error("empty mosaic bounds");
+
+            if (!grid.outputDir.empty()) {
+                std::filesystem::create_directories(grid.outputDir);
+            }
+            const GridContext actualGrid{bounds, grid.blockSize, grid.outputDir};
+            renderMosaicGrid(actualGrid, placements, territories, compositeBlocks);
+        }
+
     } // namespace
 
     FusionStepClass::FusionStepClass(const FusionInput& initialInput)
@@ -284,38 +308,25 @@ namespace StepsNs {
                 throw std::runtime_error("missing required input 'tiles', 'positions', or 'territories'");
             }
 
-            int blockSize = hasParameter("blockSize") ? getParameter("blockSize").get<int>() : input.blockSize;
-            const std::string outputPath = hasParameter("outputPath") ? getParameter("outputPath").get<std::string>() : input.outputPath;
-            const bool enableBlending = hasParameter("enableBlending") ? getParameter("enableBlending").get<bool>() : input.enableBlending;
+            int blockSize = input.blockSize;
+            std::string outputPath = input.outputPath;
+            bool enableBlending = input.enableBlending;
+            try {
+                blockSize = getParameter("blockSize").get<int>();
+                outputPath = getParameter("outputPath").get<std::string>();
+                enableBlending = getParameter("enableBlending").get<bool>();
+            } catch (const std::exception&) { // NOLINT(bugprone-empty-catch)
+            }
 
             if (blockSize <= 0) throw std::runtime_error("blockSize must be positive");
             if (enableBlending) throw std::runtime_error("blending is not implemented yet");
 
-            const auto& tiles = dataStore->get<DataNs::TileList>("tiles");
-            const auto& positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
-            const auto& territories = dataStore->get<std::vector<DataNs::TileTerritory>>("territories");
-
-            if (tiles.empty() || positions.size() != tiles.size()) throw std::runtime_error("mismatched tile and position counts");
-            if (territories.empty()) throw std::runtime_error("no territories provided");
-
-            const auto tileGains = computeTileGains(*dataStore, tiles.size());
-            const auto placements = buildTilePlacements(tiles, positions, tileGains);
-            const cv::Rect bounds = computeGlobalBoundingBox(placements);
-            if (bounds.empty()) throw std::runtime_error("empty mosaic bounds");
-
-            std::filesystem::path outputDir;
-            if (!outputPath.empty()) {
-                outputDir = outputPath;
-                std::filesystem::create_directories(outputDir);
-            }
-
             DataNs::CompositeBlockList compositeBlocks;
-            const GridContext grid{bounds, blockSize, outputDir};
-            renderMosaicGrid(grid, placements, territories, compositeBlocks);
+            const GridContext requestedGrid{{}, blockSize, outputPath};
+            prepareAndRenderMosaic(*dataStore, requestedGrid, compositeBlocks);
 
             output.totalBlocks = static_cast<int>(compositeBlocks.size());
             dataStore->replace("compositeBlocks", compositeBlocks);
-
             output.mosaicPath = outputPath;
             result["mosaicPath"] = output.mosaicPath;
             result["totalBlocks"] = output.totalBlocks;

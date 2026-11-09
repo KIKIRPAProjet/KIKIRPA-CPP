@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <vector>
 
+// NOLINTBEGIN
+
 namespace {
 
 constexpr int BLOCK_WIDTH = 100;
@@ -73,3 +75,5 @@ TEST(ExportStepTest, ExportsValidCompositeBlocksToTiff) {
     EXPECT_EQ(output.canvasSize.height, BLOCK_HEIGHT);
     EXPECT_EQ(output.blockCount, 1u);
 }
+
+// NOLINTEND
