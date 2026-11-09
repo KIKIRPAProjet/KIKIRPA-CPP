@@ -87,7 +87,17 @@ jobs:
         run: cmake --build --preset windows-aqt
 
       - name: Run CTest
-        run: ctest --preset windows-aqt -L "${{ inputs.test-labels }}"
+        run: ctest --preset windows-aqt --output-on-failure -L "${{ inputs.test-labels }}"
+
+      - name: Report CTest failure
+        if: failure()
+        shell: pwsh
+        run: |
+          if (Test-Path "build/windows-aqt/Testing/Temporary/LastTest.log") {
+            Get-Content "build/windows-aqt/Testing/Temporary/LastTest.log" | Select-String -Pattern 'FAILED|Failure|error|Assertion|Expected|Value of' | Select-Object -First 50 | ForEach-Object {
+              Write-Output "::error title=CTestWindows::$($_.Line)"
+            }
+          }
 
       # Le programme doit démarrer sur un poste sans outils de développement : l'archive contient
       # donc les DLL du projet, d'OpenCV et du runtime MSVC.
