@@ -2,18 +2,18 @@
 #include "core/pipeline/pipeline_builder.h"
 
 #include "core/config/pipeline_config.h"
-#include "core/step/step.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/step.h"
+#include "steps/absolute_pos_step.h"
+#include "steps/export_step.h"
+#include "steps/fusion_step.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/intensity_correction_step.h"
-#include "steps/sift_step.h"
-#include "steps/absolute_pos_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
-#include "steps/fusion_step.h"
-#include "steps/export_step.h"
+#include "steps/sift_step.h"
 
 #include <cstddef>
 #include <exception>

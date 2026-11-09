@@ -82,8 +82,6 @@ namespace DataNs {
         std::vector<std::vector<std::vector<cv::Point>>> holes;
     };
 
-    constexpr int BLOCK_SIZE = 512;
-
     // Bloc calculé par l'assemblage / fusion ; les matrices ont la taille de blockRect.
     struct CompositeBlock {
         cv::Mat imageRgb;       // CV_16UC3, canaux RGB ou BGR

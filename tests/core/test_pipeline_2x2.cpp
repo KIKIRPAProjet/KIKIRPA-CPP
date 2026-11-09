@@ -19,10 +19,12 @@
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
-using Json = nlohmann::json;
+// NOLINTBEGIN
 
 namespace {
+
+namespace fs = std::filesystem;
+using Json = nlohmann::json;
 
 constexpr int TILE_WIDTH = 400;
 constexpr int TILE_HEIGHT = 300;
@@ -43,8 +45,7 @@ constexpr int SIZE_TOLERANCE_PX = 20;
 constexpr std::size_t EXPECTED_TILE_COUNT = 4;
 constexpr std::size_t EXPECTED_PAIR_COUNT = 4;
 
-class TempWorkspace {
-public:
+struct TempWorkspace {
     TempWorkspace() {
         const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
         root = fs::temp_directory_path() / ("kikirpa_test_2x2_" + std::to_string(now));
@@ -227,3 +228,5 @@ TEST(Pipeline2x2Test, ExecutesFullChainOnReal2x2DatasetUntilExport) {
     EXPECT_GE(exportedImage.cols, CANVAS_WIDTH - SIZE_TOLERANCE_PX);
     EXPECT_GE(exportedImage.rows, CANVAS_HEIGHT - SIZE_TOLERANCE_PX);
 }
+
+// NOLINTEND

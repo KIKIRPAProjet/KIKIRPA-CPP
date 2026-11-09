@@ -31,6 +31,8 @@
 #include <utility>
 #include <vector>
 
+// NOLINTBEGIN
+
 namespace fs = std::filesystem;
 
 namespace StitchingNs::TestsNs {
@@ -260,3 +262,5 @@ TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
 }
+
+// NOLINTEND

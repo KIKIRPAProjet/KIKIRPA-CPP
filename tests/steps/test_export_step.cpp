@@ -20,14 +20,14 @@ constexpr double SAMPLE_COLOR_G = 2000.0;
 constexpr double SAMPLE_COLOR_R = 3000.0;
 constexpr int VALID_MASK_PIXEL = 255;
 
-class TempDir {
+class TempDirClass {
 public:
-    TempDir() {
+    TempDirClass() {
         const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
         path = std::filesystem::temp_directory_path() / ("kikirpa_test_export_" + std::to_string(now));
         std::filesystem::create_directories(path);
     }
-    ~TempDir() {
+    ~TempDirClass() {
         std::error_code ec;
         std::filesystem::remove_all(path, ec);
     }
@@ -46,7 +46,7 @@ TEST(ExportStepTest, RejectsMissingDataStoreOrBlocks) {
 }
 
 TEST(ExportStepTest, ExportsValidCompositeBlocksToTiff) {
-    TempDir tempDir;
+    TempDirClass tempDir;
 
     DataNs::CompositeBlock block;
     block.blockRect = cv::Rect(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT);

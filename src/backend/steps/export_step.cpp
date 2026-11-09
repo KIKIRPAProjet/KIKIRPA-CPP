@@ -2,8 +2,11 @@
 #include "steps/export_step.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 
+#include <nlohmann/json.hpp>
+#include <opencv2/core.hpp>
 #include <tiffio.h>
 
 #include <algorithm>
@@ -48,9 +51,6 @@ namespace StepsNs {
 
         /**
          * @brief Determine le dossier standard de telechargement de l'utilisateur.
-         *        Sous Windows : %USERPROFILE%/Downloads
-         *        Sous POSIX : $HOME/Downloads
-         *        Repli : ./output
          */
         fs::path downloadsDirectory() {
 #ifdef _WIN32
@@ -96,7 +96,7 @@ namespace StepsNs {
         }
 
         bool addBlockToIndex(const DataNs::CompositeBlock& block, BlockIndex& blockByGridPosition,
-                             int& canvasWidth, int& canvasHeight, std::string& errorMessage) {
+                             cv::Size& canvasSize, std::string& errorMessage) {
             if (!validateBlock(block, errorMessage)) return false;
 
             const cv::Rect& rectangle = block.blockRect;
@@ -111,8 +111,8 @@ namespace StepsNs {
                 errorMessage = "multiple composite blocks occupy the same grid position";
                 return false;
             }
-            canvasWidth = std::max(canvasWidth, static_cast<int>(right));
-            canvasHeight = std::max(canvasHeight, static_cast<int>(bottom));
+            canvasSize.width = std::max(canvasSize.width, static_cast<int>(right));
+            canvasSize.height = std::max(canvasSize.height, static_cast<int>(bottom));
             return true;
         }
 
@@ -148,12 +148,10 @@ namespace StepsNs {
                 errorMessage = "no composite blocks were provided";
                 return false;
             }
-            int canvasWidth = 0;
-            int canvasHeight = 0;
+            canvasSize = {0, 0};
             for (const DataNs::CompositeBlock& block : blocks) {
-                if (!addBlockToIndex(block, blockByGridPosition, canvasWidth, canvasHeight, errorMessage)) return false;
+                if (!addBlockToIndex(block, blockByGridPosition, canvasSize, errorMessage)) return false;
             }
-            canvasSize = {canvasWidth, canvasHeight};
             return validateBlockGrid(blockByGridPosition, canvasSize, errorMessage);
         }
 
@@ -191,6 +189,19 @@ namespace StepsNs {
             return conservativeFileSize >= std::numeric_limits<std::uint32_t>::max();
         }
 
+        bool writeSingleTile(TIFF* tiffFile, const DataNs::CompositeBlock& block, cv::Mat& tileBuffer, std::size_t tileBytes) {
+            tileBuffer.setTo(cv::Scalar::all(0));
+            block.imageRgb.copyTo(tileBuffer(cv::Rect{0, 0, block.imageRgb.cols, block.imageRgb.rows}));
+            const ttile_t tileIndex = TIFFComputeTile(
+                tiffFile,
+                static_cast<std::uint32_t>(block.blockRect.x),
+                static_cast<std::uint32_t>(block.blockRect.y),
+                0,
+                0
+            );
+            return TIFFWriteEncodedTile(tiffFile, tileIndex, tileBuffer.data, static_cast<tmsize_t>(tileBytes)) != -1;
+        }
+
         bool writeTileGrid(TIFF* tiffFile, const BlockIndex& blockByGridPosition, cv::Size canvasSize,
                            std::string& errorMessage) {
             const cv::Mat& sampleImage = blockByGridPosition.begin()->second->imageRgb;
@@ -202,20 +213,7 @@ namespace StepsNs {
             for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
                 for (int columnIndex = 0; columnIndex < columnCount; ++columnIndex) {
                     const DataNs::CompositeBlock& block = *blockByGridPosition.at({columnIndex, rowIndex});
-                    const cv::Mat& blockImage = block.imageRgb;
-
-                    tileBuffer.setTo(cv::Scalar::all(0));
-                    blockImage.copyTo(tileBuffer(cv::Rect{0, 0, blockImage.cols, blockImage.rows}));
-
-                    const ttile_t tileIndex = TIFFComputeTile(
-                        tiffFile,
-                        static_cast<std::uint32_t>(block.blockRect.x),
-                        static_cast<std::uint32_t>(block.blockRect.y),
-                        0,
-                        0
-                    );
-
-                    if (TIFFWriteEncodedTile(tiffFile, tileIndex, tileBuffer.data, static_cast<tmsize_t>(tileBytes)) == -1) {
+                    if (!writeSingleTile(tiffFile, block, tileBuffer, tileBytes)) {
                         errorMessage = "cannot write TIFF tile";
                         return false;
                     }
@@ -224,26 +222,24 @@ namespace StepsNs {
             return true;
         }
 
-        bool writeImageTiff(const BlockIndex& blockByGridPosition, cv::Size canvasSize,
-                            const fs::path& outputPath, bool& isBigTiff, std::string& errorMessage) {
+        bool writeImageTiff(const BlockIndex& blockByGridPosition, const fs::path& outputPath,
+                            ExportOutput& output, std::string& errorMessage) {
             const cv::Mat& sampleImage = blockByGridPosition.begin()->second->imageRgb;
-            isBigTiff = shouldUseBigTiff(canvasSize, sampleImage);
+            output.isBigTiff = shouldUseBigTiff(output.canvasSize, sampleImage);
 
-            TIFF* tiffFile = TIFFOpen(outputPath.string().c_str(), isBigTiff ? "w8" : "w");
+            TIFF* tiffFile = TIFFOpen(outputPath.string().c_str(), output.isBigTiff ? "w8" : "w");
             if (!tiffFile) {
                 errorMessage = "cannot open output TIFF '" + outputPath.string() + "'";
                 return false;
             }
 
-            const bool configured = configureTiff(tiffFile, canvasSize, sampleImage, errorMessage);
-            const bool written = configured && writeTileGrid(tiffFile, blockByGridPosition, canvasSize, errorMessage);
+            const bool configured = configureTiff(tiffFile, output.canvasSize, sampleImage, errorMessage);
+            const bool written = configured && writeTileGrid(tiffFile, blockByGridPosition, output.canvasSize, errorMessage);
             const bool finalized = written && TIFFWriteDirectory(tiffFile);
 
             TIFFClose(tiffFile);
 
-            if (!configured || !written) {
-                return false;
-            }
+            if (!configured || !written) return false;
             if (!finalized) {
                 errorMessage = "cannot finalize TIFF directory";
                 return false;
@@ -302,6 +298,34 @@ namespace StepsNs {
             return directory.empty() ? downloadsDirectory() : fs::path(directory);
         }
 
+        bool exportBlocksToDisk(const DataNs::CompositeBlockList& blocks, const fs::path& directory,
+                                ExportOutput& output, std::string& errorMessage) {
+            BlockIndex blockByGridPosition;
+            if (!indexBlocks(blocks, blockByGridPosition, output.canvasSize, errorMessage)) return false;
+
+            std::error_code directoryError;
+            fs::create_directories(directory, directoryError);
+            if (directoryError) {
+                errorMessage = "cannot create output directory '" + directory.string() + "': " + directoryError.message();
+                return false;
+            }
+
+            const OutputPaths paths = makeOutputPaths(directory);
+            const PendingFile pendingFile{temporaryPath(paths.image), paths.image};
+            TemporaryFileCleanup cleanup;
+            cleanup.paths.push_back(pendingFile.temporaryPath);
+            fs::remove(pendingFile.temporaryPath, directoryError);
+
+            if (!writeImageTiff(blockByGridPosition, pendingFile.temporaryPath, output, errorMessage)) {
+                return false;
+            }
+
+            publishFile(pendingFile);
+            output.imagePath = paths.image;
+            output.blockCount = blocks.size();
+            return true;
+        }
+
     } // namespace
 
     ExportStepClass::ExportStepClass(const ExportInput& initialInput)
@@ -327,40 +351,16 @@ namespace StepsNs {
             if (!dataStore->has("compositeBlocks")) {
                 throw std::runtime_error("missing required input 'compositeBlocks'");
             }
-            const DataNs::CompositeBlockList& blocks = dataStore->get<DataNs::CompositeBlockList>("compositeBlocks");
-
-            BlockIndex blockByGridPosition;
-            std::string errorMessage;
-            if (!indexBlocks(blocks, blockByGridPosition, output.canvasSize, errorMessage)) {
-                result["error"] = errorMessage;
-                return false;
-            }
-
+            const auto& blocks = dataStore->get<DataNs::CompositeBlockList>("compositeBlocks");
             const fs::path directory = configuredOutputDirectory(configJson);
-            std::error_code directoryError;
-            fs::create_directories(directory, directoryError);
-            if (directoryError) {
-                result["error"] = "cannot create output directory '" + directory.string() + "': " + directoryError.message();
-                return false;
-            }
 
-            const OutputPaths paths = makeOutputPaths(directory);
-            const PendingFile pendingFile{temporaryPath(paths.image), paths.image};
-            TemporaryFileCleanup cleanup;
-            cleanup.paths.push_back(pendingFile.temporaryPath);
-            fs::remove(pendingFile.temporaryPath, directoryError);
-
-            if (!writeImageTiff(blockByGridPosition, output.canvasSize,
-                                pendingFile.temporaryPath, output.isBigTiff, errorMessage)) {
+            std::string errorMessage;
+            if (!exportBlocksToDisk(blocks, directory, output, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
 
-            publishFile(pendingFile);
-
-            output.imagePath = paths.image;
-            output.blockCount = blocks.size();
-            result["image"] = {{"path", paths.image.string()}, {"bigTiff", output.isBigTiff}};
+            result["image"] = {{"path", output.imagePath.string()}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             result["blockCount"] = output.blockCount;
             return true;

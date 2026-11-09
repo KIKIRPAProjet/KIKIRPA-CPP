@@ -1,8 +1,9 @@
 // include/backend/steps/export_step.h
 #pragma once
 
-#include "core/data/algorithm_types.h"
 #include "core/step/step.h"
+
+#include <opencv2/core/types.hpp>
 
 #include <cstddef>
 #include <filesystem>
