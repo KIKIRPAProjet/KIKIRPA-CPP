@@ -13,10 +13,13 @@
 
 namespace {
 
-/**
- * @brief Gestionnaire RAII de répertoire temporaire pour isoler les fichiers créés par les tests d'export.
- *        Le dossier et son contenu sont automatiquement purgés à la destruction.
- */
+constexpr int BLOCK_WIDTH = 100;
+constexpr int BLOCK_HEIGHT = 100;
+constexpr double SAMPLE_COLOR_B = 1000.0;
+constexpr double SAMPLE_COLOR_G = 2000.0;
+constexpr double SAMPLE_COLOR_R = 3000.0;
+constexpr int VALID_MASK_PIXEL = 255;
+
 class TempDir {
 public:
     TempDir() {
@@ -33,43 +36,29 @@ public:
 
 } // namespace
 
-/**
- * @brief Vérifie que le step d'export refuse de s'exécuter si le DataStore ou les blocs composites sont absents.
- */
 TEST(ExportStepTest, RejectsMissingDataStoreOrBlocks) {
     StepsNs::ExportStepClass step;
-    // 1. Aucun DataStore associé
     EXPECT_FALSE(step.execute());
 
-    // 2. DataStore présent mais sans clé 'compositeBlocks'
     StepNs::DataStoreClass store;
     step.setDataStore(store);
     EXPECT_FALSE(step.execute());
 }
 
-/**
- * @brief Test d'exportation d'un bloc composite valide vers un fichier TIFF réel :
- *  - Prépare un bloc composite 100x100 (RGB 16 bits, provenance, masque).
- *  - Exécute ExportStepClass en ciblant un répertoire temporaire.
- *  - Vérifie que le fichier 'mosaic.tif' est créé, non vide, et correspond aux dimensions attendues.
- */
 TEST(ExportStepTest, ExportsValidCompositeBlocksToTiff) {
     TempDir tempDir;
 
-    // Création d'un bloc composite synthétique de 100x100 pixels
     DataNs::CompositeBlock block;
-    block.blockRect = cv::Rect(0, 0, 100, 100);
-    block.imageRgb = cv::Mat(100, 100, CV_16UC3, cv::Scalar(1000, 2000, 3000));
-    block.provenance = cv::Mat(100, 100, CV_16UC1, cv::Scalar(1));
-    block.mask = cv::Mat(100, 100, CV_8UC1, cv::Scalar(255));
+    block.blockRect = cv::Rect(0, 0, BLOCK_WIDTH, BLOCK_HEIGHT);
+    block.imageRgb = cv::Mat(BLOCK_HEIGHT, BLOCK_WIDTH, CV_16UC3, cv::Scalar(SAMPLE_COLOR_B, SAMPLE_COLOR_G, SAMPLE_COLOR_R));
+    block.provenance = cv::Mat(BLOCK_HEIGHT, BLOCK_WIDTH, CV_16UC1, cv::Scalar(1));
+    block.mask = cv::Mat(BLOCK_HEIGHT, BLOCK_WIDTH, CV_8UC1, cv::Scalar(VALID_MASK_PIXEL));
 
     DataNs::CompositeBlockList blocks = {block};
 
-    // Injection dans le DataStore
     StepNs::DataStoreClass store;
     store.add("compositeBlocks", blocks);
 
-    // Configuration du dossier d'export
     StepsNs::ExportInput input;
     input.outputDirectory = tempDir.path.string();
     StepsNs::ExportStepClass step(input);
@@ -77,11 +66,10 @@ TEST(ExportStepTest, ExportsValidCompositeBlocksToTiff) {
 
     EXPECT_TRUE(step.execute());
 
-    // Vérification de la sortie
     const auto& output = step.getOutput();
     EXPECT_TRUE(std::filesystem::exists(output.imagePath));
     EXPECT_GT(std::filesystem::file_size(output.imagePath), 0u);
-    EXPECT_EQ(output.canvasSize.width, 100);
-    EXPECT_EQ(output.canvasSize.height, 100);
+    EXPECT_EQ(output.canvasSize.width, BLOCK_WIDTH);
+    EXPECT_EQ(output.canvasSize.height, BLOCK_HEIGHT);
     EXPECT_EQ(output.blockCount, 1u);
 }

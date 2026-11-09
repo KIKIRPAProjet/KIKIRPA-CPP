@@ -16,10 +16,19 @@
 
 namespace {
 
-/**
- * @brief Gestionnaire RAII de répertoire temporaire pour isoler les fichiers créés par les tests.
- *        Le dossier est automatiquement détruit à la fin du bloc de test.
- */
+constexpr int TILE_WIDTH = 100;
+constexpr int TILE_HEIGHT = 100;
+constexpr double TILE_SHIFT_X = 80.0;
+constexpr int OVERLAP_X = 80;
+constexpr int CANVAS_WIDTH = 180;
+constexpr int BLOCK_SIZE_512 = 512;
+constexpr double COLOR_TILE0_B = 1000.0;
+constexpr double COLOR_TILE0_G = 2000.0;
+constexpr double COLOR_TILE0_R = 3000.0;
+constexpr double COLOR_TILE1_B = 4000.0;
+constexpr double COLOR_TILE1_G = 5000.0;
+constexpr double COLOR_TILE1_R = 6000.0;
+
 class TempDir {
 public:
     TempDir() {
@@ -36,83 +45,61 @@ public:
 
 } // namespace
 
-/**
- * @brief Vérifie le rejet gracieux lorsque le DataStore est absent ou que des clés obligatoires manquent.
- */
 TEST(FusionStepTest, RejectsMissingDataStoreOrInputs) {
     StepsNs::FusionStepClass step;
-    // 1. Appel sans aucun DataStore attaché -> doit échouer sans crasher
     EXPECT_FALSE(step.execute());
 
-    // 2. DataStore vide (sans 'tiles', 'positions', 'territories') -> doit échouer
     StepNs::DataStoreClass store;
     step.setDataStore(store);
     EXPECT_FALSE(step.execute());
 }
 
-/**
- * @brief Test fonctionnel de FusionStepClass sur deux tuiles synthétiques 16-bits :
- *  - Deux tuiles de 100x100 décalées de 80 px (zone de chevauchement de 20 px).
- *  - Territoires séparant la couture à x = 80 px.
- *  - Vérifie la production d'un bloc composite de 180x100 dans le DataStore.
- */
 TEST(FusionStepTest, ExecutesOnSyntheticTiles) {
     TempDir tempDir;
     const std::filesystem::path tilePath0 = tempDir.path / "t_r00_c00.tif";
     const std::filesystem::path tilePath1 = tempDir.path / "t_r00_c01.tif";
 
-    const int width = 100;
-    const int height = 100;
-
-    // Création de deux images synthétiques en CV_16UC3 avec des niveaux de gris/couleurs distincts
-    cv::Mat img0(height, width, CV_16UC3, cv::Scalar(1000, 2000, 3000));
-    cv::Mat img1(height, width, CV_16UC3, cv::Scalar(4000, 5000, 6000));
+    cv::Mat img0(TILE_HEIGHT, TILE_WIDTH, CV_16UC3, cv::Scalar(COLOR_TILE0_B, COLOR_TILE0_G, COLOR_TILE0_R));
+    cv::Mat img1(TILE_HEIGHT, TILE_WIDTH, CV_16UC3, cv::Scalar(COLOR_TILE1_B, COLOR_TILE1_G, COLOR_TILE1_R));
     ASSERT_TRUE(cv::imwrite(tilePath0.string(), img0));
     ASSERT_TRUE(cv::imwrite(tilePath1.string(), img1));
 
-    // Instanciation des tuiles KIKIRPA
-    auto tile0 = std::make_shared<DataNs::TileClass>(0, tilePath0, tilePath0, width, height, CV_16UC3);
-    auto tile1 = std::make_shared<DataNs::TileClass>(1, tilePath1, tilePath1, width, height, CV_16UC3);
+    auto tile0 = std::make_shared<DataNs::TileClass>(0, tilePath0, tilePath0, TILE_WIDTH, TILE_HEIGHT, CV_16UC3);
+    auto tile1 = std::make_shared<DataNs::TileClass>(1, tilePath1, tilePath1, TILE_WIDTH, TILE_HEIGHT, CV_16UC3);
     DataNs::TileList tiles = {tile0, tile1};
 
-    // Positions absolues : tuile 0 en (0,0), tuile 1 décalée à droite de 80px
     std::vector<DataNs::TilePositionData> positions = {
         {"r00_c00", cv::Point2d(0.0, 0.0), 0.0},
-        {"r00_c01", cv::Point2d(80.0, 0.0), 0.0}
+        {"r00_c01", cv::Point2d(TILE_SHIFT_X, 0.0), 0.0}
     };
 
-    // Territoires de couture complémentaires :
-    // Tuile 0 couvre [0, 80] en X ; Tuile 1 couvre [80, 180] en X.
     DataNs::TileTerritory terr0;
     terr0.tileIndex = 0;
-    terr0.polygons = {{{0, 0}, {80, 0}, {80, 100}, {0, 100}}};
+    terr0.polygons = {{{0, 0}, {OVERLAP_X, 0}, {OVERLAP_X, TILE_HEIGHT}, {0, TILE_HEIGHT}}};
 
     DataNs::TileTerritory terr1;
     terr1.tileIndex = 1;
-    terr1.polygons = {{{80, 0}, {180, 0}, {180, 100}, {80, 100}}};
+    terr1.polygons = {{{OVERLAP_X, 0}, {CANVAS_WIDTH, 0}, {CANVAS_WIDTH, TILE_HEIGHT}, {OVERLAP_X, TILE_HEIGHT}}};
 
     std::vector<DataNs::TileTerritory> territories = {terr0, terr1};
 
-    // Enregistrement dans le DataStore
     StepNs::DataStoreClass store;
     store.add("tiles", tiles);
     store.add("positions", positions);
     store.add("territories", territories);
 
-    // Configuration et exécution du step de fusion
     StepsNs::FusionInput input;
-    input.blockSize = 512; // Un seul bloc couvrira l'intégralité du canevas 180x100
+    input.blockSize = BLOCK_SIZE_512;
     StepsNs::FusionStepClass step(input);
     step.setDataStore(store);
 
     EXPECT_TRUE(step.execute());
     ASSERT_TRUE(store.has("compositeBlocks"));
 
-    // Validation des propriétés du bloc composite généré
     const auto& blocks = store.get<DataNs::CompositeBlockList>("compositeBlocks");
     EXPECT_FALSE(blocks.empty());
     EXPECT_EQ(blocks[0].blockRect.x, 0);
     EXPECT_EQ(blocks[0].blockRect.y, 0);
-    EXPECT_EQ(blocks[0].blockRect.width, 180);
-    EXPECT_EQ(blocks[0].blockRect.height, 100);
+    EXPECT_EQ(blocks[0].blockRect.width, CANVAS_WIDTH);
+    EXPECT_EQ(blocks[0].blockRect.height, TILE_HEIGHT);
 }
