@@ -1,208 +1,222 @@
 // src/backend/steps/intensity_correction_step.cpp
 #include "steps/intensity_correction_step.h"
 
-#include "algorithms/brightness_equalization/brightness_equalizer.h"
 #include "algorithms/brightness_equalization/brightness_equalization_types.h"
+#include "algorithms/brightness_equalization/brightness_equalizer.h"
 #include "core/config/pipeline_config.h"
-#include "core/checkpoint/intensity_correction_checkpoint.h"
 #include "core/data/algorithm_types.h"
-#include "core/data/intensity_correction.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
+#include "steps/phase_correlation_step.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
-#include <opencv2/imgcodecs.hpp>
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <exception>
-#include <limits>
 #include <map>
-#include <set>
+#include <optional>
 #include <stdexcept>
 #include <string>
-#include <utility>
+#include <type_traits>
 #include <vector>
 
 namespace StepsNs {
 
     using Json = nlohmann::json;
+    using BrightnessEqualizationNs::BrightnessEqualizerClass;
+    using BrightnessEqualizationNs::CorrectionMethod;
+    using BrightnessEqualizationNs::EqualizationResult;
+    using BrightnessEqualizationNs::NeighbourPair;
+    using BrightnessEqualizationNs::ReducedTile;
 
     namespace {
 
-        constexpr int ANALYSIS_REDUCTION = 8;
-        using EqualizerClass = BrightnessEqualizationNs::BrightnessEqualizerClass;
-        using ReducedTile = BrightnessEqualizationNs::ReducedTile;
-        using NeighbourPair = BrightnessEqualizationNs::NeighbourPair;
-        using Estimation = BrightnessEqualizationNs::EqualizationResult;
-        using Method = BrightnessEqualizationNs::CorrectionMethod;
+        // Niveau de pyramide lu pour l'estimation : 1/8 de la résolution. Le modèle n'a que (tuiles + 1) inconnues,
+        // une image réduite suffit, et une seule image pleine résolution est en mémoire à la fois.
+        constexpr int ANALYSIS_LEVEL = 3;
 
-        Method parseMethod(const std::string& name) {
-            if (name == "gain") return Method::GlobalGain;
-            if (name == "gain-and-field") return Method::GainAndField;
-            throw std::invalid_argument("intensity-correction: method must be 'gain' or 'gain-and-field'");
+        // Valeurs possibles du paramètre "method".
+        constexpr const char* GAIN_METHOD = "gain";
+        constexpr const char* GAIN_AND_FIELD_METHOD = "gain-and-field";
+
+        // Convertit le nom de la méthode en méthode de l'algorithme. Vide si le nom est inconnu.
+        std::optional<CorrectionMethod> parseMethod(const std::string& methodName) {
+            if (methodName == GAIN_METHOD) return CorrectionMethod::GlobalGain;
+            if (methodName == GAIN_AND_FIELD_METHOD) return CorrectionMethod::GainAndField;
+            return std::nullopt;
         }
 
-        int readInteger(const Json& value) {
-            if ((value.is_number_unsigned() && value.get<unsigned long long>() > static_cast<unsigned long long>(std::numeric_limits<int>::max())) ||
-                (!value.is_number_unsigned() && (value.get<long long>() < std::numeric_limits<int>::min() || value.get<long long>() > std::numeric_limits<int>::max())))
-                throw std::invalid_argument("intensity-correction: integer parameter is outside the supported range");
-            return value.get<int>();
-        }
-
-        std::map<int, int> indexTiles(const DataNs::TileList& tiles) {
-            if (tiles.size() < 2 || tiles.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
-                throw std::invalid_argument("intensity-correction: at least two tiles are required, within the supported index range");
-            std::map<int, int> indexById;
-            for (std::size_t index = 0; index < tiles.size(); ++index) {
-                if (!tiles[index]) throw std::invalid_argument("intensity-correction: null tile");
-                if (!indexById.emplace(tiles[index]->getId(), static_cast<int>(index)).second)
-                    throw std::invalid_argument("intensity-correction: duplicate tile id");
-            }
-            return indexById;
-        }
-
-        std::vector<ReducedTile> reduceTiles(const DataNs::TileList& tiles, const EqualizerClass& algorithm) {
-            std::vector<ReducedTile> reduced;
-            reduced.reserve(tiles.size());
-            for (auto& tile : tiles) {
-                // Une seule image pleine résolution à la fois ; l'algorithme préserve la dynamique 8/16 bits.
-                auto pixels = cv::imread(tile->getSource().string(), cv::IMREAD_UNCHANGED);
-                if (pixels.empty()) throw std::invalid_argument("intensity-correction: cannot read " + tile->getSource().string());
-                auto level = tile->getLevel(0);
-                if (pixels.cols != level.width || pixels.rows != level.height || pixels.type() != tile->getType())
-                    throw std::invalid_argument("intensity-correction: tile pixels do not match imported metadata");
-                reduced.push_back(algorithm.reduceTile(pixels));
-            }
-            return reduced;
-        }
-
-        std::vector<NeighbourPair> buildPairs(const std::map<int, int>& indexById,
-                                              const std::vector<DataNs::PairMatches>& matches, Json& failures) {
-            std::vector<NeighbourPair> pairs;
-            std::set<std::pair<int, int>> seen;
-            for (auto& match : matches) {
-                auto first = indexById.find(match.tileIdA), second = indexById.find(match.tileIdB);
-                auto translation = cv::Point2d(match.featureMatches.translationX, match.featureMatches.translationY);
-                std::string reason;
-                if (first == indexById.end() || second == indexById.end()) reason = "unknown tile id";
-                else if (first == second) reason = "a pair must reference two different tiles";
-                else if (!std::isfinite(translation.x) || !std::isfinite(translation.y)) reason = "non-finite translation";
-                else if (!seen.emplace(std::min(match.tileIdA, match.tileIdB), std::max(match.tileIdA, match.tileIdB)).second)
-                    reason = "duplicate tile pair";
-                if (!reason.empty()) {
-                    failures.push_back({{"idA", match.tileIdA}, {"idB", match.tileIdB}, {"reason", reason}});
-                    continue;
+        // Lit puis réduit chaque tuile, dans l'ordre de la liste. Une tuile illisible est une erreur de données :
+        // la cause est écrite dans errorMessage (qui reste vide si tout s'est bien passé).
+        std::vector<ReducedTile> reduceTiles(const DataNs::TileList& tiles, const BrightnessEqualizerClass& equalizer, std::string& errorMessage) {
+            std::vector<ReducedTile> reducedTiles;
+            reducedTiles.reserve(tiles.size());
+            for (const auto& tile : tiles) {
+                const cv::Mat pixels = PhaseCorrelationStepClass::readPixels(*tile, ANALYSIS_LEVEL);
+                if (pixels.empty()) {
+                    errorMessage = "cannot read " + tile->getSource().string();
+                    return {};
                 }
-                pairs.push_back({first->second, second->second, translation});
+                // L'algorithme a besoin de la taille pleine résolution pour ramener les translations à l'échelle réduite.
+                const DataNs::Level& fullResolution = tile->getLevel(0);
+                reducedTiles.push_back(equalizer.reduceTile(pixels, cv::Size(fullResolution.width, fullResolution.height)));
             }
-            if (pairs.empty()) throw std::invalid_argument("intensity-correction: no usable tile pairs");
-            return pairs;
+            return reducedTiles;
         }
 
-        void validateParameters(const BrightnessEqualizationNs::Parameters& parameters) {
-            for (auto value : {parameters.blurSigma, parameters.lowThreshold, parameters.highThreshold, parameters.huberThreshold, parameters.gaugeWeight})
-                if (!std::isfinite(value)) throw std::invalid_argument("intensity-correction: parameters must be finite");
-        }
+        // Convertit les appariements en paires de tuiles voisines : les identifiants de tuiles deviennent des indices
+        // dans la liste des tuiles. La translation est déjà en pleine résolution, dans le repère de A.
+        // Un identifiant inconnu est une erreur de données : la cause est écrite dans errorMessage.
+        std::vector<NeighbourPair> buildNeighbourPairs(const DataNs::TileList& tiles, const std::vector<DataNs::PairMatches>& pairMatches,
+            std::string& errorMessage) {
+            std::map<int, int> tileIndexById;
+            for (size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex)
+                tileIndexById[tiles[tileIndex]->getId()] = static_cast<int>(tileIndex);
 
-        EqualizerClass createAlgorithm(const BrightnessEqualizationNs::Parameters& parameters) {
-            try {
-                return EqualizerClass(parameters);
-            } catch (const std::invalid_argument&) {
-                throw std::invalid_argument("intensity-correction: invalid algorithm parameters");
+            std::vector<NeighbourPair> neighbourPairs;
+            for (const DataNs::PairMatches& pair : pairMatches) {
+                const auto tileA = tileIndexById.find(pair.tileIdA);
+                const auto tileB = tileIndexById.find(pair.tileIdB);
+                if (tileA == tileIndexById.end() || tileB == tileIndexById.end()) {
+                    const int unknownId = tileA == tileIndexById.end() ? pair.tileIdA : pair.tileIdB;
+                    errorMessage = "matches refer to unknown tile id " + std::to_string(unknownId);
+                    return {};
+                }
+                const cv::Point2d translation(pair.featureMatches.translationX, pair.featureMatches.translationY);
+                neighbourPairs.push_back({ tileA->second, tileB->second, translation });
             }
+            return neighbourPairs;
         }
 
-        DataNs::IntensityCorrection makeCorrection(const Estimation& estimation, Method method) {
+        // Garde, du résultat de l'algorithme, les gains de la méthode choisie.
+        DataNs::IntensityCorrection toCorrection(const EqualizationResult& estimation, CorrectionMethod method) {
             DataNs::IntensityCorrection correction;
-            correction.tileGains = method == Method::GlobalGain ? estimation.gainsA : estimation.gainsB;
+            correction.tileGains = method == CorrectionMethod::GlobalGain ? estimation.gainsA : estimation.gainsB;
             correction.fieldStrength = estimation.getFieldStrength(method);
             correction.isolatedTileIndices = estimation.isolatedTiles;
-            if (!std::isfinite(correction.fieldStrength)) throw std::runtime_error("intensity-correction: non-finite illumination field");
-            for (auto gain : correction.tileGains)
-                if (!std::isfinite(gain) || gain <= 0.0) throw std::runtime_error("intensity-correction: gains must be finite and positive");
             return correction;
         }
 
-        void recordFailedPair(const NeighbourPair& pair, const DataNs::TileList& tiles, Json& result) {
-            result["failures"].push_back({{"idA", tiles.at(static_cast<std::size_t>(pair.tileIndexA))->getId()},
-                                         {"idB", tiles.at(static_cast<std::size_t>(pair.tileIndexB))->getId()},
-                                         {"reason", "no valid overlap samples"}});
+        // Contrôle la méthode puis la présence des entrées. Renvoie la cause de l'échec, vide si tout est en ordre.
+        std::string checkInputs(const std::string& methodName, StepNs::DataStoreClass* dataStore) {
+            if (!parseMethod(methodName))
+                return "method must be '" + std::string(GAIN_METHOD) + "' or '" + GAIN_AND_FIELD_METHOD + "', got '" + methodName + "'";
+            if (dataStore == nullptr || !dataStore->has("tiles") || !dataStore->has("matches"))
+                return "no tiles or matches: run the import and phase-correlation steps first";
+            return {};
         }
 
-        Estimation estimateTiles(EqualizerClass& algorithm, const DataNs::TileList& tiles,
-                                  const std::vector<NeighbourPair>& pairs, Json& result) {
-            auto estimation = algorithm.estimate(reduceTiles(tiles, algorithm), pairs);
-            if (!estimation) {
-                for (auto& pair : pairs) recordFailedPair(pair, tiles, result);
-                throw std::runtime_error("intensity-correction: estimation failed: " + algorithm.getFailureReason());
+        // Étapes : 1. créer l'algorithme ; 2. lire et réduire les tuiles ; 3. convertir les appariements en paires ;
+        // 4. estimer. Vide, avec la cause dans errorMessage, au premier échec.
+        std::optional<DataNs::IntensityCorrection> estimateCorrection(IntensityCorrectionInput input, StepNs::DataStoreClass& dataStore,
+            std::string& errorMessage) {
+            const std::optional<CorrectionMethod> method = parseMethod(input.method);
+            if (!method) {
+                errorMessage = "unknown method '" + input.method + "'";
+                return std::nullopt;
             }
-            for (auto pairIndex : estimation->emptyPairs)
-                recordFailedPair(pairs.at(static_cast<std::size_t>(pairIndex)), tiles, result);
-            result["pairs"] = pairs.size() - estimation->emptyPairs.size();
-            result["samples"] = estimation->sampleCount;
-            result["isolatedTiles"] = estimation->isolatedTiles;
-            return *estimation;
+            // reduction suit le niveau de pyramide lu : la même valeur ne doit pas être écrite à deux endroits.
+            input.parameters.reductionFactor = 1 << ANALYSIS_LEVEL;
+            // L'algorithme valide ses réglages à la construction (std::invalid_argument si l'un est incohérent).
+            std::optional<BrightnessEqualizerClass> equalizer;
+            try {
+                equalizer.emplace(input.parameters);
+            }
+            catch (const std::invalid_argument& exception) {
+                errorMessage = std::string("invalid parameters: ") + exception.what();
+                return std::nullopt;
+            }
+            const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
+            const std::vector<ReducedTile> reducedTiles = reduceTiles(tiles, *equalizer, errorMessage);
+            if (!errorMessage.empty()) return std::nullopt;
+            const std::vector<NeighbourPair> neighbourPairs =
+                buildNeighbourPairs(tiles, dataStore.get<std::vector<DataNs::PairMatches>>("matches"), errorMessage);
+            if (!errorMessage.empty()) return std::nullopt;
+
+            const std::optional<EqualizationResult> estimation = equalizer->estimate(reducedTiles, neighbourPairs);
+            if (!estimation) {
+                errorMessage = equalizer->getFailureReason();
+                return std::nullopt;
+            }
+            return toCorrection(*estimation, *method);
         }
 
     }
 
-    IntensityCorrectionStepClass::IntensityCorrectionStepClass(const IntensityCorrectionInput& input) {
-        CheckpointNs::registerIntensityCorrectionCheckpoint();
-        auto& parameters = input.algorithmParameters;
+    // Déclare l'identité du step : son nom, ses 8 paramètres (valeurs par défaut = celles de l'entrée), les données
+    // qu'il lit (tuiles et appariements) et celle qu'il produit (correction). Le pipeline s'en sert pour vérifier
+    // l'enchaînement. Le paramètre reduction de l'algorithme n'est pas exposé : il est imposé par ANALYSIS_LEVEL.
+    IntensityCorrectionStepClass::IntensityCorrectionStepClass(const IntensityCorrectionInput& initialInput) {
+        const auto& algorithmParameters = initialInput.parameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "intensity-correction";
-        stepConfig.parameters = {{"string", "method", input.method}, {"float", "blurSigma", parameters.blurSigma},
-                                 {"int", "borderMargin", parameters.borderMargin}, {"float", "lowThreshold", parameters.lowThreshold},
-                                 {"float", "highThreshold", parameters.highThreshold}, {"int", "iterationCount", parameters.iterationCount},
-                                 {"float", "huberThreshold", parameters.huberThreshold}, {"float", "gaugeWeight", parameters.gaugeWeight}};
-        stepConfig.inputs = {{"Tiles", "tiles"}, {"PairMatches", "matches"}};
-        stepConfig.outputs = {{"IntensityCorrection", "intensityCorrection"}};
+        stepConfig.parameters = { {"string", "method", initialInput.method},
+                         {"float", "blurSigma", algorithmParameters.blurSigma},
+                         {"int", "borderMargin", algorithmParameters.borderMargin},
+                         {"float", "lowThreshold", algorithmParameters.lowThreshold},
+                         {"float", "highThreshold", algorithmParameters.highThreshold},
+                         {"int", "iterationCount", algorithmParameters.iterationCount},
+                         {"float", "huberThreshold", algorithmParameters.huberThreshold},
+                         {"float", "gaugeWeight", algorithmParameters.gaugeWeight} };
+        stepConfig.inputs = { {"Tiles", "tiles"}, {"PairMatches", "matches"} };
+        stepConfig.outputs = { {"IntensityCorrection", "intensityCorrection"} };
         configJson = stepConfig;
     }
 
-    IntensityCorrectionInput IntensityCorrectionStepClass::readInput() const {
-        IntensityCorrectionInput input;
-        input.method = getParameter("method").get<std::string>();
-        auto& parameters = input.algorithmParameters;
-        parameters.reductionFactor = ANALYSIS_REDUCTION;
-        parameters.blurSigma = getParameter("blurSigma").get<double>();
-        parameters.borderMargin = readInteger(getParameter("borderMargin"));
-        parameters.lowThreshold = getParameter("lowThreshold").get<double>();
-        parameters.highThreshold = getParameter("highThreshold").get<double>();
-        parameters.iterationCount = readInteger(getParameter("iterationCount"));
-        parameters.huberThreshold = getParameter("huberThreshold").get<double>();
-        parameters.gaugeWeight = getParameter("gaugeWeight").get<double>();
-        validateParameters(parameters);
-        return input;
-    }
-
-    bool IntensityCorrectionStepClass::execute() {
-        output = {};
-        result = {{"pairs", 0}, {"failures", Json::array()}, {"error", ""}};
+    // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
+    // Un paramètre absent (JSON écrit avant son ajout) garde la valeur par défaut de IntensityCorrectionInput.
+    bool IntensityCorrectionStepClass::readInput(IntensityCorrectionInput& input) {
+        auto readParameter = [this](const char* parameterName, auto& value) {
+            value = getParameter(parameterName).get<std::decay_t<decltype(value)>>();
+        };
         try {
-            if (!dataStore) throw std::invalid_argument("intensity-correction: DataStore is not attached");
-            dataStore->replace(output.key, DataNs::IntensityCorrection{});
-            auto input = readInput();
-            auto method = parseMethod(input.method);
-            auto algorithm = createAlgorithm(input.algorithmParameters);
-            auto& tiles = dataStore->get<DataNs::TileList>("tiles");
-            auto pairs = buildPairs(indexTiles(tiles), dataStore->get<std::vector<DataNs::PairMatches>>("matches"), result["failures"]);
-            auto estimation = estimateTiles(algorithm, tiles, pairs, result);
-            output.value = makeCorrection(estimation, method);
-            dataStore->replace(output.key, output.value);
-            result["method"] = input.method;
-            result["tileCount"] = tiles.size();
-            return true;
-        } catch (const std::exception& exception) {
-            output.value = {};
-            result["error"] = exception.what();
+            auto& algorithmParameters = input.parameters;
+            readParameter("method", input.method);
+            readParameter("blurSigma", algorithmParameters.blurSigma);
+            readParameter("borderMargin", algorithmParameters.borderMargin);
+            readParameter("lowThreshold", algorithmParameters.lowThreshold);
+            readParameter("highThreshold", algorithmParameters.highThreshold);
+            readParameter("iterationCount", algorithmParameters.iterationCount);
+            readParameter("huberThreshold", algorithmParameters.huberThreshold);
+            readParameter("gaugeWeight", algorithmParameters.gaugeWeight);
+        }
+        catch (const std::exception& exception) {   // mauvais type (Json::exception) ou paramètre absent (out_of_range)
+            result["error"] = std::string("invalid option: ") + exception.what();
             return false;
         }
+        return true;
+    }
+
+    // Étapes : 1. lire et contrôler les paramètres et les entrées ; 2. estimer la correction ; 3. la publier.
+    bool IntensityCorrectionStepClass::execute() {
+        output = {};
+        result = Json::object();
+
+        IntensityCorrectionInput input;
+        if (!readInput(input)) return false;
+        const std::string inputError = checkInputs(input.method, dataStore);
+        if (!inputError.empty()) {
+            result["error"] = inputError;
+            return false;
+        }
+
+        std::string errorMessage;
+        const std::optional<DataNs::IntensityCorrection> correction = estimateCorrection(input, *dataStore, errorMessage);
+        if (!correction) {
+            result["error"] = errorMessage;
+            return false;
+        }
+
+        output.correction = *correction;
+        result["method"] = input.method;
+        result["tileCount"] = dataStore->get<DataNs::TileList>("tiles").size();
+        result["pairCount"] = dataStore->get<std::vector<DataNs::PairMatches>>("matches").size();
+        result["isolatedTiles"] = output.correction.isolatedTileIndices;
+        dataStore->replace("intensityCorrection", output.correction);   // pour l'assemblage final
+        return true;
     }
 
 }

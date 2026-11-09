@@ -32,7 +32,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 4 | Rejet des aberrants | Quels points appariés sont faux ? | ❌ algorithme prêt (vote 2D), **pas branché** |
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
-| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ; DP/Dijkstra existe comme algorithme, sans step |
+| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
 | 9 | Export | Écrire le fichier final | ❌ branche `fe/export` |
 
@@ -199,6 +199,8 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                                          (assemblage et export : pas encore sur main)
 ```
 
+Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines`. C'est l'autre méthode de couture, à côté de `graphcut`.
+
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
@@ -208,12 +210,13 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 
-### Les cinq types de données, et leur JSON
+### Les six types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` et `intensity_correction_checkpoint.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -272,7 +275,7 @@ C++ : `std::vector<DataNs::TilePositionData>`.
 - `tileGains[i]` est la luminosité relative de la i-ème tuile de `tiles`. Pour la corriger, on **divise** ses pixels par le gain, et aussi par `exp(fieldStrength · r²)`, l'assombrissement vers les bords.
 - Une tuile listée dans `isolatedTileIndices` ne se corrige pas.
 
-C++ : `DataNs::IntensityCorrection` (`core/data/intensity_correction.h`).
+C++ : `DataNs::IntensityCorrection` (`core/data/algorithm_types.h`).
 
 #### `Territories` (clé `territories`) : quelle tuile fournit quels pixels
 
@@ -285,6 +288,18 @@ C++ : `DataNs::IntensityCorrection` (`core/data/intensity_correction.h`).
 - Les bords entre territoires **sont** les seamlines.
 
 C++ : `std::vector<DataNs::TileTerritory>`.
+
+#### `Seamlines` (clé `seamlines`) : le tracé de chaque couture
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "direction": "right", "points": [ [8650.0, 0.0], [8649.0, 1.0], [8647.0, 2.0] ] } ]
+```
+
+- Une entrée par paire de voisines, de A vers sa voisine de droite ou du dessous B.
+- `points` : le chemin de la couture, pixel par pixel, en pleine résolution et dans le repère de la mosaïque.
+- Produit par `dynamic-programming-dijkstra`. `graphcut` ne produit pas de `seamlines` : ses coutures sont les bords des territoires.
+
+C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
 #### Les deux fichiers du moteur
 
@@ -388,7 +403,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 | Solveur de positions (`PositioningNs::solveRelativePositions`) | placer toutes les tuiles d'un coup | chaque paire donne une équation `position B − position A = translation` ; moindres carrés sur toutes les équations (SVD) | ✅ step `absolute-pos` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | Égalisation de luminosité (`BrightnessEqualizationNs`) | égaliser la luminosité entre tuiles | compare les pixels des recouvrements sur des images réduites ; moindres carrés robustes pour trouver un gain par tuile et un champ d'éclairage commun | ✅ step `intensity-correction` (estimation seulement) | [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) |
 | Graph cut (`GraphCutNs`) | couture entre les tuiles | la coupe de graphe d'OpenCV cherche la frontière où les deux tuiles se ressemblent le plus, paire par paire ; on en tire les territoires | ✅ step `graphcut` | [GraphCutStep.md](steps/GraphCutStep.md) |
-| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ⚠️ codé et testé (`tests/seamline/`), **sans step** | pas de page |
+| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ✅ step `dynamic-programming-dijkstra` ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
 | Ancien positionneur (`PositioningNs::computeTilePositions`) | ancienne chaîne complète SIFT → vote → moindres carrés | — | ⚠️ code mort : appelé par aucun step ni aucun test | — |
 
 ---
@@ -452,7 +467,6 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 - **Assemblage et export**, en commençant par le contrat entre les deux (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
-- **Un step pour DP/Dijkstra**, comme alternative à `graphcut`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).

@@ -367,7 +367,7 @@ Les PR mergées après #76 n'ont pas fait de réorganisation d'ensemble, mais ce
 
 - Registre : `sift`, `lightglue`, `absolute-pos` et `intensity-correction` s'ajoutent à `import`, `phase-correlation` et `graphcut`. Un nouveau step doit aussi augmenter `REGISTERED_STEP_COUNT` dans `tests/core/test_pipeline.cpp` (7 au 07/11).
 - Code commun aux steps d'appariement : `steps/matching_step_utils.h` (`collectPairs`, `readImage`, `restoreCoordinates`…).
-- `DataNs::IntensityCorrection` est dans **`core/data/intensity_correction.h`**, pas dans `algorithm_types.h`. Sa sérialisation est enregistrée par `CheckpointClass::registerType` (`core/checkpoint/intensity_correction_checkpoint.cpp`), pas dans `checkpoint_types.cpp`. Une branche partie de la PR #72 (`fe/intensity-correction-step`, `fe/dp-dijkstrat`) le déclare encore dans `algorithm_types.h` : retirer cette déclaration et inclure le nouveau header.
+- ~~`DataNs::IntensityCorrection` est dans `core/data/intensity_correction.h`~~ : depuis la PR #72, qui remplace la version de #80, il est de nouveau dans **`algorithm_types.h`**, et sa sérialisation est dans `pipelineTypes()` (`checkpoint_types.cpp`). `core/data/intensity_correction.h` et `core/checkpoint/intensity_correction_checkpoint.{h,cpp}` sont supprimés : une branche qui les inclut doit inclure `core/data/algorithm_types.h`. La PR #72 ajoute aussi le step `dynamic-programming-dijkstra` et le type `Seamlines` ; `REGISTERED_STEP_COUNT` passe à 8.
 
 ### Seamline DP / Dijkstra (#66, #68)
 
