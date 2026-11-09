@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #include "core/pipeline/pipeline_builder.h"
 #include "mainwindow.h"
 
