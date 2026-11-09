@@ -186,6 +186,11 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                     │ phase-correlation  OU  sift  OU  lightglue │    │                   │
                     └───────────────────────────────────────┘         │                   │
                                                    │ matches          │                   │
+                                                   ▼                  │                   │
+                                             ┌───────────┐            │                   │
+                                             │  vote-2d  │            │                   │
+                                             └───────────┘            │                   │
+                                                   │ matches          │                   │
                               ┌────────────────────┼──────────────────┘                   │
                               ▼                    ▼                                      │
                      ┌──────────────┐    ┌──────────────────────┐                         │
@@ -205,6 +210,7 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
+| `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |

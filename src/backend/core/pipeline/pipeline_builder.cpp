@@ -12,6 +12,7 @@
 #include "steps/absolute_pos_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
+#include "steps/vote_2d_step.h"
 
 #include <cstddef>
 #include <exception>
@@ -42,6 +43,7 @@ namespace PipelineNs {
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
+                {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
             };
             return registry;
         }
