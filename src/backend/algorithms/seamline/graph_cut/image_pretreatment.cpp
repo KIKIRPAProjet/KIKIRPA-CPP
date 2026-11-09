@@ -169,7 +169,7 @@ namespace GraphCutNs {
             const double offsetY = std::floor(minimumY);
             std::vector<cv::Point> originalCorners;
             // Réserve la taille, sinon clang-tidy est pas content
-            originalCorners.reserve(rawCorner.size());
+            originalCorners.reserve(rawCorners.size());
             for (const cv::Point2d& corner : rawCorners)
                 originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
             return originalCorners;
