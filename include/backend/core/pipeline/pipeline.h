@@ -5,9 +5,10 @@
 #include "core/step/data_store.h"
 #include "core/step/step.h"
 
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <atomic>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -15,9 +16,16 @@
 #include <utility>
 #include <vector>
 
+namespace CheckpointNs {
+    class CheckpointClass;
+}
+
 namespace PipelineNs {
 
+    // The JSON type is forward-declared here and provided by the backend JSON headers.
+    // NOLINTBEGIN(misc-include-cleaner)
     using Json = nlohmann::json;
+    // NOLINTEND(misc-include-cleaner)
 
     // Suite ordonnée de steps qui partagent un DataStoreClass, avec l'état de leur exécution (RunState).
     // Se construit avec buildPipeline (pipeline_builder.h) ou step par step avec addStep.
@@ -63,6 +71,26 @@ namespace PipelineNs {
         private:
             // Réécrit le script complet dans scriptPath (écriture atomique) ; un échec est signalé sans arrêter le pipeline.
             void saveScript(const Logger& log) const;
+            void prepareRun(size_t startIndex, const CheckpointNs::CheckpointClass& checkpoint);
+            std::string stepMessagePrefix(size_t stepIndex) const;
+            void restoreOutputCheckpoints(size_t& startIndex,
+                                          const CheckpointNs::CheckpointClass& checkpoint,
+                                          const Logger& log);
+            bool executeRemainingSteps(size_t startIndex,
+                                       const CheckpointNs::CheckpointClass& checkpoint,
+                                       const Logger& log);
+            bool executeStep(size_t stepIndex,
+                             const CheckpointNs::CheckpointClass& checkpoint,
+                             const Logger& log);
+            struct StepFailureDetails {
+                std::string messagePrefix;
+                std::string errorMessage;
+            };
+            bool recordStepFailure(const StepNs::StepClass& step,
+                                   const StepFailureDetails& details, const Logger& log);
+            void recordStepSuccess(size_t stepIndex,
+                                   const CheckpointNs::CheckpointClass& checkpoint,
+                                   const Logger& log);
 
             std::vector<std::unique_ptr<StepNs::StepClass>> steps;
             StepNs::DataStoreClass dataStore;

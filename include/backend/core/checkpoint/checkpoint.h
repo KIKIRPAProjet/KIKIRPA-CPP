@@ -10,6 +10,10 @@
 #include <string>
 #include <utility>
 
+namespace ConfigNs {
+    struct DataSlot;
+}
+
 namespace CheckpointNs {
 
     // Sauvegarde sur disque des sorties de chaque step, pour reprendre un pipeline après un arrêt, une pause ou un crash.
@@ -45,7 +49,8 @@ namespace CheckpointNs {
 
             // Recharge dans le dataStore la sortie `key` de type `dataType` sauvegardée par le step `stepIndex`.
             // Lève std::runtime_error si le checkpoint est illisible.
-            void load(size_t stepIndex, const StepNs::StepClass& step, const std::string& key, const std::string& dataType, StepNs::DataStoreClass& dataStore) const;
+            void load(size_t stepIndex, const StepNs::StepClass& step, const ConfigNs::DataSlot& output,
+                      StepNs::DataStoreClass& dataStore) const;
 
             // Supprime les checkpoints des steps d'index >= firstStepIndex (devenus périmés).
             void removeFrom(size_t firstStepIndex) const;

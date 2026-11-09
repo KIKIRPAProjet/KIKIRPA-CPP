@@ -13,10 +13,15 @@
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/run_state.h"
 #include "core/data/tile.h"
-#include <opencv2/core.hpp>
+#include "core/step/step.h"
+
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/types.hpp>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -27,7 +32,7 @@
 #include <utility>
 #include <vector>
 
-namespace fs = std::filesystem;
+namespace fs = std::filesystem; // NOLINT(readability-identifier-naming)
 
 namespace {
 
@@ -59,22 +64,33 @@ void verifier(bool ok, const std::string& message) {
     EXPECT_TRUE(ok) << message;
 }
 
+struct StepCompteurConfig {
+    std::string name;
+    int value;
+    std::string input;
+    std::string output;
+};
+
 // Step de test : sortie = valeur (+ entrée si elle existe). Option "echoue" : renvoie false.
-class StepCompteur : public StepNs::StepClass {
+class StepCompteurClass : public StepNs::StepClass {
     int& executions;
     std::string entree, sortie;
     std::function<void()> pendant;   // appelé pendant execute() (ex. demande de pause)
-public:
-    StepCompteur(const std::string& nom, int valeur, const std::string& entree, const std::string& sortie,
-                 int& executions, std::function<void()> pendant = {})
-        : executions(executions), entree(entree), sortie(sortie), pendant(std::move(pendant)) {
+
+    static ConfigNs::StepConfig makeConfig(const StepCompteurConfig& setup) {
         ConfigNs::StepConfig cfg;
-        cfg.name = nom;
-        cfg.parameters = {{"int", "valeur", valeur}, {"bool", "echoue", false}};
-        if (!entree.empty()) cfg.inputs = {{"Compteur", entree}};
-        cfg.outputs = {{"Compteur", sortie}};
-        configJson = cfg;
+        cfg.name = setup.name;
+        cfg.parameters = {{"int", "valeur", setup.value}, {"bool", "echoue", false}};
+        if (!setup.input.empty()) cfg.inputs = {{"Compteur", setup.input}};
+        cfg.outputs = {{"Compteur", setup.output}};
+        return cfg;
     }
+
+public:
+    StepCompteurClass(const StepCompteurConfig& setup, int& executions,
+                      std::function<void()> pendant = {})
+        : executions(executions), entree(setup.input), sortie(setup.output),
+          pendant(std::move(pendant)) { configJson = makeConfig(setup); }
     bool execute() override {
         ++executions;
         result = Json::object();
@@ -110,8 +126,10 @@ struct Banc {
     int execA = 0, execB = 0;
     PipelineNs::PipelineClass p;
     Banc(const fs::path& checkpoints, std::function<void()> pendantA = {}) {
-        p.addStep(std::make_unique<StepCompteur>("a", VALEUR_A, "", "x", execA, std::move(pendantA)));
-        p.addStep(std::make_unique<StepCompteur>("b", VALEUR_B, "x", "y", execB));
+        p.addStep(std::make_unique<StepCompteurClass>(
+            StepCompteurConfig{"a", VALEUR_A, "", "x"}, execA, std::move(pendantA)));
+        p.addStep(std::make_unique<StepCompteurClass>(
+            StepCompteurConfig{"b", VALEUR_B, "x", "y"}, execB));
         PipelineNs::RunState r;
         r.checkpointDirectory = checkpoints.string();
         p.setRunState(r);

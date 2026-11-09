@@ -4,6 +4,7 @@
 #include "algorithms/stitching/positioning/position_solver.h"
 #include "core/data/algorithm_types.h"
 #include "core/checkpoint/checkpoint.h"
+#include "core/config/pipeline_config.h"
 #include "core/pipeline/pipeline.h"
 #include "core/data/tile.h"
 #include "core/pipeline/pipeline_builder.h"
@@ -210,7 +211,7 @@ namespace {
         ASSERT_TRUE(checkpoint.save(0, step, store, failureReason)) << failureReason;
         ASSERT_TRUE(checkpoint.valid(0, step));
         StepNs::DataStoreClass restored;
-        checkpoint.load(0, step, "positions", "Positions", restored);
+        checkpoint.load(0, step, ConfigNs::DataSlot{"Positions", "positions"}, restored);
         auto positions = restored.get<std::vector<DataNs::TilePositionData>>("positions");
         ASSERT_EQ(positions.size(), 3U);
         EXPECT_EQ(positions[2].tileId, "r01_c03");

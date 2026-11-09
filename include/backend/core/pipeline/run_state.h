@@ -1,17 +1,23 @@
 // include/backend/core/pipeline/run_state.h
 #pragma once
 
+// NOLINTBEGIN(misc-include-cleaner)
 #include <nlohmann/json.hpp>
+// NOLINTEND(misc-include-cleaner)
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
 namespace PipelineNs {
 
+    // The JSON macros need the full nlohmann header, which include-cleaner cannot
+    // associate with their generated declarations.
+    // NOLINTBEGIN(misc-include-cleaner)
     using Json = nlohmann::json;
 
     // Statut d'un run : Idle (jamais lancé), Running, Paused (pause demandée), Failed, Completed.
-    enum class RunStatus {
+    enum class RunStatus : std::uint8_t {
         Idle,
         Running,
         Paused,
@@ -47,5 +53,6 @@ namespace PipelineNs {
     };
 
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(RunState, status, completedSteps, stepResults, failedStep, error, skipCompletedSteps, startFromStep, checkpointDirectory)
+    // NOLINTEND(misc-include-cleaner)
 
 }

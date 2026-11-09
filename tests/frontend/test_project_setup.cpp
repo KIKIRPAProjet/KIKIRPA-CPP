@@ -12,7 +12,7 @@
 
 namespace {
 
-namespace fs = std::filesystem;
+namespace fs = std::filesystem; // NOLINT(readability-identifier-naming)
 
 const FrontendNs::Json &parameterValue(const FrontendNs::Json &step,
                                        const std::string &name) {

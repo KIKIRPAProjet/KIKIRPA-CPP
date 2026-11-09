@@ -3,12 +3,18 @@
 
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
+#include "core/pipeline/run_state.h"
+#include "core/step/data_store.h"
+#include "core/step/step.h"
 
+#include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -16,13 +22,49 @@
 
 namespace PipelineNs {
 
-    namespace fs = std::filesystem;
+    namespace fs = std::filesystem; // NOLINT(readability-identifier-naming)
 
     namespace {
 
         // Nom du step lu dans sa config JSON ; chaîne vide si le step n'a pas de config.
         std::string stepName(const StepNs::StepClass& step) {
             return step.getConfigJson().is_object() ? step.getConfigJson().value("name", "") : "";
+        }
+
+        struct CheckpointProducer {
+            std::size_t stepIndex;
+            ConfigNs::DataSlot output;
+        };
+
+        struct OutputRestoreContext {
+            const std::vector<std::unique_ptr<StepNs::StepClass>>& steps;
+            const CheckpointNs::CheckpointClass& checkpoint;
+            StepNs::DataStoreClass& dataStore;
+            const PipelineClass::Logger& logger;
+        };
+
+        void report(const PipelineClass::Logger& log, const std::string& message, bool isError);
+
+        std::optional<std::size_t> restoreOutputValues(
+            const std::map<std::string, CheckpointProducer>& outputs,
+            const OutputRestoreContext& context) {
+            for (const auto& entry : outputs) {
+                const CheckpointProducer& producer = entry.second;
+                try {
+                    context.checkpoint.load(producer.stepIndex,
+                                            *context.steps[producer.stepIndex],
+                                            producer.output, context.dataStore);
+                } catch (const std::exception& exception) {
+                    std::string message = "checkpoint of step ";
+                    message += std::to_string(producer.stepIndex + 1);
+                    message += " is unreadable: ";
+                    message += exception.what();
+                    message += "; recomputing from that step";
+                    report(context.logger, message, false);
+                    return producer.stepIndex;
+                }
+            }
+            return std::nullopt;
         }
 
         // Envoie le message au logger s'il existe ; sinon, seuls les messages d'erreur vont sur std::cerr.
@@ -112,6 +154,130 @@ namespace PipelineNs {
         }
     }
 
+    void PipelineClass::prepareRun(size_t startIndex,
+                                   const CheckpointNs::CheckpointClass& checkpoint) {
+        checkpoint.removeFrom(startIndex);
+        runState.completedSteps.resize(startIndex);
+        for (size_t stepIndex = startIndex; stepIndex < steps.size(); ++stepIndex)
+            runState.stepResults.erase(stepName(*steps[stepIndex]));
+        runState.failedStep.clear();
+        runState.error.clear();
+        runState.skipCompletedSteps = true;
+        runState.startFromStep.clear();
+        dataStore = StepNs::DataStoreClass();
+    }
+
+    std::string PipelineClass::stepMessagePrefix(size_t stepIndex) const {
+        std::string prefix = "Step ";
+        prefix += std::to_string(stepIndex + 1);
+        prefix.push_back('/');
+        prefix += std::to_string(steps.size());
+        return prefix;
+    }
+
+    void PipelineClass::restoreOutputCheckpoints(
+        size_t& startIndex, const CheckpointNs::CheckpointClass& checkpoint,
+        const Logger& log) {
+        std::map<std::string, CheckpointProducer> latestOutputByKey;
+        for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex) {
+            const ConfigNs::StepConfig stepConfig =
+                steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>();
+            for (const ConfigNs::DataSlot& output : stepConfig.outputs)
+                latestOutputByKey[output.key] = {stepIndex, output};
+        }
+        while (true) {
+            dataStore = StepNs::DataStoreClass();
+            const OutputRestoreContext context{steps, checkpoint, dataStore, log};
+            const std::optional<size_t> brokenStep =
+                restoreOutputValues(latestOutputByKey, context);
+            if (!brokenStep)
+                return;
+            startIndex = *brokenStep;
+            checkpoint.removeFrom(startIndex);
+            runState.completedSteps.resize(startIndex);
+            for (size_t stepIndex = startIndex; stepIndex < steps.size(); ++stepIndex)
+                runState.stepResults.erase(stepName(*steps[stepIndex]));
+        }
+    }
+
+    bool PipelineClass::recordStepFailure(const StepNs::StepClass& step,
+                                          const StepFailureDetails& details,
+                                          const Logger& log) {
+        const std::string name = stepName(step);
+        const Json result = step.getResult();
+        const std::string failure = details.errorMessage.empty()
+            ? result.dump() : details.errorMessage;
+        std::string message = details.messagePrefix;
+        message += " failed: ";
+        message += failure;
+        report(log, message, true);
+        runState.status = RunStatus::Failed;
+        runState.failedStep = name;
+        const Json stepError = result.is_object() ? result.value("error", Json()) : Json();
+        runState.error = !details.errorMessage.empty()
+            ? details.errorMessage : (stepError.is_string() ? stepError.get<std::string>() : failure);
+        runState.stepResults[name] = result;
+        saveScript(log);
+        return false;
+    }
+
+    void PipelineClass::recordStepSuccess(
+        size_t stepIndex, const CheckpointNs::CheckpointClass& checkpoint,
+        const Logger& log) {
+        const auto& step = steps[stepIndex];
+        const std::string prefix = stepMessagePrefix(stepIndex);
+        std::string failureReason;
+        if (checkpoint.enabled() &&
+            !checkpoint.save(stepIndex, *step, dataStore, failureReason)) {
+            std::string warning = prefix;
+            warning += " warning: checkpoint incomplete (";
+            warning += failureReason;
+            warning += "), this step will be redone on resume";
+            report(log, warning, false);
+        }
+        const std::string name = stepName(*step);
+        runState.completedSteps.push_back(name);
+        runState.stepResults[name] = step->getResult();
+        saveScript(log);
+        report(log, prefix + " OK " + step->getResult().dump(), false);
+    }
+
+    bool PipelineClass::executeStep(size_t stepIndex,
+                                    const CheckpointNs::CheckpointClass& checkpoint,
+                                    const Logger& log) {
+        const auto& step = steps[stepIndex];
+        const std::string messagePrefix = stepMessagePrefix(stepIndex);
+        if (pauseRequested->exchange(false)) {
+            runState.status = RunStatus::Paused;
+            saveScript(log);
+            std::string pausedMessage = messagePrefix;
+            pausedMessage += " paused";
+            report(log, pausedMessage, false);
+            return false;
+        }
+        step->setDataStore(dataStore);
+        bool succeeded = false;
+        std::string errorMessage;
+        try {
+            succeeded = step->execute();
+        } catch (const std::exception& exception) {
+            errorMessage = exception.what();
+        }
+        if (!succeeded)
+            return recordStepFailure(*step, {messagePrefix, errorMessage}, log);
+        recordStepSuccess(stepIndex, checkpoint, log);
+        return true;
+    }
+
+    bool PipelineClass::executeRemainingSteps(
+        size_t startIndex, const CheckpointNs::CheckpointClass& checkpoint,
+        const Logger& log) {
+        for (size_t stepIndex = startIndex; stepIndex < steps.size(); ++stepIndex)
+            if (!executeStep(stepIndex, checkpoint, log))
+                return false;
+        return true;
+    }
+
     // Quatre phases : 1. choisir le step de départ ; 2. remettre l'état à zéro ; 3. restaurer les sorties des steps sautés ;
     // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
     bool PipelineClass::run(const Logger& log) {
@@ -124,99 +290,12 @@ namespace PipelineNs {
         else if (!runState.startFromStep.empty()) report(log, "run.startFromStep ignored: skipCompletedSteps=false restarts from the first step", false);
         if (startIndex > 0 && startIndex < stepCount) report(log, "resuming at step " + std::to_string(startIndex + 1) + "/" + std::to_string(stepCount), false);
 
-        // 2. État propre : les checkpoints des steps à refaire sont périmés, les consignes sont consommées.
-        checkpoint.removeFrom(startIndex);
-        runState.completedSteps.resize(startIndex);
-        for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex)
-            runState.stepResults.erase(stepName(*steps[stepIndex]));
-        runState.failedStep.clear();
-        runState.error.clear();
-        runState.skipCompletedSteps = true;
-        runState.startFromStep.clear();
-        dataStore = StepNs::DataStoreClass();
-
-        // 3. Restauration des sorties des steps sautés : pour chaque clé, la version du dernier step qui l'a produite.
-        std::map<std::string, std::pair<size_t, std::string>> latestOutputByKey;   // clé -> (index du step producteur, type)
-        for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
-            for (const ConfigNs::DataSlot& outputSlot : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
-                latestOutputByKey[outputSlot.key] = {stepIndex, outputSlot.dataType};
-        while (true) {
-            dataStore = StepNs::DataStoreClass();
-            size_t brokenCheckpointStep = startIndex;
-            bool restoreFailed = false;
-            for (const auto& [key, producer] : latestOutputByKey) {
-                if (producer.first >= startIndex)
-                    continue;
-                try {
-                    checkpoint.load(producer.first, *steps[producer.first], key,
-                                    producer.second, dataStore);
-                } catch (const std::exception& exception) {
-                    report(log, "checkpoint of step " + std::to_string(producer.first + 1) +
-                                    " is unreadable: " + exception.what() +
-                                    "; recomputing from that step", false);
-                    brokenCheckpointStep = producer.first;
-                    restoreFailed = true;
-                    break;
-                }
-            }
-            if (!restoreFailed)
-                break;
-            startIndex = brokenCheckpointStep;
-            checkpoint.removeFrom(startIndex);
-            runState.completedSteps.resize(startIndex);
-            for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex)
-                runState.stepResults.erase(stepName(*steps[stepIndex]));
-        }
-
-        // 4. Exécution des steps restants.
+        prepareRun(startIndex, checkpoint);
+        restoreOutputCheckpoints(startIndex, checkpoint, log);
         runState.status = RunStatus::Running;
         saveScript(log);
-        for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex) {
-            const auto& step = steps[stepIndex];
-            const std::string messagePrefix = "Step " + std::to_string(stepIndex + 1) + "/" + std::to_string(stepCount);
-
-            if (pauseRequested->exchange(false)) {   // pause demandée : arrêt propre entre deux steps
-                runState.status = RunStatus::Paused;
-                saveScript(log);
-                report(log, messagePrefix + " paused", false);
-                return false;
-            }
-
-            step->setDataStore(dataStore);
-            bool succeeded = false;
-            std::string errorMessage;
-            try {
-                succeeded = step->execute();
-            } catch (const std::exception& exception) {   // une exception d'un step = un step en échec, pas un crash
-                errorMessage = exception.what();
-            }
-            if (!succeeded) {
-                const std::string name = stepName(*step);
-                const Json result = step->getResult();
-                const std::string failure = errorMessage.empty() ? result.dump() : errorMessage;
-                report(log, messagePrefix + " failed: " + failure, true);
-                runState.status = RunStatus::Failed;
-                runState.failedStep = name;
-                const Json stepError = result.is_object()
-                    ? result.value("error", Json()) : Json();
-                runState.error = !errorMessage.empty()
-                    ? errorMessage
-                    : (stepError.is_string() ? stepError.get<std::string>() : failure);
-                runState.stepResults[name] = result;
-                saveScript(log);
-                return false;   // reprise possible : completedSteps et checkpoints sont à jour
-            }
-
-            // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
-            std::string failureReason;
-            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
-                report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
-            const std::string name = stepName(*step);
-            runState.completedSteps.push_back(name);
-            runState.stepResults[name] = step->getResult();
-            saveScript(log);
-            report(log, messagePrefix + " OK " + step->getResult().dump(), false);
-        }
+        if (!executeRemainingSteps(startIndex, checkpoint, log))
+            return false;
         if (startIndex == stepCount && stepCount > 0) report(log, "nothing to do: all steps are already done", false);
         runState.status = RunStatus::Completed;
         saveScript(log);
