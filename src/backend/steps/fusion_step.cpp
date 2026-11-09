@@ -9,6 +9,7 @@
 #include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -58,8 +59,8 @@ namespace StepsNs {
         cv::Rect computeGlobalBoundingBox(const std::vector<TilePlacement>& placements) {
             if (placements.empty()) return {};
             cv::Rect result = placements.front().globalBox;
-            for (std::size_t i = 1; i < placements.size(); ++i) {
-                result |= placements[i].globalBox;
+            for (std::size_t placementIndex = 1; placementIndex < placements.size(); ++placementIndex) {
+                result |= placements[placementIndex].globalBox;
             }
             return result;
         }
@@ -192,7 +193,7 @@ namespace StepsNs {
                 minX = std::min(minX, pos.position.x);
                 minY = std::min(minY, pos.position.y);
             }
-            return {std::floor(minX), std::floor(minY)};
+            return {minX, minY};
         }
 
         std::vector<TilePlacement> buildTilePlacements(const DataNs::TileList& tiles,
@@ -241,11 +242,11 @@ namespace StepsNs {
                 territoryByIndex[territory.tileIndex] = &territory;
             }
 
-            for (int coordY = grid.bounds.y; coordY < grid.bounds.y + grid.bounds.height; coordY += grid.blockSize) {
-                for (int coordX = grid.bounds.x; coordX < grid.bounds.x + grid.bounds.width; coordX += grid.blockSize) {
+            for (int coordY = 0; coordY < grid.bounds.height; coordY += grid.blockSize) {
+                for (int coordX = 0; coordX < grid.bounds.width; coordX += grid.blockSize) {
                     const cv::Rect block(coordX, coordY,
-                        std::min(grid.blockSize, grid.bounds.x + grid.bounds.width - coordX),
-                        std::min(grid.blockSize, grid.bounds.y + grid.bounds.height - coordY));
+                        std::min(grid.blockSize, grid.bounds.width - coordX),
+                        std::min(grid.blockSize, grid.bounds.height - coordY));
 
                     BlockRenderOutput renderOutput;
                     renderBlock(block, placements, territoryByIndex, renderOutput);
@@ -281,7 +282,9 @@ namespace StepsNs {
             if (!grid.outputDir.empty()) {
                 std::filesystem::create_directories(grid.outputDir);
             }
-            const GridContext actualGrid{bounds, grid.blockSize, grid.outputDir};
+            const int canvasWidth = bounds.x + bounds.width;
+            const int canvasHeight = bounds.y + bounds.height;
+            const GridContext actualGrid{cv::Rect(0, 0, canvasWidth, canvasHeight), grid.blockSize, grid.outputDir};
             renderMosaicGrid(actualGrid, placements, territories, compositeBlocks);
         }
 

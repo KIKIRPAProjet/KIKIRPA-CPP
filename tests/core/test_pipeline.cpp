@@ -1,17 +1,16 @@
-// tests/core/test_pipeline.cpp
-// NOLINTBEGIN
+// test_pipeline.cpp
 // Construction et exécution d'un pipeline à partir du script JSON (core/PipelineBuilder, Step::importConfig).
 //
 // GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
-#include "core/data/algorithm_types.h"
-#include "core/data/tile.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
-#include "core/pipeline/run_state.h"
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/step/step.h"
+#include "core/pipeline/run_state.h"
 #include "steps/import_step.h"
 #include <gtest/gtest.h>
 #include <nlohmann/json_fwd.hpp>
@@ -261,5 +260,3 @@ TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 
 }
-
-// NOLINTEND
