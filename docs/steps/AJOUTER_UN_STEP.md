@@ -31,6 +31,7 @@ Il faut décider de cinq choses.
 | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
 | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `absolute-pos` |
+| `pairResiduals` | `PairResiduals` | `std::vector<DataNs::PairResidual>` | `absolute-pos` |
 | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | `intensity-correction` |
 | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | `graphcut` |
 

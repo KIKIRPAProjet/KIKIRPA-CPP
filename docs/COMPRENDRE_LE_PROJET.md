@@ -205,13 +205,13 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
-| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
+| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 
-### Les cinq types de données, et leur JSON
+### Les six types de données, et leur JSON
 
 Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` et `intensity_correction_checkpoint.cpp` ; les valeurs sont inventées.
 
@@ -262,6 +262,18 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
+
+#### `PairResiduals` (clé `pairResiduals`) : l'écart de chaque paire après ajustement
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.16, 3.78], "residualNorm": 3.95 } ]
+```
+
+- `residual` = translation mesurée − (position B − position A) ajustées, en pixels.
+- Un grand résidu indique une mesure en contradiction avec les autres. Sans boucle dans la grille, il vaut 0.
+- `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
+
+C++ : `std::vector<DataNs::PairResidual>`.
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 

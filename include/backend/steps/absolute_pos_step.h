@@ -2,6 +2,7 @@
 #pragma once
 
 #include "core/data/algorithm_types.h"
+#include "core/data/pair_residual.h"
 #include "core/step/step.h"
 
 #include <string>
@@ -18,6 +19,9 @@ namespace StepsNs {
         std::string key = "positions";
         std::vector<DataNs::TilePositionData> value;
         std::string type = "Positions";
+        std::string residualsKey = "pairResiduals";
+        std::vector<DataNs::PairResidual> residuals;   // écart de chaque paire après ajustement, dans l'ordre des paires utilisées
+        std::string residualsType = "PairResiduals";
     };
 
     // Transforme les translations relatives de matches en positions globales ; ne relit aucune image.
