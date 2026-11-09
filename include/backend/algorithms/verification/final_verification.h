@@ -6,8 +6,8 @@
 
 namespace VerificationNs {
 
-    // Lit les métadonnées d'images TIFF/JPEG et retourne les différences observées.
-    // Lève std::runtime_error si une image est illisible ou dans un format non pris en charge.
+    // Compare les métadonnées d'une référence TIFF/JPEG et d'une sortie TIFF, sans lire les pixels.
+    // Retourne le rapport JSON; lève std::runtime_error si un fichier est illisible ou son format non pris en charge.
     nlohmann::json compareImages(
         const std::filesystem::path& inputImagePath,
         const std::filesystem::path& outputImagePath

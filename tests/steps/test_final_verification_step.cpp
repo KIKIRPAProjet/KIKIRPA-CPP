@@ -44,23 +44,26 @@ namespace {
     constexpr std::size_t BYTE_SHIFT = 8;
 
     struct TiffParameters {
-        std::uint32_t width;
-        std::uint32_t height;
-        std::vector<std::uint8_t> iccProfile = {};
-        std::uint16_t orientation = ORIENTATION_TOPLEFT;
+        std::uint32_t width;                        // Largeur inscrite dans le répertoire TIFF.
+        std::uint32_t height;                       // Hauteur inscrite dans le répertoire TIFF.
+        std::vector<std::uint8_t> iccProfile = {};   // Profil optionnel utilisé par les tests ICC.
+        std::uint16_t orientation = ORIENTATION_TOPLEFT; // Orientation TIFF facultative à simuler.
     };
 
     struct TemporaryDirectory {
         fs::path path = fs::temp_directory_path() / "kikirpa_final_verification_test";
 
+        // Recrée le répertoire connu afin que chaque test parte d'un espace vide.
         TemporaryDirectory() {
             fs::remove_all(path);
             fs::create_directories(path);
         }
 
+        // Supprime les fixtures du test une fois les assertions terminées.
         ~TemporaryDirectory() { fs::remove_all(path); }
     };
 
+    // Génère une image TIFF minimale dont les tags sont entièrement contrôlés par le test.
     void writeTiff(const fs::path& path, const TiffParameters& parameters) {
         // Générer un TIFF minimal avec les tags demandés par l'algorithme, sans dépendre de données externes.
         TIFF* tiffFile = TIFFOpen(path.string().c_str(), "w");
@@ -86,6 +89,7 @@ namespace {
         TIFFClose(tiffFile);
     }
 
+    // Insère un profil ICC dans un segment APP2 pour exercer le parcours ICC propre au format JPEG.
     void addJpegIccProfile(const fs::path& path, const std::vector<std::uint8_t>& profile) {
         std::ifstream input(path, std::ios::binary);
         const std::vector<char> jpegBytes(
@@ -112,6 +116,7 @@ namespace {
         ASSERT_TRUE(output.good());
     }
 
+    // Vérifie les écarts dimensionnels et les ratios, sans introduire de comparaison de résolution.
     TEST(FinalVerification, ReportsDimensionsAndAspectRatios) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
@@ -128,6 +133,7 @@ namespace {
         EXPECT_FALSE(report.contains("resolution"));
     }
 
+    // Vérifie qu'une différence de profil est signalée sans prétendre conclure sur l'équivalence visuelle.
     TEST(FinalVerification, ReportsMetadataAndIccByteIdentity) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
@@ -145,6 +151,7 @@ namespace {
         EXPECT_FALSE(report.at("warnings").empty());
     }
 
+    // Vérifie que des profils identiques octet par octet reçoivent le statut correspondant.
     TEST(FinalVerification, ReportsIdenticalIccProfileBytes) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
@@ -158,6 +165,7 @@ namespace {
         EXPECT_EQ(report.at("iccProfile").at("colorimetricEquivalence"), "identical_profile_data");
     }
 
+    // Vérifie la lecture d'une référence JPEG et sa comparaison à une sortie TIFF.
     TEST(FinalVerification, HandlesJpegMetadata) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.jpg";
@@ -173,6 +181,7 @@ namespace {
         EXPECT_EQ(report.at("dimensions").at("difference").at("height"), JPEG_OUTPUT_HEIGHT - JPEG_HEIGHT);
     }
 
+    // Vérifie que le profil réparti dans un segment APP2 est réassemblé avant comparaison.
     TEST(FinalVerification, ReadsJpegIccProfileSegments) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.jpg";
@@ -187,6 +196,7 @@ namespace {
         EXPECT_TRUE(report.at("iccProfile").at("identicalBytes").get<bool>());
     }
 
+    // Vérifie le contrat d'exécution du step et la publication du rapport dans le DataStore.
     TEST(FinalVerificationStep, PublishesReportInDataStore) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
@@ -206,6 +216,7 @@ namespace {
         EXPECT_EQ(step.getResult().at("dimensions").at("difference").at("width"), 0);
     }
 
+    // Vérifie qu'un checkpoint restaure le même rapport après une sauvegarde réussie.
     TEST(FinalVerificationStep, SavesAndRestoresReportCheckpoint) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
@@ -232,6 +243,7 @@ namespace {
         );
     }
 
+    // Vérifie qu'une entrée absente produit un échec explicite au lieu d'un rapport valide vide.
     TEST(FinalVerificationStep, ReportsUnreadableImage) {
         StepNs::DataStoreClass store;
         StepsNs::FinalVerificationStepClass step({

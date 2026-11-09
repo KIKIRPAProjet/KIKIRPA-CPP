@@ -18,6 +18,7 @@ namespace StepsNs {
 
     namespace fs = std::filesystem;
 
+    // Configure le step et s'assure que le type de rapport est connu du système de checkpoint.
     FinalVerificationStepClass::FinalVerificationStepClass(const FinalVerificationInput& input) {
         // Enregistrer le sérialiseur avant qu'un pipeline puisse demander un checkpoint de ce type.
         CheckpointNs::registerFinalVerificationCheckpoint();
@@ -31,6 +32,7 @@ namespace StepsNs {
         configJson = stepConfig;
     }
 
+    // Produit le rapport ou publie un état d'échec explicite sans conserver un résultat précédent.
     bool FinalVerificationStepClass::execute() {
         // Publier d'abord un état vide afin d'éviter de laisser un ancien rapport après un échec.
         output.value.details = Json::object();
@@ -50,6 +52,7 @@ namespace StepsNs {
         }
     }
 
+    // Décrit l'identité et les métadonnées des fichiers utilisés pour invalider une reprise obsolète.
     Json FinalVerificationStepClass::externalInputsFingerprint() const {
         Json fingerprint = Json::array();
         // Le résultat dépend de deux fichiers externes; leur identité invalide le checkpoint s'ils changent.

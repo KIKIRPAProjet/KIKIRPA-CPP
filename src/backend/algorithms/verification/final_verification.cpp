@@ -30,6 +30,7 @@ namespace VerificationNs {
 
         using Json = nlohmann::json;
 
+        // Les offsets et tailles suivent les structures binaires JPEG/Exif et évitent les nombres magiques.
         constexpr std::size_t JPEG_FRAME_HEADER_SIZE = 6;
         constexpr std::size_t JPEG_LENGTH_FIELD_SIZE = 2;
         constexpr std::size_t JPEG_FRAME_PRECISION_OFFSET = 0;
@@ -87,11 +88,13 @@ namespace VerificationNs {
         };
 
         struct ComparisonDiagnostics {
+            // Écarts observés et réserves à distinguer dans le rapport final.
             Json differences = Json::array();
             Json warnings = Json::array();
         };
 
         // L'algorithme ne décode pas les pixels : il extrait les métadonnées TIFF ou parcourt les segments JPEG.
+        // Normalise l'extension pour que la sélection du lecteur accepte aussi les suffixes en majuscules.
         std::string lowerExtension(const std::filesystem::path& path) {
             std::string extension = path.extension().string();
             std::transform(extension.begin(), extension.end(), extension.begin(),
@@ -99,18 +102,20 @@ namespace VerificationNs {
             return extension;
         }
 
-        // Ajoute un tag texte à l'objet JSON des propriétés si le tag est présent dans le fichier TIFF.
+        // Ajoute un tag texte facultatif au rapport; l'absence du tag n'est pas une erreur de lecture.
         void addTextTag(TIFF* tiffFile, ttag_t tag, const std::string& name, Json& properties) {
             char* value = nullptr;
             if (TIFFGetField(tiffFile, tag, &value) && value != nullptr) properties[name] = value;
         }
 
+        // Ouvre le TIFF avec un deleter RAII afin que tous les chemins de sortie appellent TIFFClose.
         std::unique_ptr<TIFF, decltype(&TIFFClose)> openTiff(const std::filesystem::path& path) {
             std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(TIFFOpen(path.string().c_str(), "r"), TIFFClose);
             if (!tiffFile) throw std::runtime_error("cannot open TIFF: " + path.string());
             return tiffFile;
         }
 
+        // Lit les dimensions obligatoires et refuse les valeurs nulles ou hors de la plage de rapport.
         void addTiffDimensions(TIFF* tiffFile, const std::filesystem::path& path, Json& properties) {
             std::uint32_t width = 0;
             std::uint32_t height = 0;
@@ -125,6 +130,7 @@ namespace VerificationNs {
             properties["height"] = height;
         }
 
+        // Extrait les propriétés techniques et laisse libtiff fournir les valeurs par défaut TIFF normalisées.
         void addTiffTechnicalProperties(TIFF* tiffFile, Json& properties) {
             std::uint16_t samplesPerPixel = 1;
             std::uint16_t bitsPerSample = 1;
@@ -152,6 +158,7 @@ namespace VerificationNs {
             });
         }
 
+        // Préserve l'ordre des tags ExtraSamples, car chaque entrée décrit un canal supplémentaire.
         void addTiffExtraSamples(TIFF* tiffFile, Json& properties) {
             std::uint16_t extraSampleCount = 0;
             std::uint16_t* extraSamples = nullptr;
@@ -164,6 +171,7 @@ namespace VerificationNs {
             }
         }
 
+        // Copie les tags descriptifs texte courants lorsqu'ils sont présents dans le répertoire courant.
         void addTiffTextProperties(TIFF* tiffFile, Json& properties) {
             addTextTag(tiffFile, TIFFTAG_IMAGEDESCRIPTION, "imageDescription", properties);
             addTextTag(tiffFile, TIFFTAG_DOCUMENTNAME, "documentName", properties);
@@ -175,6 +183,7 @@ namespace VerificationNs {
             addTextTag(tiffFile, TIFFTAG_COPYRIGHT, "copyright", properties);
         }
 
+        // Copie les octets ICC : seule leur identité binaire sera comparée, pas leur rendu colorimétrique.
         void addTiffIccProfile(TIFF* tiffFile, ImageMetadata& metadata) {
             std::uint32_t iccSize = 0;
             void* iccBuffer = nullptr;
@@ -186,6 +195,7 @@ namespace VerificationNs {
             }
         }
 
+        // Inspecte l'IFD EXIF s'il existe et distingue son absence d'un répertoire illisible.
         void addTiffExifProperties(TIFF* tiffFile, Json& properties) {
             toff_t exifOffset = 0;
             const bool exifDirectoryPresent = TIFFGetField(tiffFile, TIFFTAG_EXIFIFD, &exifOffset) != 0;
@@ -203,6 +213,7 @@ namespace VerificationNs {
             }
         }
 
+        // Assemble les lecteurs TIFF en une seule fiche sans lire ni décompresser les pixels.
         ImageMetadata readTiffMetadata(const std::filesystem::path& path) {
             std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile = openTiff(path);
             ImageMetadata metadata;
@@ -216,11 +227,13 @@ namespace VerificationNs {
             return metadata;
         }
 
+        // Décode un entier non signé de 16 bits stocké selon l'ordre réseau JPEG (octet fort en premier).
         std::uint16_t readBigEndian16(const std::uint8_t* bytes) {
             return static_cast<std::uint16_t>(
                 (static_cast<std::uint16_t>(bytes[0]) << std::numeric_limits<std::uint8_t>::digits) | bytes[1]);
         }
 
+        // Lit un champ EXIF de 16 bits sans dépasser le tampon et respecte l'endianness de l'en-tête TIFF.
         bool readExif16(const std::vector<std::uint8_t>& bytes, std::size_t offset, bool littleEndian, std::uint16_t& value) {
             if (offset > bytes.size() || bytes.size() - offset < JPEG_LENGTH_FIELD_SIZE) return false;
             value = littleEndian
@@ -231,6 +244,7 @@ namespace VerificationNs {
             return true;
         }
 
+        // Décode un champ EXIF de 32 bits après validation de la plage disponible dans le segment.
         bool readExif32(const std::vector<std::uint8_t>& bytes, std::size_t offset, bool littleEndian, std::uint32_t& value) {
             constexpr std::size_t UINT32_SIZE = sizeof(std::uint32_t);
             if (offset > bytes.size() || bytes.size() - offset < UINT32_SIZE) return false;
@@ -249,16 +263,19 @@ namespace VerificationNs {
         }
 
         struct ExifEntry {
+            // Vue normalisée des champs d'une entrée de douze octets d'un IFD.
             std::uint16_t tag = 0;
             std::uint16_t fieldType = 0;
             std::uint32_t valueCount = 0;
             std::size_t offset = 0;
         };
 
+        // Retourne le format de rapport uniforme utilisé quand l'en-tête EXIF ne peut pas être interprété.
         Json invalidExifMetadata() {
             return {{"orientation", 1}, {"parseStatus", "invalid"}};
         }
 
+        // Lit l'en-tête d'une entrée IFD et vérifie que les douze octets de l'entrée sont présents.
         bool readExifEntryHeader(const std::vector<std::uint8_t>& payload, std::size_t entryOffset,
                                  bool littleEndian, ExifEntry& entry) {
             entry.offset = entryOffset;
@@ -268,6 +285,7 @@ namespace VerificationNs {
                    entryOffset <= payload.size() && payload.size() - entryOffset >= EXIF_ENTRY_SIZE;
         }
 
+        // Extrait l'orientation EXIF, dont la valeur peut être inline ou stockée à un offset du segment.
         void addExifOrientation(const std::vector<std::uint8_t>& payload, const ExifEntry& entry,
                                 bool littleEndian, Json& metadata) {
             if (entry.tag != EXIF_ORIENTATION_TAG || entry.fieldType != EXIF_SHORT_FIELD_TYPE ||
@@ -287,6 +305,7 @@ namespace VerificationNs {
             metadata["orientation"] = orientation;
         }
 
+        // Traduit uniquement les tags texte explicitement pris en charge en noms de propriétés stables.
         std::string exifTextFieldName(std::uint16_t tag) {
             switch (tag) {
             case EXIF_MAKE_TAG: return "make";
@@ -299,6 +318,7 @@ namespace VerificationNs {
             }
         }
 
+        // Ajoute un tag ASCII EXIF si sa valeur inline ou référencée est entièrement dans le segment.
         void addExifTextField(const std::vector<std::uint8_t>& payload, const ExifEntry& entry,
                               bool littleEndian, Json& metadata) {
             const std::string name = exifTextFieldName(entry.tag);
@@ -317,6 +337,7 @@ namespace VerificationNs {
             metadata[name] = std::string(text, textLength);
         }
 
+        // Traite une entrée IFD complète; false signale une entrée tronquée à l'appelant.
         bool processExifEntry(const std::vector<std::uint8_t>& payload, std::size_t entryOffset,
                               bool littleEndian, Json& metadata) {
             ExifEntry entry;
@@ -326,6 +347,7 @@ namespace VerificationNs {
             return true;
         }
 
+        // Parcourt le premier IFD EXIF pour extraire l'orientation et les principaux champs texte.
         Json readJpegExifMetadata(const std::vector<std::uint8_t>& payload) {
             Json metadata = invalidExifMetadata();
             if (payload.size() < EXIF_HEADER_OFFSET + EXIF_HEADER_SIZE) return metadata;
@@ -352,12 +374,14 @@ namespace VerificationNs {
             return metadata;
         }
 
+        // Distingue les marqueurs Start Of Frame de ceux ayant une autre structure dans la plage C0-CF.
         bool isStartOfFrame(std::uint8_t marker) {
             return marker >= JPEG_SOF_FIRST && marker <= JPEG_SOF_LAST && marker != JPEG_DHT &&
                    marker != JPEG_JPG && marker != JPEG_DAC;
         }
 
         struct JpegMetadataState {
+            // Accumule les segments avant de finaliser le profil ICC et les propriétés du fichier.
             ImageMetadata imageMetadata;
             Json metadataSegments = Json::array();
             Json properties = {{"orientation", 1}};
@@ -365,6 +389,7 @@ namespace VerificationNs {
             unsigned int expectedIccChunks = 0;
         };
 
+        // Avance jusqu'au prochain marqueur JPEG et retourne false uniquement si le flux est terminé.
         bool readJpegMarker(std::istream& input, std::uint8_t& marker) {
             int prefix = input.get();
             while (prefix != std::char_traits<char>::eof() && prefix != JPEG_MARKER_PREFIX) prefix = input.get();
@@ -376,6 +401,7 @@ namespace VerificationNs {
             return true;
         }
 
+        // Lit la longueur puis le contenu d'un segment en signalant explicitement tout segment tronqué.
         std::vector<std::uint8_t> readJpegSegmentPayload(std::istream& input, const std::filesystem::path& path) {
             std::array<std::uint8_t, JPEG_LENGTH_FIELD_SIZE> lengthBytes{};
             if (!input.read(reinterpret_cast<char*>(lengthBytes.data()), static_cast<std::streamsize>(lengthBytes.size())))
@@ -390,6 +416,7 @@ namespace VerificationNs {
             return payload;
         }
 
+        // Interprète le frame JPEG pour récupérer les dimensions et propriétés de codage de base.
         void readJpegFrameProperties(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                                      const std::filesystem::path& path, Json& properties) {
             if (!isStartOfFrame(marker)) return;
@@ -405,6 +432,7 @@ namespace VerificationNs {
             properties["compression"] = marker;
         }
 
+        // Valide puis conserve un fragment ICC APP2; le réassemblage se fait après la lecture des segments.
         bool collectJpegIccProfile(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                                    const std::filesystem::path& path, JpegMetadataState& state) {
             constexpr std::array<std::uint8_t, 12> ICC_SIGNATURE = {
@@ -430,6 +458,7 @@ namespace VerificationNs {
             return true;
         }
 
+        // Décode le segment APP1 Exif et expose les champs reconnus au niveau des propriétés JPEG.
         void readJpegExifProperties(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                                     Json& properties) {
             constexpr std::array<std::uint8_t, EXIF_HEADER_OFFSET> EXIF_SIGNATURE = {'E', 'x', 'i', 'f', 0, 0};
@@ -444,12 +473,14 @@ namespace VerificationNs {
                 if (exifMetadata.contains(propertyName)) properties[propertyName] = exifMetadata.at(propertyName);
         }
 
+        // Identifie JFIF par sa signature, pas uniquement par le marqueur APP0 qui peut porter d'autres données.
         bool isJfifSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload) {
             return marker == JPEG_APP0 && payload.size() >= JFIF_MINIMUM_PAYLOAD_SIZE &&
                    payload[0] == 'J' && payload[1] == 'F' && payload[2] == 'I' &&
                    payload[3] == 'F' && payload[4] == 0;
         }
 
+        // Enregistre les métadonnées APP, tout en séparant JFIF et ICC des segments génériques comparés.
         void readJpegApplicationSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                                         const std::filesystem::path& path, JpegMetadataState& state) {
             if (marker < JPEG_APP_FIRST || marker > JPEG_APP_LAST) return;
@@ -470,6 +501,7 @@ namespace VerificationNs {
                 state.imageMetadata.metadataSegments.emplace_back(marker, payload);
         }
 
+        // Compte et conserve les commentaires JPEG pour que leur contenu puisse être comparé ensuite.
         void readJpegComment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                              JpegMetadataState& state) {
             if (marker != JPEG_COMMENT) return;
@@ -479,6 +511,7 @@ namespace VerificationNs {
             state.imageMetadata.metadataSegments.emplace_back(marker, payload);
         }
 
+        // Distribue un segment vers son lecteur spécialisé selon son marqueur JPEG.
         void collectJpegSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
                                 const std::filesystem::path& path, JpegMetadataState& state) {
             readJpegFrameProperties(marker, payload, path, state.properties);
@@ -486,6 +519,7 @@ namespace VerificationNs {
             readJpegComment(marker, payload, state);
         }
 
+        // Vérifie que le frame existe puis assemble les fragments ICC dans leur ordre numéroté.
         ImageMetadata finishJpegMetadata(const std::filesystem::path& path, JpegMetadataState& state) {
             if (!state.properties.contains("width") || !state.properties.contains("height"))
                 throw std::runtime_error("JPEG has no supported frame header: " + path.string());
@@ -514,6 +548,7 @@ namespace VerificationNs {
             return std::move(state.imageMetadata);
         }
 
+        // Parcourt uniquement l'en-tête JPEG avant SOS, suffisant pour lire frame et métadonnées sans les pixels.
         ImageMetadata readJpegMetadata(const std::filesystem::path& path) {
             std::ifstream input(path, std::ios::binary);
             if (!input) throw std::runtime_error("cannot open JPEG: " + path.string());
@@ -533,6 +568,7 @@ namespace VerificationNs {
             return finishJpegMetadata(path, state);
         }
 
+        // Oriente le fichier vers son lecteur en se basant sur l'extension normalisée.
         ImageMetadata readImageMetadata(const std::filesystem::path& path) {
             const std::string extension = lowerExtension(path);
             if (extension == ".tif" || extension == ".tiff") return readTiffMetadata(path);
@@ -540,6 +576,7 @@ namespace VerificationNs {
             throw std::runtime_error("unsupported image format: " + path.string());
         }
 
+        // Compare l'union des propriétés : les champs manquants d'un côté apparaissent comme null et donc différents.
         Json compareMetadata(const ImageMetadata& input, const ImageMetadata& output, Json& differences) {
             Json comparisons = Json::object();
             std::set<std::string> propertyNames;
@@ -559,6 +596,7 @@ namespace VerificationNs {
             return comparisons;
         }
 
+        // Compare un index de segment en signalant séparément l'absence et le contenu de chaque côté.
         Json compareJpegMetadataSegment(
             std::size_t index, const ImageMetadata& input, const ImageMetadata& output, Json& differences
         ) {
@@ -590,6 +628,7 @@ namespace VerificationNs {
             };
         }
 
+        // Aligne les listes de segments par position pour rapporter aussi ceux présents d'un seul côté.
         Json compareJpegMetadataSegments(const ImageMetadata& input, const ImageMetadata& output, Json& differences) {
             Json comparisons = Json::array();
             const std::size_t segmentCount = std::max(input.metadataSegments.size(), output.metadataSegments.size());
@@ -598,6 +637,7 @@ namespace VerificationNs {
             return comparisons;
         }
 
+        // Produit un état descriptif sans assimiler des octets différents à un rendu colorimétrique différent.
         std::string iccComparisonStatus(bool inputPresent, bool outputPresent, bool identicalBytes) {
             if (!inputPresent && !outputPresent) return "absent_from_both";
             if (inputPresent != outputPresent) return "presence_differs";
@@ -605,6 +645,7 @@ namespace VerificationNs {
             return "colorimetric_equivalence_undetermined";
         }
 
+        // Ajoute écarts et avertissements ICC, puis retourne les états binaires et colorimétriques observés.
         Json compareIccProfiles(const ImageMetadata& input, const ImageMetadata& output,
                                 ComparisonDiagnostics& diagnostics) {
             const bool identicalBytes = input.hasIccProfile && output.hasIccProfile &&
@@ -638,6 +679,7 @@ namespace VerificationNs {
             };
         }
 
+        // Calcule les écarts signés et ratios sortie/référence à partir des dimensions validées des lecteurs.
         Json compareDimensions(const ImageMetadata& input, const ImageMetadata& output) {
             const std::int64_t inputWidth = input.properties.at("width").get<std::int64_t>();
             const std::int64_t inputHeight = input.properties.at("height").get<std::int64_t>();
@@ -657,6 +699,7 @@ namespace VerificationNs {
             };
         }
 
+        // Construit l'objet public du rapport à partir des résultats spécialisés de chaque comparaison.
         Json createComparisonReport(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath,
                                    const ImageMetadata& input, const ImageMetadata& output) {
             // Les écarts alimentent le rapport; ils ne constituent jamais un verdict de conformité.
@@ -679,10 +722,12 @@ namespace VerificationNs {
 
     }
 
+    // Valide les formats acceptés puis délègue la lecture et l'assemblage du rapport aux helpers internes.
     nlohmann::json compareImages(
         const std::filesystem::path& inputImagePath,
         const std::filesystem::path& outputImagePath
     ) {
+        // La sortie doit rester un TIFF, tandis que le format de la référence choisit son lecteur.
         const std::string outputExtension = lowerExtension(outputImagePath);
         if (outputExtension != ".tif" && outputExtension != ".tiff")
             throw std::runtime_error("reconstructed image must be a TIFF: " + outputImagePath.string());

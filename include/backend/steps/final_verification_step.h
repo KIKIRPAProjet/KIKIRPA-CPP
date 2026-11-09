@@ -14,15 +14,15 @@ namespace StepsNs {
 
     // Chemins des deux images passés au step de vérification.
     struct FinalVerificationInput {
-        std::string inputImagePath;   // TIFF ou JPEG de référence
-        std::string outputImagePath;  // TIFF reconstruit
+        std::string inputImagePath;   // Chemin de la référence client (TIFF/JPEG).
+        std::string outputImagePath;  // Chemin du TIFF reconstruit à contrôler.
     };
 
     // Rapport publié par le step dans le DataStore sous la clé verificationReport.
     struct FinalVerificationOutput {
-        std::string key = "verificationReport";
-        DataNs::VerificationReport value;
-        std::string type = "VerificationReport";
+        std::string key = "verificationReport"; // Clé stable consommée par le DataStore et le checkpoint.
+        DataNs::VerificationReport value;        // Rapport complet exposé par le step.
+        std::string type = "VerificationReport"; // Nom logique utilisé par le registre des données.
     };
 
     // Compare les dimensions et métadonnées d'une image de référence et de l'image reconstruite.
@@ -30,10 +30,16 @@ namespace StepsNs {
     class FinalVerificationStepClass : public StepNs::StepClass {
 
         public:
+            // Crée le step avec les chemins par défaut du constructeur ou ceux fournis par l'appelant.
             explicit FinalVerificationStepClass(const FinalVerificationInput& input = {});
+
+            // Lit les deux fichiers, publie le rapport et retourne false avec une erreur en cas d'échec.
             bool execute() override;
+
             // Empreinte des deux fichiers externes pour invalider le checkpoint lorsqu'ils changent.
             Json externalInputsFingerprint() const override;
+
+            // Retourne le même objet rapport que celui placé dans le DataStore.
             const FinalVerificationOutput& getOutput() const { return output; }
 
         private:

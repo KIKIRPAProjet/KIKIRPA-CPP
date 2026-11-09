@@ -8,7 +8,7 @@ namespace DataNs {
 
     // Rapport descriptif comparant les caractéristiques de deux images.
     struct VerificationReport {
-        nlohmann::json details;
+        nlohmann::json details; // Rapport JSON complet produit par VerificationNs::compareImages.
     };
 
 }
