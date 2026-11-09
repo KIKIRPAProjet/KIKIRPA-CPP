@@ -5,13 +5,16 @@
 #include "steps/final_verification_step.h"
 
 #include <gtest/gtest.h>
-#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <tiff.h>
 #include <tiffio.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -19,6 +22,32 @@
 namespace {
 
     namespace fs = std::filesystem;
+
+    constexpr std::uint32_t REFERENCE_WIDTH = 100;
+    constexpr std::uint32_t REFERENCE_HEIGHT = 50;
+    constexpr std::uint32_t OUTPUT_WIDTH = 120;
+    constexpr std::uint32_t OUTPUT_HEIGHT = 60;
+    constexpr std::uint32_t SMALL_IMAGE_WIDTH = 20;
+    constexpr std::uint32_t SMALL_IMAGE_HEIGHT = 10;
+    constexpr std::uint32_t JPEG_WIDTH = 24;
+    constexpr std::uint32_t JPEG_HEIGHT = 12;
+    constexpr std::uint32_t JPEG_OUTPUT_HEIGHT = 16;
+    constexpr std::uint32_t CHECKPOINT_IMAGE_WIDTH = 30;
+    constexpr std::uint32_t CHECKPOINT_IMAGE_HEIGHT = 20;
+    constexpr std::uint32_t CHECKPOINT_OUTPUT_WIDTH = 32;
+    constexpr std::uint16_t TEST_BITS_PER_SAMPLE = 8;
+    constexpr std::uint8_t DIFFERENT_PROFILE_LAST_BYTE = 5;
+    constexpr std::uint8_t JPEG_APP2_MARKER_PREFIX = 0xFF;
+    constexpr std::uint8_t JPEG_APP2_MARKER = 0xE2;
+    constexpr std::uint8_t BYTE_MASK = 0xFF;
+    constexpr std::size_t BYTE_SHIFT = 8;
+
+    struct TiffParameters {
+        std::uint32_t width;
+        std::uint32_t height;
+        std::vector<std::uint8_t> iccProfile = {};
+        std::uint16_t orientation = ORIENTATION_TOPLEFT;
+    };
 
     struct TemporaryDirectory {
         fs::path path = fs::temp_directory_path() / "kikirpa_final_verification_test";
@@ -31,35 +60,34 @@ namespace {
         ~TemporaryDirectory() { fs::remove_all(path); }
     };
 
-    void writeTiff(const fs::path& path, std::uint32_t width, std::uint32_t height,
-                   std::vector<std::uint8_t> iccProfile = {}, std::uint16_t orientation = ORIENTATION_TOPLEFT) {
+    void writeTiff(const fs::path& path, const TiffParameters& parameters) {
         TIFF* tiffFile = TIFFOpen(path.string().c_str(), "w");
         ASSERT_NE(tiffFile, nullptr);
-        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, width));
-        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_IMAGELENGTH, height));
+        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, parameters.width));
+        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_IMAGELENGTH, parameters.height));
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_SAMPLESPERPIXEL, 1));
-        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_BITSPERSAMPLE, 8));
+        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_BITSPERSAMPLE, TEST_BITS_PER_SAMPLE));
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT));
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_MINISBLACK));
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_NONE));
-        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, orientation));
+        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, parameters.orientation));
         ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG));
-        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_ROWSPERSTRIP, height));
-        if (!iccProfile.empty())
+        ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_ROWSPERSTRIP, parameters.height));
+        if (!parameters.iccProfile.empty())
             ASSERT_TRUE(TIFFSetField(tiffFile, TIFFTAG_ICCPROFILE,
-                                     static_cast<std::uint32_t>(iccProfile.size()),
-                                     iccProfile.data()));
+                                     static_cast<std::uint32_t>(parameters.iccProfile.size()),
+                                     parameters.iccProfile.data()));
 
-        std::vector<std::uint8_t> row(width, 0);
-        for (std::uint32_t rowIndex = 0; rowIndex < height; ++rowIndex)
+        std::vector<std::uint8_t> row(parameters.width, 0);
+        for (std::uint32_t rowIndex = 0; rowIndex < parameters.height; ++rowIndex)
             ASSERT_GE(TIFFWriteScanline(tiffFile, row.data(), rowIndex, 0), 0);
         TIFFClose(tiffFile);
     }
 
     void addJpegIccProfile(const fs::path& path, const std::vector<std::uint8_t>& profile) {
         std::ifstream input(path, std::ios::binary);
-        const std::vector<std::uint8_t> jpegBytes(
-            std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+        const std::vector<char> jpegBytes(
+            (std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>{});
         ASSERT_GE(jpegBytes.size(), 2u);
 
         const std::vector<std::uint8_t> iccPayload{
@@ -67,16 +95,16 @@ namespace {
         };
         const std::uint16_t segmentLength = static_cast<std::uint16_t>(iccPayload.size() + profile.size() + 2);
         std::ofstream output(path, std::ios::binary | std::ios::trunc);
-        output.write(reinterpret_cast<const char*>(jpegBytes.data()), 2);
+        output.write(jpegBytes.data(), 2);
         const std::uint8_t markerAndLength[] = {
-            0xFF, 0xE2,
-            static_cast<std::uint8_t>(segmentLength >> 8),
-            static_cast<std::uint8_t>(segmentLength & 0xFF)
+            JPEG_APP2_MARKER_PREFIX, JPEG_APP2_MARKER,
+            static_cast<std::uint8_t>(segmentLength >> BYTE_SHIFT),
+            static_cast<std::uint8_t>(segmentLength & BYTE_MASK)
         };
         output.write(reinterpret_cast<const char*>(markerAndLength), sizeof(markerAndLength));
         output.write(reinterpret_cast<const char*>(iccPayload.data()), static_cast<std::streamsize>(iccPayload.size()));
         output.write(reinterpret_cast<const char*>(profile.data()), static_cast<std::streamsize>(profile.size()));
-        output.write(reinterpret_cast<const char*>(jpegBytes.data() + 2),
+        output.write(jpegBytes.data() + 2,
                      static_cast<std::streamsize>(jpegBytes.size() - 2));
         ASSERT_TRUE(output.good());
     }
@@ -85,13 +113,13 @@ namespace {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
         const fs::path outputPath = directory.path / "reconstructed.tif";
-        writeTiff(inputPath, 100, 50);
-        writeTiff(outputPath, 120, 60);
+        writeTiff(inputPath, {REFERENCE_WIDTH, REFERENCE_HEIGHT});
+        writeTiff(outputPath, {OUTPUT_WIDTH, OUTPUT_HEIGHT});
 
         const auto report = VerificationNs::compareImages(inputPath, outputPath);
         EXPECT_EQ(report.at("status"), "report_ready");
-        EXPECT_EQ(report.at("dimensions").at("difference").at("width"), 20);
-        EXPECT_EQ(report.at("dimensions").at("difference").at("height"), 10);
+        EXPECT_EQ(report.at("dimensions").at("difference").at("width"), OUTPUT_WIDTH - REFERENCE_WIDTH);
+        EXPECT_EQ(report.at("dimensions").at("difference").at("height"), OUTPUT_HEIGHT - REFERENCE_HEIGHT);
         EXPECT_DOUBLE_EQ(report.at("dimensions").at("outputToInputRatio").at("width").get<double>(), 1.2);
         EXPECT_DOUBLE_EQ(report.at("dimensions").at("outputToInputRatio").at("height").get<double>(), 1.2);
         EXPECT_FALSE(report.contains("resolution"));
@@ -102,9 +130,9 @@ namespace {
         const fs::path inputPath = directory.path / "reference.tif";
         const fs::path outputPath = directory.path / "reconstructed.tif";
         const std::vector<std::uint8_t> inputProfile{1, 2, 3, 4};
-        const std::vector<std::uint8_t> outputProfile{1, 2, 3, 5};
-        writeTiff(inputPath, 20, 10, inputProfile, ORIENTATION_TOPLEFT);
-        writeTiff(outputPath, 20, 10, outputProfile, ORIENTATION_BOTLEFT);
+        const std::vector<std::uint8_t> outputProfile{1, 2, 3, DIFFERENT_PROFILE_LAST_BYTE};
+        writeTiff(inputPath, {SMALL_IMAGE_WIDTH, SMALL_IMAGE_HEIGHT, inputProfile, ORIENTATION_TOPLEFT});
+        writeTiff(outputPath, {SMALL_IMAGE_WIDTH, SMALL_IMAGE_HEIGHT, outputProfile, ORIENTATION_BOTLEFT});
 
         const auto report = VerificationNs::compareImages(inputPath, outputPath);
         EXPECT_EQ(report.at("iccProfile").at("colorimetricEquivalence"), "colorimetric_equivalence_undetermined");
@@ -119,8 +147,8 @@ namespace {
         const fs::path inputPath = directory.path / "reference.tif";
         const fs::path outputPath = directory.path / "reconstructed.tif";
         const std::vector<std::uint8_t> profile{1, 2, 3, 4};
-        writeTiff(inputPath, 20, 10, profile);
-        writeTiff(outputPath, 20, 10, profile);
+        writeTiff(inputPath, {SMALL_IMAGE_WIDTH, SMALL_IMAGE_HEIGHT, profile});
+        writeTiff(outputPath, {SMALL_IMAGE_WIDTH, SMALL_IMAGE_HEIGHT, profile});
 
         const auto report = VerificationNs::compareImages(inputPath, outputPath);
         EXPECT_TRUE(report.at("iccProfile").at("identicalBytes").get<bool>());
@@ -131,25 +159,25 @@ namespace {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.jpg";
         const fs::path outputPath = directory.path / "reconstructed.tif";
-        ASSERT_TRUE(cv::imwrite(inputPath.string(), cv::Mat::zeros(12, 24, CV_8UC3)));
-        writeTiff(outputPath, 24, 16);
+        ASSERT_TRUE(cv::imwrite(inputPath.string(), cv::Mat::zeros(JPEG_HEIGHT, JPEG_WIDTH, CV_8UC3)));
+        writeTiff(outputPath, {JPEG_WIDTH, JPEG_OUTPUT_HEIGHT});
 
         const auto report = VerificationNs::compareImages(inputPath, outputPath);
         EXPECT_EQ(report.at("inputImage").at("format"), "JPEG");
         EXPECT_EQ(report.at("outputImage").at("format"), "TIFF");
-        EXPECT_EQ(report.at("dimensions").at("input").at("width"), 24);
-        EXPECT_EQ(report.at("dimensions").at("input").at("height"), 12);
-        EXPECT_EQ(report.at("dimensions").at("difference").at("height"), 4);
+        EXPECT_EQ(report.at("dimensions").at("input").at("width"), JPEG_WIDTH);
+        EXPECT_EQ(report.at("dimensions").at("input").at("height"), JPEG_HEIGHT);
+        EXPECT_EQ(report.at("dimensions").at("difference").at("height"), JPEG_OUTPUT_HEIGHT - JPEG_HEIGHT);
     }
 
     TEST(FinalVerification, ReadsJpegIccProfileSegments) {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.jpg";
         const fs::path outputPath = directory.path / "reconstructed.tif";
-        const std::vector<std::uint8_t> profile{10, 20, 30, 40};
-        ASSERT_TRUE(cv::imwrite(inputPath.string(), cv::Mat::zeros(12, 24, CV_8UC3)));
+        const std::vector<std::uint8_t> profile{1, 2, 3, 4};
+        ASSERT_TRUE(cv::imwrite(inputPath.string(), cv::Mat::zeros(JPEG_HEIGHT, JPEG_WIDTH, CV_8UC3)));
         addJpegIccProfile(inputPath, profile);
-        writeTiff(outputPath, 24, 12, profile);
+        writeTiff(outputPath, {JPEG_WIDTH, JPEG_HEIGHT, profile});
 
         const auto report = VerificationNs::compareImages(inputPath, outputPath);
         EXPECT_TRUE(report.at("iccProfile").at("inputPresent").get<bool>());
@@ -160,8 +188,8 @@ namespace {
         TemporaryDirectory directory;
         const fs::path inputPath = directory.path / "reference.tif";
         const fs::path outputPath = directory.path / "reconstructed.tif";
-        writeTiff(inputPath, 30, 20);
-        writeTiff(outputPath, 30, 20);
+        writeTiff(inputPath, {CHECKPOINT_IMAGE_WIDTH, CHECKPOINT_IMAGE_HEIGHT});
+        writeTiff(outputPath, {CHECKPOINT_IMAGE_WIDTH, CHECKPOINT_IMAGE_HEIGHT});
 
         StepNs::DataStoreClass store;
         StepsNs::FinalVerificationStepClass step({
@@ -180,8 +208,8 @@ namespace {
         const fs::path inputPath = directory.path / "reference.tif";
         const fs::path outputPath = directory.path / "reconstructed.tif";
         const fs::path checkpointPath = directory.path / "checkpoints";
-        writeTiff(inputPath, 30, 20);
-        writeTiff(outputPath, 32, 20);
+        writeTiff(inputPath, {CHECKPOINT_IMAGE_WIDTH, CHECKPOINT_IMAGE_HEIGHT});
+        writeTiff(outputPath, {CHECKPOINT_OUTPUT_WIDTH, CHECKPOINT_IMAGE_HEIGHT});
 
         StepNs::DataStoreClass store;
         StepsNs::FinalVerificationStepClass step({inputPath.string(), outputPath.string()});

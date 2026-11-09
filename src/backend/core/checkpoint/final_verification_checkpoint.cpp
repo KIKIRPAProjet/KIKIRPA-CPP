@@ -9,14 +9,13 @@
 
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <stdexcept>
 #include <string>
 
 namespace CheckpointNs {
 
     namespace {
-
-        using Json = nlohmann::json;
 
         void saveReport(const StepNs::DataStoreClass& dataStore, const std::string& key, const std::filesystem::path& directory) {
             std::ofstream output(directory / (key + ".json"), std::ios::binary);
@@ -27,7 +26,7 @@ namespace CheckpointNs {
         void loadReport(StepNs::DataStoreClass& dataStore, const std::string& key, const std::filesystem::path& directory) {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
             if (!input) throw std::runtime_error("cannot read verification report checkpoint");
-            dataStore.replace(key, DataNs::VerificationReport{Json::parse(input)});
+            dataStore.replace(key, DataNs::VerificationReport{nlohmann::json::parse(input)});
         }
 
     }

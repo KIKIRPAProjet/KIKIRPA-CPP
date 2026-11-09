@@ -1,6 +1,7 @@
 // src/backend/algorithms/verification/final_verification.cpp
 #include "algorithms/verification/final_verification.h"
 
+#include <tiff.h>
 #include <tiffio.h>
 
 #include <algorithm>
@@ -9,6 +10,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
+#include <ios>
+#include <istream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -23,6 +26,53 @@ namespace VerificationNs {
     namespace {
 
         using Json = nlohmann::json;
+
+        constexpr std::size_t JPEG_FRAME_HEADER_SIZE = 6;
+        constexpr std::size_t JPEG_LENGTH_FIELD_SIZE = 2;
+        constexpr std::size_t JPEG_FRAME_PRECISION_OFFSET = 0;
+        constexpr std::size_t JPEG_FRAME_HEIGHT_OFFSET = 1;
+        constexpr std::size_t JPEG_FRAME_WIDTH_OFFSET = 3;
+        constexpr std::size_t JPEG_FRAME_COMPONENTS_OFFSET = 5;
+        constexpr std::size_t JFIF_VERSION_MAJOR_OFFSET = 5;
+        constexpr std::size_t JFIF_VERSION_MINOR_OFFSET = 6;
+        constexpr std::size_t JFIF_THUMBNAIL_WIDTH_OFFSET = 12;
+        constexpr std::size_t JFIF_THUMBNAIL_HEIGHT_OFFSET = 13;
+        constexpr std::size_t JFIF_MINIMUM_PAYLOAD_SIZE = 14;
+        constexpr std::size_t EXIF_HEADER_OFFSET = 6;
+        constexpr std::size_t EXIF_HEADER_SIZE = 8;
+        constexpr std::size_t EXIF_ENTRY_SIZE = 12;
+        constexpr std::size_t EXIF_ENTRY_VALUE_OFFSET = 8;
+        constexpr std::size_t EXIF_INLINE_VALUE_SIZE = 4;
+        constexpr std::uint16_t EXIF_TIFF_MAGIC = 42;
+        constexpr std::uint16_t EXIF_ASCII_FIELD_TYPE = 2;
+        constexpr std::uint16_t EXIF_SHORT_FIELD_TYPE = 3;
+        constexpr std::uint16_t EXIF_ORIENTATION_TAG = 0x0112;
+        constexpr std::uint16_t EXIF_MAKE_TAG = 0x010F;
+        constexpr std::uint16_t EXIF_MODEL_TAG = 0x0110;
+        constexpr std::uint16_t EXIF_SOFTWARE_TAG = 0x0131;
+        constexpr std::uint16_t EXIF_DATE_TIME_TAG = 0x0132;
+        constexpr std::uint16_t EXIF_ARTIST_TAG = 0x013B;
+        constexpr std::uint16_t EXIF_COPYRIGHT_TAG = 0x8298;
+        constexpr ttag_t TIFF_EXIF_DATETIME_ORIGINAL = 36867;
+        constexpr ttag_t TIFF_EXIF_DATETIME_DIGITIZED = 36868;
+        constexpr std::uint8_t JPEG_MARKER_PREFIX = 0xFF;
+        constexpr std::uint8_t JPEG_START_OF_IMAGE = 0xD8;
+        constexpr std::uint8_t JPEG_END_OF_IMAGE = 0xD9;
+        constexpr std::uint8_t JPEG_START_OF_SCAN = 0xDA;
+        constexpr std::uint8_t JPEG_TEM = 0x01;
+        constexpr std::uint8_t JPEG_RESTART_FIRST = 0xD0;
+        constexpr std::uint8_t JPEG_RESTART_LAST = 0xD8;
+        constexpr std::uint8_t JPEG_SOF_FIRST = 0xC0;
+        constexpr std::uint8_t JPEG_SOF_LAST = 0xCF;
+        constexpr std::uint8_t JPEG_DHT = 0xC4;
+        constexpr std::uint8_t JPEG_JPG = 0xC8;
+        constexpr std::uint8_t JPEG_DAC = 0xCC;
+        constexpr std::uint8_t JPEG_APP_FIRST = 0xE0;
+        constexpr std::uint8_t JPEG_APP_LAST = 0xEF;
+        constexpr std::uint8_t JPEG_APP0 = 0xE0;
+        constexpr std::uint8_t JPEG_APP1 = 0xE1;
+        constexpr std::uint8_t JPEG_APP2 = 0xE2;
+        constexpr std::uint8_t JPEG_COMMENT = 0xFE;
 
         // Définitions de structures pour stocker les métadonnées des images
         struct ImageMetadata {
@@ -128,8 +178,8 @@ namespace VerificationNs {
             metadata.properties["exifParseStatus"] = exifDirectoryPresent ? "unread" : "absent";
             if (exifDirectoryPresent) {
                 if (TIFFReadEXIFDirectory(tiffFile.get(), exifOffset)) {
-                    addTextTag(tiffFile.get(), static_cast<ttag_t>(36867), "dateTimeOriginal", metadata.properties);
-                    addTextTag(tiffFile.get(), static_cast<ttag_t>(36868), "dateTimeDigitized", metadata.properties);
+                    addTextTag(tiffFile.get(), TIFF_EXIF_DATETIME_ORIGINAL, "dateTimeOriginal", metadata.properties);
+                    addTextTag(tiffFile.get(), TIFF_EXIF_DATETIME_DIGITIZED, "dateTimeDigitized", metadata.properties);
                     metadata.properties["exifParseStatus"] = "parsed";
                 } else {
                     metadata.properties["exifParseStatus"] = "invalid";
@@ -139,225 +189,317 @@ namespace VerificationNs {
         }
 
         std::uint16_t readBigEndian16(const std::uint8_t* bytes) {
-            return static_cast<std::uint16_t>((static_cast<std::uint16_t>(bytes[0]) << 8) | bytes[1]);
+            return static_cast<std::uint16_t>(
+                (static_cast<std::uint16_t>(bytes[0]) << std::numeric_limits<std::uint8_t>::digits) | bytes[1]);
         }
 
         bool readExif16(const std::vector<std::uint8_t>& bytes, std::size_t offset, bool littleEndian, std::uint16_t& value) {
-            if (offset > bytes.size() || bytes.size() - offset < 2) return false;
+            if (offset > bytes.size() || bytes.size() - offset < JPEG_LENGTH_FIELD_SIZE) return false;
             value = littleEndian
-                ? static_cast<std::uint16_t>(bytes[offset] | (static_cast<std::uint16_t>(bytes[offset + 1]) << 8))
+                ? static_cast<std::uint16_t>(
+                      bytes[offset] |
+                      (static_cast<std::uint16_t>(bytes[offset + 1]) << std::numeric_limits<std::uint8_t>::digits))
                 : readBigEndian16(bytes.data() + offset);
             return true;
         }
 
         bool readExif32(const std::vector<std::uint8_t>& bytes, std::size_t offset, bool littleEndian, std::uint32_t& value) {
-            if (offset > bytes.size() || bytes.size() - offset < 4) return false;
+            constexpr std::size_t UINT32_SIZE = sizeof(std::uint32_t);
+            if (offset > bytes.size() || bytes.size() - offset < UINT32_SIZE) return false;
             if (littleEndian) {
                 value = static_cast<std::uint32_t>(bytes[offset]) |
-                        (static_cast<std::uint32_t>(bytes[offset + 1]) << 8) |
-                        (static_cast<std::uint32_t>(bytes[offset + 2]) << 16) |
-                        (static_cast<std::uint32_t>(bytes[offset + 3]) << 24);
+                        (static_cast<std::uint32_t>(bytes[offset + 1]) << std::numeric_limits<std::uint8_t>::digits) |
+                        (static_cast<std::uint32_t>(bytes[offset + 2]) << (2 * std::numeric_limits<std::uint8_t>::digits)) |
+                        (static_cast<std::uint32_t>(bytes[offset + 3]) << (3 * std::numeric_limits<std::uint8_t>::digits));
             } else {
-                value = (static_cast<std::uint32_t>(bytes[offset]) << 24) |
-                        (static_cast<std::uint32_t>(bytes[offset + 1]) << 16) |
-                        (static_cast<std::uint32_t>(bytes[offset + 2]) << 8) |
+                value = (static_cast<std::uint32_t>(bytes[offset]) << (3 * std::numeric_limits<std::uint8_t>::digits)) |
+                        (static_cast<std::uint32_t>(bytes[offset + 1]) << (2 * std::numeric_limits<std::uint8_t>::digits)) |
+                        (static_cast<std::uint32_t>(bytes[offset + 2]) << std::numeric_limits<std::uint8_t>::digits) |
                         static_cast<std::uint32_t>(bytes[offset + 3]);
             }
             return true;
         }
 
+        struct ExifEntry {
+            std::uint16_t tag = 0;
+            std::uint16_t fieldType = 0;
+            std::uint32_t valueCount = 0;
+            std::size_t offset = 0;
+        };
+
+        Json invalidExifMetadata() {
+            return {{"orientation", 1}, {"parseStatus", "invalid"}};
+        }
+
+        bool readExifEntryHeader(const std::vector<std::uint8_t>& payload, std::size_t entryOffset,
+                                 bool littleEndian, ExifEntry& entry) {
+            entry.offset = entryOffset;
+            return readExif16(payload, entryOffset, littleEndian, entry.tag) &&
+                   readExif16(payload, entryOffset + JPEG_LENGTH_FIELD_SIZE, littleEndian, entry.fieldType) &&
+                   readExif32(payload, entryOffset + (2 * JPEG_LENGTH_FIELD_SIZE), littleEndian, entry.valueCount) &&
+                   entryOffset <= payload.size() && payload.size() - entryOffset >= EXIF_ENTRY_SIZE;
+        }
+
+        void addExifOrientation(const std::vector<std::uint8_t>& payload, const ExifEntry& entry,
+                                bool littleEndian, Json& metadata) {
+            if (entry.tag != EXIF_ORIENTATION_TAG || entry.fieldType != EXIF_SHORT_FIELD_TYPE ||
+                entry.valueCount == 0)
+                return;
+
+            std::uint16_t orientation = 1;
+            if (entry.valueCount <= JPEG_LENGTH_FIELD_SIZE) {
+                if (!readExif16(payload, entry.offset + EXIF_ENTRY_VALUE_OFFSET, littleEndian, orientation)) return;
+            } else {
+                std::uint32_t valueOffset = 0;
+                if (!readExif32(payload, entry.offset + EXIF_ENTRY_VALUE_OFFSET, littleEndian, valueOffset) ||
+                    !readExif16(payload, EXIF_HEADER_OFFSET + static_cast<std::size_t>(valueOffset),
+                                littleEndian, orientation))
+                    return;
+            }
+            metadata["orientation"] = orientation;
+        }
+
+        std::string exifTextFieldName(std::uint16_t tag) {
+            switch (tag) {
+            case EXIF_MAKE_TAG: return "make";
+            case EXIF_MODEL_TAG: return "model";
+            case EXIF_SOFTWARE_TAG: return "software";
+            case EXIF_DATE_TIME_TAG: return "dateTime";
+            case EXIF_ARTIST_TAG: return "artist";
+            case EXIF_COPYRIGHT_TAG: return "copyright";
+            default: return {};
+            }
+        }
+
+        void addExifTextField(const std::vector<std::uint8_t>& payload, const ExifEntry& entry,
+                              bool littleEndian, Json& metadata) {
+            const std::string name = exifTextFieldName(entry.tag);
+            if (name.empty() || entry.fieldType != EXIF_ASCII_FIELD_TYPE || entry.valueCount == 0) return;
+
+            std::size_t valueOffset = entry.offset + EXIF_ENTRY_VALUE_OFFSET;
+            if (entry.valueCount > EXIF_INLINE_VALUE_SIZE) {
+                std::uint32_t relativeOffset = 0;
+                if (!readExif32(payload, entry.offset + EXIF_ENTRY_VALUE_OFFSET, littleEndian, relativeOffset)) return;
+                valueOffset = EXIF_HEADER_OFFSET + static_cast<std::size_t>(relativeOffset);
+            }
+            if (valueOffset > payload.size() || entry.valueCount > payload.size() - valueOffset) return;
+            const auto* text = reinterpret_cast<const char*>(payload.data() + valueOffset);
+            const std::size_t valueLength = entry.valueCount;
+            const std::size_t textLength = std::find(text, text + valueLength, '\0') - text;
+            metadata[name] = std::string(text, textLength);
+        }
+
+        bool processExifEntry(const std::vector<std::uint8_t>& payload, std::size_t entryOffset,
+                              bool littleEndian, Json& metadata) {
+            ExifEntry entry;
+            if (!readExifEntryHeader(payload, entryOffset, littleEndian, entry)) return false;
+            addExifOrientation(payload, entry, littleEndian, metadata);
+            addExifTextField(payload, entry, littleEndian, metadata);
+            return true;
+        }
+
         Json readJpegExifMetadata(const std::vector<std::uint8_t>& payload) {
-            constexpr std::size_t TIFF_HEADER_OFFSET = 6;
-            Json metadata = {{"orientation", 1}, {"parseStatus", "invalid"}};
-            if (payload.size() < TIFF_HEADER_OFFSET + 8) return metadata;
-            const bool littleEndian = payload[TIFF_HEADER_OFFSET] == 'I' && payload[TIFF_HEADER_OFFSET + 1] == 'I';
-            const bool bigEndian = payload[TIFF_HEADER_OFFSET] == 'M' && payload[TIFF_HEADER_OFFSET + 1] == 'M';
+            Json metadata = invalidExifMetadata();
+            if (payload.size() < EXIF_HEADER_OFFSET + EXIF_HEADER_SIZE) return metadata;
+            const bool littleEndian = payload[EXIF_HEADER_OFFSET] == 'I' && payload[EXIF_HEADER_OFFSET + 1] == 'I';
+            const bool bigEndian = payload[EXIF_HEADER_OFFSET] == 'M' && payload[EXIF_HEADER_OFFSET + 1] == 'M';
             if (!littleEndian && !bigEndian) return metadata;
 
             std::uint16_t magic = 0;
             std::uint32_t firstIfdOffset = 0;
-            if (!readExif16(payload, TIFF_HEADER_OFFSET + 2, littleEndian, magic) || magic != 42 ||
-                !readExif32(payload, TIFF_HEADER_OFFSET + 4, littleEndian, firstIfdOffset))
+            if (!readExif16(payload, EXIF_HEADER_OFFSET + JPEG_LENGTH_FIELD_SIZE, littleEndian, magic) ||
+                magic != EXIF_TIFF_MAGIC ||
+                !readExif32(payload, EXIF_HEADER_OFFSET + (2 * JPEG_LENGTH_FIELD_SIZE), littleEndian, firstIfdOffset))
                 return metadata;
-            const std::size_t ifdOffset = TIFF_HEADER_OFFSET + static_cast<std::size_t>(firstIfdOffset);
+            const std::size_t ifdOffset = EXIF_HEADER_OFFSET + static_cast<std::size_t>(firstIfdOffset);
             std::uint16_t entryCount = 0;
             if (!readExif16(payload, ifdOffset, littleEndian, entryCount)) return metadata;
 
             metadata["parseStatus"] = "parsed";
             for (std::size_t entryIndex = 0; entryIndex < entryCount; ++entryIndex) {
-                const std::size_t entryOffset = ifdOffset + 2 + entryIndex * 12;
-                std::uint16_t tag = 0;
-                std::uint16_t fieldType = 0;
-                std::uint32_t valueCount = 0;
-                if (!readExif16(payload, entryOffset, littleEndian, tag) ||
-                    !readExif16(payload, entryOffset + 2, littleEndian, fieldType) ||
-                    !readExif32(payload, entryOffset + 4, littleEndian, valueCount) ||
-                    entryOffset > payload.size() || payload.size() - entryOffset < 12)
-                    return Json{{"orientation", 1}, {"parseStatus", "invalid"}};
-
-                if (tag == 0x0112 && fieldType == 3 && valueCount > 0) {
-                    std::uint16_t orientation = 1;
-                    if (valueCount <= 2) {
-                        if (!readExif16(payload, entryOffset + 8, littleEndian, orientation)) return metadata;
-                    } else {
-                        std::uint32_t valueOffset = 0;
-                        if (!readExif32(payload, entryOffset + 8, littleEndian, valueOffset) ||
-                            !readExif16(payload, TIFF_HEADER_OFFSET + static_cast<std::size_t>(valueOffset),
-                                        littleEndian, orientation))
-                            return metadata;
-                    }
-                    metadata["orientation"] = orientation;
-                }
-
-                std::string name;
-                switch (tag) {
-                case 0x010F: name = "make"; break;
-                case 0x0110: name = "model"; break;
-                case 0x0131: name = "software"; break;
-                case 0x0132: name = "dateTime"; break;
-                case 0x013B: name = "artist"; break;
-                case 0x8298: name = "copyright"; break;
-                default: break;
-                }
-                if (name.empty() || fieldType != 2 || valueCount == 0) continue;
-
-                std::size_t valueOffset = entryOffset + 8;
-                if (valueCount > 4) {
-                    std::uint32_t relativeOffset = 0;
-                    if (!readExif32(payload, entryOffset + 8, littleEndian, relativeOffset)) continue;
-                    valueOffset = TIFF_HEADER_OFFSET + static_cast<std::size_t>(relativeOffset);
-                }
-                if (valueOffset > payload.size() || valueCount > payload.size() - valueOffset) continue;
-                const auto* text = reinterpret_cast<const char*>(payload.data() + valueOffset);
-                const std::size_t textLength = std::find(text, text + valueCount, '\0') - text;
-                metadata[name] = std::string(text, textLength);
+                const std::size_t entryOffset = ifdOffset + JPEG_LENGTH_FIELD_SIZE + entryIndex * EXIF_ENTRY_SIZE;
+                if (!processExifEntry(payload, entryOffset, littleEndian, metadata)) return invalidExifMetadata();
             }
             return metadata;
         }
 
         bool isStartOfFrame(std::uint8_t marker) {
-            return marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+            return marker >= JPEG_SOF_FIRST && marker <= JPEG_SOF_LAST && marker != JPEG_DHT &&
+                   marker != JPEG_JPG && marker != JPEG_DAC;
+        }
+
+        struct JpegMetadataState {
+            ImageMetadata imageMetadata;
+            Json metadataSegments = Json::array();
+            Json properties = {{"orientation", 1}};
+            std::map<unsigned int, std::vector<std::uint8_t>> iccChunks;
+            unsigned int expectedIccChunks = 0;
+        };
+
+        bool readJpegMarker(std::istream& input, std::uint8_t& marker) {
+            int prefix = input.get();
+            while (prefix != std::char_traits<char>::eof() && prefix != JPEG_MARKER_PREFIX) prefix = input.get();
+            if (prefix == std::char_traits<char>::eof()) return false;
+            int markerValue = input.get();
+            while (markerValue == JPEG_MARKER_PREFIX) markerValue = input.get();
+            if (markerValue == std::char_traits<char>::eof()) return false;
+            marker = static_cast<std::uint8_t>(markerValue);
+            return true;
+        }
+
+        std::vector<std::uint8_t> readJpegSegmentPayload(std::istream& input, const std::filesystem::path& path) {
+            std::array<std::uint8_t, JPEG_LENGTH_FIELD_SIZE> lengthBytes{};
+            if (!input.read(reinterpret_cast<char*>(lengthBytes.data()), static_cast<std::streamsize>(lengthBytes.size())))
+                throw std::runtime_error("truncated JPEG segment: " + path.string());
+            const std::uint16_t segmentLength = readBigEndian16(lengthBytes.data());
+            if (segmentLength < JPEG_LENGTH_FIELD_SIZE)
+                throw std::runtime_error("invalid JPEG segment length: " + path.string());
+            std::vector<std::uint8_t> payload(segmentLength - JPEG_LENGTH_FIELD_SIZE);
+            if (!payload.empty() &&
+                !input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size())))
+                throw std::runtime_error("truncated JPEG segment: " + path.string());
+            return payload;
+        }
+
+        void readJpegFrameProperties(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                                     const std::filesystem::path& path, Json& properties) {
+            if (!isStartOfFrame(marker)) return;
+            if (payload.size() < JPEG_FRAME_HEADER_SIZE)
+                throw std::runtime_error("invalid JPEG frame header: " + path.string());
+            const std::uint16_t height = readBigEndian16(payload.data() + JPEG_FRAME_HEIGHT_OFFSET);
+            const std::uint16_t width = readBigEndian16(payload.data() + JPEG_FRAME_WIDTH_OFFSET);
+            if (width == 0 || height == 0) throw std::runtime_error("JPEG has invalid dimensions: " + path.string());
+            properties["width"] = width;
+            properties["height"] = height;
+            properties["bitsPerSample"] = payload[JPEG_FRAME_PRECISION_OFFSET];
+            properties["samplesPerPixel"] = payload[JPEG_FRAME_COMPONENTS_OFFSET];
+            properties["compression"] = marker;
+        }
+
+        bool collectJpegIccProfile(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                                   const std::filesystem::path& path, JpegMetadataState& state) {
+            constexpr std::array<std::uint8_t, 12> ICC_SIGNATURE = {
+                'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', 0
+            };
+            const std::size_t chunkIndexOffset = ICC_SIGNATURE.size();
+            const std::size_t chunkCountOffset = chunkIndexOffset + 1;
+            if (marker != JPEG_APP2 || payload.size() < ICC_SIGNATURE.size() + JPEG_LENGTH_FIELD_SIZE ||
+                !std::equal(ICC_SIGNATURE.begin(), ICC_SIGNATURE.end(), payload.begin()))
+                return false;
+
+            const unsigned int chunkIndex = payload[chunkIndexOffset];
+            const unsigned int chunkCount = payload[chunkCountOffset];
+            if (chunkIndex == 0 || chunkCount == 0 || chunkIndex > chunkCount ||
+                (state.expectedIccChunks != 0 && state.expectedIccChunks != chunkCount))
+                throw std::runtime_error("invalid JPEG ICC profile segments: " + path.string());
+            state.expectedIccChunks = chunkCount;
+            if (state.iccChunks.count(chunkIndex) != 0)
+                throw std::runtime_error("duplicate JPEG ICC profile segment: " + path.string());
+            state.iccChunks.emplace(chunkIndex, std::vector<std::uint8_t>(
+                payload.begin() + static_cast<std::ptrdiff_t>(chunkCountOffset + 1), payload.end()));
+            return true;
+        }
+
+        void readJpegExifProperties(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                                    Json& properties) {
+            constexpr std::array<std::uint8_t, EXIF_HEADER_OFFSET> EXIF_SIGNATURE = {'E', 'x', 'i', 'f', 0, 0};
+            if (marker != JPEG_APP1 || payload.size() < EXIF_SIGNATURE.size() ||
+                !std::equal(EXIF_SIGNATURE.begin(), EXIF_SIGNATURE.end(), payload.begin()))
+                return;
+            properties["exifPresent"] = true;
+            properties["exifPayloadBytes"] = payload.size();
+            const Json exifMetadata = readJpegExifMetadata(payload);
+            properties["exif"] = exifMetadata;
+            for (const char* propertyName : {"orientation", "make", "model", "software", "dateTime", "artist", "copyright"})
+                if (exifMetadata.contains(propertyName)) properties[propertyName] = exifMetadata.at(propertyName);
+        }
+
+        bool isJfifSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload) {
+            return marker == JPEG_APP0 && payload.size() >= JFIF_MINIMUM_PAYLOAD_SIZE &&
+                   payload[0] == 'J' && payload[1] == 'F' && payload[2] == 'I' &&
+                   payload[3] == 'F' && payload[4] == 0;
+        }
+
+        void readJpegApplicationSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                                        const std::filesystem::path& path, JpegMetadataState& state) {
+            if (marker < JPEG_APP_FIRST || marker > JPEG_APP_LAST) return;
+            state.metadataSegments.push_back({{"marker", marker}, {"payloadBytes", payload.size()}});
+            const bool jfifSegment = isJfifSegment(marker, payload);
+            if (jfifSegment) {
+                state.properties["jfifVersion"] = {
+                    {"major", payload[JFIF_VERSION_MAJOR_OFFSET]},
+                    {"minor", payload[JFIF_VERSION_MINOR_OFFSET]},
+                    {"thumbnailWidth", payload[JFIF_THUMBNAIL_WIDTH_OFFSET]},
+                    {"thumbnailHeight", payload[JFIF_THUMBNAIL_HEIGHT_OFFSET]}
+                };
+            }
+
+            readJpegExifProperties(marker, payload, state.properties);
+            const bool isIccProfile = collectJpegIccProfile(marker, payload, path, state);
+            if (!jfifSegment && !isIccProfile)
+                state.imageMetadata.metadataSegments.emplace_back(marker, payload);
+        }
+
+        void readJpegComment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                             JpegMetadataState& state) {
+            if (marker != JPEG_COMMENT) return;
+            state.properties["commentBytes"] =
+                state.properties.value("commentBytes", std::size_t{0}) + payload.size();
+            state.properties["commentCount"] = state.properties.value("commentCount", std::size_t{0}) + 1;
+            state.imageMetadata.metadataSegments.emplace_back(marker, payload);
+        }
+
+        void collectJpegSegment(std::uint8_t marker, const std::vector<std::uint8_t>& payload,
+                                const std::filesystem::path& path, JpegMetadataState& state) {
+            readJpegFrameProperties(marker, payload, path, state.properties);
+            readJpegApplicationSegment(marker, payload, path, state);
+            readJpegComment(marker, payload, state);
+        }
+
+        ImageMetadata finishJpegMetadata(const std::filesystem::path& path, JpegMetadataState& state) {
+            if (!state.properties.contains("width") || !state.properties.contains("height"))
+                throw std::runtime_error("JPEG has no supported frame header: " + path.string());
+            if (!state.properties.contains("exifPresent")) {
+                state.properties["exifPresent"] = false;
+                state.properties["exifPayloadBytes"] = 0;
+                state.properties["exif"] = Json();
+            }
+            state.properties["metadataSegments"] = std::move(state.metadataSegments);
+
+            if (state.expectedIccChunks != 0) {
+                if (state.iccChunks.size() != state.expectedIccChunks)
+                    throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
+                for (unsigned int index = 1; index <= state.expectedIccChunks; ++index) {
+                    const auto chunk = state.iccChunks.find(index);
+                    if (chunk == state.iccChunks.end())
+                        throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
+                    state.imageMetadata.iccProfile.insert(
+                        state.imageMetadata.iccProfile.end(), chunk->second.begin(), chunk->second.end());
+                }
+                state.imageMetadata.hasIccProfile = !state.imageMetadata.iccProfile.empty();
+            }
+            state.imageMetadata.format = "JPEG";
+            state.imageMetadata.properties = std::move(state.properties);
+            return std::move(state.imageMetadata);
         }
 
         ImageMetadata readJpegMetadata(const std::filesystem::path& path) {
             std::ifstream input(path, std::ios::binary);
             if (!input) throw std::runtime_error("cannot open JPEG: " + path.string());
-
-            const std::array<std::uint8_t, 2> signature = {
+            const std::array<std::uint8_t, JPEG_LENGTH_FIELD_SIZE> signature = {
                 static_cast<std::uint8_t>(input.get()), static_cast<std::uint8_t>(input.get())
             };
-            if (signature[0] != 0xFF || signature[1] != 0xD8)
+            if (signature[0] != JPEG_MARKER_PREFIX || signature[1] != JPEG_START_OF_IMAGE)
                 throw std::runtime_error("invalid JPEG signature: " + path.string());
 
-            ImageMetadata metadata;
-            metadata.format = "JPEG";
-            Json metadataSegments = Json::array();
-            Json properties = {{"orientation", 1}};
-            std::map<unsigned int, std::vector<std::uint8_t>> iccChunks;
-            unsigned int expectedIccChunks = 0;
-
-            while (input) {
-                int prefix = input.get();
-                while (prefix != std::char_traits<char>::eof() && prefix != 0xFF) prefix = input.get();
-                if (prefix == std::char_traits<char>::eof()) break;
-                int markerValue = input.get();
-                while (markerValue == 0xFF) markerValue = input.get();
-                if (markerValue == std::char_traits<char>::eof()) break;
-                const auto marker = static_cast<std::uint8_t>(markerValue);
-                if (marker == 0xD9 || marker == 0xDA) break;
-                if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) continue;
-
-                std::array<std::uint8_t, 2> lengthBytes{};
-                if (!input.read(reinterpret_cast<char*>(lengthBytes.data()), 2))
-                    throw std::runtime_error("truncated JPEG segment: " + path.string());
-                const std::uint16_t segmentLength = readBigEndian16(lengthBytes.data());
-                if (segmentLength < 2) throw std::runtime_error("invalid JPEG segment length: " + path.string());
-                std::vector<std::uint8_t> payload(segmentLength - 2);
-                if (!payload.empty() && !input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size())))
-                    throw std::runtime_error("truncated JPEG segment: " + path.string());
-
-                if (isStartOfFrame(marker)) {
-                    if (payload.size() < 6) throw std::runtime_error("invalid JPEG frame header: " + path.string());
-                    const std::uint16_t height = readBigEndian16(payload.data() + 1);
-                    const std::uint16_t width = readBigEndian16(payload.data() + 3);
-                    if (width == 0 || height == 0) throw std::runtime_error("JPEG has invalid dimensions: " + path.string());
-                    properties["width"] = width;
-                    properties["height"] = height;
-                    properties["bitsPerSample"] = payload[0];
-                    properties["samplesPerPixel"] = payload[5];
-                    properties["compression"] = marker;
-                }
-
-                if (marker >= 0xE0 && marker <= 0xEF) {
-                    metadataSegments.push_back({{"marker", marker}, {"payloadBytes", payload.size()}});
-                    if (marker == 0xE0 && payload.size() >= 14 &&
-                        payload[0] == 'J' && payload[1] == 'F' && payload[2] == 'I' &&
-                        payload[3] == 'F' && payload[4] == 0) {
-                        properties["jfifVersion"] = {
-                            {"major", payload[5]}, {"minor", payload[6]},
-                            {"thumbnailWidth", payload[12]}, {"thumbnailHeight", payload[13]}
-                        };
-                    } else if (marker == 0xE0) {
-                        metadata.metadataSegments.emplace_back(marker, payload);
-                    }
-                } else if (marker == 0xFE) {
-                    properties["commentBytes"] = properties.value("commentBytes", std::size_t{0}) + payload.size();
-                    properties["commentCount"] = properties.value("commentCount", std::size_t{0}) + 1;
-                    metadata.metadataSegments.emplace_back(marker, payload);
-                }
-
-                constexpr std::array<std::uint8_t, 6> EXIF_SIGNATURE = {'E', 'x', 'i', 'f', 0, 0};
-                if (marker == 0xE1 && payload.size() >= EXIF_SIGNATURE.size() &&
-                    std::equal(EXIF_SIGNATURE.begin(), EXIF_SIGNATURE.end(), payload.begin())) {
-                    properties["exifPresent"] = true;
-                    properties["exifPayloadBytes"] = payload.size();
-                    const Json exifMetadata = readJpegExifMetadata(payload);
-                    properties["exif"] = exifMetadata;
-                    for (const char* propertyName : {"orientation", "make", "model", "software", "dateTime", "artist", "copyright"})
-                        if (exifMetadata.contains(propertyName)) properties[propertyName] = exifMetadata.at(propertyName);
-                }
-
-                constexpr std::array<std::uint8_t, 12> ICC_SIGNATURE = {
-                    'I', 'C', 'C', '_', 'P', 'R', 'O', 'F', 'I', 'L', 'E', 0
-                };
-                if (marker == 0xE2 && payload.size() >= ICC_SIGNATURE.size() + 2 &&
-                    std::equal(ICC_SIGNATURE.begin(), ICC_SIGNATURE.end(), payload.begin())) {
-                    const unsigned int chunkIndex = payload[12];
-                    const unsigned int chunkCount = payload[13];
-                    if (chunkIndex == 0 || chunkCount == 0 || chunkIndex > chunkCount ||
-                        (expectedIccChunks != 0 && expectedIccChunks != chunkCount))
-                        throw std::runtime_error("invalid JPEG ICC profile segments: " + path.string());
-                    expectedIccChunks = chunkCount;
-                    if (iccChunks.count(chunkIndex) != 0)
-                        throw std::runtime_error("duplicate JPEG ICC profile segment: " + path.string());
-                    iccChunks.emplace(chunkIndex, std::vector<std::uint8_t>(
-                        payload.begin() + static_cast<std::ptrdiff_t>(ICC_SIGNATURE.size() + 2), payload.end()));
-                } else if (marker >= 0xE0 && marker <= 0xEF && marker != 0xE0) {
-                    metadata.metadataSegments.emplace_back(marker, payload);
-                }
+            JpegMetadataState state;
+            std::uint8_t marker = 0;
+            while (readJpegMarker(input, marker)) {
+                if (marker == JPEG_END_OF_IMAGE || marker == JPEG_START_OF_SCAN) break;
+                if (marker == JPEG_TEM || (marker >= JPEG_RESTART_FIRST && marker <= JPEG_RESTART_LAST)) continue;
+                collectJpegSegment(marker, readJpegSegmentPayload(input, path), path, state);
             }
-
-            if (!properties.contains("width") || !properties.contains("height"))
-                throw std::runtime_error("JPEG has no supported frame header: " + path.string());
-            if (!properties.contains("exifPresent")) {
-                properties["exifPresent"] = false;
-                properties["exifPayloadBytes"] = 0;
-                properties["exif"] = Json();
-            }
-            properties["metadataSegments"] = std::move(metadataSegments);
-
-            if (expectedIccChunks != 0) {
-                if (iccChunks.size() != expectedIccChunks)
-                    throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
-                for (unsigned int index = 1; index <= expectedIccChunks; ++index) {
-                    const auto chunk = iccChunks.find(index);
-                    if (chunk == iccChunks.end()) throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
-                    metadata.iccProfile.insert(metadata.iccProfile.end(), chunk->second.begin(), chunk->second.end());
-                }
-                metadata.hasIccProfile = !metadata.iccProfile.empty();
-            }
-            metadata.properties = std::move(properties);
-            return metadata;
+            return finishJpegMetadata(path, state);
         }
 
         ImageMetadata readImageMetadata(const std::filesystem::path& path) {
@@ -386,38 +528,120 @@ namespace VerificationNs {
             return comparisons;
         }
 
+        Json compareJpegMetadataSegment(
+            std::size_t index, const ImageMetadata& input, const ImageMetadata& output, Json& differences
+        ) {
+            const bool inputPresent = index < input.metadataSegments.size();
+            const bool outputPresent = index < output.metadataSegments.size();
+            const auto inputSegment = inputPresent ? input.metadataSegments[index] :
+                std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
+            const auto outputSegment = outputPresent ? output.metadataSegments[index] :
+                std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
+            const bool equal = inputPresent && outputPresent && inputSegment == outputSegment;
+            if (!equal) {
+                differences.push_back({
+                    {"property", "jpegMetadataSegment"},
+                    {"index", index},
+                    {"inputPresent", inputPresent},
+                    {"outputPresent", outputPresent},
+                    {"equal", false}
+                });
+            }
+            return {
+                {"index", index},
+                {"inputPresent", inputPresent},
+                {"outputPresent", outputPresent},
+                {"inputMarker", inputPresent ? Json(inputSegment.first) : Json()},
+                {"outputMarker", outputPresent ? Json(outputSegment.first) : Json()},
+                {"inputBytes", inputPresent ? Json(inputSegment.second.size()) : Json()},
+                {"outputBytes", outputPresent ? Json(outputSegment.second.size()) : Json()},
+                {"equal", equal}
+            };
+        }
+
         Json compareJpegMetadataSegments(const ImageMetadata& input, const ImageMetadata& output, Json& differences) {
             Json comparisons = Json::array();
             const std::size_t segmentCount = std::max(input.metadataSegments.size(), output.metadataSegments.size());
-            for (std::size_t segmentIndex = 0; segmentIndex < segmentCount; ++segmentIndex) {
-                const bool inputPresent = segmentIndex < input.metadataSegments.size();
-                const bool outputPresent = segmentIndex < output.metadataSegments.size();
-                const auto inputSegment = inputPresent ? input.metadataSegments[segmentIndex] :
-                    std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
-                const auto outputSegment = outputPresent ? output.metadataSegments[segmentIndex] :
-                    std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
-                const bool equal = inputPresent && outputPresent && inputSegment == outputSegment;
-                comparisons.push_back({
-                    {"index", segmentIndex},
-                    {"inputPresent", inputPresent},
-                    {"outputPresent", outputPresent},
-                    {"inputMarker", inputPresent ? Json(inputSegment.first) : Json()},
-                    {"outputMarker", outputPresent ? Json(outputSegment.first) : Json()},
-                    {"inputBytes", inputPresent ? Json(inputSegment.second.size()) : Json()},
-                    {"outputBytes", outputPresent ? Json(outputSegment.second.size()) : Json()},
-                    {"equal", equal}
-                });
-                if (!equal) {
-                    differences.push_back({
-                        {"property", "jpegMetadataSegment"},
-                        {"index", segmentIndex},
-                        {"inputPresent", inputPresent},
-                        {"outputPresent", outputPresent},
-                        {"equal", false}
-                    });
-                }
-            }
+            for (std::size_t segmentIndex = 0; segmentIndex < segmentCount; ++segmentIndex)
+                comparisons.push_back(compareJpegMetadataSegment(segmentIndex, input, output, differences));
             return comparisons;
+        }
+
+        std::string iccComparisonStatus(bool inputPresent, bool outputPresent, bool identicalBytes) {
+            if (!inputPresent && !outputPresent) return "absent_from_both";
+            if (inputPresent != outputPresent) return "presence_differs";
+            if (identicalBytes) return "identical_profile_data";
+            return "colorimetric_equivalence_undetermined";
+        }
+
+        Json compareIccProfiles(const ImageMetadata& input, const ImageMetadata& output,
+                                Json& differences, Json& warnings) {
+            const bool identicalBytes = input.hasIccProfile && output.hasIccProfile &&
+                                        input.iccProfile == output.iccProfile;
+            const std::string comparison =
+                iccComparisonStatus(input.hasIccProfile, output.hasIccProfile, identicalBytes);
+            if (input.hasIccProfile != output.hasIccProfile ||
+                (input.hasIccProfile && output.hasIccProfile && !identicalBytes)) {
+                differences.push_back({
+                    {"property", "iccProfile"},
+                    {"inputPresent", input.hasIccProfile},
+                    {"outputPresent", output.hasIccProfile},
+                    {"inputBytes", input.iccProfile.size()},
+                    {"outputBytes", output.iccProfile.size()},
+                    {"comparison", comparison}
+                });
+            }
+            if (!input.hasIccProfile || !output.hasIccProfile)
+                warnings.push_back("ICC profile is missing from at least one image");
+            else if (!identicalBytes)
+                warnings.push_back("ICC colorimetric equivalence cannot be determined without a color-management engine");
+
+            return {
+                {"inputPresent", input.hasIccProfile},
+                {"outputPresent", output.hasIccProfile},
+                {"inputBytes", input.iccProfile.size()},
+                {"outputBytes", output.iccProfile.size()},
+                {"identicalBytes", identicalBytes},
+                {"colorimetricEquivalence", comparison}
+            };
+        }
+
+        Json compareDimensions(const ImageMetadata& input, const ImageMetadata& output) {
+            const std::int64_t inputWidth = input.properties.at("width").get<std::int64_t>();
+            const std::int64_t inputHeight = input.properties.at("height").get<std::int64_t>();
+            const std::int64_t outputWidth = output.properties.at("width").get<std::int64_t>();
+            const std::int64_t outputHeight = output.properties.at("height").get<std::int64_t>();
+            const double inputAspectRatio = static_cast<double>(inputWidth) / static_cast<double>(inputHeight);
+            const double outputAspectRatio = static_cast<double>(outputWidth) / static_cast<double>(outputHeight);
+            return {
+                {"input", {{"width", inputWidth}, {"height", inputHeight}}},
+                {"output", {{"width", outputWidth}, {"height", outputHeight}}},
+                {"difference", {{"width", outputWidth - inputWidth}, {"height", outputHeight - inputHeight}}},
+                {"outputToInputRatio", {
+                    {"width", static_cast<double>(outputWidth) / static_cast<double>(inputWidth)},
+                    {"height", static_cast<double>(outputHeight) / static_cast<double>(inputHeight)},
+                    {"aspectRatio", outputAspectRatio / inputAspectRatio}
+                }}
+            };
+        }
+
+        Json createComparisonReport(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath,
+                                   const ImageMetadata& input, const ImageMetadata& output) {
+            Json differences = Json::array();
+            Json warnings = Json::array();
+            Json metadataComparisons = compareMetadata(input, output, differences);
+            metadataComparisons["jpegMetadataSegments"] = compareJpegMetadataSegments(input, output, differences);
+            const Json iccComparison = compareIccProfiles(input, output, differences, warnings);
+            return {
+                {"status", "report_ready"},
+                {"inputImage", {{"path", inputPath.string()}, {"format", input.format}, {"metadata", input.properties}}},
+                {"outputImage", {{"path", outputPath.string()}, {"format", output.format}, {"metadata", output.properties}}},
+                {"dimensions", compareDimensions(input, output)},
+                {"metadataComparisons", metadataComparisons},
+                {"iccProfile", iccComparison},
+                {"differences", differences},
+                {"warnings", warnings}
+            };
         }
 
     }
@@ -431,73 +655,7 @@ namespace VerificationNs {
             throw std::runtime_error("reconstructed image must be a TIFF: " + outputImagePath.string());
         const ImageMetadata inputMetadata = readImageMetadata(inputImagePath);
         const ImageMetadata outputMetadata = readImageMetadata(outputImagePath);
-        const std::int64_t inputWidth = inputMetadata.properties.at("width").get<std::int64_t>();
-        const std::int64_t inputHeight = inputMetadata.properties.at("height").get<std::int64_t>();
-        const std::int64_t outputWidth = outputMetadata.properties.at("width").get<std::int64_t>();
-        const std::int64_t outputHeight = outputMetadata.properties.at("height").get<std::int64_t>();
-
-        Json differences = Json::array();
-        Json metadataComparisons = compareMetadata(inputMetadata, outputMetadata, differences);
-        metadataComparisons["jpegMetadataSegments"] =
-            compareJpegMetadataSegments(inputMetadata, outputMetadata, differences);
-        const bool sameIccPresence = inputMetadata.hasIccProfile == outputMetadata.hasIccProfile;
-        const bool identicalIccBytes = inputMetadata.hasIccProfile && outputMetadata.hasIccProfile &&
-                                       inputMetadata.iccProfile == outputMetadata.iccProfile;
-        std::string iccComparison;
-        if (!inputMetadata.hasIccProfile && !outputMetadata.hasIccProfile) {
-            iccComparison = "absent_from_both";
-        } else if (!sameIccPresence) {
-            iccComparison = "presence_differs";
-        } else if (identicalIccBytes) {
-            iccComparison = "identical_profile_data";
-        } else {
-            iccComparison = "colorimetric_equivalence_undetermined";
-        }
-        if (!sameIccPresence || (inputMetadata.hasIccProfile && outputMetadata.hasIccProfile && !identicalIccBytes)) {
-            differences.push_back({
-                {"property", "iccProfile"},
-                {"inputPresent", inputMetadata.hasIccProfile},
-                {"outputPresent", outputMetadata.hasIccProfile},
-                {"inputBytes", inputMetadata.iccProfile.size()},
-                {"outputBytes", outputMetadata.iccProfile.size()},
-                {"comparison", iccComparison}
-            });
-        }
-
-        Json warnings = Json::array();
-        if (!inputMetadata.hasIccProfile || !outputMetadata.hasIccProfile)
-            warnings.push_back("ICC profile is missing from at least one image");
-        if (inputMetadata.hasIccProfile && outputMetadata.hasIccProfile && !identicalIccBytes)
-            warnings.push_back("ICC colorimetric equivalence cannot be determined without a color-management engine");
-
-        const double inputAspectRatio = static_cast<double>(inputWidth) / inputHeight;
-        const double outputAspectRatio = static_cast<double>(outputWidth) / outputHeight;
-        return {
-            {"status", "report_ready"},
-            {"inputImage", {{"path", inputImagePath.string()}, {"format", inputMetadata.format},
-                            {"metadata", inputMetadata.properties}}},
-            {"outputImage", {{"path", outputImagePath.string()}, {"format", outputMetadata.format},
-                             {"metadata", outputMetadata.properties}}},
-            {"dimensions", {
-                {"input", {{"width", inputWidth}, {"height", inputHeight}}},
-                {"output", {{"width", outputWidth}, {"height", outputHeight}}},
-                {"difference", {{"width", outputWidth - inputWidth}, {"height", outputHeight - inputHeight}}},
-                {"outputToInputRatio", {{"width", static_cast<double>(outputWidth) / inputWidth},
-                                        {"height", static_cast<double>(outputHeight) / inputHeight},
-                                        {"aspectRatio", outputAspectRatio / inputAspectRatio}}}
-            }},
-            {"metadataComparisons", metadataComparisons},
-            {"iccProfile", {
-                {"inputPresent", inputMetadata.hasIccProfile},
-                {"outputPresent", outputMetadata.hasIccProfile},
-                {"inputBytes", inputMetadata.iccProfile.size()},
-                {"outputBytes", outputMetadata.iccProfile.size()},
-                {"identicalBytes", identicalIccBytes},
-                {"colorimetricEquivalence", iccComparison}
-            }},
-            {"differences", differences},
-            {"warnings", warnings}
-        };
+        return createComparisonReport(inputImagePath, outputImagePath, inputMetadata, outputMetadata);
     }
 
 }
