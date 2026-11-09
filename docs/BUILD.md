@@ -1,5 +1,7 @@
 # Compiler KIKIRPA-CPP
 
+Première installation sur un poste, pas à pas, avec les problèmes courants : [DEMARRER.md](DEMARRER.md). Cette page est la référence : dépendances, presets et options du build.
+
 ## Dépendances
 
 | Dépendance | Obligatoire | Rôle |
@@ -40,8 +42,9 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
    setx QT_ROOT C:\Qt\6.10.3\msvc2022_64
    ```
    `KIKIRPA_VCPKG_ROOT` évite le conflit avec la variable `VCPKG_ROOT` que Visual Studio peut définir pour son propre vcpkg.
-6. **Compiler et tester**, depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat` :
+6. **Compiler et tester** avec `python scripts/demarrer.py --tests`, depuis n'importe quel terminal ([DEMARRER.md](DEMARRER.md) § 4). À la main : depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat`, avec la console en UTF-8 :
    ```bat
+   chcp 65001
    cmake --preset windows-aqt
    cmake --build --preset windows-aqt
    ctest --preset windows-aqt
