@@ -104,8 +104,8 @@ void FusionStepClass::renderBlock(
     for (const auto& tile : placements) {
         auto territoryIt = territoryByIndex.find(tile.index);
         if (territoryIt == territoryByIndex.end()) continue;
-        const cv::Rect INTERSECTION = block & tile.globalBox;
-        if (INTERSECTION.empty()) continue;
+        const cv::Rect intersection = block & tile.globalBox;
+        if (intersection.empty()) continue;
 
         cv::Mat source = cv::imread(tile.path.string(), cv::IMREAD_UNCHANGED);
         if (source.empty())
@@ -115,21 +115,21 @@ void FusionStepClass::renderBlock(
         if (source.size() != tile.globalBox.size())
             throw std::runtime_error("Dimensions inattendues : " + tile.path.string());
 
-        const cv::Rect SRC_RECT(INTERSECTION.x - tile.globalBox.x,
-                               INTERSECTION.y - tile.globalBox.y,
-                               INTERSECTION.width, INTERSECTION.height);
-        const cv::Rect DST_RECT(INTERSECTION.x - block.x,
-                               INTERSECTION.y - block.y,
-                               INTERSECTION.width, INTERSECTION.height);
+        const cv::Rect srcRect(intersection.x - tile.globalBox.x,
+                               intersection.y - tile.globalBox.y,
+                               intersection.width, intersection.height);
+        const cv::Rect dstRect(intersection.x - block.x,
+                               intersection.y - block.y,
+                               intersection.width, intersection.height);
 
         cv::Mat territoryMask = makeTerritoryMask(block, *territoryIt->second);
-        cv::Mat maskRoi = territoryMask(DST_RECT);
-        cv::Mat pixels = source(SRC_RECT);
+        cv::Mat maskRoi = territoryMask(dstRect);
+        cv::Mat pixels = source(srcRect);
         cv::Mat corrected;
         pixels.convertTo(corrected, CV_16UC3, tile.lightGain);
-        corrected.copyTo(outBlockRgb(DST_RECT), maskRoi);
-        outBlockProvenance(DST_RECT).setTo(cv::Scalar(tile.index + 1), maskRoi);
-        outBlockMask(DST_RECT).setTo(cv::Scalar(VALID_MASK_VALUE), maskRoi);
+        corrected.copyTo(outBlockRgb(dstRect), maskRoi);
+        outBlockProvenance(dstRect).setTo(cv::Scalar(tile.index + 1), maskRoi);
+        outBlockMask(dstRect).setTo(cv::Scalar(VALID_MASK_VALUE), maskRoi);
     }
 }
 
@@ -164,16 +164,16 @@ bool FusionStepClass::execute() {
         for (std::size_t i = 0; i < tiles.size(); ++i) {
             const auto& tile = tiles[i];
             if (!tile) throw std::runtime_error("FusionStep : tuile nulle");
-            const std::string FILENAME = tile->getSource().filename().string();
+            const std::string filename = tile->getSource().filename().string();
             const DataNs::TilePositionData* position = nullptr;
             for (const auto& candidate : positions) {
-                if (FILENAME.find(candidate.tileId) != std::string::npos) {
-                    if (position) throw std::runtime_error("FusionStep : position ambigue pour " + FILENAME);
+                if (filename.find(candidate.tileId) != std::string::npos) {
+                    if (position) throw std::runtime_error("FusionStep : position ambigue pour " + filename);
                     position = &candidate;
                 }
             }
             if (!position)
-                throw std::runtime_error("FusionStep : position introuvable pour " + FILENAME);
+                throw std::runtime_error("FusionStep : position introuvable pour " + filename);
             if (std::abs(position->rotationRadians) > ROTATION_TOLERANCE)
                 throw std::runtime_error("FusionStep : rotations non prises en charge");
             const auto& level = tile->getLevel(0);
@@ -192,31 +192,31 @@ bool FusionStepClass::execute() {
                 throw std::runtime_error("FusionStep : tileIndex hors limites");
         }
 
-        const cv::Rect BOUNDS = computeGlobalBoundingBox(placements);
-        if (BOUNDS.empty()) throw std::runtime_error("FusionStep : mosaique vide");
-        const std::filesystem::path DIRECTORY = input.outputPath.empty()
+        const cv::Rect bounds = computeGlobalBoundingBox(placements);
+        if (bounds.empty()) throw std::runtime_error("FusionStep : mosaique vide");
+        const std::filesystem::path directory = input.outputPath.empty()
             ? std::filesystem::path("fusion_output")
             : std::filesystem::path(input.outputPath);
-        std::filesystem::create_directories(DIRECTORY);
+        std::filesystem::create_directories(directory);
 
-        for (int y = BOUNDS.y; y < BOUNDS.y + BOUNDS.height; y += input.blockSize) {
-            for (int x = BOUNDS.x; x < BOUNDS.x + BOUNDS.width; x += input.blockSize) {
-                const cv::Rect BLOCK(x, y,
-                    std::min(input.blockSize, BOUNDS.x + BOUNDS.width - x),
-                    std::min(input.blockSize, BOUNDS.y + BOUNDS.height - y));
+        for (int y = bounds.y; y < bounds.y + bounds.height; y += input.blockSize) {
+            for (int x = bounds.x; x < bounds.x + bounds.width; x += input.blockSize) {
+                const cv::Rect block(x, y,
+                    std::min(input.blockSize, bounds.x + bounds.width - x),
+                    std::min(input.blockSize, bounds.y + bounds.height - y));
                 cv::Mat rgb, provenance, mask;
-                renderBlock(BLOCK, placements, territories, rgb, provenance, mask);
-                const std::string SUFFIX = "_x" + std::to_string(x) +
+                renderBlock(block, placements, territories, rgb, provenance, mask);
+                const std::string suffix = "_x" + std::to_string(x) +
                                            "_y" + std::to_string(y) + ".png";
-                const bool OK =
-                    cv::imwrite((DIRECTORY / ("rgb" + SUFFIX)).string(), rgb) &&
-                    cv::imwrite((DIRECTORY / ("provenance" + SUFFIX)).string(), provenance) &&
-                    cv::imwrite((DIRECTORY / ("mask" + SUFFIX)).string(), mask);
-                if (!OK) throw std::runtime_error("FusionStep : ecriture bloc echouee");
+                const bool ok =
+                    cv::imwrite((directory / ("rgb" + suffix)).string(), rgb) &&
+                    cv::imwrite((directory / ("provenance" + suffix)).string(), provenance) &&
+                    cv::imwrite((directory / ("mask" + suffix)).string(), mask);
+                if (!ok) throw std::runtime_error("FusionStep : ecriture bloc echouee");
                 ++output.totalBlocks;
             }
         }
-        output.mosaicPath = DIRECTORY.string();
+        output.mosaicPath = directory.string();
         result["mosaicPath"] = output.mosaicPath;
         result["totalBlocks"] = output.totalBlocks;
         return true;
