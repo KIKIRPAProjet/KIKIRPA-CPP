@@ -1,5 +1,5 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// include/frontend/mainwindow.h
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
@@ -90,5 +90,3 @@ private:
     bool panelsVisible = true;
     bool maskVisible = true;
 };
-
-#endif

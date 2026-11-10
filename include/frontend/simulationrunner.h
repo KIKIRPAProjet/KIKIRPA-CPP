@@ -1,5 +1,5 @@
-#ifndef SIMULATIONRUNNER_H
-#define SIMULATIONRUNNER_H
+// include/frontend/simulationrunner.h
+#pragma once
 
 #include <QObject>
 #include <QString>
@@ -55,5 +55,3 @@ private:
     bool running = false;
     bool comparisonVisible = false;
 };
-
-#endif

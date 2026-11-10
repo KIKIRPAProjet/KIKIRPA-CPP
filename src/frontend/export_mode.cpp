@@ -1,3 +1,4 @@
+// src/frontend/export_mode.cpp
 #include "mainwindow.h"
 
 #include "core/pipeline/pipeline_report.h"

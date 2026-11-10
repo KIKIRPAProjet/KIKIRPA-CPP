@@ -1,3 +1,4 @@
+// src/frontend/mainwindow.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : la fenêtre principale coordonne les composants sans déplacer leur logique dédiée ;
@@ -12,41 +13,42 @@
  * - ce que ça renvoie : aucune valeur directement, les interactions sont transmises par des signaux ;
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
-//  implemente la fenetre principale de lapplication
 #include "mainwindow.h"
+
 #include "artworkcanvas.h"
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
 #include "menubar_manager.h"
-#include "projectgrid.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
+#include "projectgrid.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
 
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QKeyEvent>
+#include <QFontMetrics>
+#include <QFrame>
 #include <QImage>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QUuid>
-#include <QAbstractItemView>
-#include <QFontMetrics>
-#include <QFrame>
-#include <QPixmap>
 #include <QtMath>
-#include <functional>
+
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>

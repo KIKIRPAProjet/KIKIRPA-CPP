@@ -1,5 +1,5 @@
-#ifndef DIALOG_HELPERS_H
-#define DIALOG_HELPERS_H
+// include/frontend/dialog_helpers.h
+#pragma once
 
 #include <QString>
 
@@ -14,5 +14,3 @@ void showReferenceComparisonDialog(QWidget *parent, const QString &referencePath
                                    const QImage &tileImage);
 void showComparisonDialog(QWidget *parent, SimulationRunner *simulationRunner);
 }
-
-#endif
