@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **09/11/2026**. La branche `fe/export` ajoute un step d'export, en attente de PR. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **10/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -35,9 +35,9 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
-| 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
+| 9 | Export | Écrire le fichier final | 🟡 `export` (attend la mosaïque écrite par l'assemblage) |
 
-**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step facultatif `final-verification` peut comparer des fichiers fournis explicitement; l'assemblage et l'export du pipeline restent à réaliser.
+**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step `export` publie l'image que l'assemblage aura écrite sur disque, bloc par bloc (§5).
 
 ---
 
@@ -219,14 +219,14 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
+| `export` | `outputDirectory` | `mosaic` : `Mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 `final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
 
 ### Les types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. `CompositeBlocks` est échangé en mémoire et n'est pas encore sérialisé. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -316,11 +316,20 @@ C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
-#### `CompositeBlocks` (clé `compositeBlocks`) : les blocs d'image assemblés
+#### `Mosaic` (clé `mosaic`) : la mosaïque assemblée, sur disque
 
-Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
+```json
+{ "imagePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_mask.tif",
+  "canvasSize": [17400, 6810] }
+```
 
-C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints.
+- Les pixels ne sont **jamais** dans le DataStore : seulement les chemins de trois TIFF tuilés pleine résolution, de `canvasSize` pixels, écrits bloc par bloc ([core/TiledTiffWriter.md](core/TiledTiffWriter.md)).
+- `imagePath` : RGB 16 bits. `provenancePath` : 16 bits, l'`id` de la tuile d'où vient chaque pixel. `maskPath` : 8 bits, 255 = pixel valide (la provenance n'a pas de sens là où le masque vaut 0).
+- Le repère est celui des territoires : coin le plus petit en (0, 0).
+
+C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`, au même endroit, est le format d'**un** bloc en mémoire, le temps de l'écrire ; il ne passe pas par le DataStore.
 
 #### Les deux fichiers du moteur
 
@@ -348,7 +357,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Aucun des deux n'est encore sur `main`.**
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **L'export est sur `main`, pas encore l'assemblage.**
 
 Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 
@@ -358,13 +367,13 @@ Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 4. ne garder que les pixels qui tombent dans son **territoire** ;
 5. écrire le résultat dans l'image finale, **par blocs** et sans jamais garder toute la mosaïque en mémoire (§6).
 
-L'export écrit les blocs composites dans un TIFF tuilé `mosaic.tif`.
+L'assemblage écrit chaque bloc **dès qu'il est calculé**, avec `IONs::TiledTiffWriterClass`, dans trois TIFF tuilés (image, provenance, masque). Il ne range dans le DataStore que leur description, `mosaic` (§4). L'export publie ensuite l'image sous le nom `mosaic.tif`.
 
 Où en est-on :
 
 - **Assemblage (Fusion)** : PR #69 (brouillon).
-- **Export** : branche `fe/export`, qui ajoute le step `export` et son type partagé.
-- **Contrat entre les deux** : Fusion doit fournir la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque bloc doit contenir `imageRgb` en `CV_16UC3` et un `blockRect` aligné sur `DataNs::BLOCK_SIZE`, avec une grille complète. L'export n'écrit pas `provenance` ni `mask`.
+- **Export** : step `export` sur main ([ExportStep.md](steps/ExportStep.md)).
+- **Contrat entre les deux** : l'assemblage fournit la clé `mosaic` (`DataNs::Mosaic`). Son `imagePath` est un TIFF tuilé RGB 16 bits de `canvasSize` pixels ; l'export le contrôle puis le copie (temporaire puis renommage). Il ne publie ni la provenance ni le masque. Aucune image entière ne passe par la mémoire, ni dans l'assemblage, ni dans l'export.
 
 ---
 
@@ -485,7 +494,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : faire correspondre les sorties de Fusion au contrat `CompositeBlocks`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
+- **Fusion et Export** : écrire l'assemblage sur le writer par blocs et le contrat `mosaic`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.
