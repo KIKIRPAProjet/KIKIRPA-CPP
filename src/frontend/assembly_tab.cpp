@@ -25,24 +25,25 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
         tr("4  Optimisation"), tr("5  Calage local"), tr("6  Égalisation"),
         tr("7  Ligne de couture"), tr("8  Fusion et export")};
 
-    auto *stepList = new QListWidget(this);
+    m_stepList = new QListWidget(this);
     for (int i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem((i == 2 ? QStringLiteral("⚠  ") : QStringLiteral("●  "))
-                                         + steps.at(i), stepList);
+                                         + steps.at(i), m_stepList);
         item->setData(Qt::UserRole, i + 1);
     }
-    chainLayout->addWidget(stepList);
+    
+    chainLayout->addWidget(m_stepList);
 
-    connect(stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
+    connect(m_stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
 
-    //bouton de relance 
+    // Bouton de relance 
     auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), this);
     chainLayout->addWidget(relaunch);
 
-    connect(relaunch, &QPushButton::clicked, this, [this, stepList]() {
-        const int row = std::max(0, stepList->currentRow());
+    connect(relaunch, &QPushButton::clicked, this, [this]() {
+        const int row = std::max(0, m_stepList->currentRow());
         m_mainWindow->requestRun(row + 1);
     });
 
@@ -53,4 +54,20 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     connect(selectAlgo, &QComboBox::currentTextChanged, this, [this](const QString &algorithm) {
         m_mainWindow->updateStatus(tr("Algorithme sélectionné : %1 — étapes suivantes à refaire.").arg(algorithm));
     });
+}
+
+void AssemblyTab::setActiveStep(int stepNumber)
+{
+    m_activeStep = stepNumber;
+    if (!m_stepList)
+        return;
+
+    if (stepNumber <= 0 || stepNumber > m_stepList->count()) {
+        m_stepList->clearSelection();
+        m_stepList->setCurrentRow(-1);
+        return;
+    }
+
+    m_stepList->setCurrentRow(stepNumber - 1);
+    m_stepList->scrollToItem(m_stepList->item(stepNumber - 1));
 }

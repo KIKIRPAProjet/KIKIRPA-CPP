@@ -273,6 +273,18 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 
 C++ : `std::vector<DataNs::TilePositionData>`.
 
+#### `PairResiduals` (clé `pairResiduals`) : l'écart de chaque paire après ajustement
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.16, 3.78], "residualNorm": 3.95 } ]
+```
+
+- `residual` = translation mesurée − (position B − position A) ajustées, en pixels.
+- Un grand résidu indique une mesure en contradiction avec les autres. Sans boucle dans la grille, il vaut 0.
+- `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
+
+C++ : `std::vector<DataNs::PairResidual>`.
+
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 
 ```json
