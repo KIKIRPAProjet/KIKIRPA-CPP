@@ -12,55 +12,12 @@
           {
             "valueType": "string",
             "name": "format",
-            "value": ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?"
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
           }
         ]
       },
       {
-        "name": "phase-correlation",
-        "parameters": [
-          {
-            "valueType": "int",
-            "name": "niveau",
-            "value": 1
-          }
-        ]
-      },
-      {
-        "name": "absolute-pos"
-      },
-      {
-        "name": "intensity-correction"
-      },
-      {
-        "name": "graphcut",
-        "parameters": [
-          {
-            "valueType": "float",
-            "name": "scale",
-            "value": 0.25
-          }
-        ]
-      },
-      {
-        "name": "fusion",
-        "parameters": [
-          {
-            "valueType": "int",
-            "name": "blockSize",
-            "value": 512
-          }
-        ]
-      },
-      {
-        "name": "export",
-        "parameters": [
-          {
-            "valueType": "string",
-            "name": "outputDirectory",
-            "value": "output/"
-          }
-        ]
+        "name": "phase-correlation"
       }
     ]
   }

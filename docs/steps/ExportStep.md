@@ -4,7 +4,7 @@ Code : [export_step.h](../../include/backend/steps/export_step.h) / [export_step
 
 ## Rôle
 
-Dernier step du pipeline. Il écrit uniquement l'image composite produite par l'assemblage (`fusion`) dans un fichier TIFF tuilé (`mosaic.tif`). Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé.
+Dernier step du pipeline. Il écrit uniquement l'image composite produite par l'assemblage dans un fichier TIFF. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé.
 
 ## Contrat
 
@@ -12,7 +12,7 @@ Dernier step du pipeline. Il écrit uniquement l'image composite produite par l'
 |---|---|
 | Nom du step | `export` |
 | Paramètre | `outputDirectory` (`string`), vide par défaut : dossier Téléchargements de l'utilisateur courant |
-| Entrée `compositeBlocks` | Type logique `CompositeBlocks`, type C++ `DataNs::CompositeBlockList` (fourni par `fusion`) |
+| Entrée `compositeBlocks` | Type logique `CompositeBlocks`, type C++ `DataNs::CompositeBlockList` |
 | Sorties DataStore | Aucune : ce step termine le pipeline |
 
 `CompositeBlock` est défini dans `core/data/algorithm_types.h`. L'export lit dans chaque bloc uniquement :
@@ -42,7 +42,7 @@ Le checkpoint ne sérialise pas actuellement `CompositeBlockList`. Un producteur
 
 ## État de l'enchaînement
 
-Le registre expose `export`, alimenté directement par le step `fusion` qui produit `compositeBlocks`.
+Le registre expose `export`, mais le dépôt ne contient pas encore de step de fusion qui produise `compositeBlocks`. En conséquence, `buildPipeline` rejettera un script qui utilise `export` tant qu'un producteur précédent ne sera pas implémenté et enregistré.
 
 ## Test ciblé
 

@@ -33,10 +33,10 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
-| 8 | Assemblage | Fabriquer l'image finale en blocs composites | ✅ `fusion` |
-| 9 | Export | Écrire le fichier final TIFF | ✅ `export` |
+| 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
+| 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
 
-**En une phrase : le pipeline peut désormais exécuter la chaîne complète depuis les tuiles individuelles jusqu'à l'image assemblée et exportée sur disque.**
+**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** La branche `fe/export` ajoute l'écriture TIFF, qui attend les blocs produits par Fusion.
 
 ---
 

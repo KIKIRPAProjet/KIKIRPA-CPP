@@ -118,8 +118,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
-| `fusion` | `StepsNs::FusionStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `territories` : `Territories` | `compositeBlocks` : `CompositeBlocks` |
-| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — *(terminal, écrit `mosaic.tif`)* |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
 `export` est terminal : il attend des blocs composites produits par Fusion, étape qui n'est pas encore présente dans ce dépôt.
@@ -135,10 +134,10 @@ doivent donc employer le même type C++.
 |---|---|---|---|
 | `tiles` | `Tiles` | `DataNs::TileList` | Produit par `import` ; consommé par tous les steps suivants |
 | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | Produit par `phase-correlation`, `sift`, `lightglue` ; consommé par `absolute-pos`, `intensity-correction` |
-| `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Produit par `absolute-pos` ; consommé par `graphcut`, `fusion` |
-| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `fusion` |
-| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` ; consommé par `fusion` |
-| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Produit par `fusion` ; consommé par `export` |
+| `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Produit par `absolute-pos` ; consommé par `graphcut`, `dynamic-programming-dijkstra` |
+| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `dynamic-programming-dijkstra` |
+| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` ; aucun consommateur d'assemblage enregistré |
+| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Aucun producteur enregistré (attendu par `export`) |
 
 Les contrats suivants ne sont **pas encore définis ni validés** pour les
 échanges entre steps. Les types d'algorithmes existants ne suffisent pas à
