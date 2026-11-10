@@ -253,6 +253,28 @@ namespace CheckpointNs {
             correction.isolatedTileIndices = correctionJson.at("isolatedTileIndices").get<std::vector<int>>();
             dataStore.replace(key, std::move(correction));
         }
+
+        // Sauvegarde du type "Mosaic" : { imagePath, provenancePath, maskPath, canvasSize: [largeur, hauteur] }.
+        // Seuls les chemins sont écrits ; les TIFF restent où l'assemblage les a écrits.
+        void saveMosaic(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const auto& mosaic = dataStore.get<DataNs::Mosaic>(key);
+            writeJson(directory, key, {{"imagePath", mosaic.imagePath.u8string()},
+                                       {"provenancePath", mosaic.provenancePath.u8string()},
+                                       {"maskPath", mosaic.maskPath.u8string()},
+                                       {"canvasSize", {mosaic.canvasSize.width, mosaic.canvasSize.height}}});
+        }
+
+        // Chargement du type "Mosaic" : relit les champs écrits par saveMosaic. L'existence des fichiers n'est pas
+        // vérifiée ici : l'empreinte du step producteur (externalInputsFingerprint) périme déjà son checkpoint.
+        void loadMosaic(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const Json mosaicJson = readJson(directory, key);
+            DataNs::Mosaic mosaic;
+            mosaic.imagePath = fs::u8path(mosaicJson.at("imagePath").get<std::string>());
+            mosaic.provenancePath = fs::u8path(mosaicJson.at("provenancePath").get<std::string>());
+            mosaic.maskPath = fs::u8path(mosaicJson.at("maskPath").get<std::string>());
+            mosaic.canvasSize = {mosaicJson.at("canvasSize").at(0).get<int>(), mosaicJson.at("canvasSize").at(1).get<int>()};
+            dataStore.replace(key, std::move(mosaic));
+        }
     }
 
     // Un type de donnée du pipeline -> sa paire (sauvegarde, chargement).
@@ -264,6 +286,7 @@ namespace CheckpointNs {
             {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
             {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
+            {"Mosaic", {saveMosaic, loadMosaic}},
         };
     }
 
