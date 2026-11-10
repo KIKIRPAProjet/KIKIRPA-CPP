@@ -1,6 +1,7 @@
 #include "bottom_tabs.h"
 #include "mainwindow.h"
 
+#include <QDateTime>
 #include <QTableWidget>
 #include <QListWidget>
 #include <QHeaderView>
@@ -32,11 +33,11 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     addTab(m_pairsTable, tr("Paires (4)"));
     
-    auto *journal = new QListWidget;
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
+    m_journalList = new QListWidget;
+    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
                        tr("14:10  4 tuiles importées"),
                        tr("14:02  Projet ouvert")});
-    addTab(journal, tr("Journal"));
+    addTab(m_journalList, tr("Journal"));
 
     auto *positions = new QTableWidget(4, 3);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
@@ -52,4 +53,12 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
         m_mainWindow->updateStatus(tr("Paire sélectionnée : %1").arg(m_pairsTable->item(row, 0)->text()));
     });
 
+}
+
+void BottomTabs::appendJournalEntry(const QString &message)
+{
+    if (!m_journalList)
+        return;
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("HH:mm:ss"));
+    m_journalList->insertItem(0, QStringLiteral("%1  %2").arg(timestamp, message));
 }

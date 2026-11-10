@@ -57,6 +57,8 @@ private:
     void refreshProjectInfo();
     void saveProject();
     void requestRun(int firstStep);
+    void requestResume();
+    bool generateBackendScript(QString *errorMessage = nullptr);
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
@@ -72,7 +74,10 @@ private slots:
     void handleGridValidation(bool valid, int activeTileCount, const QStringList &errors);
     void showComparisonDialog();
     void showCancelRunButton();
+    void markCancelPending();
     void removeCancelRunButton();
+    void showResumeRunButton();
+    void removeResumeRunButton();
 
 private:
     ProjectGrid *projectGrid = nullptr;
@@ -82,6 +87,7 @@ private:
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;
+    QString backendScriptPath;
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;

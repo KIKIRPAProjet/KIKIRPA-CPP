@@ -55,6 +55,12 @@ public:
 
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
+    QPushButton *resumeRunButton() const { return m_resumeRunButton; }
+    void setResumeRunButton(QPushButton *button) { m_resumeRunButton = button; }
+
+    void setResumeAvailable(bool available);
+    void setRunInProgress(bool running);
+    void appendJournalEntry(const QString &message);
 
 private:
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
@@ -74,6 +80,7 @@ private:
     RightPanel *m_rightPanel = nullptr;
     TopToolbars *m_topToolbars = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
+    QPushButton *m_resumeRunButton = nullptr;
 };
 
 #endif // WORKSPACE_UI_H

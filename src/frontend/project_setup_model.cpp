@@ -333,13 +333,19 @@ Json ProjectSetupModelClass::createBackendScript() const {
   return script;
 }
 
+std::filesystem::path
+ProjectSetupModelClass::scriptPathFor(const fs::path &outputDirectory,
+                                      const std::string &projectName) {
+  const fs::path normalizedOutput = fs::absolute(outputDirectory).lexically_normal();
+  return normalizedOutput / (safeFileStem(projectName) + ".json");
+}
+
 fs::path ProjectSetupModelClass::writeBackendScript() const {
   const Json script = createBackendScript();
   const fs::path outputDirectory =
       fs::absolute(setup.outputDirectory).lexically_normal();
   fs::create_directories(outputDirectory);
-  const fs::path destination =
-      outputDirectory / (safeFileStem(setup.projectName) + ".json");
+  const fs::path destination = scriptPathFor(outputDirectory, setup.projectName);
   const fs::path temporary = destination.string() + ".tmp";
   {
     std::ofstream output(temporary, std::ios::binary);

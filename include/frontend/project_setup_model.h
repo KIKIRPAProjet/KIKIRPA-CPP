@@ -56,6 +56,11 @@ public:
   Json createBackendScript() const;
   std::filesystem::path writeBackendScript() const;
 
+  // Calcule le chemin déterministe du script JSON généré pour un projet.
+  static std::filesystem::path
+  scriptPathFor(const std::filesystem::path &outputDirectory,
+                const std::string &projectName);
+
 private:
   ProjectSetup setup;
 };

@@ -83,6 +83,12 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *assemblyMenu = menuBar->addMenu(tr("Assemblage"));
     connect(assemblyMenu->addAction(tr("Tout lancer"), QKeySequence(Qt::Key_F5)),
             &QAction::triggered, this, [this]() { emit runRequested(1); });
+    m_resumeAction = assemblyMenu->addAction(tr("Reprendre l'assemblage"));
+    m_resumeAction->setEnabled(false);
+    connect(m_resumeAction, &QAction::triggered, this, &MenuBarManager::resumeRequested);
+    m_cancelAction = assemblyMenu->addAction(tr("Annuler l'assemblage en cours"));
+    m_cancelAction->setEnabled(false);
+    connect(m_cancelAction, &QAction::triggered, this, &MenuBarManager::cancelRunRequested);
     connect(assemblyMenu->addAction(tr("Relancer à partir de…")),
             &QAction::triggered, this, [this]() { emit runRequested(6); });
     connect(assemblyMenu->addAction(tr("Comparer deux exécutions…")),
@@ -91,4 +97,16 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *helpMenu = menuBar->addMenu(tr("Aide"));
     connect(helpMenu->addAction(tr("À propos")),
             &QAction::triggered, this, &MenuBarManager::aboutRequested);
+}
+
+void MenuBarManager::setResumeAvailable(bool available)
+{
+    if (m_resumeAction)
+        m_resumeAction->setEnabled(available);
+}
+
+void MenuBarManager::setCancelAvailable(bool available)
+{
+    if (m_cancelAction)
+        m_cancelAction->setEnabled(available);
 }

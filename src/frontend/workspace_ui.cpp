@@ -141,6 +141,24 @@ QProgressBar *WorkspaceUI::progressBar() const
     return m_statusBar ? m_statusBar->progressBar() : nullptr;
 }
 
+void WorkspaceUI::setResumeAvailable(bool available)
+{
+    if (m_topToolbars)
+        m_topToolbars->setResumeAvailable(available);
+}
+
+void WorkspaceUI::setRunInProgress(bool running)
+{
+    if (m_topToolbars)
+        m_topToolbars->setRunInProgress(running);
+}
+
+void WorkspaceUI::appendJournalEntry(const QString &message)
+{
+    if (m_bottomTabs)
+        m_bottomTabs->appendJournalEntry(message);
+}
+
 /**
  * Met à jour l'interface utilisateur en fonction de l'état de la grille du projet.
  * @param projectName Le nom du projet.

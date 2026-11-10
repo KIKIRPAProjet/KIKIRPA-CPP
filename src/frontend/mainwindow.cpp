@@ -131,7 +131,10 @@ void MainWindow::setupProjectGridConnections()
 void MainWindow::setupSimulationConnections()
 {
     connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
-        workspaceUI->progressBar()->setValue(0);
+        workspaceUI->progressBar()->setValue(simulationRunner->currentProgress());
+        workspaceUI->setRunInProgress(true);
+        menuBarManager->setCancelAvailable(true);
+        removeResumeRunButton();
     });
     connect(simulationRunner, &SimulationRunner::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -141,10 +144,37 @@ void MainWindow::setupSimulationConnections()
             this, &MainWindow::updateStatus);
     connect(simulationRunner, &SimulationRunner::cancellationAvailable,
             this, &MainWindow::showCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runFinished,
-            this, &MainWindow::removeCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runCancelled,
-            this, &MainWindow::removeCancelRunButton);
+    connect(simulationRunner, &SimulationRunner::cancellationRequested,
+            this, &MainWindow::markCancelPending);
+    connect(simulationRunner, &SimulationRunner::runFinished, this, [this]() {
+        removeCancelRunButton();
+        removeResumeRunButton();
+        workspaceUI->setRunInProgress(false);
+        menuBarManager->setCancelAvailable(false);
+    });
+    connect(simulationRunner, &SimulationRunner::runCancelled, this, [this]() {
+        removeCancelRunButton();
+        workspaceUI->setRunInProgress(false);
+        menuBarManager->setCancelAvailable(false);
+    });
+    connect(simulationRunner, &SimulationRunner::runFailed, this, [this](const QString &error) {
+        removeCancelRunButton();
+        workspaceUI->setRunInProgress(false);
+        menuBarManager->setCancelAvailable(false);
+        workspaceUI->appendJournalEntry(tr("[Erreur] %1").arg(error));
+    });
+    connect(simulationRunner, &SimulationRunner::resumeAvailabilityChanged, this, [this](bool available) {
+        workspaceUI->setResumeAvailable(available);
+        menuBarManager->setResumeAvailable(available);
+        if (available)
+            showResumeRunButton();
+        else
+            removeResumeRunButton();
+    });
+    connect(simulationRunner, &SimulationRunner::backendLogReceived,
+            this, [this](const QString &message, const QString &level) {
+        workspaceUI->appendJournalEntry(QStringLiteral("[%1] %2").arg(level, message));
+    });
     connect(simulationRunner, &SimulationRunner::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
     connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
@@ -215,6 +245,10 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
+    connect(menuBarManager, &MenuBarManager::resumeRequested,
+            this, &MainWindow::requestResume);
+    connect(menuBarManager, &MenuBarManager::cancelRunRequested,
+            simulationRunner, &SimulationRunner::cancelRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             simulationRunner, &SimulationRunner::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
@@ -239,7 +273,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
+    backendScriptPath.clear();
     projectCreated = true;
+    simulationRunner->clearBackendScriptPath();
+    removeResumeRunButton();
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
@@ -272,13 +309,32 @@ void MainWindow::applyLoadedProject(const QString &path)
         projectGrid->initializeGridFromPaths();
     projectPath = path;
     projectCreated = true;
+    backendScriptPath.clear();
+    simulationRunner->clearBackendScriptPath();
+    removeResumeRunButton();
+
+    // Si un script JSON backend existe déjà pour ce projet, on inspecte son état "run"
+    // afin de rendre immédiatement la reprise disponible si un assemblage avait été mis en pause.
+    if (!outputDirectory.isEmpty()) {
+        const std::filesystem::path candidateScript =
+            FrontendNs::ProjectSetupModelClass::scriptPathFor(
+                std::filesystem::path(outputDirectory.toStdString()), projectName.toStdString());
+        const QString candidateQtPath = QString::fromStdString(candidateScript.string());
+        if (QFileInfo::exists(candidateQtPath)) {
+            backendScriptPath = candidateQtPath;
+            simulationRunner->setBackendScriptPath(backendScriptPath);
+        }
+    }
+
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
-    updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    updateStatus(simulationRunner->canResume()
+                     ? tr("Projet ouvert — un assemblage en pause peut être repris.")
+                     : tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -383,25 +439,19 @@ void MainWindow::showGridMessage(const QString &title, const QString &message, b
         QMessageBox::information(this, title, message);
 }
 
-void MainWindow::handleGridValidation(bool valid, int activeTileCount,
-                                      const QStringList &errors)
+bool MainWindow::generateBackendScript(QString *errorMessage)
 {
-    const ProjectGrid::State &gridState = projectGrid->state();
-    if (!valid) {
-        QMessageBox::warning(this, tr("Grille à corriger"), errors.join(QLatin1Char('\n')));
-        updateStatus(tr("La grille n'est pas valide : %1 problème(s).").arg(errors.size()));
-        return;
-    }
-
     if (outputDirectory.isEmpty()) {
         outputDirectory = QFileDialog::getExistingDirectory(
             this, tr("Choisir le dossier de sortie"));
         if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
-            return;
+            if (errorMessage)
+                *errorMessage = tr("Aucun dossier de sortie sélectionné.");
+            return false;
         }
     }
 
+    const ProjectGrid::State &gridState = projectGrid->state();
     FrontendNs::ProjectSetup setup;
     setup.projectName = projectName.toStdString();
     setup.inputDirectory = gridState.tileDirectory.toStdString();
@@ -421,15 +471,39 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                                index % gridState.gridColumns});
     }
 
-    std::filesystem::path scriptPath;
     try {
         FrontendNs::ProjectSetupModelClass model;
         model.setSetup(std::move(setup));
-        scriptPath = model.writeBackendScript();
+        const std::filesystem::path scriptPath = model.writeBackendScript();
+        backendScriptPath = QString::fromStdString(scriptPath.string());
+        simulationRunner->setBackendScriptPath(backendScriptPath);
+        return true;
     } catch (const std::exception &exception) {
+        if (errorMessage)
+            *errorMessage = QString::fromUtf8(exception.what());
+        return false;
+    }
+}
+
+void MainWindow::handleGridValidation(bool valid, int activeTileCount,
+                                      const QStringList &errors)
+{
+    const ProjectGrid::State &gridState = projectGrid->state();
+    if (!valid) {
+        QMessageBox::warning(this, tr("Grille à corriger"), errors.join(QLatin1Char('\n')));
+        updateStatus(tr("La grille n'est pas valide : %1 problème(s).").arg(errors.size()));
+        return;
+    }
+
+    QString generationError;
+    if (!generateBackendScript(&generationError)) {
+        if (outputDirectory.isEmpty()) {
+            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
+            return;
+        }
         QMessageBox::warning(this, tr("JSON non généré"),
             tr("La grille est valide, mais le JSON backend n'a pas pu être généré :\n%1")
-                .arg(QString::fromUtf8(exception.what())));
+                .arg(generationError));
         updateStatus(tr("La génération du JSON backend a échoué."));
         return;
     }
@@ -439,7 +513,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                      .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
-            .arg(QString::fromStdString(scriptPath.string())));
+            .arg(backendScriptPath));
 }
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
@@ -476,7 +550,7 @@ void MainWindow::saveProject()
 void MainWindow::requestRun(int firstStep)
 {
     if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+        updateStatus(tr("Un assemblage est déjà en cours."));
         return;
     }
     if (projectGrid->state().tilePaths.isEmpty()) {
@@ -485,12 +559,51 @@ void MainWindow::requestRun(int firstStep)
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
         if (answer != QMessageBox::Yes)
             return;
+        if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep))
+            return;
+        simulationRunner->clearBackendScriptPath();
+        simulationRunner->startRun(firstStep);
+        return;
     }
-    if (firstStep > 1) {
-        if (!DialogHelpers::confirmRunRestart(this, firstStep))
+
+    // Protège une progression mise en pause contre une réinitialisation involontaire.
+    if (firstStep == 1 && simulationRunner->canResume()) {
+        const auto answer = QMessageBox::question(this, tr("Assemblage en pause"),
+            tr("Un assemblage annulé est en pause. Voulez-vous tout relancer depuis le début "
+               "(les étapes sauvegardées seront recalculées) ?\n\n"
+               "Cliquez sur « Non » puis sur « Reprendre » pour continuer là où il s'est arrêté."),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
             return;
     }
-    simulationRunner->startRun(firstStep);
+
+    if (backendScriptPath.isEmpty() || !QFileInfo::exists(backendScriptPath)) {
+        QString generationError;
+        if (!generateBackendScript(&generationError)) {
+            QMessageBox::warning(this, tr("Lancement impossible"),
+                tr("Impossible de générer le script d'assemblage :\n%1").arg(generationError));
+            updateStatus(tr("Lancement annulé : %1").arg(generationError));
+            return;
+        }
+    }
+
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep))
+        return;
+
+    simulationRunner->startBackendRun(backendScriptPath, firstStep);
+}
+
+void MainWindow::requestResume()
+{
+    if (simulationRunner->isRunning()) {
+        updateStatus(tr("Un assemblage est déjà en cours."));
+        return;
+    }
+    if (!simulationRunner->canResume()) {
+        updateStatus(tr("Aucun assemblage en pause à reprendre."));
+        return;
+    }
+    simulationRunner->resumeRun();
 }
 
 void MainWindow::showComparisonDialog()
@@ -510,6 +623,15 @@ void MainWindow::showCancelRunButton()
             simulationRunner, &SimulationRunner::cancelRun);
 }
 
+void MainWindow::markCancelPending()
+{
+    QPushButton *cancelRunButton = workspaceUI->cancelRunButton();
+    if (!cancelRunButton)
+        return;
+    cancelRunButton->setEnabled(false);
+    cancelRunButton->setText(tr("Annulation…"));
+}
+
 void MainWindow::removeCancelRunButton()
 {
     QPushButton *cancelRunButton = workspaceUI->cancelRunButton();
@@ -518,6 +640,28 @@ void MainWindow::removeCancelRunButton()
     statusBar()->removeWidget(cancelRunButton);
     cancelRunButton->deleteLater();
     workspaceUI->setCancelRunButton(nullptr);
+}
+
+void MainWindow::showResumeRunButton()
+{
+    if (workspaceUI->resumeRunButton())
+        return;
+    auto *resumeRunButton = FrontendUtils::makeButton(tr("▶ Reprendre"), this, true);
+    workspaceUI->setResumeRunButton(resumeRunButton);
+    resumeRunButton->setObjectName(QStringLiteral("statusResumeRunButton"));
+    statusBar()->addPermanentWidget(resumeRunButton);
+    connect(resumeRunButton, &QPushButton::clicked,
+            this, &MainWindow::requestResume);
+}
+
+void MainWindow::removeResumeRunButton()
+{
+    QPushButton *resumeRunButton = workspaceUI->resumeRunButton();
+    if (!resumeRunButton)
+        return;
+    statusBar()->removeWidget(resumeRunButton);
+    resumeRunButton->deleteLater();
+    workspaceUI->setResumeRunButton(nullptr);
 }
 
 void MainWindow::updateStatus(const QString &message)

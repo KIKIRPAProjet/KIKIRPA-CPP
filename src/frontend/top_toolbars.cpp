@@ -62,9 +62,18 @@ void TopToolbars::createModesBar()
         connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
     }
 
-    auto *run = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
-    stageLayout->addWidget(run);
-    connect(run, &QPushButton::clicked, this, [this]() { m_mainWindow->requestRun(1); });
+    m_runButton = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
+    m_runButton->setObjectName(QStringLiteral("runAllButton"));
+    stageLayout->addWidget(m_runButton);
+    connect(m_runButton, &QPushButton::clicked, this, [this]() { m_mainWindow->requestRun(1); });
+
+    // Bouton dédié à la reprise après annulation/pause (activé uniquement lorsqu'un état repris existe).
+    m_resumeButton = FrontendUtils::makeButton(tr("▶ Reprendre"), stages, true);
+    m_resumeButton->setObjectName(QStringLiteral("resumeRunButton"));
+    m_resumeButton->setEnabled(false);
+    m_resumeButton->setToolTip(tr("Reprendre l'assemblage interrompu à partir de la dernière étape sauvegardée."));
+    stageLayout->addWidget(m_resumeButton);
+    connect(m_resumeButton, &QPushButton::clicked, m_mainWindow, &MainWindow::requestResume);
     
     auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
@@ -106,4 +115,20 @@ void TopToolbars::updateTitle(const QString &projectName, const QString &modalit
         title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
                            .arg(projectName, modality));
     }
+}
+
+void TopToolbars::setResumeAvailable(bool available)
+{
+    m_resumeAvailable = available;
+    if (m_resumeButton)
+        m_resumeButton->setEnabled(m_resumeAvailable && !m_runInProgress);
+}
+
+void TopToolbars::setRunInProgress(bool running)
+{
+    m_runInProgress = running;
+    if (m_runButton)
+        m_runButton->setEnabled(!m_runInProgress);
+    if (m_resumeButton)
+        m_resumeButton->setEnabled(m_resumeAvailable && !m_runInProgress);
 }
