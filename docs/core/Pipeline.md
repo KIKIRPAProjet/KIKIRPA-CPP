@@ -120,10 +120,11 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
+| `fusion` | `StepsNs::FusionStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `territories` : `Territories` (+ `intensityCorrection` lue si présente) | `mosaic` : `Mosaic` |
 | `export` | `StepsNs::ExportStepClass` | `mosaic` : `Mosaic` | — (publie `mosaic.tif`) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
-`export` est terminal : il attend la mosaïque `mosaic` écrite par l'assemblage, step qui n'est pas encore présent dans ce dépôt.
+`fusion` écrit la mosaïque sur disque, bloc par bloc ; `export`, terminal, la publie. `fusion` lit `intensityCorrection` sans la déclarer : le moteur n'a pas d'entrée facultative.
 
 ## Ajouter un step
 
