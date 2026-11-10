@@ -37,7 +37,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
 | 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
 
-**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** La branche `fe/export` ajoute l'écriture TIFF, qui attend les blocs produits par Fusion.
+**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step facultatif `final-verification` peut comparer des fichiers fournis explicitement; l'assemblage et l'export du pipeline restent à réaliser.
 
 ---
 
@@ -217,10 +217,12 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
 | `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
+`final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
 
 ### Les types de données, et leur JSON
 
@@ -309,6 +311,11 @@ C++ : `DataNs::IntensityCorrection` (`core/data/algorithm_types.h`).
 
 C++ : `std::vector<DataNs::TileTerritory>`.
 
+#### `VerificationReport` (clé `verificationReport`) : rapport de vérification finale
+
+Un objet JSON contenant les dimensions, écarts, rapports largeur/hauteur et métadonnées comparées de l'image de référence et du TIFF reconstruit. Les pixels et les DPI/PPI ne sont pas comparés.
+
+C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 #### `Seamlines` (clé `seamlines`) : le tracé de chaque couture
 
 ```json
