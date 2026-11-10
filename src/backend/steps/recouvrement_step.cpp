@@ -9,6 +9,7 @@
 
 #include <opencv2/core/mat.hpp>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
 #include <exception>
