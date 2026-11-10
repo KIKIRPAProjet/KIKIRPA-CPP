@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <string>
 
 namespace PipelineNs {
 

@@ -5,24 +5,26 @@
 #include "core/config/pipeline_config.h"
 #include "core/pipeline/pipeline_report.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/data_store.h"
+#include "core/step/step.h"
 
+#include <chrono>
+#include <ctime>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
-#include <chrono>
-#include <ctime>
-#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-#include <system_error>
 
 #ifdef _WIN32
+#include <system_error>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -103,32 +105,55 @@ namespace PipelineNs {
             };
         }
 
-        Json createRunReport(size_t startIndex, const std::vector<std::unique_ptr<StepNs::StepClass>>& steps,
-                             const CheckpointNs::CheckpointClass& checkpoint, const Json& metadata,
-                             const fs::path& reportPath) {
+        Json createInitialReport(const Json& metadata) {
             Json reportJson = {{"metadata", metadata}, {"steps", Json::array()}};
             if (!reportJson["metadata"].contains("startedAt"))
                 reportJson["metadata"]["startedAt"] = currentTimestamp();
             reportJson["metadata"]["status"] = "running";
+            return reportJson;
+        }
 
-            StepNs::DataStoreClass reportDataStore;
-            for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex) {
-                const StepNs::StepClass& step = *steps[stepIndex];
-                if (reportPath.empty() || stepIndex >= startIndex) {
-                    reportJson["steps"].push_back(createNotReachedStepReport(stepIndex, step));
-                    continue;
-                }
+        Json createSkippedStepReport(size_t stepIndex, const StepNs::StepClass& step,
+                                     const CheckpointNs::CheckpointClass& checkpoint,
+                                     StepNs::DataStoreClass& reportDataStore) {
+            const Json inputs = createStepInputs(step, reportDataStore);
+            for (const ConfigNs::DataSlot& output : step.getConfigJson().get<ConfigNs::StepConfig>().outputs)
+                checkpoint.load(stepIndex, step, output.key, output.dataType, reportDataStore);
+            Json stepReport = createStepReport(stepIndex, step, reportDataStore, inputs);
+            stepReport["status"] = "skipped";
+            stepReport["summary"] = "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé.";
+            stepReport["result"] = nullptr;
+            stepReport["reason"] = nullptr;
+            return stepReport;
+        }
 
-                const Json inputs = createStepInputs(step, reportDataStore);
-                for (const ConfigNs::DataSlot& output : step.getConfigJson().get<ConfigNs::StepConfig>().outputs)
-                    checkpoint.load(stepIndex, step, output.key, output.dataType, reportDataStore);
-                Json stepReport = createStepReport(stepIndex, step, reportDataStore, inputs);
-                stepReport["status"] = "skipped";
-                stepReport["summary"] = "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé.";
-                stepReport["result"] = nullptr;
-                stepReport["reason"] = nullptr;
-                reportJson["steps"].push_back(std::move(stepReport));
+        struct RunReportContext {
+            size_t startIndex;
+            const std::vector<std::unique_ptr<StepNs::StepClass>>& steps;
+            const CheckpointNs::CheckpointClass& checkpoint;
+            const fs::path& reportPath;
+            StepNs::DataStoreClass& reportDataStore;
+            Json& reportJson;
+        };
+
+        void appendRunStepReport(size_t stepIndex, RunReportContext& context) {
+            const StepNs::StepClass& step = *context.steps[stepIndex];
+            if (context.reportPath.empty() || stepIndex >= context.startIndex) {
+                context.reportJson["steps"].push_back(createNotReachedStepReport(stepIndex, step));
+                return;
             }
+            context.reportJson["steps"].push_back(
+                createSkippedStepReport(stepIndex, step, context.checkpoint, context.reportDataStore));
+        }
+
+        Json createRunReport(size_t startIndex, const std::vector<std::unique_ptr<StepNs::StepClass>>& steps,
+                             const CheckpointNs::CheckpointClass& checkpoint, const Json& metadata,
+                             const fs::path& reportPath) {
+            Json reportJson = createInitialReport(metadata);
+            StepNs::DataStoreClass reportDataStore;
+            RunReportContext context{startIndex, steps, checkpoint, reportPath, reportDataStore, reportJson};
+            for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex)
+                appendRunStepReport(stepIndex, context);
             return reportJson;
         }
 
