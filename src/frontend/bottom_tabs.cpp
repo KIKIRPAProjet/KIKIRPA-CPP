@@ -5,6 +5,7 @@
 #include <QListWidget>
 #include <QHeaderView>
 #include <QStringList>
+#include <QTime>
 
 BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     : QTabWidget(parent), m_mainWindow(mainWindow)
@@ -32,11 +33,11 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     addTab(m_pairsTable, tr("Paires (4)"));
     
-    auto *journal = new QListWidget;
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                       tr("14:10  4 tuiles importées"),
-                       tr("14:02  Projet ouvert")});
-    addTab(journal, tr("Journal"));
+    m_journalList = new QListWidget(this);
+    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
+                             tr("14:10  4 tuiles importées"),
+                             tr("14:02  Projet ouvert")});
+    addTab(m_journalList, tr("Journal"));
 
     auto *positions = new QTableWidget(4, 3);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
@@ -52,4 +53,13 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
         m_mainWindow->updateStatus(tr("Paire sélectionnée : %1").arg(m_pairsTable->item(row, 0)->text()));
     });
 
+}
+
+void BottomTabs::appendLog(const QString &message)
+{
+    if (m_journalList) {
+        QString timeStr = QTime::currentTime().toString("hh:mm:ss");
+        m_journalList->addItem(timeStr + "  " + message);
+        m_journalList->scrollToBottom();
+    }
 }
