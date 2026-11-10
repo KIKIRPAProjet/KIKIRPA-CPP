@@ -45,6 +45,42 @@ namespace {
         ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
         IONs::PyramidalTiffReaderClass reader(PATH);
 
+        std::vector<cv::Size> pyramidDimensions;
+        ASSERT_TRUE(reader.readPyramidDimensions(pyramidDimensions, error)) << error;
+        ASSERT_EQ(pyramidDimensions.size(), 4U);
+        EXPECT_EQ(pyramidDimensions.at(0), cv::Size(SOURCE_WIDTH, SOURCE_HEIGHT));
+        EXPECT_EQ(pyramidDimensions.at(1), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
+
+        IONs::PyramidViewportRegion viewport;
+        ASSERT_TRUE(reader.readViewport(
+            cv::Point2d(100, 200), cv::Size(120, 80), 100.0, viewport, error)) << error;
+        EXPECT_EQ(viewport.level, 0);
+        EXPECT_EQ(viewport.region, cv::Rect(100, 200, 120, 80));
+        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(100, 200, 120, 80));
+        const cv::Vec<uint16_t, 3> viewportFirstPixel{100, 200, BLUE_CHANNEL};
+        const cv::Vec<uint16_t, 3> actualViewportFirstPixel =
+            viewport.pixels.at<cv::Vec<uint16_t, 3>>(0, 0);
+        EXPECT_EQ(actualViewportFirstPixel, viewportFirstPixel);
+
+        ASSERT_TRUE(reader.readViewport(
+            cv::Point2d(40, 20), cv::Size(100, 75), 25.0, viewport, error)) << error;
+        EXPECT_EQ(viewport.level, 2);
+        EXPECT_EQ(viewport.region, cv::Rect(10, 5, 100, 75));
+        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(40, 20, 400, 300));
+
+        ASSERT_TRUE(reader.readViewport(
+            cv::Point2d(850, 650), cv::Size(100, 100), 100.0, viewport, error)) << error;
+        EXPECT_EQ(viewport.region, cv::Rect(850, 650, 50, 50));
+        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(850, 650, 50, 50));
+
+        ASSERT_TRUE(reader.readViewport(
+            cv::Point2d(-20, -10), cv::Size(100, 100), 100.0, viewport, error)) << error;
+        EXPECT_EQ(viewport.region, cv::Rect(0, 0, 80, 90));
+
+        EXPECT_FALSE(reader.readViewport(
+            cv::Point2d(0, 0), cv::Size(100, 100), 0.0, viewport, error));
+        EXPECT_FALSE(error.empty());
+
         // Lit une région du niveau original, en traversant plusieurs tuiles.
         cv::Mat region;
         ASSERT_TRUE(reader.readRegion(

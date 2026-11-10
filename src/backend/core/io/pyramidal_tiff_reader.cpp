@@ -9,6 +9,7 @@
 #include <tiffio.h>
 
 #include <cstdint>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -279,6 +280,147 @@ namespace IONs {
         TIFFClose(tiffFile);
         if (!SUCCESS) output.release();
         return SUCCESS;
+    }
+
+    bool PyramidalTiffReaderClass::readPyramidDimensions(
+        std::vector<cv::Size>& dimensions,
+        std::string& errorMessage
+    ) const {
+        errorMessage.clear();
+        dimensions.clear();
+
+        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        if (tiffFile == nullptr) {
+            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            return false;
+        }
+
+        if (!TIFFSetDirectory(tiffFile, 0)) {
+            errorMessage = "cannot select TIFF base directory";
+            TIFFClose(tiffFile);
+            return false;
+        }
+
+        ImageMetadata image;
+        if (!getImageMetadata(tiffFile, image, errorMessage)) {
+            TIFFClose(tiffFile);
+            return false;
+        }
+        dimensions.emplace_back(image.width, image.height);
+
+        uint16_t subIfdCount = 0;
+        toff_t* subIfdOffsets = nullptr;
+        const bool hasSubIfds =
+            TIFFGetField(tiffFile, TIFFTAG_SUBIFD, &subIfdCount, &subIfdOffsets) != 0;
+        if (hasSubIfds && subIfdCount > 0 && subIfdOffsets == nullptr) {
+            errorMessage = "cannot read TIFF pyramid offsets";
+            dimensions.clear();
+            TIFFClose(tiffFile);
+            return false;
+        }
+        for (uint16_t index = 0; hasSubIfds && index < subIfdCount; ++index) {
+            if (!selectLevel(tiffFile, static_cast<int>(index) + 1, errorMessage)) {
+                dimensions.clear();
+                TIFFClose(tiffFile);
+                return false;
+            }
+            if (!getImageMetadata(tiffFile, image, errorMessage)) {
+                dimensions.clear();
+                TIFFClose(tiffFile);
+                return false;
+            }
+            dimensions.emplace_back(image.width, image.height);
+        }
+
+        TIFFClose(tiffFile);
+        return true;
+    }
+
+    bool PyramidalTiffReaderClass::readViewport(
+        const cv::Point2d& origin,
+        const cv::Size& viewportSize,
+        double zoomPercent,
+        PyramidViewportRegion& output,
+        std::string& errorMessage
+    ) const {
+        errorMessage.clear();
+        output = {};
+
+        if (viewportSize.width <= 0 || viewportSize.height <= 0 ||
+            !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
+            !std::isfinite(zoomPercent) || zoomPercent <= 0.0) {
+            errorMessage = "viewport dimensions and zoom must be positive and coordinates finite";
+            return false;
+        }
+
+        std::vector<cv::Size> dimensions;
+        if (!readPyramidDimensions(dimensions, errorMessage))
+            return false;
+        if (dimensions.empty()) {
+            errorMessage = "TIFF pyramid has no image levels";
+            return false;
+        }
+
+        const cv::Size fullSize = dimensions.front();
+        const double scale = zoomPercent / 100.0;
+        const double requestedRight = origin.x + viewportSize.width / scale;
+        const double requestedBottom = origin.y + viewportSize.height / scale;
+        if (!std::isfinite(requestedRight) || !std::isfinite(requestedBottom)) {
+            errorMessage = "viewport coordinates exceed the supported range";
+            return false;
+        }
+
+        const double left = std::max(0.0, origin.x);
+        const double top = std::max(0.0, origin.y);
+        const double right = std::min(static_cast<double>(fullSize.width), requestedRight);
+        const double bottom = std::min(static_cast<double>(fullSize.height), requestedBottom);
+        if (right <= left || bottom <= top) {
+            errorMessage = "viewport does not intersect the TIFF image";
+            return false;
+        }
+
+        int selectedLevel = 0;
+        double bestDistance = std::numeric_limits<double>::infinity();
+        for (int level = 0; level < static_cast<int>(dimensions.size()); ++level) {
+            const cv::Size levelSize = dimensions.at(static_cast<size_t>(level));
+            const double displayPixelsPerLevelPixelX =
+                scale * fullSize.width / levelSize.width;
+            const double displayPixelsPerLevelPixelY =
+                scale * fullSize.height / levelSize.height;
+            const double distance = std::max(
+                std::abs(std::log(displayPixelsPerLevelPixelX)),
+                std::abs(std::log(displayPixelsPerLevelPixelY)));
+            if (distance < bestDistance) {
+                selectedLevel = level;
+                bestDistance = distance;
+            }
+        }
+
+        const cv::Size levelSize = dimensions.at(static_cast<size_t>(selectedLevel));
+        const double levelScaleX = static_cast<double>(levelSize.width) / fullSize.width;
+        const double levelScaleY = static_cast<double>(levelSize.height) / fullSize.height;
+        const int regionLeft = static_cast<int>(std::floor(left * levelScaleX));
+        const int regionTop = static_cast<int>(std::floor(top * levelScaleY));
+        const int regionRight = std::min(
+            levelSize.width, static_cast<int>(std::ceil(right * levelScaleX)));
+        const int regionBottom = std::min(
+            levelSize.height, static_cast<int>(std::ceil(bottom * levelScaleY)));
+        if (regionRight <= regionLeft || regionBottom <= regionTop) {
+            errorMessage = "viewport maps to an empty pyramid region";
+            return false;
+        }
+
+        output.level = selectedLevel;
+        output.region = cv::Rect(regionLeft, regionTop,
+                                 regionRight - regionLeft, regionBottom - regionTop);
+        output.fullResolutionRegion = cv::Rect2d(
+            regionLeft / levelScaleX, regionTop / levelScaleY,
+            output.region.width / levelScaleX, output.region.height / levelScaleY);
+        if (!readRegion(output.level, output.region, output.pixels, errorMessage)) {
+            output = {};
+            return false;
+        }
+        return true;
     }
 
     bool PyramidalTiffReaderClass::readMetadata(
