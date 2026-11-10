@@ -2,6 +2,7 @@
 #define ARTWORKCANVAS_H
 
 #include "projectgrid.h"
+#include "image_layer.h"
 
 #include <QRect>
 #include <QStringList>
@@ -9,6 +10,7 @@
 #include <QWidget>
 
 #include <functional>
+
 
 class QMouseEvent;
 class QPaintEvent;
@@ -27,6 +29,34 @@ public:
     void setMode(int mode) { modeValue = mode; update(); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
     void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
+    void setImageLayers(const QVector<ImageLayer> &layers)
+    {
+    imageLayers = layers;
+    update();
+    }
+
+    void setImageLayerOpacity(const QString &id, qreal opacity)
+    {
+        for (ImageLayer &layer : imageLayers) {
+            if (layer.id == id) {
+                layer.opacity = qBound(qreal(0), opacity, qreal(1));
+                update();
+                return;
+            }
+        }
+    }
+
+    void setImageLayerVisible(const QString &id, bool visible)
+    {
+        for (ImageLayer &layer : imageLayers) {
+            if (layer.id == id) {
+                layer.visible = visible;
+                update();
+                return;
+            }
+        }
+    }
+
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
@@ -48,12 +78,13 @@ private:
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
-
+    bool drawImageLayers(QPainter &p, const QRect &area);
     int gridCellAt(const QPoint &point) const;
 
     int modeValue = 4;
     int zoomPercent = 12;
     QStringList imagePaths;
+    QVector<ImageLayer> imageLayers;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
     std::function<void(int)> selectionChangedCallback;

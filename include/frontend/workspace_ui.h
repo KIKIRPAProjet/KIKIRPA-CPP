@@ -4,7 +4,7 @@
 #include "projectgrid.h"
 
 #include <QObject>
-
+#include "image_layer.h"
 class QComboBox;
 class QLabel;
 class QProgressBar;
@@ -34,6 +34,7 @@ public:
 
     void updateFromGridState(const QString &projectName,
                              const ProjectGrid::State &gridState);
+    void setImageLayers(const QVector<ImageLayer> &layers);
 
     HomePage *homePage() const { return m_homePage; }
     QStackedWidget *pages() const { return m_pages; }

@@ -114,11 +114,19 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     const int x0 = (width() - totalW) / 2;
     const int y0 = (height() - imageH) / 2;
 
+
     const QRect firstImageRect(x0, y0, imageW, imageH);
-    if (!imagePaths.isEmpty())
+
+    // Afficher les couches lorsqu'elles sont disponibles.
+    // Conserver le dessin habituel dans les autres cas.
+    const bool layersDrawn = !pair && drawImageLayers(p, firstImageRect);
+
+    if (!layersDrawn) {
+        if (!imagePaths.isEmpty())
         drawPhoto(p, firstImageRect, imagePaths.first());
     else
         drawPainting(p, firstImageRect);
+    }
     if (pair) {
         const QRect secondImageRect(x0 + imageW + gutter, y0, imageW, imageH);
         if (imagePaths.size() > 1)

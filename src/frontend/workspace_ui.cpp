@@ -165,6 +165,12 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
 
     m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
 }
+void WorkspaceUI::setImageLayers(const QVector<ImageLayer> &layers)
+{
+    if (m_rightPanel) {
+        m_rightPanel->setImageLayers(layers);
+    }
+}
 
 /**
  * Met à jour les informations du projet dans l'interface utilisateur.

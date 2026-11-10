@@ -26,7 +26,8 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
     m_alignmentTab = new AlignmentTab(m_mainWindow, canvas, this);
 
     addTab(m_gridTab, tr("Grille"));
-    addTab(new MasksTab(m_mainWindow, canvas, this), tr("Calques"));
+    m_masksTab = new MasksTab(m_mainWindow, canvas, this);
+    addTab(m_masksTab, tr("Calques"));
     addTab(new AssemblyTab(m_mainWindow, this), tr("Chaîne"));
     addTab(m_alignmentTab, tr("Infos"));
 }
@@ -42,5 +43,13 @@ void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid
 {
     if (m_alignmentTab) {
         m_alignmentTab->updateInfo(projectName, gridState);
+    }
+}
+
+
+void RightPanel::setImageLayers(const QVector<ImageLayer> &layers)
+{
+    if (m_masksTab) {
+        m_masksTab->setImageLayers(layers);
     }
 }

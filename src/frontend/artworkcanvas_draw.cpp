@@ -235,3 +235,64 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
 }
+
+
+
+
+bool ArtworkCanvas::drawImageLayers(QPainter &p, const QRect &area)
+{
+    QRectF worldBounds;
+    bool firstLayer = true;
+
+    // 1. Calculer la zone occupée par toutes les images
+    for (const ImageLayer &layer : imageLayers) {
+        if (layer.image.isNull() || layer.worldRect.isEmpty())
+            continue;
+
+        if (firstLayer) {
+            worldBounds = layer.worldRect;
+            firstLayer = false;
+        } else {
+            worldBounds = worldBounds.united(layer.worldRect);
+        }
+    }
+
+    if (firstLayer || worldBounds.isEmpty())
+        return false;
+
+    // 2. Adapter la mosaïque à la zone d'affichage
+    const qreal scale = qMin(
+        qreal(area.width()) / worldBounds.width(),
+        qreal(area.height()) / worldBounds.height()
+    );
+
+    const qreal offsetX =
+        area.center().x() - worldBounds.width() * scale / 2.0;
+
+    const qreal offsetY =
+        area.center().y() - worldBounds.height() * scale / 2.0;
+
+    // 3. Dessiner les couches dans leur ordre
+    p.save();
+    p.setClipRect(area);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+    for (const ImageLayer &layer : imageLayers) {
+        if (!layer.visible || layer.image.isNull()
+            || layer.worldRect.isEmpty())
+            continue;
+
+        const QRectF targetRect(
+            offsetX + (layer.worldRect.x() - worldBounds.x()) * scale,
+            offsetY + (layer.worldRect.y() - worldBounds.y()) * scale,
+            layer.worldRect.width() * scale,
+            layer.worldRect.height() * scale
+        );
+
+        p.setOpacity(qBound(0.0, layer.opacity, 1.0));
+        p.drawImage(targetRect, layer.image);
+    }
+
+    p.restore();
+    return true;
+}
