@@ -7,6 +7,8 @@
 #include <QStringList>
 #include <QVector>
 
+#include <cstdint>
+
 class QLabel;
 class QPushButton;
 class QWidget;
@@ -16,7 +18,7 @@ namespace FrontendUtils {
 extern const QStringList MODE_NAMES;
 
 //définition des 4 états possibles d'une paire de tuiles 
-enum class PairStatus {
+enum class PairStatus : std::uint8_t {
     Reliable,
     Dubious,
     Failed,
