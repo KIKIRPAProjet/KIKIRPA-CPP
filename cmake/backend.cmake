@@ -83,7 +83,10 @@ file(GLOB onnxruntime_dlls CONFIGURE_DEPENDS "${onnxruntime_library_directory}/o
 # deux copies simultanées vers le même fichier échouent. Sans effet hors de Windows.
 function(kikirpa_copy_onnxruntime_dlls target)
     if(WIN32)
-        string(MAKE_C_IDENTIFIER "${CMAKE_CURRENT_BINARY_DIR}" output_directory_id)
+        # Nom tiré du chemin relatif au dossier de build : avec le chemin complet, CMake crée un dossier dont le nom
+        # répète ce chemin, et sous Windows le tout dépasse 260 caractères dès que le dépôt est dans un dossier profond.
+        file(RELATIVE_PATH output_directory "${CMAKE_BINARY_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
+        string(MAKE_C_IDENTIFIER "build/${output_directory}" output_directory_id)
         set(copy_target "onnxruntime_dlls_${output_directory_id}")
         if(NOT TARGET ${copy_target})
             add_custom_target(${copy_target}
