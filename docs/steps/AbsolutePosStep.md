@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
-| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` |
+| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` | `dynamic-programming-dijkstra`|
 | Sortie | `pairResiduals` | `PairResiduals` | `std::vector<DataNs::PairResidual>` | pas encore de consommateur |
 
 - **Lit** dans `tiles` l'identifiant et le nom du fichier source, d'où il tire la ligne et la colonne. Aucune image n'est relue.
