@@ -52,3 +52,10 @@ void RightPanel::setActiveStep(int stepNumber)
         m_assemblyTab->setActiveStep(stepNumber);
     }
 }
+
+void RightPanel::showSavedState(const QStringList &stepNames, int savedStepCount)
+{
+    if (m_assemblyTab) {
+        m_assemblyTab->showSavedState(stepNames, savedStepCount);
+    }
+}

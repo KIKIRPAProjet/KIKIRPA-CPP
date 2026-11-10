@@ -1,6 +1,7 @@
 #ifndef RIGHT_PANEL_H
 #define RIGHT_PANEL_H
 
+#include <QStringList>
 #include <QTabWidget>
 #include "projectgrid.h"
 
@@ -22,6 +23,7 @@ public:
     void updateGridState(const ProjectGrid::State &gridState);
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
     void setActiveStep(int stepNumber);
+    void showSavedState(const QStringList &stepNames, int savedStepCount);
 
 private:
     MainWindow *m_mainWindow;

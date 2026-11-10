@@ -257,3 +257,10 @@ void WorkspaceUI::setActiveStep(int stepNumber)
         m_rightPanel->setActiveStep(stepNumber);
     }
 }
+
+void WorkspaceUI::showSavedState(const QStringList &stepNames, int savedStepCount)
+{
+    if (m_rightPanel) {
+        m_rightPanel->showSavedState(stepNames, savedStepCount);
+    }
+}
