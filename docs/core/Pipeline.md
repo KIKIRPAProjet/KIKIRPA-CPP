@@ -95,6 +95,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Territories` | `tileIndex`, `polygons`, `holes` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
 | `PairResiduals` | `tileIdA`, `tileIdB`, `residual`, `residualNorm` (enregistré par `registerType`, dans `steps/absolute_pos_step.cpp`) |
+| `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
@@ -117,8 +118,11 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
 
-`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. Une fiche par step dans [docs/steps/](../steps/).
+`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
+`export` est terminal : il attend des blocs composites produits par Fusion, étape qui n'est pas encore présente dans ce dépôt.
 
 ## Ajouter un step
 

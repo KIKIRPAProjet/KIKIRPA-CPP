@@ -14,7 +14,9 @@ namespace CheckpointNs {
     //   "Tiles"        TileList : fiches des tuiles, voisins par identifiant (les pixels restent dans les TIFF, non recopiés)
     //   "PairMatches"  std::vector<PairMatches>
     //   "Positions"    std::vector<TilePositionData>
+    //   "Seamlines"    Seamlines
     //   "Territories"  std::vector<TileTerritory>
+    //   "IntensityCorrection"  IntensityCorrection : gains par tuile et force du champ d'éclairage
     // Nouveau type : une entrée dans pipelineTypes() (checkpoint_types.cpp) ou un appel à CheckpointClass::registerType.
     std::map<std::string, std::pair<CheckpointClass::Saver, CheckpointClass::Loader>> pipelineTypes();
 

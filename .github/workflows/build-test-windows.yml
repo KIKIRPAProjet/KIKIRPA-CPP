@@ -58,11 +58,18 @@ jobs:
           python -m pip install aqtinstall
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
 
+      - name: vcpkg version
+        id: vcpkg
+        shell: pwsh
+        run: |
+          echo "commit=$(git -C C:\vcpkg rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+          echo "image=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
       - name: Restore vcpkg packages
         uses: actions/cache@v4
         with:
           path: ~\AppData\Local\vcpkg\archives
-          key: vcpkg-x64-windows-tiff-gtest
+          key: vcpkg-x64-windows-tiff-gtest-${{ steps.vcpkg.outputs.image }}-${{ steps.vcpkg.outputs.commit }}
 
       - name: Install libtiff and GoogleTest
         run: C:\vcpkg\vcpkg install tiff gtest --triplet x64-windows

@@ -14,7 +14,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **08/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **09/11/2026**. La branche `fe/export` ajoute un step d'export, en attente de PR. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -32,11 +32,11 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 4 | Rejet des aberrants | Quels points appariés sont faux ? | ❌ algorithme prêt (vote 2D), **pas branché** |
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
-| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ; DP/Dijkstra existe comme algorithme, sans step |
+| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
-| 9 | Export | Écrire le fichier final | ❌ branche `fe/export` |
+| 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
 
-**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Aucun step ne produit d'image.
+**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** La branche `fe/export` ajoute l'écriture TIFF, qui attend les blocs produits par Fusion.
 
 ---
 
@@ -199,6 +199,8 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                                          (assemblage et export : pas encore sur main)
 ```
 
+Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines`. C'est l'autre méthode de couture, à côté de `graphcut`.
+
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
@@ -208,12 +210,14 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
+| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 
-### Les six types de données, et leur JSON
+### Les types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Dans un checkpoint, elle devient un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` et `intensity_correction_checkpoint.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. `CompositeBlocks` est échangé en mémoire et n'est pas encore sérialisé. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -284,7 +288,7 @@ C++ : `std::vector<DataNs::PairResidual>`.
 - `tileGains[i]` est la luminosité relative de la i-ème tuile de `tiles`. Pour la corriger, on **divise** ses pixels par le gain, et aussi par `exp(fieldStrength · r²)`, l'assombrissement vers les bords.
 - Une tuile listée dans `isolatedTileIndices` ne se corrige pas.
 
-C++ : `DataNs::IntensityCorrection` (`core/data/intensity_correction.h`).
+C++ : `DataNs::IntensityCorrection` (`core/data/algorithm_types.h`).
 
 #### `Territories` (clé `territories`) : quelle tuile fournit quels pixels
 
@@ -297,6 +301,24 @@ C++ : `DataNs::IntensityCorrection` (`core/data/intensity_correction.h`).
 - Les bords entre territoires **sont** les seamlines.
 
 C++ : `std::vector<DataNs::TileTerritory>`.
+
+#### `Seamlines` (clé `seamlines`) : le tracé de chaque couture
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "direction": "right", "points": [ [8650.0, 0.0], [8649.0, 1.0], [8647.0, 2.0] ] } ]
+```
+
+- Une entrée par paire de voisines, de A vers sa voisine de droite ou du dessous B.
+- `points` : le chemin de la couture, pixel par pixel, en pleine résolution et dans le repère de la mosaïque.
+- Produit par `dynamic-programming-dijkstra`. `graphcut` ne produit pas de `seamlines` : ses coutures sont les bords des territoires.
+
+C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
+
+#### `CompositeBlocks` (clé `compositeBlocks`) : les blocs d'image assemblés
+
+Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
+
+C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints.
 
 #### Les deux fichiers du moteur
 
@@ -324,7 +346,7 @@ C++ : `std::vector<DataNs::TileTerritory>`.
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Ni l'un ni l'autre n'est sur main.**
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Aucun des deux n'est encore sur `main`.**
 
 Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 
@@ -334,13 +356,13 @@ Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 4. ne garder que les pixels qui tombent dans son **territoire** ;
 5. écrire le résultat dans l'image finale, **par blocs** et sans jamais garder toute la mosaïque en mémoire (§6).
 
-L'export écrit ensuite l'image finale dans le format voulu.
+L'export écrit les blocs composites dans un TIFF tuilé `mosaic.tif`.
 
 Où en est-on :
 
-- **Assemblage** : PR #69 (brouillon).
-- **Export** : branche `fe/export`.
-- Le **contrat entre les deux** (quelle structure l'assemblage passe à l'export) n'est pas encore décidé. Trois branches définissent chacune un type de mosaïque différent : il faut en choisir un avant de coder.
+- **Assemblage (Fusion)** : PR #69 (brouillon).
+- **Export** : branche `fe/export`, qui ajoute le step `export` et son type partagé.
+- **Contrat entre les deux** : Fusion doit fournir la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque bloc doit contenir `imageRgb` en `CV_16UC3` et un `blockRect` aligné sur `DataNs::BLOCK_SIZE`, avec une grille complète. L'export n'écrit pas `provenance` ni `mask`.
 - `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide en attendant le vrai assemblage.
 
 ---
@@ -400,7 +422,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 | Solveur de positions (`PositioningNs::solveRelativePositions`) | placer toutes les tuiles d'un coup | chaque paire donne une équation `position B − position A = translation` ; moindres carrés sur toutes les équations (SVD) | ✅ step `absolute-pos` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | Égalisation de luminosité (`BrightnessEqualizationNs`) | égaliser la luminosité entre tuiles | compare les pixels des recouvrements sur des images réduites ; moindres carrés robustes pour trouver un gain par tuile et un champ d'éclairage commun | ✅ step `intensity-correction` (estimation seulement) | [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) |
 | Graph cut (`GraphCutNs`) | couture entre les tuiles | la coupe de graphe d'OpenCV cherche la frontière où les deux tuiles se ressemblent le plus, paire par paire ; on en tire les territoires | ✅ step `graphcut` | [GraphCutStep.md](steps/GraphCutStep.md) |
-| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ⚠️ codé et testé (`tests/seamline/`), **sans step** | pas de page |
+| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ✅ step `dynamic-programming-dijkstra` ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
 | Ancien positionneur (`PositioningNs::computeTilePositions`) | ancienne chaîne complète SIFT → vote → moindres carrés | — | ⚠️ code mort : appelé par aucun step ni aucun test | — |
 
 ---
@@ -462,9 +484,8 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Assemblage et export**, en commençant par le contrat entre les deux (§5).
+- **Fusion et Export** : faire correspondre les sorties de Fusion au contrat `CompositeBlocks`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
-- **Un step pour DP/Dijkstra**, comme alternative à `graphcut`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
