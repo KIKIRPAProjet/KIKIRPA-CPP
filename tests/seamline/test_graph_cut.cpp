@@ -392,7 +392,6 @@ TEST_F(GraphCutSeamFinderTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) 
     EXPECT_EQ(indexMatrix.size(), TILE_SIZE);
     EXPECT_EQ(cv::countNonZero(indexMatrix), 0); 
 }
-
 // ---------------------------------------------------------------------------------------------------------------------
 // Coupe de graphe : cas d'erreur de computeSeamline
 // ---------------------------------------------------------------------------------------------------------------------
@@ -400,9 +399,14 @@ TEST_F(GraphCutSeamFinderTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) 
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWithoutTiles) {
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
-    GraphCutNs::FullResolutionGeometry fullRes;
-    GraphCutNs::ReducedGrid reducedGrid;
-    reducedGrid.scale = DEFAULT_SCALE;
+    
+    // On crée des vecteurs vides que les structures vont référencer
+    std::vector<cv::Size> emptySizes;
+    std::vector<cv::Point> emptyCorners;
+    std::vector<cv::UMat> emptyMasks;
+    
+    GraphCutNs::FullResolutionGeometry fullRes{emptySizes, emptyCorners};
+    GraphCutNs::ReducedGrid reducedGrid{DEFAULT_SCALE, emptyCorners, emptyMasks};
 
     const bool isSuccessful = graphCut.computeSeamline({}, fullRes, reducedGrid, indexMatrix);
 
@@ -415,14 +419,14 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenTileCountReachesTheReserved
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     const std::vector<std::string> paths(TILE_COUNT, "a_r00_c00.tif");
     
-    GraphCutNs::FullResolutionGeometry fullRes;
-    fullRes.tileSizes.assign(TILE_COUNT, TILE_SIZE);
-    fullRes.originalCorners.assign(TILE_COUNT, cv::Point(0, 0));
+    // Initialisation des vecteurs en mémoire
+    std::vector<cv::Size> sizes(TILE_COUNT, TILE_SIZE);
+    std::vector<cv::Point> corners(TILE_COUNT, cv::Point(0, 0));
+    std::vector<cv::UMat> masks(TILE_COUNT);
     
-    GraphCutNs::ReducedGrid reducedGrid;
-    reducedGrid.scale = DEFAULT_SCALE;
-    reducedGrid.cornersSmall.assign(TILE_COUNT, cv::Point(0, 0));
-    reducedGrid.masksUmatSmall.resize(TILE_COUNT);
+    // Initialisation des vues
+    GraphCutNs::FullResolutionGeometry fullRes{sizes, corners};
+    GraphCutNs::ReducedGrid reducedGrid{DEFAULT_SCALE, corners, masks};
     
     cv::Mat indexMatrix;
 
@@ -435,14 +439,12 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenTileCountReachesTheReserved
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenListsDoNotMatchTheTileCount) {
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     
-    GraphCutNs::FullResolutionGeometry fullRes;
-    fullRes.tileSizes.assign(2, TILE_SIZE);
-    fullRes.originalCorners.assign(2, cv::Point(0, 0));
+    std::vector<cv::Size> sizes(2, TILE_SIZE);
+    std::vector<cv::Point> corners(2, cv::Point(0, 0));
+    std::vector<cv::UMat> masks(2);
     
-    GraphCutNs::ReducedGrid reducedGrid;
-    reducedGrid.scale = DEFAULT_SCALE;
-    reducedGrid.cornersSmall.assign(2, cv::Point(0, 0));
-    reducedGrid.masksUmatSmall.resize(2);
+    GraphCutNs::FullResolutionGeometry fullRes{sizes, corners};
+    GraphCutNs::ReducedGrid reducedGrid{DEFAULT_SCALE, corners, masks};
 
     cv::Mat indexMatrix;
 
@@ -479,9 +481,11 @@ TEST_F(GraphCutSeamFinderTest, ErrorMessageIsClearedByASuccessfulCall) {
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
     
-    GraphCutNs::FullResolutionGeometry emptyFullRes;
-    GraphCutNs::ReducedGrid emptyReducedGrid;
-    emptyReducedGrid.scale = DEFAULT_SCALE;
+    std::vector<cv::Size> emptySizes;
+    std::vector<cv::Point> emptyCorners;
+    std::vector<cv::UMat> emptyMasks;
+    GraphCutNs::FullResolutionGeometry emptyFullRes{emptySizes, emptyCorners};
+    GraphCutNs::ReducedGrid emptyReducedGrid{DEFAULT_SCALE, emptyCorners, emptyMasks};
 
     ASSERT_FALSE(graphCut.computeSeamline({}, emptyFullRes, emptyReducedGrid, indexMatrix));
     ASSERT_FALSE(graphCut.getErrorMessage().empty());
