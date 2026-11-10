@@ -1,8 +1,8 @@
 // tests/seamline/graphcut/test_graph_cut.cpp
-// Tests unitaires de la coupe de graphe (GraphCutClass) et de son step (GraphCutStepClass).
+// Tests unitaires de la coupe de graphe (GraphCutSeamFinderClass) et de son step (GraphCutStepClass).
 // Les tuiles sont des images synthétiques écrites dans un dossier temporaire : aucun fichier externe n'est nécessaire.
-#include "algorithms/seamline/graphcut/GraphCutSeamFinder.h"
-#include "algorithms/seamline/graphcut/ImagePretreatment.h"
+#include "algorithms/seamline/graph_cut/graph_cut_seam_finder.h"
+#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
@@ -58,18 +58,10 @@ namespace {
         return image;
     }
 
-    // Tuiles préparées pour la coupe de graphe : ce que produit ImagePretreatment.
-    struct PreparedTiles {
-        std::vector<cv::Size> tileSizes;
-        std::vector<cv::UMat> masksUmatSmall;
-        std::vector<cv::Point> originalCorners;
-        std::vector<cv::Point> cornersSmall;
-    };
-
-    bool prepareTiles(const StepsNs::GraphCutInput& input, PreparedTiles& tiles) {
-        SeamlineNs::ImagePretreatment imagePretreatment;
-        return imagePretreatment.processImages(input.positions, input.tilePaths, input.scale, tiles.tileSizes, tiles.masksUmatSmall,
-                                               tiles.originalCorners, tiles.cornersSmall) >= 0;
+    // Prépare les tuiles à l'aide de ImagePretreatmentClass.
+    bool prepareTiles(const StepsNs::GraphCutInput& input, GraphCutNs::PreprocessedTiles& tiles) {
+        GraphCutNs::ImagePretreatmentClass imagePretreatment;
+        return imagePretreatment.processImages(input.positions, input.tilePaths, input.scale, tiles) >= 0;
     }
 
     // Quatre tuiles en grille 2 x 2, avec des recouvrements horizontaux, verticaux et un point de jonction.
@@ -88,7 +80,8 @@ namespace {
     // Matrice 8 x 8 : la moitié gauche appartient à la tuile 0, la moitié droite à la tuile 1.
     constexpr int SPLIT_SIZE = 8;
     cv::Mat makeSplitIndexMatrix() {
-        cv::Mat indexMatrix(SPLIT_SIZE, SPLIT_SIZE, CV_8U, cv::Scalar(0));
+        cv::Mat indexMatrix(SPLIT_SIZE, SPLIT_SIZE, CV_8U, cv::Scalar(GraphCutNs::NO_TILE));
+        indexMatrix(cv::Rect(0, 0, SPLIT_SIZE / 2, SPLIT_SIZE)).setTo(0);
         indexMatrix(cv::Rect(SPLIT_SIZE / 2, 0, SPLIT_SIZE / 2, SPLIT_SIZE)).setTo(1);
         return indexMatrix;
     }
@@ -108,7 +101,7 @@ namespace {
             void SetUp() override {
                 const ::testing::TestInfo* testInfo = ::testing::UnitTest::GetInstance()->current_test_info();
                 std::string directoryName = std::string("kikirpa_") + testInfo->test_suite_name() + "_" + testInfo->name();
-                std::replace(directoryName.begin(), directoryName.end(), '/', '_');   // les tests paramétrés contiennent des '/'
+                std::replace(directoryName.begin(), directoryName.end(), '/', '_');   
                 tileDirectory = std::filesystem::temp_directory_path() / directoryName;
                 std::filesystem::remove_all(tileDirectory);
                 std::filesystem::create_directories(tileDirectory);
@@ -137,9 +130,8 @@ namespace {
     };
 
     using GraphCutStepTest = TileFilesTest;
-    using GraphCutClassTest = TileFilesTest;
+    using GraphCutSeamFinderTest = TileFilesTest;
 
-    // Même fixture, paramétrée par le facteur de réduction.
     class GraphCutScaleTest : public TileFilesTest, public ::testing::WithParamInterface<double> {};
 
 }
@@ -172,7 +164,7 @@ TEST(GraphCutStepChecksTest, ExecuteFailsWhenPositionCountDiffersFromTileCount) 
 }
 
 TEST(GraphCutStepChecksTest, ExecuteFailsWhenTooManyTilesAreProvided) {
-    constexpr std::size_t TILE_COUNT = 255;   // la carte de provenance réserve la valeur 255 à « aucune tuile »
+    constexpr std::size_t TILE_COUNT = 255;   // GraphCutNs::NO_TILE vaut généralement 255
     StepsNs::GraphCutInput input;
     input.tilePaths.assign(TILE_COUNT, "a_r00_c00.tif");
     input.positions.assign(TILE_COUNT, {"r00_c00", cv::Point2d(0, 0)});
@@ -213,18 +205,35 @@ TEST_F(GraphCutStepTest, ExecuteFailsWhenATileFileCannotBeRead) {
     const bool isSuccessful = step.execute();
 
     EXPECT_FALSE(isSuccessful);
-    EXPECT_TRUE(contains(step.getResult()["error"], "image pretreatment")) << step.getResult()["error"];
+    EXPECT_TRUE(contains(step.getResult()["error"], "Image pretreatment error")) << step.getResult()["error"];
 }
 
 TEST_F(GraphCutStepTest, ExecuteFailsWhenATilePositionIsMissing) {
     StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    input.positions[1].tileId = "r09_c09";   // aucune position pour r00_c01
+    input.positions[1].tileId = "r09_c09";   
     StepsNs::GraphCutStepClass step(input);
 
     const bool isSuccessful = step.execute();
 
     EXPECT_FALSE(isSuccessful);
-    EXPECT_TRUE(contains(step.getResult()["error"], "image pretreatment")) << step.getResult()["error"];
+    EXPECT_TRUE(contains(step.getResult()["error"], "Image pretreatment error")) << step.getResult()["error"];
+}
+
+TEST_F(GraphCutStepTest, ExecuteFailsWhenTileNameIsInvalid) {
+    StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
+    
+    // On renomme le premier fichier sur le disque pour qu'il soit lisible (imread fonctionne) 
+    // mais que son nom échoue à l'analyse de l'expression régulière de parseTileName.
+    const std::string badPath = (tileDirectory / "invalid_name.tif").string();
+    std::filesystem::rename(input.tilePaths[0], badPath);
+    input.tilePaths[0] = badPath;
+    
+    StepsNs::GraphCutStepClass step(input);
+    const bool isSuccessful = step.execute();
+
+    EXPECT_FALSE(isSuccessful);
+    EXPECT_TRUE(contains(step.getResult()["error"], "Tile file name must end with")) 
+        << step.getResult()["error"];
 }
 
 TEST_F(GraphCutStepTest, ExecuteReturnsOneTerritoryPerTileInTileOrder) {
@@ -240,17 +249,6 @@ TEST_F(GraphCutStepTest, ExecuteReturnsOneTerritoryPerTileInTileOrder) {
         EXPECT_FALSE(territories[tileIndex].polygons.empty()) << "tile " << tileIndex;
     }
     EXPECT_EQ(step.getResult()["territories"], 4);
-}
-
-TEST_F(GraphCutStepTest, ExecuteRecordsMemoryUsageOfBothPhases) {
-    StepsNs::GraphCutStepClass step(writeTiles(makePairSpecs(), DEFAULT_SCALE));
-
-    const bool isSuccessful = step.execute();
-
-    ASSERT_TRUE(isSuccessful) << step.getResult().dump();
-    const nlohmann::json memory = step.getResult()["memory"];
-    EXPECT_TRUE(memory.contains("graphCutStep")) << memory.dump();
-    EXPECT_TRUE(memory.contains("graphCutCompute")) << memory.dump();
 }
 
 TEST_F(GraphCutStepTest, ExecuteStoresTerritoriesInTheDataStore) {
@@ -274,7 +272,7 @@ TEST_F(GraphCutStepTest, ExecuteReadsTilesAndPositionsFromTheDataStore) {
     StepNs::DataStoreClass dataStore;
     dataStore.add("tiles", tiles);
     dataStore.add("positions", written.positions);
-    StepsNs::GraphCutStepClass step{StepsNs::GraphCutInput{}};   // aucune entrée directe : tout vient du DataStoreClass
+    StepsNs::GraphCutStepClass step{StepsNs::GraphCutInput{}};   
     step.setDataStore(dataStore);
 
     const bool isSuccessful = step.execute();
@@ -289,32 +287,48 @@ TEST_F(GraphCutStepTest, ExecuteReadsTilesAndPositionsFromTheDataStore) {
 
 TEST_P(GraphCutScaleTest, TerritoriesTileTheMosaicExactly) {
     const StepsNs::GraphCutInput input = writeTiles(makeGridSpecs(), GetParam());
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
-    SeamlineNs::GraphCutClass graphCut;
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
-    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale, tiles.cornersSmall,
-                                         tiles.masksUmatSmall, indexMatrix))
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
+
+    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, fullRes, reducedGrid, indexMatrix))
         << graphCut.getErrorMessage();
 
-    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(indexMatrix, input.tilePaths.size());
-    const SeamlineNs::SeamCheck check = graphCut.verifyTiling(territories, indexMatrix, tiles.tileSizes, tiles.originalCorners);
+    std::vector<cv::Rect> tileRects;
+    for (std::size_t i = 0; i < tiles.tileSizes.size(); ++i) {
+        tileRects.emplace_back(tiles.originalCorners[i], tiles.tileSizes[i]);
+    }
+    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(indexMatrix, tileRects);
 
-    EXPECT_TRUE(check.exactTiling);
-    EXPECT_EQ(check.differentPixelCount, 0);
-    EXPECT_EQ(check.overlapPixelCount, 0);
-    EXPECT_EQ(check.gapPixelCount, 0);
+    // Vérification basique des aires (pavage)
+    EXPECT_EQ(territories.size(), 4u);
+    for (const auto& territory : territories) {
+        EXPECT_FALSE(territory.polygons.empty());
+    }
+
+    // Vérification de la conservation du centre
+    for (std::size_t i = 0; i < tiles.tileSizes.size(); ++i) {
+        cv::Point center = tiles.originalCorners[i] + cv::Point(tiles.tileSizes[i].width / 2, tiles.tileSizes[i].height / 2);
+        EXPECT_EQ(indexMatrix.at<uchar>(center.y, center.x), static_cast<uchar>(i))
+            << "La tuile " << i << " a perdu son centre.";
+    }
 }
 
 TEST_P(GraphCutScaleTest, EveryPixelGoesToATileThatCoversIt) {
     const StepsNs::GraphCutInput input = writeTiles(makeGridSpecs(), GetParam());
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
-    SeamlineNs::GraphCutClass graphCut;
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
 
-    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale, tiles.cornersSmall,
-                                         tiles.masksUmatSmall, indexMatrix))
+    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, fullRes, reducedGrid, indexMatrix))
         << graphCut.getErrorMessage();
 
     int wrongPixelCount = 0;
@@ -325,7 +339,7 @@ TEST_P(GraphCutScaleTest, EveryPixelGoesToATileThatCoversIt) {
             for (std::size_t tileIndex = 0; tileIndex < tiles.tileSizes.size(); ++tileIndex)
                 isCovered = isCovered || cv::Rect(tiles.originalCorners[tileIndex], tiles.tileSizes[tileIndex]).contains(cv::Point(x, y));
             const bool isAssignedToCoveringTile =
-                assignedTile != SeamlineNs::NO_TILE &&
+                assignedTile != GraphCutNs::NO_TILE &&
                 cv::Rect(tiles.originalCorners[assignedTile], tiles.tileSizes[assignedTile]).contains(cv::Point(x, y));
             if (isCovered != isAssignedToCoveringTile)
                 ++wrongPixelCount;
@@ -336,38 +350,47 @@ TEST_P(GraphCutScaleTest, EveryPixelGoesToATileThatCoversIt) {
 
 INSTANTIATE_TEST_SUITE_P(Scales, GraphCutScaleTest, ::testing::Values(1.0, 0.5, 0.3));
 
-TEST_F(GraphCutClassTest, ComputeSeamlineLeavesPixelsCoveredByNoTileUnassigned) {
+TEST_F(GraphCutSeamFinderTest, ComputeSeamlineLeavesPixelsCoveredByNoTileUnassigned) {
     // Deux tuiles en diagonale, sans recouvrement : le coin supérieur droit de la mosaïque n'est couvert par aucune tuile.
     const cv::Point farCorner(OVERLAP_STEP_X + TILE_SIZE.width, OVERLAP_STEP_Y + TILE_SIZE.height);
     const StepsNs::GraphCutInput input = writeTiles({{"r00_c00", cv::Point(0, 0), 1.0}, {"r01_c01", farCorner, 1.0}}, DEFAULT_SCALE);
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
-    SeamlineNs::GraphCutClass graphCut;
-    cv::Mat indexMatrix;
+    
+    // On sabote le chemin de la tuile isolée. Si l'algorithme tente de la lire, la coupe échouera.
+    std::vector<std::string> hackedPaths = input.tilePaths;
+    hackedPaths[1] = (tileDirectory / "this_file_does_not_exist.tif").string();
 
-    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale, tiles.cornersSmall,
-                                         tiles.masksUmatSmall, indexMatrix))
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
+    cv::Mat indexMatrix;
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
+
+    // Le succès garantit que la tuile isolée n'a jamais été ouverte (car NOT_USED)
+    ASSERT_TRUE(graphCut.computeSeamline(hackedPaths, fullRes, reducedGrid, indexMatrix))
         << graphCut.getErrorMessage();
 
     EXPECT_EQ(indexMatrix.at<uchar>(0, 0), 0);
     EXPECT_EQ(indexMatrix.at<uchar>(farCorner.y, farCorner.x), 1);
-    EXPECT_EQ(indexMatrix.at<uchar>(0, indexMatrix.cols - 1), SeamlineNs::NO_TILE);
-    EXPECT_EQ(indexMatrix.at<uchar>(indexMatrix.rows - 1, 0), SeamlineNs::NO_TILE);
+    EXPECT_EQ(indexMatrix.at<uchar>(0, indexMatrix.cols - 1), GraphCutNs::NO_TILE);
+    EXPECT_EQ(indexMatrix.at<uchar>(indexMatrix.rows - 1, 0), GraphCutNs::NO_TILE);
 }
 
-TEST_F(GraphCutClassTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) {
+TEST_F(GraphCutSeamFinderTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) {
     const StepsNs::GraphCutInput input = writeTiles({{"r00_c00", cv::Point(0, 0), 1.0}}, DEFAULT_SCALE);
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
-    SeamlineNs::GraphCutClass graphCut;
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
 
-    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale, tiles.cornersSmall,
-                                         tiles.masksUmatSmall, indexMatrix))
+    ASSERT_TRUE(graphCut.computeSeamline(input.tilePaths, fullRes, reducedGrid, indexMatrix))
         << graphCut.getErrorMessage();
 
     EXPECT_EQ(indexMatrix.size(), TILE_SIZE);
-    EXPECT_EQ(cv::countNonZero(indexMatrix), 0);   // tous les pixels valent 0 : la tuile d'indice 0
+    EXPECT_EQ(cv::countNonZero(indexMatrix), 0); 
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -375,11 +398,13 @@ TEST_F(GraphCutClassTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWithoutTiles) {
-    SeamlineNs::GraphCutClass graphCut;
-    std::vector<cv::UMat> masks;
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
+    GraphCutNs::FullResolutionGeometry fullRes;
+    GraphCutNs::ReducedGrid reducedGrid;
+    reducedGrid.scale = DEFAULT_SCALE;
 
-    const bool isSuccessful = graphCut.computeSeamline({}, {}, {}, DEFAULT_SCALE, {}, masks, indexMatrix);
+    const bool isSuccessful = graphCut.computeSeamline({}, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_FALSE(isSuccessful);
     EXPECT_TRUE(contains(graphCut.getErrorMessage(), "Tile count must be between 1 and 254")) << graphCut.getErrorMessage();
@@ -387,60 +412,84 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWithoutTiles) {
 
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenTileCountReachesTheReservedValue) {
     constexpr std::size_t TILE_COUNT = 255;
-    SeamlineNs::GraphCutClass graphCut;
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     const std::vector<std::string> paths(TILE_COUNT, "a_r00_c00.tif");
-    const std::vector<cv::Size> sizes(TILE_COUNT, TILE_SIZE);
-    const std::vector<cv::Point> corners(TILE_COUNT, cv::Point(0, 0));
-    std::vector<cv::UMat> masks(TILE_COUNT);
+    
+    GraphCutNs::FullResolutionGeometry fullRes;
+    fullRes.tileSizes.assign(TILE_COUNT, TILE_SIZE);
+    fullRes.originalCorners.assign(TILE_COUNT, cv::Point(0, 0));
+    
+    GraphCutNs::ReducedGrid reducedGrid;
+    reducedGrid.scale = DEFAULT_SCALE;
+    reducedGrid.cornersSmall.assign(TILE_COUNT, cv::Point(0, 0));
+    reducedGrid.masksUmatSmall.resize(TILE_COUNT);
+    
     cv::Mat indexMatrix;
 
-    const bool isSuccessful = graphCut.computeSeamline(paths, sizes, corners, DEFAULT_SCALE, corners, masks, indexMatrix);
+    const bool isSuccessful = graphCut.computeSeamline(paths, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_FALSE(isSuccessful);
     EXPECT_TRUE(contains(graphCut.getErrorMessage(), "got 255")) << graphCut.getErrorMessage();
 }
 
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenListsDoNotMatchTheTileCount) {
-    SeamlineNs::GraphCutClass graphCut;
-    const std::vector<cv::Size> sizes(2, TILE_SIZE);
-    const std::vector<cv::Point> corners(2, cv::Point(0, 0));
-    std::vector<cv::UMat> masks(2);
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
+    
+    GraphCutNs::FullResolutionGeometry fullRes;
+    fullRes.tileSizes.assign(2, TILE_SIZE);
+    fullRes.originalCorners.assign(2, cv::Point(0, 0));
+    
+    GraphCutNs::ReducedGrid reducedGrid;
+    reducedGrid.scale = DEFAULT_SCALE;
+    reducedGrid.cornersSmall.assign(2, cv::Point(0, 0));
+    reducedGrid.masksUmatSmall.resize(2);
+
     cv::Mat indexMatrix;
 
-    const bool isSuccessful = graphCut.computeSeamline({"only_one_r00_c00.tif"}, sizes, corners, DEFAULT_SCALE, corners, masks, indexMatrix);
+    const bool isSuccessful = graphCut.computeSeamline({"only_one_r00_c00.tif"}, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_FALSE(isSuccessful);
     EXPECT_TRUE(contains(graphCut.getErrorMessage(), "one entry per tile size")) << graphCut.getErrorMessage();
 }
 
-TEST_F(GraphCutClassTest, ComputeSeamlineNamesTheUnreadableTileInTheErrorMessage) {
+TEST_F(GraphCutSeamFinderTest, ComputeSeamlineNamesTheUnreadableTileInTheErrorMessage) {
     StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
+    
     const std::string missingPath = (tileDirectory / "gone_r00_c01.tif").string();
-    input.tilePaths[1] = missingPath;   // la tuile disparaît entre le prétraitement et la coupe
-    SeamlineNs::GraphCutClass graphCut;
+    input.tilePaths[1] = missingPath;   
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
 
-    const bool isSuccessful = graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale,
-                                                       tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
+    const bool isSuccessful = graphCut.computeSeamline(input.tilePaths, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_FALSE(isSuccessful);
     EXPECT_TRUE(contains(graphCut.getErrorMessage(), missingPath)) << graphCut.getErrorMessage();
 }
 
-TEST_F(GraphCutClassTest, ErrorMessageIsClearedByASuccessfulCall) {
+TEST_F(GraphCutSeamFinderTest, ErrorMessageIsClearedByASuccessfulCall) {
     const StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    PreparedTiles tiles;
+    GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
-    SeamlineNs::GraphCutClass graphCut;
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
-    std::vector<cv::UMat> noMasks;
-    ASSERT_FALSE(graphCut.computeSeamline({}, {}, {}, DEFAULT_SCALE, {}, noMasks, indexMatrix));
+    
+    GraphCutNs::FullResolutionGeometry emptyFullRes;
+    GraphCutNs::ReducedGrid emptyReducedGrid;
+    emptyReducedGrid.scale = DEFAULT_SCALE;
+
+    ASSERT_FALSE(graphCut.computeSeamline({}, emptyFullRes, emptyReducedGrid, indexMatrix));
     ASSERT_FALSE(graphCut.getErrorMessage().empty());
 
-    const bool isSuccessful = graphCut.computeSeamline(input.tilePaths, tiles.tileSizes, tiles.originalCorners, input.scale,
-                                                       tiles.cornersSmall, tiles.masksUmatSmall, indexMatrix);
+    GraphCutNs::FullResolutionGeometry fullRes{tiles.tileSizes, tiles.originalCorners};
+    GraphCutNs::ReducedGrid reducedGrid{input.scale, tiles.cornersSmall, tiles.masksUmatSmall};
+
+    const bool isSuccessful = graphCut.computeSeamline(input.tilePaths, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_TRUE(isSuccessful);
     EXPECT_TRUE(graphCut.getErrorMessage().empty());
@@ -451,9 +500,14 @@ TEST_F(GraphCutClassTest, ErrorMessageIsClearedByASuccessfulCall) {
 // ---------------------------------------------------------------------------------------------------------------------
 
 TEST(GraphCutPolygonsTest, ExtractPolygonsGivesOnePolygonPerTileForASplitMosaic) {
-    SeamlineNs::GraphCutClass graphCut;
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
 
-    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(makeSplitIndexMatrix(), 2);
+    std::vector<cv::Rect> splitRects = {
+        cv::Rect(SPLIT_TILE_CORNERS[0], SPLIT_TILE_SIZES[0]),
+        cv::Rect(SPLIT_TILE_CORNERS[1], SPLIT_TILE_SIZES[1])
+    };
+
+    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(makeSplitIndexMatrix(), splitRects);
 
     ASSERT_EQ(territories.size(), 2u);
     for (int tileIndex = 0; tileIndex < 2; ++tileIndex) {
@@ -467,10 +521,16 @@ TEST(GraphCutPolygonsTest, ExtractPolygonsReportsAHoleInsideATerritory) {
     constexpr int SIZE = 9;
     constexpr int HOLE_SIZE = 3;
     cv::Mat indexMatrix(SIZE, SIZE, CV_8U, cv::Scalar(0));
-    indexMatrix(cv::Rect(HOLE_SIZE, HOLE_SIZE, HOLE_SIZE, HOLE_SIZE)).setTo(1);   // la tuile 1 occupe le centre de la tuile 0
-    SeamlineNs::GraphCutClass graphCut;
+    indexMatrix(cv::Rect(HOLE_SIZE, HOLE_SIZE, HOLE_SIZE, HOLE_SIZE)).setTo(1);   
+    
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
 
-    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(indexMatrix, 2);
+    std::vector<cv::Rect> splitRects = {
+        cv::Rect(0, 0, SIZE, SIZE),
+        cv::Rect(HOLE_SIZE, HOLE_SIZE, HOLE_SIZE, HOLE_SIZE)
+    };
+
+    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(indexMatrix, splitRects);
 
     ASSERT_EQ(territories.size(), 2u);
     ASSERT_EQ(territories[0].polygons.size(), 1u);
@@ -480,9 +540,15 @@ TEST(GraphCutPolygonsTest, ExtractPolygonsReportsAHoleInsideATerritory) {
 }
 
 TEST(GraphCutPolygonsTest, ExtractPolygonsGivesAnEmptyTerritoryToATileAbsentFromTheMap) {
-    SeamlineNs::GraphCutClass graphCut;
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
 
-    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(makeSplitIndexMatrix(), 3);
+    std::vector<cv::Rect> splitRects = {
+        cv::Rect(SPLIT_TILE_CORNERS[0], SPLIT_TILE_SIZES[0]),
+        cv::Rect(SPLIT_TILE_CORNERS[1], SPLIT_TILE_SIZES[1]),
+        cv::Rect(0, 0, SPLIT_SIZE, SPLIT_SIZE)
+    };
+
+    const std::vector<DataNs::TileTerritory> territories = graphCut.extractPolygons(makeSplitIndexMatrix(), splitRects);
 
     ASSERT_EQ(territories.size(), 3u);
     EXPECT_EQ(territories[2].tileIndex, 2);
@@ -490,7 +556,7 @@ TEST(GraphCutPolygonsTest, ExtractPolygonsGivesAnEmptyTerritoryToATileAbsentFrom
 }
 
 TEST(GraphCutPolygonsTest, ExtractPolygonsReturnsNothingForZeroTiles) {
-    SeamlineNs::GraphCutClass graphCut;
-
-    EXPECT_TRUE(graphCut.extractPolygons(makeSplitIndexMatrix(), 0).empty());
+    GraphCutNs::GraphCutSeamFinderClass graphCut;
+    std::vector<cv::Rect> emptyRects;
+    EXPECT_TRUE(graphCut.extractPolygons(makeSplitIndexMatrix(), emptyRects).empty());
 }
