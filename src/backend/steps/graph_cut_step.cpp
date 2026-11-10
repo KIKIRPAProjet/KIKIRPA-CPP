@@ -99,13 +99,10 @@ namespace StepsNs {
             return false;
         if (!checkInputs(resolvedInput, result))
             return false;
-
         GraphCutNs::PreprocessedTiles tiles;
         if (!preprocessTiles(resolvedInput, tiles, result))
             return false;
-
-        // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
-        GraphCutNs::GraphCutSeamFinderClass graphCut;
+        GraphCutNs::GraphCutSeamFinderClass graphCut;         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         cv::Mat indexMatrix;
         const GraphCutNs::FullResolutionGeometry fullResolution{tiles.tileSizes, tiles.originalCorners};
         GraphCutNs::ReducedGrid reducedGrid{resolvedInput.scale, tiles.cornersSmall, tiles.masksUmatSmall};
@@ -114,7 +111,6 @@ namespace StepsNs {
             result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;
         }
-
         // Territoires : les polygones de chaque tuile sont extraits de la carte de provenance, puis rangés dans le
         // DataStoreClass pour les steps suivants.
         std::vector<cv::Rect> tileRects;

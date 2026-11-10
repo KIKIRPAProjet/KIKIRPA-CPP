@@ -3,7 +3,6 @@
 
 #include "core/data/algorithm_types.h"
 #include <opencv2/core/hal/interface.h> 
-#include <cstddef>
 #include <string>
 #include <vector>
 // Inclusions directes des types OpenCV pour satisfaire misc-include-cleaner
@@ -66,7 +65,7 @@ namespace GraphCutNs {
             // mosaïque.
             std::vector<DataNs::TileTerritory> extractPolygons(const cv::Mat& indexMatrix,
                                                                const std::vector<cv::Rect>& tileRects) const;
-                                                               
+
             // Cause du dernier échec de computeSeamline() ; vide si le dernier appel a réussi.
             const std::string& getErrorMessage() const {
                 return errorMessage;

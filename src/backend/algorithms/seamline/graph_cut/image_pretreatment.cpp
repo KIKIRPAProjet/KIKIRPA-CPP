@@ -10,6 +10,7 @@
 #include <opencv2/core/hal/interface.h>   // Pour CV_8U, CV_16UC3, CV_32FC3...
 #include <opencv2/core/saturate.hpp>      // Pour cv::saturate_cast
 #include <tiffio.h>
+#include <tiff.h>
 #include <algorithm>
 #include "core/data/algorithm_types.h"
 #include <cmath>
@@ -78,7 +79,7 @@ namespace GraphCutNs {
     // La transparence est supprimée, les niveaux de gris sont dupliqués sur trois canaux.
     // Renvoie une image vide si la lecture échoue.
     cv::Mat ImagePretreatmentClass::read16Bit(const std::string& path) {
-        const cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
         if (rawImage.empty()) return rawImage;
         return toUnsigned16Bit(toThreeChannels(rawImage));
     }

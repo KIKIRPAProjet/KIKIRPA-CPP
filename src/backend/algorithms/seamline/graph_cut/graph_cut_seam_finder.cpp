@@ -452,40 +452,29 @@ bool GraphCutSeamFinderClass::computeSeamline(const std::vector<std::string>& ti
         return true;
     }
 
-    std::vector<DataNs::TileTerritory> GraphCutSeamFinderClass::extractPolygons(const cv::Mat& indexMatrix,
-                                                                                 const std::vector<cv::Rect>& tileRects) const {
+    std::vector<DataNs::TileTerritory> GraphCutSeamFinderClass::extractPolygons(const cv::Mat& indexMatrix, const std::vector<cv::Rect>& tileRects) const {
         const cv::Rect canvas(0, 0, indexMatrix.cols, indexMatrix.rows);
         std::vector<DataNs::TileTerritory> territories;
         territories.reserve(tileRects.size());
         for (std::size_t tileIndex = 0; tileIndex < tileRects.size(); ++tileIndex) {
             DataNs::TileTerritory territory;
             territory.tileIndex = static_cast<int>(tileIndex);
-
-            // Une tuile ne reçoit que des pixels qu'elle couvre : son territoire est donc dans son rectangle. On ne
-            // regarde que cette zone, et non toute la mosaïque, pour que le coût ne croisse pas avec la taille de la mosaïque.
-            const cv::Rect searchRect = tileRects[tileIndex] & canvas;
+            const cv::Rect searchRect = tileRects[tileIndex] & canvas; // On ne regarde que ce rectangle (tuile), et non toute la mosaïque, pour limiter la croissance du coût.
             if (searchRect.area() <= 0) {
                 territories.push_back(territory);
                 continue;
             }
-
-            // Masque binaire strictement dédié à la tuile courante, limité à son rectangle.
-            const cv::Mat tileMask = (indexMatrix(searchRect) == static_cast<int>(tileIndex));
-
-            // Contours extérieurs ET trous (RETR_CCOMP) : sans les trous, le pavage ne serait pas exact.
-            // Le décalage `searchRect.tl()` remet les coordonnées dans le repère de la mosaïque.
+            const cv::Mat tileMask = (indexMatrix(searchRect) == static_cast<int>(tileIndex)); // Masque binaire strictement dédié à la tuile courante, limité à son rectangle.
             std::vector<std::vector<cv::Point>> contours;
             std::vector<cv::Vec4i> hierarchy;
-            cv::findContours(tileMask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE, searchRect.tl());
-
+            cv::findContours(tileMask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE, searchRect.tl()); // Extérieurs ET trous (RETR_CCOMP) pour pavage exact. `searchRect.tl()` remet ds le repère mosaïque.
             for (std::size_t contourIndex = 0; contourIndex < contours.size(); ++contourIndex) {
                 if (hierarchy[contourIndex][3] >= 0)
                     continue;   // un trou : rattaché à son polygone ci-dessous
                 std::vector<std::vector<cv::Point>> holes;
                 for (int holeIndex = hierarchy[contourIndex][2]; holeIndex >= 0; holeIndex = hierarchy[holeIndex][0])
                     holes.push_back(contours[holeIndex]);
-                // Aucun filtre d'aire : un contour dégénéré (1 pixel de large) fait partie du territoire.
-                territory.polygons.push_back(contours[contourIndex]);
+                territory.polygons.push_back(contours[contourIndex]); // Aucun filtre d'aire : un contour dégénéré (1 pixel de large) fait partie du territoire.
                 territory.holes.push_back(holes);
             }
             territories.push_back(territory);
