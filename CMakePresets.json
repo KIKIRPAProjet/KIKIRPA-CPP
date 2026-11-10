@@ -20,7 +20,7 @@
     {
       "name": "linux",
       "displayName": "Linux (paquets du système)",
-      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
+      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev (version 4.x) libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
@@ -29,7 +29,7 @@
     {
       "name": "macos",
       "displayName": "macOS (Apple Clang + Homebrew)",
-      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV 4.x, libtiff et GoogleTest.",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
@@ -61,7 +61,9 @@
       "name": "windows-aqt",
       "configurePreset": "windows-aqt",
       "output": { "outputOnFailure": true },
-      "environment": { "PATH": "$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}" }
+      "environment": {
+        "PATH": "$env{QT_ROOT}/bin;$env{OpenCV_DIR}/x64/vc16/bin;$penv{PATH}"
+      }
     },
     {
       "name": "linux",
