@@ -95,6 +95,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Territories` | `tileIndex`, `polygons`, `holes` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
 | `VerificationReport` | rapport JSON de dimensions et métadonnées (enregistré par `registerType`, voir `core/checkpoint/final_verification_checkpoint.cpp`) |
+| `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
@@ -118,9 +119,11 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `final-verification` | `StepsNs::FinalVerificationStepClass` | — (chemins configurés) | `verificationReport` : `VerificationReport` |
+| `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
 
-`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. Une fiche par step dans [docs/steps/](../steps/).
-`final-verification` est facultatif et s'ajoute après la production de l'image reconstruite; voir [FinalVerificationStep.md](../steps/FinalVerificationStep.md).
+`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
+`export` est terminal : il attend des blocs composites produits par Fusion, étape qui n'est pas encore présente dans ce dépôt.
 
 ## Ajouter un step
 

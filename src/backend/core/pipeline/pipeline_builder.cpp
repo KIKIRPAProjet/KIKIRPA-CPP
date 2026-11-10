@@ -10,6 +10,13 @@
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/intensity_correction_step.h"
+#include "steps/dynamic_programming_dijkstra_step.h"
+#include "steps/graph_cut_step.h"
+#include "steps/import_step.h"
+#include "steps/intensity_correction_step.h"
+#include "steps/sift_step.h"
+#include "steps/absolute_pos_step.h"
+#include "steps/export_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
 #include "steps/sift_step.h"
@@ -41,10 +48,12 @@ namespace PipelineNs {
                 {"lightglue", [] { return std::make_unique<StepsNs::LightGlueStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
+                {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
                 // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
+                {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
             };
             return registry;
         }
