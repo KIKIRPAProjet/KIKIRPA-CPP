@@ -1,11 +1,19 @@
-#ifndef SIMULATIONRUNNER_H
-#define SIMULATIONRUNNER_H
+// include/frontend/simulationrunner.h
+#pragma once
 
 #include <QObject>
 #include <QString>
 
+#include <memory>
+
+template <typename T>
+class QFutureWatcher;
+
 class QImage;
-class QTimer;
+
+namespace PipelineNs {
+class PipelineClass;
+}
 
 class SimulationRunner : public QObject
 {
@@ -13,11 +21,14 @@ class SimulationRunner : public QObject
 
 public:
     explicit SimulationRunner(QObject *parent = nullptr);
+    ~SimulationRunner() override;
 
     bool isRunning() const;
 
 public slots:
-    void startRun(int firstStep);
+    void startRun(int firstStep, const QString &scriptPath,
+                  const QString &runDirectory, const QString &projectName,
+                  const QString &executionId);
     void cancelRun();
     void showComparison();
     void toggleComparison();
@@ -30,6 +41,7 @@ signals:
     void stepChanged(int stepNumber, const QString &stepName);
     void runFinished();
     void runCancelled();
+    void runFailed(const QString &message);
     void cancellationAvailable();
     void statusChanged(const QString &message);
     void comparisonRequested();
@@ -38,13 +50,8 @@ signals:
     void mosaicReady(const QImage &image);
 
 private:
-    void finishRun();
-
-    QTimer *timer = nullptr;
-    int firstStepNumber = 1;
-    int progress = 0;
+    QFutureWatcher<bool> *watcher = nullptr;
+    std::shared_ptr<PipelineNs::PipelineClass> pipeline;
     bool running = false;
     bool comparisonVisible = false;
 };
-
-#endif

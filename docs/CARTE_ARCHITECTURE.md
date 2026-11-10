@@ -450,7 +450,7 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 | Qt est facultatif                                                                    | Plus depuis #43 : sans Qt 6 ni GoogleTest, `cmake` échoue. Sous Windows, Qt s'installe avec aqt et GoogleTest avec vcpkg ([BUILD.md](BUILD.md)).                                                                                                                                                                                   |
 | Tout le code suit déjà les conventions                                               | Presque 🆕 : `core/`, `steps/`, `frontend/` et `algorithms/` ont été migrés. Restent les noms internes des tests (français, ou `snake_case` dans `tests/seamline/`), quelques sorties console et les noms des paramètres JSON gardés pour compatibilité : voir [CONVENTIONS.md §9](CONVENTIONS.md#9-ce-qui-nest-pas-encore-migré). |
 | `docs/` couvre tous les algorithmes                                                  | Seulement la corrélation de phase (et son indicateur de confiance), le recouvrement, l'égalisation et le vote 2D, plus le pipeline, le TIFF pyramidal, cinq steps et le build. Rien sur les seamlines, SIFT, LightGlue (algorithmes) ni la mesure de mémoire.                                                                    |
-| L'interface Qt affiche le calcul                                                     | Sur `main`, il n'y a pas d'interface. Sur les branches, c'est une maquette : la progression est un minuteur de démonstration, sans appel au pipeline (voir §8).                                                                                                                                                                     |
+| L'interface Qt affiche le calcul                                                     | Sur `main`, il n'y a pas d'interface. Exception sur `fe/pipeline-execution-report` : le pipeline réel est lancé en asynchrone et son rapport est exportable sans recalcul ; la configuration GUI reste limitée à `import` + `phase-correlation` (§8).                                                                              |
 
 ---
 
@@ -472,7 +472,7 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 
 Les trois branches de fin de chaîne (`feature/fusion-step`, `fe/export`, `feature/full-2x2-pipeline`) définissent chacune leurs propres types de mosaïque, incompatibles entre eux.
 
-**Frontend.** Aucune branche n'est reliée au calcul : la progression est un minuteur de démonstration (`SimulationRunner`), l'export de la mosaïque affiche « backend non connecté ».
+**Frontend.** `fe/pipeline-execution-report` relie `SimulationRunner` au pipeline réel et archive un rapport JSON par exécution, exportable en HTML sans recalcul. Le modèle GUI configure actuellement `import` et `phase-correlation` seulement ; la chaîne de fusion/export d'une mosaïque n'est pas encore complète. Les autres branches historiques restent des maquettes.
 
 | Branche (PR)                    | Dernier commit | État                                                                                                                                                                                       |
 | ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

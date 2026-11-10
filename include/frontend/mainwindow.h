@@ -1,5 +1,5 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// include/frontend/mainwindow.h
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
@@ -56,6 +56,7 @@ private:
     void setMode(int mode);
     void refreshProjectInfo();
     void saveProject();
+    QString writeBackendScript() const;
     void requestRun(int firstStep);
     void showExportDialog();
     void updateStatus(const QString &message);
@@ -82,11 +83,10 @@ private:
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;
+    QString backendScriptPath;
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 12;
     bool panelsVisible = true;
     bool maskVisible = true;
 };
-
-#endif

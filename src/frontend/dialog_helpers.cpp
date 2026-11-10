@@ -1,3 +1,4 @@
+// src/frontend/dialog_helpers.cpp
 #include "dialog_helpers.h"
 
 #include "frontendutils.h"
@@ -11,7 +12,6 @@
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
-#include <QListWidget>
 #include <QPushButton>
 #include <QPixmap>
 #include <QStringList>
@@ -109,36 +109,4 @@ void DialogHelpers::showComparisonDialog(QWidget *parent,
         dialog.accept();
     });
     dialog.exec();
-}
-
-bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep)
-{
-    QDialog confirmation(parent);
-    confirmation.setWindowTitle(
-        translate("Relancer à partir de l'étape %1").arg(firstStep));
-    auto *layout = new QVBoxLayout(&confirmation);
-    layout->addWidget(new QLabel(
-        translate("Les étapes précédentes seront réutilisées sans recalcul."),
-        &confirmation));
-    auto *reused = new QListWidget(&confirmation);
-    for (int step = 1; step < firstStep; ++step)
-        reused->addItem(translate("✓  Étape %1 — résultat conservé").arg(step));
-    layout->addWidget(reused);
-    auto *recalculated = new QListWidget(&confirmation);
-    for (int step = firstStep; step <= 8; ++step)
-        recalculated->addItem(translate("↻  Étape %1 — résultat recalculé").arg(step));
-    layout->addWidget(recalculated);
-    layout->addWidget(FrontendUtils::mutedLabel(
-        translate("Les résultats actuels seront conservés dans l'historique. "
-                  "Cette maquette ne lance pas de calcul backend."),
-        &confirmation));
-    auto *buttons = new QDialogButtonBox(
-        QDialogButtonBox::Cancel | QDialogButtonBox::Ok, &confirmation);
-    buttons->button(QDialogButtonBox::Ok)->setText(translate("Lancer"));
-    layout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted,
-                     &confirmation, &QDialog::accept);
-    QObject::connect(buttons, &QDialogButtonBox::rejected,
-                     &confirmation, &QDialog::reject);
-    return confirmation.exec() == QDialog::Accepted;
 }
