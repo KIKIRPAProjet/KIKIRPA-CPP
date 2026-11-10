@@ -35,6 +35,7 @@ public:
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
+    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -64,6 +65,7 @@ private:
     int dragStartCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    bool seamVisible = true;
 };
 
 #endif // ARTWORKCANVAS_H
