@@ -1,23 +1,50 @@
 // src/backend/algorithms/brightness_equalization/output.cpp
 #include "algorithms/brightness_equalization/output.h"
 
+#include "algorithms/brightness_equalization/brightness_equalization_types.h"
 #include "algorithms/brightness_equalization/preparation.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/core/utility.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <string>
 #include <vector>
 
 namespace BrightnessEqualizationNs {
 
     namespace {
 
+        constexpr int FORMATTED_NUMBER_SIZE = 64;      // tampon de formatNumber, largement suffisant pour un double
+        constexpr double MAXIMUM_16_BIT_VALUE = 65535.0;
+
+        // Profondeur de sortie et facteur d'échelle de la correction, selon la profondeur d'entrée.
+        struct DepthConversion {
+            int outputDepth = CV_16U;
+            double scale = 1.0;                          // entier : ramène sur 0-65535 (8 bits : × 257)
+            double maximumValue = MAXIMUM_16_BIT_VALUE;  // valeur maximale de la sortie
+            bool isFloatingPoint = false;                // flottant : même type en sortie, pas d'arrondi
+        };
+
+        // Tout ce qu'il faut pour corriger une ligne de la région ; `corrected` partage ses pixels avec la sortie.
+        struct RegionCorrection {
+            cv::Mat region;
+            cv::Mat corrected;
+            RegionInTile placement;
+            double gain = 1.0;
+            double fieldStrength = 0.0;
+            DepthConversion conversion;
+            std::vector<double> squaredColumns;   // u² de chaque colonne de la région, dans le repère de la tuile
+        };
+
         // Nombre écrit avec `decimalCount` chiffres après la virgule
         std::string formatNumber(double value, int decimalCount) {
-            char buffer[64];
+            char buffer[FORMATTED_NUMBER_SIZE];
             std::snprintf(buffer, sizeof buffer, "%.*f", decimalCount, value);
             return buffer;
         }
@@ -38,51 +65,78 @@ namespace BrightnessEqualizationNs {
                    formatNumber(qualityReport.medianResidual, 2) + " %\n";
         }
 
+        DepthConversion makeDepthConversion(int depth) {
+            if (depth == CV_32F || depth == CV_64F) return {depth, 1.0, 1.0, true};
+            return {CV_16U, MAXIMUM_16_BIT_VALUE / PreparationClass::maximumValueOfDepth(depth), MAXIMUM_16_BIT_VALUE,
+                    false};
+        }
+
+        // Carré de la coordonnée normalisée sur [−1, 1] du centre du pixel `pixelIndex`, sur `length` pixels.
+        double squaredNormalizedCoordinate(int pixelIndex, int length) {
+            const double normalizedCoordinate = 2.0 * (pixelIndex + 0.5) / length - 1.0;
+            return normalizedCoordinate * normalizedCoordinate;
+        }
+
+        std::vector<double> computeSquaredColumns(const RegionInTile& placement, int regionWidth) {
+            std::vector<double> squaredColumns(static_cast<std::size_t>(regionWidth));
+            for (int column = 0; column < regionWidth; ++column)
+                squaredColumns[static_cast<std::size_t>(column)] =
+                    squaredNormalizedCoordinate(placement.origin.x + column, placement.tileSize.width);
+            return squaredColumns;
+        }
+
+        // Facteur de chaque pixel de la ligne : exp(−c · r²) / gain, mis à l'échelle de la sortie.
+        void computeRowFactors(const RegionCorrection& correction, int row, std::vector<double>& factors) {
+            const double squaredRow = squaredNormalizedCoordinate(correction.placement.origin.y + row,
+                                                                  correction.placement.tileSize.height);
+            for (std::size_t column = 0; column < factors.size(); ++column)
+                factors[column] = std::exp(-correction.fieldStrength * (correction.squaredColumns[column] + squaredRow)) /
+                                  correction.gain * correction.conversion.scale;
+        }
+
+        // Ligne convertie en double, multipliée, arrondie et bornée, puis écrite dans le type de sortie : aucune copie
+        // flottante de la région entière.
+        void correctRow(const RegionCorrection& correction, int row, const std::vector<double>& factors) {
+            const int channelCount = correction.region.channels();
+            const int colorChannelCount = channelCount == 4 ? 3 : channelCount;   // canal alpha recopié sans correction
+            const DepthConversion& conversion = correction.conversion;
+            cv::Mat rowValues;
+            correction.region.row(row).convertTo(rowValues, CV_MAKETYPE(CV_64F, channelCount));
+            auto* values = rowValues.ptr<double>();
+            for (int column = 0; column < rowValues.cols; ++column)
+                for (int channelIndex = 0; channelIndex < channelCount; ++channelIndex) {
+                    double& value = values[column * channelCount + channelIndex];
+                    value *= channelIndex < colorChannelCount ? factors[static_cast<std::size_t>(column)] : conversion.scale;
+                    value = std::clamp(conversion.isFloatingPoint ? value : std::round(value), 0.0, conversion.maximumValue);
+                }
+            rowValues.convertTo(correction.corrected.row(row), correction.corrected.type());
+        }
+
+        void correctRows(const RegionCorrection& correction, const cv::Range& rowRange) {
+            std::vector<double> factors(static_cast<std::size_t>(correction.region.cols));
+            for (int row = rowRange.start; row < rowRange.end; ++row) {
+                computeRowFactors(correction, row, factors);
+                correctRow(correction, row, factors);
+            }
+        }
+
     }
 
     cv::Mat OutputClass::correctTile(const cv::Mat& tile, double gain, double fieldStrength) {
-        if (tile.empty()) return {};
-        const int channelCount = tile.channels();
-        const bool isFloatingPoint = tile.depth() == CV_32F || tile.depth() == CV_64F;
-        // Entier : sortie 16 bits, valeurs ramenées sur 0-65535 (8 bits : × 257). Flottant : même type.
-        const int outputDepth = isFloatingPoint ? tile.depth() : CV_16U;
-        const double scale = isFloatingPoint ? 1.0 : 65535.0 / PreparationClass::maximumValueOfDepth(tile.depth());
-        const double maximumValue = isFloatingPoint ? 1.0 : 65535.0;
-        const int colorChannelCount = channelCount == 4 ? 3 : channelCount;   // canal alpha recopié sans correction
+        return correctRegion(tile, {cv::Point(0, 0), tile.size()}, gain, fieldStrength);
+    }
 
-        const int width = tile.cols, height = tile.rows;
-        std::vector<double> squaredNormalizedX(width);
-        for (int column = 0; column < width; ++column) {
-            const double normalizedX = 2.0 * (column + 0.5) / width - 1.0;
-            squaredNormalizedX[column] = normalizedX * normalizedX;
-        }
-
-        cv::Mat corrected(tile.size(), CV_MAKETYPE(outputDepth, channelCount));
-        // Ligne par ligne, en parallèle : aucune copie flottante de la tuile entière
-        cv::parallel_for_(cv::Range(0, height), [&](const cv::Range& rowRange) {
-            cv::Mat inputRow, outputRow;
-            std::vector<double> factors(width);
-            for (int row = rowRange.start; row < rowRange.end; ++row) {
-                const double normalizedY = 2.0 * (row + 0.5) / height - 1.0;
-                for (int column = 0; column < width; ++column)
-                    factors[column] = std::exp(-fieldStrength * (squaredNormalizedX[column] + normalizedY * normalizedY)) /
-                                      gain * scale;
-
-                tile.row(row).convertTo(inputRow, CV_MAKETYPE(CV_64F, channelCount));
-                const double* inputValues = inputRow.ptr<double>();
-                outputRow.create(1, width, CV_MAKETYPE(CV_64F, channelCount));
-                double* outputValues = outputRow.ptr<double>();
-                for (int column = 0; column < width; ++column)
-                    for (int channelIndex = 0; channelIndex < channelCount; ++channelIndex) {
-                        const double value = inputValues[column * channelCount + channelIndex] *
-                                             (channelIndex < colorChannelCount ? factors[column] : scale);
-                        outputValues[column * channelCount + channelIndex] =
-                            std::min(std::max(isFloatingPoint ? value : std::round(value), 0.0), maximumValue);
-                    }
-                outputRow.convertTo(corrected.row(row), corrected.type());
-            }
-        });
-        return corrected;
+    cv::Mat OutputClass::correctRegion(const cv::Mat& region, const RegionInTile& placement, double gain,
+                                       double fieldStrength) {
+        if (region.empty()) return {};
+        const DepthConversion conversion = makeDepthConversion(region.depth());
+        const RegionCorrection correction{
+            region, cv::Mat(region.size(), CV_MAKETYPE(conversion.outputDepth, region.channels())), placement, gain,
+            fieldStrength, conversion, computeSquaredColumns(placement, region.cols)};
+        // Ligne par ligne, en parallèle
+        cv::parallel_for_(cv::Range(0, region.rows),
+                          [&correction](const cv::Range& rowRange) { correctRows(correction, rowRange); });
+        return correction.corrected;
     }
 
     std::string OutputClass::buildReport(const EqualizationResult& result) {
@@ -98,12 +152,12 @@ namespace BrightnessEqualizationNs {
         if (!result.isolatedTiles.empty()) {
             report += "  tiles without a usable pair (gain 1, not equalized):";
             for (int tileIndex : result.isolatedTiles) report += " " + std::to_string(tileIndex);
-            report += "\n";
+            report += '\n';
         }
         if (!result.emptyPairs.empty()) {
             report += "  pairs without a sample (no usable overlap):";
             for (int pairIndex : result.emptyPairs) report += " " + std::to_string(pairIndex);
-            report += "\n";
+            report += '\n';
         }
         return report;
     }

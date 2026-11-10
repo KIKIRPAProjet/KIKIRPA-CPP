@@ -77,6 +77,7 @@ for (int tileIndex = 0; tileIndex < tileCount; ++tileIndex) {
 - **Entrées** : tuiles 8 ou 16 bits, gris ou couleur (BGR / BGRA, comme `cv::imread`), de tailles éventuellement différentes. Les paires sont les voisins directs (droite, dessous) ; leur translation vient du stitching (aucun recalage n'est refait ici).
 - **`estimate`** : vide si les entrées sont invalides (moins de 2 tuiles, tuile vide, indice hors limites) ou si aucune paire n'a d'échantillon ; `getFailureReason()` donne la raison.
 - **`correctTile`** : tuile entière 8 ou 16 bits → **16 bits** (8 bits × 257, comme le notebook) ; flottant → même type. Même facteur sur les 3 canaux couleur (teinte conservée), canal alpha recopié.
+- **`OutputClass::correctRegion(region, {origine, taille de la tuile}, gain, c)`** : la même correction sur une **région** seulement, r² étant calculé dans le repère de la tuile entière ; corriger région par région redonne exactement `correctTile`. C'est ce qu'utilise `fusion`, qui ne lit d'une tuile que la partie qui tombe dans un bloc.
 
 Sortie (`brightness_equalization_types.h`) :
 
