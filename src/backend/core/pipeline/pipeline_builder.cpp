@@ -14,6 +14,7 @@
 #include "steps/export_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
+#include "steps/vote_2d_step.h"
 
 #include <cstddef>
 #include <exception>
@@ -46,6 +47,7 @@ namespace PipelineNs {
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
                 {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
+                {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
             };
             return registry;
         }
