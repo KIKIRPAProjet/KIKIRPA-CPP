@@ -1,4 +1,4 @@
-// tests/seamline/graphcut/test_graph_cut.cpp
+// tests/seamline/test_graph_cut.cpp
 // Tests unitaires de la coupe de graphe (GraphCutSeamFinderClass) et de son step (GraphCutStepClass).
 // Les tuiles sont des images synthétiques écrites dans un dossier temporaire : aucun fichier externe n'est nécessaire.
 #include "algorithms/seamline/graph_cut/graph_cut_seam_finder.h"
@@ -392,6 +392,7 @@ TEST_F(GraphCutSeamFinderTest, ComputeSeamlineGivesTheWholeMosaicToASingleTile) 
     EXPECT_EQ(indexMatrix.size(), TILE_SIZE);
     EXPECT_EQ(cv::countNonZero(indexMatrix), 0); 
 }
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Coupe de graphe : cas d'erreur de computeSeamline
 // ---------------------------------------------------------------------------------------------------------------------
@@ -400,11 +401,12 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWithoutTiles) {
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     cv::Mat indexMatrix;
     
-    // On crée des vecteurs vides que les structures vont référencer
+    // 1. On crée des vecteurs vides en mémoire
     std::vector<cv::Size> emptySizes;
     std::vector<cv::Point> emptyCorners;
     std::vector<cv::UMat> emptyMasks;
     
+    // 2. On initialise les vues en leur passant les vecteurs
     GraphCutNs::FullResolutionGeometry fullRes{emptySizes, emptyCorners};
     GraphCutNs::ReducedGrid reducedGrid{DEFAULT_SCALE, emptyCorners, emptyMasks};
 
@@ -419,12 +421,12 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenTileCountReachesTheReserved
     GraphCutNs::GraphCutSeamFinderClass graphCut;
     const std::vector<std::string> paths(TILE_COUNT, "a_r00_c00.tif");
     
-    // Initialisation des vecteurs en mémoire
+    // 1. Initialisation des vecteurs en mémoire avec la bonne taille
     std::vector<cv::Size> sizes(TILE_COUNT, TILE_SIZE);
     std::vector<cv::Point> corners(TILE_COUNT, cv::Point(0, 0));
     std::vector<cv::UMat> masks(TILE_COUNT);
     
-    // Initialisation des vues
+    // 2. Initialisation des vues
     GraphCutNs::FullResolutionGeometry fullRes{sizes, corners};
     GraphCutNs::ReducedGrid reducedGrid{DEFAULT_SCALE, corners, masks};
     
