@@ -95,6 +95,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Territories` | `tileIndex`, `polygons`, `holes` |
 | `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` |
+| `MosaicFiles` | `mosaicPath`, `totalBlocks` ; les blocs PNG restent dans leur dossier et ne sont pas recopiés dans le checkpoint |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
@@ -119,6 +120,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
 | `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
+| `mosaic-crop` | `StepsNs::MosaicCropStepClass` | `mosaic` : `MosaicFiles` | `mosaic` : `MosaicFiles` |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
 `export` est terminal : il attend des blocs composites produits par Fusion, étape qui n'est pas encore présente dans ce dépôt.

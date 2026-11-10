@@ -36,3 +36,16 @@ add_executable(test_sift_step test_sift_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_sift_step)
 target_link_libraries(test_sift_step PRIVATE kikirpa_backend GTest::gtest_main)
 gtest_discover_tests(test_sift_step PROPERTIES LABELS "unit")
+
+add_executable(test_mosaic_crop_step test_mosaic_crop_step.cpp)
+
+target_link_libraries(test_mosaic_crop_step PRIVATE
+    kikirpa_backend
+    GTest::gtest_main
+)
+
+kikirpa_copy_onnxruntime_dlls(test_mosaic_crop_step)
+
+gtest_discover_tests(test_mosaic_crop_step
+    PROPERTIES LABELS "unit"
+)

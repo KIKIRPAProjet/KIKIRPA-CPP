@@ -44,7 +44,7 @@ constexpr int VALEUR_B = 5;
 constexpr int VALEUR_A_MODIFIEE = 20;
 
 // Valeurs de l'aller-retour des types du pipeline : des fractions binaires exactes, pour comparer avec ==.
-constexpr std::size_t NOMBRE_TYPES_PIPELINE = 6;
+constexpr std::size_t NOMBRE_TYPES_PIPELINE = 7;
 constexpr int LARGEUR_TUILE = 400;
 constexpr int HAUTEUR_TUILE = 300;
 constexpr float POINT_A_X = 1.25F;
