@@ -36,7 +36,7 @@ namespace {
 
     // Description d'une tuile synthétique.
     struct TileSpec {
-        std::string id;        // "rLL_cCC", doit correspondre au nom du fichier
+        std::string id;        // "rLL_cCC", sert d'ID interne
         cv::Point position;    // coin supérieur gauche dans la mosaïque
         double exposureGain;   // simule une exposition différente d'une tuile à l'autre
     };
@@ -116,8 +116,7 @@ namespace {
                 StepsNs::GraphCutInput input;
                 input.scale = scale;
                 for (const TileSpec& spec : specs) {
-                    // spec.id est sous la forme "rLL_cCC" (ex: "r00_c01")
-                    // Le backend exige un nom de fichier terminant par _C<colonne>_R<ligne>.tif
+                    // Extraction des colonnes et lignes pour générer un nom valide _C<col>_R<row>.tif
                     std::string row = spec.id.substr(1, 2);
                     std::string col = spec.id.substr(4, 2);
                     std::string fileName = "tile_C" + col + "_R" + row + ".tif";
@@ -131,6 +130,7 @@ namespace {
                 }
                 return input;
             }
+
             std::filesystem::path tileDirectory;
 
     };
@@ -205,7 +205,7 @@ INSTANTIATE_TEST_SUITE_P(OutOfRangeScales, GraphCutInvalidScaleTest, ::testing::
 
 TEST_F(GraphCutStepTest, ExecuteFailsWhenATileFileCannotBeRead) {
     StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    input.tilePaths[1] = (tileDirectory / "missing_r00_c01.tif").string();
+    input.tilePaths[1] = (tileDirectory / "missing_C01_R00.tif").string();
     StepsNs::GraphCutStepClass step(input);
 
     const bool isSuccessful = step.execute();
@@ -425,7 +425,7 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWithoutTiles) {
 TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenTileCountReachesTheReservedValue) {
     constexpr std::size_t TILE_COUNT = 255;
     GraphCutNs::GraphCutSeamFinderClass graphCut;
-    const std::vector<std::string> paths(TILE_COUNT, "a_r00_c00.tif");
+    const std::vector<std::string> paths(TILE_COUNT, "a_C00_R00.tif");
     
     // 1. Initialisation des vecteurs en mémoire avec la bonne taille
     std::vector<cv::Size> sizes(TILE_COUNT, TILE_SIZE);
@@ -456,7 +456,7 @@ TEST(GraphCutClassErrorTest, ComputeSeamlineFailsWhenListsDoNotMatchTheTileCount
 
     cv::Mat indexMatrix;
 
-    const bool isSuccessful = graphCut.computeSeamline({"only_one_r00_c00.tif"}, fullRes, reducedGrid, indexMatrix);
+    const bool isSuccessful = graphCut.computeSeamline({"only_one_C00_R00.tif"}, fullRes, reducedGrid, indexMatrix);
 
     EXPECT_FALSE(isSuccessful);
     EXPECT_TRUE(contains(graphCut.getErrorMessage(), "one entry per tile size")) << graphCut.getErrorMessage();
@@ -467,7 +467,7 @@ TEST_F(GraphCutSeamFinderTest, ComputeSeamlineNamesTheUnreadableTileInTheErrorMe
     GraphCutNs::PreprocessedTiles tiles;
     ASSERT_TRUE(prepareTiles(input, tiles));
     
-    const std::string missingPath = (tileDirectory / "gone_r00_c01.tif").string();
+    const std::string missingPath = (tileDirectory / "gone_C01_R00.tif").string();
     input.tilePaths[1] = missingPath;   
     
     GraphCutNs::GraphCutSeamFinderClass graphCut;
