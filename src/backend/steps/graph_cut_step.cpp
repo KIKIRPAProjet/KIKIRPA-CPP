@@ -9,6 +9,7 @@
 #include "core/step/step.h"
 
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <cstddef>
 #include <exception>
@@ -116,7 +117,11 @@ namespace StepsNs {
 
         // Territoires : les polygones de chaque tuile sont extraits de la carte de provenance, puis rangés dans le
         // DataStoreClass pour les steps suivants.
-        output.territories = graphCut.extractPolygons(indexMatrix, resolvedInput.tilePaths.size());
+        std::vector<cv::Rect> tileRects;
+        tileRects.reserve(tiles.tileSizes.size());
+        for (std::size_t tileIndex = 0; tileIndex < tiles.tileSizes.size(); ++tileIndex)
+            tileRects.emplace_back(tiles.originalCorners[tileIndex], tiles.tileSizes[tileIndex]);
+        output.territories = graphCut.extractPolygons(indexMatrix, tileRects);
         if (dataStore)
             dataStore->replace("territories", output.territories);
         result["territories"] = output.territories.size();

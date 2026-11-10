@@ -44,9 +44,10 @@ namespace GraphCutNs {
         public:
             // Coupe de graphe d'OpenCV (COST_COLOR) appliquée paire par paire.
             // OpenCV traite déjà les tuiles deux à deux (i < j, masques mis à jour sur place) : on l'appelle donc sur 2 tuiles
-            // à la fois, dans le même ordre, ce qui donne le même résultat que l'appel unique. Pour chaque paire, les deux tuiles
-            // sont relues depuis le disque (tilePaths), réduites du facteur `scale`, puis libérées : jamais plus de deux tuiles
-            // en mémoire (la tuile i reste chargée pendant qu'on parcourt les j). Seuls les masques (8 bits) persistent.
+            // à la fois, dans le même ordre, ce qui donne le même résultat que l'appel unique. Chaque tuile est lue depuis le disque
+            // (tilePaths) et réduite du facteur `scale` une seule fois, à sa première paire, puis libérée dès que plus aucune paire
+            // à venir ne l'utilise : en mémoire, seules les tuiles voisines de la ligne courante (environ une ligne de tuiles
+            // réduites, plus deux). Les masques (8 bits) persistent.
             // L'assemblage reste exact : chaque pixel de la mosaïque reçoit une seule tuile (carte de provenance indexMatrix,
             // NO_TILE = aucune), choisie parmi les tuiles qui le couvrent exactement (rectangles issus des positions).
             //
@@ -60,14 +61,12 @@ namespace GraphCutNs {
                                 cv::Mat& indexMatrix);
 
             // Polygones de chaque territoire, trous compris (RETR_CCOMP), sans filtre d'aire : le pavage doit rester exact.
-            std::vector<DataNs::TileTerritory> extractPolygons(const cv::Mat& indexMatrix, std::size_t tileCount) const;
-
-            // Redessine les territoires et compare à la carte de provenance (pavage exact, sans trou ni chevauchement ?).
-            SeamCheck verifyTiling(const std::vector<DataNs::TileTerritory>& territories,
-                                   const cv::Mat& indexMatrix,
-                                   const std::vector<cv::Size>& tileSizes,
-                                   const std::vector<cv::Point>& originalCorners) const;
-
+            // tileRects : rectangle de chaque tuile dans la mosaïque (même ordre que les tuiles). Le territoire d'une tuile
+            // est cherché dans son seul rectangle : à utiliser de préférence, le coût ne dépend plus de la taille de la
+            // mosaïque.
+            std::vector<DataNs::TileTerritory> extractPolygons(const cv::Mat& indexMatrix,
+                                                               const std::vector<cv::Rect>& tileRects) const;
+                                                               
             // Cause du dernier échec de computeSeamline() ; vide si le dernier appel a réussi.
             const std::string& getErrorMessage() const {
                 return errorMessage;

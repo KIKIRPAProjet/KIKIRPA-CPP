@@ -21,6 +21,8 @@
 #include <algorithm>
 #include <climits>
 #include <cstddef>
+#include <initializer_list>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -87,35 +89,75 @@ namespace GraphCutNs {
             return true;
         }
 
+        // Pour chaque tuile, les indices des tuiles suivantes (indice plus grand) qui la chevauchent, dans l'ordre croissant.
+        // C'est exactement l'ensemble des paires (i, j > i) que le seam finder doit traiter.
+        std::vector<std::vector<std::size_t>> findOverlappingPairs(const ReducedTiles& reducedTiles) {
+            const std::size_t tileCount = reducedTiles.masks.size();
+            std::vector<std::vector<std::size_t>> overlapsAfter(tileCount);
+            for (std::size_t firstIndex = 0; firstIndex + 1 < tileCount; ++firstIndex) {
+                for (std::size_t secondIndex = firstIndex + 1; secondIndex < tileCount; ++secondIndex) {
+                    cv::Rect overlap;
+                    if (cv::detail::overlapRoi(reducedTiles.corners[firstIndex], reducedTiles.corners[secondIndex],
+                                               reducedTiles.masks[firstIndex].size(), reducedTiles.masks[secondIndex].size(),
+                                               overlap))
+                        overlapsAfter[firstIndex].push_back(secondIndex);
+                }
+            }
+            return overlapsAfter;
+        }
+
+        // Pour chaque tuile, le tour de la boucle externe (indice `firstIndex`) à la fin duquel elle ne sert plus.
+        // Une tuile sert au tour `firstIndex` si c'est elle (en première position) ou une de ses voisines suivantes
+        // qui y est traitée. Vaut NOT_USED si elle ne chevauche aucune autre tuile (elle n'est alors jamais lue).
+        constexpr std::size_t NOT_USED = std::numeric_limits<std::size_t>::max();
+
+        std::vector<std::size_t> findLastRound(const std::vector<std::vector<std::size_t>>& overlapsAfter) {
+            std::vector<std::size_t> lastRound(overlapsAfter.size(), NOT_USED);
+            for (std::size_t firstIndex = 0; firstIndex < overlapsAfter.size(); ++firstIndex) {
+                if (overlapsAfter[firstIndex].empty())
+                    continue;
+                lastRound[firstIndex] = firstIndex;
+                for (std::size_t secondIndex : overlapsAfter[firstIndex])
+                    lastRound[secondIndex] = firstIndex;   // les tours sont croissants : la dernière écriture est la plus grande
+            }
+            return lastRound;
+        }
+
         // Applique la coupe de graphe d'OpenCV à chaque paire de tuiles qui se chevauchent, dans l'ordre (i, j > i) que le
         // seam finder utilise en interne. Les masques sont partagés avec la liste globale : la modification faite sur la
-        // paire (i, j) est donc vue par les paires suivantes, comme dans l'appel unique d'origine. Les tuiles sont relues
-        // depuis le disque : au plus deux en mémoire à un instant donné (i, puis chaque j qui la chevauche).
+        // paire (i, j) est donc vue par les paires suivantes, comme dans l'appel unique d'origine.
+        //
+        // Chaque tuile est lue et réduite une seule fois : elle est chargée à sa première utilisation, gardée tant qu'une
+        // paire à venir en a besoin, puis libérée dès la fin du dernier tour où elle sert. Pour une grille de tuiles
+        // parcourue ligne par ligne, seules les tuiles voisines de la ligne courante restent en mémoire (environ une
+        // ligne de tuiles réduites, plus deux).
         // Renvoie false si une tuile est illisible (cause dans errorMessage).
         bool cutSeamsPairByPair(ReducedTiles& reducedTiles, std::string& errorMessage) {
             // Le coût couleur place la frontière là où passer d'une image à l'autre se voit le moins.
             cv::Ptr<cv::detail::SeamFinder> seamFinder =
                 cv::makePtr<cv::detail::GraphCutSeamFinder>(cv::detail::GraphCutSeamFinderBase::COST_COLOR);
             const std::size_t tileCount = reducedTiles.masks.size();
-            for (std::size_t firstIndex = 0; firstIndex + 1 < tileCount; ++firstIndex) {
-                cv::UMat firstImage;   // chargée à la première paire qui l'utilise, libérée en fin de tour
-                for (std::size_t secondIndex = firstIndex + 1; secondIndex < tileCount; ++secondIndex) {
-                    cv::Rect overlap;
-                    if (!cv::detail::overlapRoi(reducedTiles.corners[firstIndex], reducedTiles.corners[secondIndex],
-                                                reducedTiles.masks[firstIndex].size(), reducedTiles.masks[secondIndex].size(),
-                                                overlap))
-                        continue;
-                    if (firstImage.empty() && !loadReducedTile(reducedTiles, firstIndex, firstImage, errorMessage))
-                        return false;
-                    cv::UMat secondImage;
-                    if (!loadReducedTile(reducedTiles, secondIndex, secondImage, errorMessage))
-                        return false;
+            const std::vector<std::vector<std::size_t>> overlapsAfter = findOverlappingPairs(reducedTiles);
+            const std::vector<std::size_t> lastRound = findLastRound(overlapsAfter);
+            std::vector<cv::UMat> loadedImages(tileCount);   // vide tant que la tuile n'est pas chargée, ou déjà libérée
 
-                    std::vector<cv::UMat> pairImages{firstImage, secondImage};
+            for (std::size_t firstIndex = 0; firstIndex + 1 < tileCount; ++firstIndex) {
+                for (std::size_t secondIndex : overlapsAfter[firstIndex]) {
+                    for (std::size_t tileIndex : {firstIndex, secondIndex})
+                        if (loadedImages[tileIndex].empty() &&
+                            !loadReducedTile(reducedTiles, tileIndex, loadedImages[tileIndex], errorMessage))
+                            return false;
+
+                    std::vector<cv::UMat> pairImages{loadedImages[firstIndex], loadedImages[secondIndex]};
                     std::vector<cv::Point> pairCorners{reducedTiles.corners[firstIndex], reducedTiles.corners[secondIndex]};
                     std::vector<cv::UMat> pairMasks{reducedTiles.masks[firstIndex], reducedTiles.masks[secondIndex]};
                     seamFinder->find(pairImages, pairCorners, pairMasks);
                 }
+                // Fin du tour : libère les tuiles qui ne serviront plus. Une tuile libérée n'est jamais relue, car son
+                // dernier tour est passé.
+                for (std::size_t tileIndex = 0; tileIndex < tileCount; ++tileIndex)
+                    if (lastRound[tileIndex] == firstIndex)
+                        loadedImages[tileIndex].release();
             }
             return true;
         }
@@ -410,19 +452,32 @@ bool GraphCutSeamFinderClass::computeSeamline(const std::vector<std::string>& ti
         return true;
     }
 
-    std::vector<DataNs::TileTerritory> GraphCutSeamFinderClass::extractPolygons(const cv::Mat& indexMatrix, std::size_t tileCount) const {
+    std::vector<DataNs::TileTerritory> GraphCutSeamFinderClass::extractPolygons(const cv::Mat& indexMatrix,
+                                                                                 const std::vector<cv::Rect>& tileRects) const {
+        const cv::Rect canvas(0, 0, indexMatrix.cols, indexMatrix.rows);
         std::vector<DataNs::TileTerritory> territories;
-        for (std::size_t tileIndex = 0; tileIndex < tileCount; ++tileIndex) {
-            // Masque binaire strictement dédié à la tuile courante.
-            const cv::Mat tileMask = (indexMatrix == static_cast<int>(tileIndex));
-
-            // Contours extérieurs ET trous (RETR_CCOMP) : sans les trous, le pavage ne serait pas exact.
-            std::vector<std::vector<cv::Point>> contours;
-            std::vector<cv::Vec4i> hierarchy;
-            cv::findContours(tileMask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE);
-
+        territories.reserve(tileRects.size());
+        for (std::size_t tileIndex = 0; tileIndex < tileRects.size(); ++tileIndex) {
             DataNs::TileTerritory territory;
             territory.tileIndex = static_cast<int>(tileIndex);
+
+            // Une tuile ne reçoit que des pixels qu'elle couvre : son territoire est donc dans son rectangle. On ne
+            // regarde que cette zone, et non toute la mosaïque, pour que le coût ne croisse pas avec la taille de la mosaïque.
+            const cv::Rect searchRect = tileRects[tileIndex] & canvas;
+            if (searchRect.area() <= 0) {
+                territories.push_back(territory);
+                continue;
+            }
+
+            // Masque binaire strictement dédié à la tuile courante, limité à son rectangle.
+            const cv::Mat tileMask = (indexMatrix(searchRect) == static_cast<int>(tileIndex));
+
+            // Contours extérieurs ET trous (RETR_CCOMP) : sans les trous, le pavage ne serait pas exact.
+            // Le décalage `searchRect.tl()` remet les coordonnées dans le repère de la mosaïque.
+            std::vector<std::vector<cv::Point>> contours;
+            std::vector<cv::Vec4i> hierarchy;
+            cv::findContours(tileMask, contours, hierarchy, cv::RETR_CCOMP, cv::CHAIN_APPROX_SIMPLE, searchRect.tl());
+
             for (std::size_t contourIndex = 0; contourIndex < contours.size(); ++contourIndex) {
                 if (hierarchy[contourIndex][3] >= 0)
                     continue;   // un trou : rattaché à son polygone ci-dessous
@@ -437,23 +492,4 @@ bool GraphCutSeamFinderClass::computeSeamline(const std::vector<std::string>& ti
         }
         return territories;
     }
-// Fonction pour vérification qu'il n'y ait pas de problèmes (surtout pour le débug)
-    SeamCheck GraphCutSeamFinderClass::verifyTiling(const std::vector<DataNs::TileTerritory>& territories,
-                                          const cv::Mat& indexMatrix,
-                                          const std::vector<cv::Size>& tileSizes,
-                                          const std::vector<cv::Point>& originalCorners) const {
-        SeamCheck check;
-        check.fallbackPixelCount = fallbackPixelCount;
-        cv::Mat recomposed(indexMatrix.size(), CV_8U, cv::Scalar(NO_TILE));
-        for (const DataNs::TileTerritory& territory : territories)
-            drawTerritory(territory, recomposed, check);
-
-        cv::Mat differentPixels;
-        cv::compare(recomposed, indexMatrix, differentPixels, cv::CMP_NE);
-        check.differentPixelCount = cv::countNonZero(differentPixels);
-        check.isExactTiling = check.differentPixelCount == 0;   // indique seulement si la reconstruction redonne la carte
-        check.gapPixelCount = countGapPixels(indexMatrix, tileSizes, originalCorners);
-        return check;
-    }
-
 }
