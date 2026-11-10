@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -163,27 +164,32 @@ void testerValidation() {
     testerDefaults();
 }
 
-void testerExceptionDansUnStep() {
-    std::cout << "Step qui lève une exception\n";
+Json readJsonFile(const fs::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return Json::parse(input);
+}
+
+std::string readTextFile(const fs::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+Json runFailingPipeline(const fs::path& reportPath, const fs::path& htmlPath,
+                        std::string& message) {
     PipelineNs::PipelineClass p;
     p.addStep(std::make_unique<StepReussiClass>());
     p.addStep(std::make_unique<StepQuiLeveClass>());
-    const fs::path reportPath = fs::temp_directory_path() / "kikirpa_test_pipeline_report.json";
-    const fs::path htmlPath = fs::temp_directory_path() / "kikirpa_test_pipeline_report.html";
-    fs::remove(reportPath);
-    fs::remove(htmlPath);
     p.setReportPath(reportPath);
     p.setReportMetadata({{"projectName", "test"}, {"executionId", "failure-case"}});
     p.addStep(std::make_unique<StepNonAtteintClass>());
-    std::string message;
     const bool ok = p.run([&](const std::string& m) { message = m; });
     verifier(!ok, "run() renvoie false");
-    verifier(message.find("boum") != std::string::npos, "le message de l'exception est transmis au journal");
-    Json report;
-    {
-        std::ifstream reportFile(reportPath, std::ios::binary);
-        report = Json::parse(reportFile);
-    }
+    Json report = readJsonFile(reportPath);
+    PipelineNs::writeHtmlReport(htmlPath, report);
+    return report;
+}
+
+void verifyFailureReport(const Json& report, const fs::path& htmlPath) {
     verifier(report.at("metadata").at("status") == "failed", "le rapport indique l'échec global");
     verifier(report.at("metadata").contains("startedAt") && report.at("metadata").contains("finishedAt"),
              "le rapport contient les dates de début et de fin");
@@ -196,14 +202,21 @@ void testerExceptionDansUnStep() {
              "le rapport distingue l'étape non atteinte");
     verifier(report.at("steps").at(2).at("reason").get<std::string>().find("arrêtée") != std::string::npos,
              "le rapport explique pourquoi l'étape n'a pas été atteinte");
-    PipelineNs::writeHtmlReport(htmlPath, report);
-    std::string reportHtml;
-    {
-        std::ifstream htmlFile(htmlPath, std::ios::binary);
-        reportHtml.assign(std::istreambuf_iterator<char>(htmlFile), std::istreambuf_iterator<char>());
-    }
+    const std::string reportHtml = readTextFile(htmlPath);
     verifier(reportHtml.find("Motif : boum") != std::string::npos,
              "l'export HTML présente le motif d'échec");
+}
+
+void testerExceptionDansUnStep() {
+    std::cout << "Step qui lève une exception\n";
+    const fs::path reportPath = fs::temp_directory_path() / "kikirpa_test_pipeline_report.json";
+    const fs::path htmlPath = fs::temp_directory_path() / "kikirpa_test_pipeline_report.html";
+    fs::remove(reportPath);
+    fs::remove(htmlPath);
+    std::string message;
+    const Json report = runFailingPipeline(reportPath, htmlPath, message);
+    verifier(message.find("boum") != std::string::npos, "le message de l'exception est transmis au journal");
+    verifyFailureReport(report, htmlPath);
     fs::remove(reportPath);
     fs::remove(htmlPath);
 }
@@ -229,14 +242,7 @@ Json scriptReel(const fs::path& dossier) {
                    etape("phase-correlation")});
 }
 
-void testerPipelineReel() {
-    std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
-    creerTuiles(dossier);
-
-    PipelineNs::PipelineClass p = PipelineNs::buildPipeline(scriptReel(dossier));
-    const fs::path reportPath = dossier / "execution.json";
-    const fs::path htmlPath = dossier / "rapport.html";
+void setRealPipelineReportMetadata(PipelineNs::PipelineClass& pipeline) {
     const Json projectMetadata = {
         {"grid", {
             {"rows", 1},
@@ -247,37 +253,30 @@ void testerPipelineReel() {
             })}
         }}
     };
-    p.setReportMetadata({
+    pipeline.setReportMetadata({
         {"projectName", "projet-test"},
         {"executionId", "execution-reelle"},
         {"project", projectMetadata}
     });
-    p.setReportPath(reportPath);
-    std::string journal;
-    const bool ok = p.run([&](const std::string& m) { journal += "        " + m + "\n"; });
-    verifier(ok, "run() réussit");
-    if (!ok) {
-        std::cout << journal;
-        return;
-    }
+}
 
-    const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
+float verifyRealPipelineOutputs(const PipelineNs::PipelineClass& pipeline) {
+    const auto& tuiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");
     verifier(tuiles.size() == 2, "2 tuiles importées");
     verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get(), "B est la voisine de droite de A");
     verifier(tuiles.size() == 2 && fs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
 
-    const auto& paires = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    const auto& paires = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
     verifier(paires.size() == 1, "1 paire mesurée");
-    if (paires.size() != 1) return;
+    if (paires.size() != 1) return 0.0F;
     const DataNs::Matches& m = paires[0].featureMatches;
     verifier(std::abs(m.translationX - DECALAGE_B) < TOLERANCE && std::abs(m.translationY) < TOLERANCE,
              "translation (" + std::to_string(m.translationX) + ", " + std::to_string(m.translationY) + ") = (" +
                  std::to_string(DECALAGE_B) + ", 0)");
-    Json report;
-    {
-        std::ifstream reportFile(reportPath, std::ios::binary);
-        report = Json::parse(reportFile);
-    }
+    return m.translationX;
+}
+
+void verifyRealReportData(const Json& report, float expectedTranslation) {
     verifier(report.at("metadata").at("status") == "completed",
              "le rapport enregistre le statut global réel");
     verifier(report.at("steps").size() == 2 &&
@@ -287,20 +286,41 @@ void testerPipelineReel() {
     verifier(report.at("steps").at(0).at("outputs").at(0).at("value").size() == 2,
              "le rapport contient les tuiles importées");
     verifier(report.at("steps").at(1).at("outputs").at(0).at("value").at(0)
-                 .at("translationX").get<double>() == m.translationX,
+                 .at("translationX").get<double>() == expectedTranslation,
              "le rapport contient les mesures réelles de la sortie");
+}
+
+void verifyRealReportHtml(const Json& report, const fs::path& htmlPath) {
     PipelineNs::writeHtmlReport(htmlPath, report);
-    std::string reportHtml;
-    {
-        std::ifstream htmlFile(htmlPath, std::ios::binary);
-        reportHtml.assign(std::istreambuf_iterator<char>(htmlFile), std::istreambuf_iterator<char>());
-    }
+    const std::string reportHtml = readTextFile(htmlPath);
     verifier(reportHtml.find("phase-correlation") != std::string::npos, "l'HTML nomme le step d'appariement");
     verifier(reportHtml.find("Ordre d'import configuré") != std::string::npos &&
                  reportHtml.find("A.tif") != std::string::npos,
              "l'HTML restitue la grille et l'ordre configuré");
     verifier(reportHtml.find(std::to_string(LARGEUR_TUILE)) != std::string::npos,
              "l'HTML contient les dimensions réelles des tuiles importées");
+}
+
+void testerPipelineReel() {
+    std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
+    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
+    creerTuiles(dossier);
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(scriptReel(dossier));
+    const fs::path reportPath = dossier / "execution.json";
+    const fs::path htmlPath = dossier / "rapport.html";
+    pipeline.setReportPath(reportPath);
+    setRealPipelineReportMetadata(pipeline);
+    std::string journal;
+    const bool succeeded = pipeline.run([&](const std::string& message) { journal += message + "\n"; });
+    verifier(succeeded, "run() réussit");
+    if (succeeded) {
+        const float translation = verifyRealPipelineOutputs(pipeline);
+        const Json report = readJsonFile(reportPath);
+        verifyRealReportData(report, translation);
+        verifyRealReportHtml(report, htmlPath);
+    } else {
+        std::cout << journal;
+    }
     fs::remove_all(dossier);
 }
 

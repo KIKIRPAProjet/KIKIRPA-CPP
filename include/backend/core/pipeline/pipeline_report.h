@@ -12,7 +12,7 @@ namespace PipelineNs {
     Json createStepInputs(const StepNs::StepClass& step, const StepNs::DataStoreClass& dataStore);
     Json createStepReport(size_t stepIndex, const StepNs::StepClass& step,
                           const StepNs::DataStoreClass& dataStore, const Json& inputs);
-    std::string makeStepSummary(const std::string& stepName, const Json& outputs, const Json& result);
+    std::string makeStepSummary(const Json& stepReport);
     void writeReport(const std::filesystem::path& reportPath, const Json& reportJson);
     void writeHtmlReport(const std::filesystem::path& reportPath, const Json& reportJson);
 

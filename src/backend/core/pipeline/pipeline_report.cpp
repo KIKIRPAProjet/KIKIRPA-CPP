@@ -4,12 +4,15 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/step/step.h"
 
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
 
 #include <algorithm>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -201,6 +204,43 @@ namespace PipelineNs {
             return serializedSlots;
         }
 
+        std::string summarizePairMatches(const Json& pairs) {
+            size_t correspondenceCount = 0;
+            for (const Json& pair : pairs)
+                correspondenceCount += pair.at("pointsInA").size();
+            return "Paires mesurées : " + std::to_string(pairs.size()) +
+                " ; correspondances retenues : " + std::to_string(correspondenceCount);
+        }
+
+        std::string summarizeCompositeBlocks(const Json& value) {
+            return "Blocs assemblés : " + std::to_string(value.at("blockCount").get<size_t>()) +
+                " ; dimensions : " + std::to_string(value.at("width").get<int>()) + " × " +
+                std::to_string(value.at("height").get<int>()) + " pixels.";
+        }
+
+        std::string summarizeOutput(const Json& output) {
+            const Json& value = output.at("value");
+            const std::string& type = output.at("dataType").get_ref<const std::string&>();
+            if (type == "Tiles") return "Tuiles importées : " + std::to_string(value.size());
+            if (type == "PairMatches") return summarizePairMatches(value);
+            if (type == "Positions") return "Positions calculées : " + std::to_string(value.size());
+            if (type == "IntensityCorrection")
+                return "Corrections de luminosité calculées pour " +
+                    std::to_string(value.at("tileGains").size()) + " tuile(s).";
+            if (type == "Territories") return "Territoires calculés : " + std::to_string(value.size());
+            if (type == "Seamlines") return "Coutures calculées : " + std::to_string(value.size());
+            if (type == "CompositeBlocks") return summarizeCompositeBlocks(value);
+            return {};
+        }
+
+        std::string summarizeExport(const Json& result) {
+            const Json& image = result.at("image");
+            const Json size = result.value("canvasSize", Json::array());
+            return "Fichier exporté : " + image.value("path", std::string()) +
+                (size.size() == 2 ? " ; dimensions : " + std::to_string(size.at(0).get<int>()) + " × " +
+                    std::to_string(size.at(1).get<int>()) + " pixels." : "");
+        }
+
         std::string escapeHtml(const std::string& text) {
             std::string escaped;
             escaped.reserve(text.size());
@@ -332,11 +372,10 @@ namespace PipelineNs {
         const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
         Json outputs = serializeSlots(config.outputs, dataStore);
         const Json result = step.getResult();
-        return {
+        Json stepReport = {
             {"index", stepIndex},
             {"name", config.name},
             {"status", "completed"},
-            {"summary", makeStepSummary(config.name, outputs, result)},
             {"reason", nullptr},
             {"configuration", step.getConfigJson()},
             {"parameters", step.getConfigJson().value("parameters", Json::array())},
@@ -344,41 +383,23 @@ namespace PipelineNs {
             {"outputs", std::move(outputs)},
             {"result", result}
         };
+        stepReport["summary"] = makeStepSummary(stepReport);
+        return stepReport;
     }
 
-    std::string makeStepSummary(const std::string& stepName, const Json& outputs, const Json& result) {
+    std::string makeStepSummary(const Json& stepReport) {
+        const Json& result = stepReport.at("result");
         if (result.is_object() && result.contains("error")) {
             const Json& error = result.at("error");
             return error.is_string() ? error.get<std::string>() : error.dump();
         }
-        for (const Json& output : outputs) {
-            const Json& value = output.at("value");
-            const std::string& type = output.at("dataType").get_ref<const std::string&>();
-            if (type == "Tiles") return "Tuiles importées : " + std::to_string(value.size());
-            if (type == "PairMatches") {
-                size_t correspondenceCount = 0;
-                for (const Json& pair : value) correspondenceCount += pair.at("pointsInA").size();
-                return "Paires mesurées : " + std::to_string(value.size()) +
-                    " ; correspondances retenues : " + std::to_string(correspondenceCount);
-            }
-            if (type == "Positions") return "Positions calculées : " + std::to_string(value.size());
-            if (type == "IntensityCorrection")
-                return "Corrections de luminosité calculées pour " +
-                    std::to_string(value.at("tileGains").size()) + " tuile(s).";
-            if (type == "Territories") return "Territoires calculés : " + std::to_string(value.size());
-            if (type == "Seamlines") return "Coutures calculées : " + std::to_string(value.size());
-            if (type == "CompositeBlocks")
-                return "Blocs assemblés : " + std::to_string(value.at("blockCount").get<size_t>()) +
-                    " ; dimensions : " + std::to_string(value.at("width").get<int>()) + " × " +
-                    std::to_string(value.at("height").get<int>()) + " pixels.";
+        for (const Json& output : stepReport.at("outputs")) {
+            const std::string summary = summarizeOutput(output);
+            if (!summary.empty()) return summary;
         }
-        if (stepName == "export" && result.is_object() && result.contains("image")) {
-            const Json& image = result.at("image");
-            const Json size = result.value("canvasSize", Json::array());
-            return "Fichier exporté : " + image.value("path", std::string()) +
-                (size.size() == 2 ? " ; dimensions : " + std::to_string(size.at(0).get<int>()) + " × " +
-                    std::to_string(size.at(1).get<int>()) + " pixels." : "");
-        }
+        if (stepReport.value("name", std::string()) == "export" &&
+            result.is_object() && result.contains("image"))
+            return summarizeExport(result);
         return "Étape terminée. Résultat détaillé disponible ci-dessous.";
     }
 
