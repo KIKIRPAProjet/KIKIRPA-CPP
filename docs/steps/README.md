@@ -12,6 +12,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `absolute-pos` | `tiles`, `matches` | `positions` | [AbsolutePosStep.md](AbsolutePosStep.md) |
 | `intensity-correction` | `tiles`, `matches` | `intensityCorrection` | [IntensityCorrectionStep.md](IntensityCorrectionStep.md) |
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
+| `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
 | `mosaic-crop` | `mosaic` | `mosaic` rognée | [MosaicCropStep.md](MosaicCropStep.md) |
 
