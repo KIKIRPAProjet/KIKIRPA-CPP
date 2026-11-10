@@ -59,6 +59,8 @@ public:
 
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
+    void appendLog(const QString &message);
+    void setActiveStep(int stepNumber);
 
 private:
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);

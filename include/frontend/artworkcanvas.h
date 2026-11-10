@@ -8,6 +8,7 @@
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
+#include <QImage>
 
 #include <functional>
 
@@ -36,6 +37,10 @@ public:
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
+    void setMosaicPreview(const QImage &image) {
+        m_mosaicPreview = image;
+        update(); // Demande à Qt de redessiner le canevas immédiatement
+    }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
@@ -69,6 +74,7 @@ private:
     int dragStartCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    QImage m_mosaicPreview;
     bool seamVisible = true;
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;

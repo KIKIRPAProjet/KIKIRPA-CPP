@@ -8,6 +8,7 @@ class MainWindow;
 class WorkspaceCenter;
 class GridTab;
 class AlignmentTab;
+class AssemblyTab;
 
 class RightPanel : public QTabWidget
 {
@@ -22,6 +23,7 @@ public:
 
     void updateGridState(const ProjectGrid::State &gridState);
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
+    void setActiveStep(int stepNumber);
 
 private:
     MainWindow *m_mainWindow;
@@ -30,6 +32,7 @@ private:
 
     GridTab *m_gridTab = nullptr;
     AlignmentTab *m_alignmentTab = nullptr;
+    AssemblyTab *m_assemblyTab = nullptr;
 };
 
 #endif // RIGHT_PANEL_H

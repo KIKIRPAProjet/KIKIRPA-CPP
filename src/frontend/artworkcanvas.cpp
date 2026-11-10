@@ -105,6 +105,17 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#484848"));
 
+    if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
+        const QRect target = rect().adjusted(24, 24, -24, -24);
+        p.drawImage(target, m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+
+        // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
+        p.setPen(QColor("#dddddd"));
+        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
+        return; // On arrête de dessiner ici
+    }
+
     if (modeValue == kModeGrid) {
         drawGrid(p);
         return;

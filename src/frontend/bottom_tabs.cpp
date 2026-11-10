@@ -23,17 +23,18 @@
 #include <QBrush>
 #include <QColor>
 #include <QFont>
+#include <QTime>
 
 BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     : QTabWidget(parent), m_mainWindow(mainWindow)
 {
     setMinimumHeight(80);
 
-    auto *journal = new QListWidget(this);
-    journal->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                       tr("14:10  4 tuiles importées"),
-                       tr("14:02  Projet ouvert")});
-    addTab(journal, tr("Journal"));
+    m_journalList = new QListWidget(this);
+    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
+                             tr("14:10  4 tuiles importées"),
+                             tr("14:02  Projet ouvert")});
+    addTab(m_journalList, tr("Journal"));
 
     m_pairsTable = new QTableWidget(0, 10, this);
     m_pairsTable->setHorizontalHeaderLabels({
@@ -149,4 +150,13 @@ void BottomTabs::selectPairRow(int pairIndex)
         return;
     const QSignalBlocker blocker(m_pairsTable);
     m_pairsTable->selectRow(pairIndex);
+}
+
+void BottomTabs::appendLog(const QString &message)
+{
+    if (m_journalList) {
+        QString timeStr = QTime::currentTime().toString("hh:mm:ss");
+        m_journalList->addItem(timeStr + "  " + message);
+        m_journalList->scrollToBottom();
+    }
 }
