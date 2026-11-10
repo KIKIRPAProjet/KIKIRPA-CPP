@@ -365,7 +365,6 @@ Où en est-on :
 - **Assemblage (Fusion)** : PR #69 (brouillon).
 - **Export** : branche `fe/export`, qui ajoute le step `export` et son type partagé.
 - **Contrat entre les deux** : Fusion doit fournir la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque bloc doit contenir `imageRgb` en `CV_16UC3` et un `blockRect` aligné sur `DataNs::BLOCK_SIZE`, avec une grille complète. L'export n'écrit pas `provenance` ni `mask`.
-- `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide en attendant le vrai assemblage.
 
 ---
 
@@ -407,7 +406,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 - **Aucun step ne lit le TIFF pyramidal.** Tous relisent l'image source entière (`cv::imread`), puis la réduisent si besoin. `readRegion` existe mais n'est pas utilisé.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
-- `graphcut` alloue deux images de la taille de la mosaïque entière (1 + 3 octets par pixel).
+- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
 - `MemoryScopeClass` n'est utilisé par aucun step.
 
 ---
