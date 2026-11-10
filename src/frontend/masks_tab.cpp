@@ -21,9 +21,9 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
             m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
             if (name == tr("Masques")) {
                 m_mainWindow->maskVisible = checked;
-                static_cast<ArtworkCanvas *>(m_canvas)->setMaskVisible(checked);
+                m_canvas->setMaskVisible(checked);
             }
-            elseif(name == tr("Lignes de couture")){
+            else if(name == tr("Lignes de couture")){
                 m_canvas->setSeamVisible(checked);
             }
         });
