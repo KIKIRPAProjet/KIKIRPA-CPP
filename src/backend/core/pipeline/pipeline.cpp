@@ -315,7 +315,10 @@ namespace PipelineNs {
                         failureReason = result.dump();
                     }
                 }
-                report(log, messagePrefix + " failed: " + failureReason, true);
+                std::string failureMessage = messagePrefix;
+                failureMessage += " failed: ";
+                failureMessage += failureReason;
+                report(log, failureMessage, true);
                 if (!reportPath.empty()) {
                     stepReport["status"] = "failed";
                     stepReport["summary"] = "L'étape a échoué.";
@@ -330,8 +333,13 @@ namespace PipelineNs {
 
             // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
             std::string failureReason;
-            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
-                report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
+            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason)) {
+                std::string warningMessage = messagePrefix;
+                warningMessage += " warning: checkpoint incomplete (";
+                warningMessage += failureReason;
+                warningMessage += "), this step will be redone on resume";
+                report(log, warningMessage, false);
+            }
             if (!reportPath.empty()) {
                 try {
                     stepReport = createStepReport(stepIndex, *step, dataStore, stepInputs);

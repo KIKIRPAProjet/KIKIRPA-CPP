@@ -4,12 +4,15 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/pipeline/pipeline.h"
+#include "core/step/data_store.h"
 #include "core/step/step.h"
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -105,31 +108,36 @@ namespace PipelineNs {
             return positions;
         }
 
+        Json serializePolygon(const std::vector<cv::Point>& polygon) {
+            Json points = Json::array();
+            for (const cv::Point& vertex : polygon) points.push_back(point(vertex));
+            return points;
+        }
+
+        Json serializeTerritoryHoles(const std::vector<std::vector<std::vector<cv::Point>>>& territoryHoles) {
+            Json holes = Json::array();
+            for (const auto& polygonHoles : territoryHoles) {
+                Json holesForPolygon = Json::array();
+                for (const auto& hole : polygonHoles) holesForPolygon.push_back(serializePolygon(hole));
+                holes.push_back(std::move(holesForPolygon));
+            }
+            return holes;
+        }
+
+        Json serializeTerritory(const DataNs::TileTerritory& territory) {
+            Json polygons = Json::array();
+            for (const auto& polygon : territory.polygons) polygons.push_back(serializePolygon(polygon));
+            return {
+                {"tileIndex", territory.tileIndex},
+                {"polygons", std::move(polygons)},
+                {"holes", serializeTerritoryHoles(territory.holes)}
+            };
+        }
+
         Json serializeTerritories(const StepNs::DataStoreClass& dataStore, const std::string& key) {
             Json territories = Json::array();
-            for (const DataNs::TileTerritory& territory : dataStore.get<std::vector<DataNs::TileTerritory>>(key)) {
-                Json polygons = Json::array();
-                Json holes = Json::array();
-                for (const auto& polygon : territory.polygons) {
-                    Json points = Json::array();
-                    for (const cv::Point& vertex : polygon) points.push_back(point(vertex));
-                    polygons.push_back(std::move(points));
-                }
-                for (const auto& polygonHoles : territory.holes) {
-                    Json holesForPolygon = Json::array();
-                    for (const auto& hole : polygonHoles) {
-                        Json points = Json::array();
-                        for (const cv::Point& vertex : hole) points.push_back(point(vertex));
-                        holesForPolygon.push_back(std::move(points));
-                    }
-                    holes.push_back(std::move(holesForPolygon));
-                }
-                territories.push_back({
-                    {"tileIndex", territory.tileIndex},
-                    {"polygons", std::move(polygons)},
-                    {"holes", std::move(holes)}
-                });
-            }
+            for (const DataNs::TileTerritory& territory : dataStore.get<std::vector<DataNs::TileTerritory>>(key))
+                territories.push_back(serializeTerritory(territory));
             return territories;
         }
 
@@ -267,19 +275,22 @@ namespace PipelineNs {
             return "Inconnue";
         }
 
-        std::string renderHtml(const Json& reportJson) {
-            const Json metadata = reportJson.value("metadata", Json::object());
-            std::string html = "<!doctype html>\n<html lang=\"fr\"><head><meta charset=\"utf-8\">"
+        void appendHtmlHeader(const Json& metadata, std::string& html) {
+            html += "<!doctype html>\n<html lang=\"fr\"><head><meta charset=\"utf-8\">"
                 "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
                 "<title>Rapport d'assemblage</title>"
                 "<style>body{font:16px sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem}"
                 "pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f4f4;padding:1rem}"
                 "section{border-top:1px solid #bbb;padding:1rem 0}.failed{color:#a00}</style></head><body>"
-                "<h1>Rapport d'assemblage — " +
-                escapeHtml(metadata.value("projectName", "Projet inconnu")) + "</h1>";
+                "<h1>Rapport d'assemblage — ";
+            html += escapeHtml(metadata.value("projectName", "Projet inconnu"));
+            html += "</h1>";
             html += "<p>Exécution : " + escapeHtml(metadata.value("executionId", "inconnue")) + "</p>";
             html += "<p>Date : " + escapeHtml(metadata.value("startedAt", "inconnue")) + "</p>";
             html += "<p>Statut global : <strong>" + escapeHtml(metadata.value("status", "inconnu")) + "</strong></p>";
+        }
+
+        void appendHtmlGrid(const Json& metadata, std::string& html) {
             const Json project = metadata.value("project", Json::object());
             if (project.is_object() && project.contains("grid") && project.at("grid").is_object()) {
                 const Json& grid = project.at("grid");
@@ -296,23 +307,32 @@ namespace PipelineNs {
                     html += "</ol>";
                 }
             }
-            for (const Json& step : reportJson.at("steps")) {
-                const std::string status = step.value("status", "notReached");
-                html += "<section><h2>Étape " + std::to_string(step.at("index").get<size_t>() + 1) +
-                    " — " + escapeHtml(step.value("name", "inconnue")) + "</h2>";
-                html += "<p>Statut : <strong" + std::string(status == "failed" ? " class=\"failed\"" : "") +
-                    ">" + statusLabel(status) + "</strong></p>";
-                html += "<p>" + escapeHtml(step.value("summary", "")) + "</p>";
-                if (step.contains("reason") && !step.at("reason").is_null())
-                    html += "<p>Motif : " + escapeHtml(step.at("reason").get<std::string>()) + "</p>";
-                if (step.contains("inputs") && !step.at("inputs").empty())
-                    html += "<h3>Entrées</h3><pre>" + escapeHtml(step.at("inputs").dump(2)) + "</pre>";
-                if (step.contains("outputs") && !step.at("outputs").empty())
-                    html += "<h3>Sorties</h3><pre>" + escapeHtml(step.at("outputs").dump(2)) + "</pre>";
-                if (step.contains("result") && !step.at("result").is_null())
-                    html += "<h3>Résultat</h3><pre>" + escapeHtml(step.at("result").dump(2)) + "</pre>";
-                html += "</section>";
-            }
+        }
+
+        void appendHtmlStep(const Json& step, std::string& html) {
+            const std::string status = step.value("status", "notReached");
+            html += "<section><h2>Étape " + std::to_string(step.at("index").get<size_t>() + 1) +
+                " — " + escapeHtml(step.value("name", "inconnue")) + "</h2>";
+            html += "<p>Statut : <strong" + std::string(status == "failed" ? " class=\"failed\"" : "") +
+                ">" + statusLabel(status) + "</strong></p>";
+            html += "<p>" + escapeHtml(step.value("summary", "")) + "</p>";
+            if (step.contains("reason") && !step.at("reason").is_null())
+                html += "<p>Motif : " + escapeHtml(step.at("reason").get<std::string>()) + "</p>";
+            if (step.contains("inputs") && !step.at("inputs").empty())
+                html += "<h3>Entrées</h3><pre>" + escapeHtml(step.at("inputs").dump(2)) + "</pre>";
+            if (step.contains("outputs") && !step.at("outputs").empty())
+                html += "<h3>Sorties</h3><pre>" + escapeHtml(step.at("outputs").dump(2)) + "</pre>";
+            if (step.contains("result") && !step.at("result").is_null())
+                html += "<h3>Résultat</h3><pre>" + escapeHtml(step.at("result").dump(2)) + "</pre>";
+            html += "</section>";
+        }
+
+        std::string renderHtml(const Json& reportJson) {
+            const Json metadata = reportJson.value("metadata", Json::object());
+            std::string html;
+            appendHtmlHeader(metadata, html);
+            appendHtmlGrid(metadata, html);
+            for (const Json& step : reportJson.at("steps")) appendHtmlStep(step, html);
             if (reportJson.contains("output") && !reportJson.at("output").is_null())
                 html += "<h2>Fichier final</h2><pre>" + escapeHtml(reportJson.at("output").dump(2)) + "</pre>";
             html += "</body></html>\n";

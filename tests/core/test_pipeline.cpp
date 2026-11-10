@@ -174,8 +174,7 @@ std::string readTextFile(const fs::path& path) {
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
-Json runFailingPipeline(const fs::path& reportPath, const fs::path& htmlPath,
-                        std::string& message) {
+Json runFailingPipeline(const fs::path& reportPath, std::string& message) {
     PipelineNs::PipelineClass p;
     p.addStep(std::make_unique<StepReussiClass>());
     p.addStep(std::make_unique<StepQuiLeveClass>());
@@ -184,9 +183,7 @@ Json runFailingPipeline(const fs::path& reportPath, const fs::path& htmlPath,
     p.addStep(std::make_unique<StepNonAtteintClass>());
     const bool ok = p.run([&](const std::string& m) { message = m; });
     verifier(!ok, "run() renvoie false");
-    Json report = readJsonFile(reportPath);
-    PipelineNs::writeHtmlReport(htmlPath, report);
-    return report;
+    return readJsonFile(reportPath);
 }
 
 void verifyFailureReport(const Json& report, const fs::path& htmlPath) {
@@ -214,7 +211,8 @@ void testerExceptionDansUnStep() {
     fs::remove(reportPath);
     fs::remove(htmlPath);
     std::string message;
-    const Json report = runFailingPipeline(reportPath, htmlPath, message);
+    const Json report = runFailingPipeline(reportPath, message);
+    PipelineNs::writeHtmlReport(htmlPath, report);
     verifier(message.find("boum") != std::string::npos, "le message de l'exception est transmis au journal");
     verifyFailureReport(report, htmlPath);
     fs::remove(reportPath);
