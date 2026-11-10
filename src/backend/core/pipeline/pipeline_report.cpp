@@ -31,7 +31,7 @@
 
 namespace PipelineNs {
 
-    namespace fs = std::filesystem;
+    namespace FilesystemNs = std::filesystem;
 
     namespace {
 
@@ -345,13 +345,13 @@ namespace PipelineNs {
             return html;
         }
 
-        fs::path temporaryPath(const fs::path& destination) {
-            fs::path temporary = destination;
+        FilesystemNs::path temporaryPath(const FilesystemNs::path& destination) {
+            FilesystemNs::path temporary = destination;
             temporary += ".tmp";
             return temporary;
         }
 
-        void replaceFile(const fs::path& temporary, const fs::path& destination) {
+        void replaceFile(const FilesystemNs::path& temporary, const FilesystemNs::path& destination) {
 #ifdef _WIN32
             if (!MoveFileExW(temporary.c_str(), destination.c_str(),
                              MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
@@ -359,29 +359,29 @@ namespace PipelineNs {
                                         "cannot replace " + destination.string());
 #else
             std::error_code errorCode;
-            fs::rename(temporary, destination, errorCode);
+            FilesystemNs::rename(temporary, destination, errorCode);
             if (errorCode) throw std::system_error(errorCode, "cannot replace " + destination.string());
 #endif
         }
 
-        void writeAtomically(const fs::path& destination, const std::string& content) {
+        void writeAtomically(const FilesystemNs::path& destination, const std::string& content) {
             if (destination.empty()) throw std::invalid_argument("report path must not be empty");
-            if (destination.has_parent_path()) fs::create_directories(destination.parent_path());
-            const fs::path temporary = temporaryPath(destination);
+            if (destination.has_parent_path()) FilesystemNs::create_directories(destination.parent_path());
+            const FilesystemNs::path temporary = temporaryPath(destination);
             {
                 std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
                 if (!output) throw std::runtime_error("report: cannot create " + temporary.string());
                 output << content;
                 output.close();
                 if (!output) {
-                    fs::remove(temporary);
+                    FilesystemNs::remove(temporary);
                     throw std::runtime_error("report: cannot write " + temporary.string());
                 }
             }
             try {
                 replaceFile(temporary, destination);
             } catch (...) {
-                fs::remove(temporary);
+                FilesystemNs::remove(temporary);
                 throw;
             }
         }
@@ -429,11 +429,11 @@ namespace PipelineNs {
         return "Étape terminée. Résultat détaillé disponible ci-dessous.";
     }
 
-    void writeReport(const fs::path& reportPath, const Json& reportJson) {
+    void writeReport(const FilesystemNs::path& reportPath, const Json& reportJson) {
         writeAtomically(reportPath, reportJson.dump(2) + '\n');
     }
 
-    void writeHtmlReport(const fs::path& reportPath, const Json& reportJson) {
+    void writeHtmlReport(const FilesystemNs::path& reportPath, const Json& reportJson) {
         writeAtomically(reportPath, renderHtml(reportJson));
     }
 

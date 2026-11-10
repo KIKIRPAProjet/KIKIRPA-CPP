@@ -8,17 +8,12 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
-#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
-
-namespace CheckpointNs {
-    class CheckpointClass;
-}
 
 namespace PipelineNs {
 
@@ -69,24 +64,6 @@ namespace PipelineNs {
             const std::vector<std::unique_ptr<StepNs::StepClass>>& getSteps() const { return steps; }
 
         private:
-            struct RunContext;
-            // Réécrit le script complet dans scriptPath (écriture atomique) ; un échec est signalé sans arrêter le pipeline.
-            void saveScript(const Logger& log) const;
-            bool prepareRun(size_t& startIndex, const CheckpointNs::CheckpointClass& checkpoint,
-                            Json& reportJson, const Logger& log);
-            bool restoreCompletedOutputs(size_t startIndex, const CheckpointNs::CheckpointClass& checkpoint,
-                                         const Logger& log);
-            bool executeSteps(size_t startIndex, RunContext& context);
-            bool handlePause(RunContext& context);
-            bool executeStep(RunContext& context);
-            bool captureStepInputs(RunContext& context);
-            bool writeRunningStepReport(RunContext& context);
-            bool executeConfiguredStep(RunContext& context, std::string& errorMessage);
-            void saveSuccessfulCheckpoint(RunContext& context) const;
-            bool recordFailedStep(const std::string& failureReason, const Json& result, RunContext& context);
-            bool recordSuccessfulStep(RunContext& context);
-            bool finalizeRun(size_t startIndex, RunContext& context);
-
             std::vector<std::unique_ptr<StepNs::StepClass>> steps;
             StepNs::DataStoreClass dataStore;
             RunState runState;
