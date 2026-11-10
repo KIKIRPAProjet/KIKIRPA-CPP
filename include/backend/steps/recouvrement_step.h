@@ -9,11 +9,11 @@
 
 namespace StepsNs {
 
-    constexpr float DEFAULT_OVERLAP = 0.2f;
+    constexpr float DEFAULT_RECOUVREMENT_OVERLAP = 0.2f;
 
     // Paramètres de l'estimation des zones de recouvrement.
     struct RecouvrementInput {
-        float overlap = DEFAULT_OVERLAP;
+        float overlap = DEFAULT_RECOUVREMENT_OVERLAP;
         PhaseCorrelationNs::Parameters parameters;
     };
 
