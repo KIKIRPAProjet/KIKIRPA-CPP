@@ -40,6 +40,7 @@ public:
         m_mosaicPreview = image;
         update(); // Demande à Qt de redessiner le canevas immédiatement
     }
+    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -70,6 +71,7 @@ private:
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
+    bool seamVisible = true;
 };
 
 #endif // ARTWORKCANVAS_H
