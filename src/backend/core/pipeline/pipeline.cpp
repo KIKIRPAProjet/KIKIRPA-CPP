@@ -35,6 +35,16 @@ namespace PipelineNs {
 
     namespace fs = std::filesystem;
 
+    struct PipelineClass::RunContext {
+        const CheckpointNs::CheckpointClass& checkpoint;
+        Json& reportJson;
+        const Logger& log;
+        size_t stepCount;
+        size_t stepIndex = 0;
+        std::string messagePrefix;
+        Json stepInputs;
+    };
+
     namespace {
 
         // Nom du step lu dans sa config JSON ; chaîne vide si le step n'a pas de config.
@@ -134,6 +144,7 @@ namespace PipelineNs {
             const fs::path& reportPath;
             StepNs::DataStoreClass& reportDataStore;
             Json& reportJson;
+            const Json& metadata;
         };
 
         void appendRunStepReport(size_t stepIndex, RunReportContext& context) {
@@ -146,15 +157,10 @@ namespace PipelineNs {
                 createSkippedStepReport(stepIndex, step, context.checkpoint, context.reportDataStore));
         }
 
-        Json createRunReport(size_t startIndex, const std::vector<std::unique_ptr<StepNs::StepClass>>& steps,
-                             const CheckpointNs::CheckpointClass& checkpoint, const Json& metadata,
-                             const fs::path& reportPath) {
-            Json reportJson = createInitialReport(metadata);
-            StepNs::DataStoreClass reportDataStore;
-            RunReportContext context{startIndex, steps, checkpoint, reportPath, reportDataStore, reportJson};
-            for (size_t stepIndex = 0; stepIndex < steps.size(); ++stepIndex)
+        void createRunReport(RunReportContext& context) {
+            context.reportJson = createInitialReport(context.metadata);
+            for (size_t stepIndex = 0; stepIndex < context.steps.size(); ++stepIndex)
                 appendRunStepReport(stepIndex, context);
-            return reportJson;
         }
 
         void markUnreachedSteps(Json& reportJson) {
@@ -255,7 +261,10 @@ namespace PipelineNs {
         dataStore = StepNs::DataStoreClass();
         if (!restoreCompletedOutputs(startIndex, checkpoint, log)) return false;
         try {
-            reportJson = createRunReport(startIndex, steps, checkpoint, reportMetadata, reportPath);
+            StepNs::DataStoreClass reportDataStore;
+            RunReportContext context{startIndex, steps, checkpoint, reportPath, reportDataStore, reportJson,
+                                     reportMetadata};
+            createRunReport(context);
         } catch (const std::exception& exception) {
             report(log, std::string("cannot prepare execution report: ") + exception.what(), true);
             runState.status = RunStatus::Failed;

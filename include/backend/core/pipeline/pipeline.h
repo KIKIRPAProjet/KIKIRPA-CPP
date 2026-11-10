@@ -69,16 +69,7 @@ namespace PipelineNs {
             const std::vector<std::unique_ptr<StepNs::StepClass>>& getSteps() const { return steps; }
 
         private:
-            struct RunContext {
-                const CheckpointNs::CheckpointClass& checkpoint;
-                Json& reportJson;
-                const Logger& log;
-                size_t stepCount;
-                size_t stepIndex = 0;
-                std::string messagePrefix;
-                Json stepInputs;
-            };
-
+            struct RunContext;
             // Réécrit le script complet dans scriptPath (écriture atomique) ; un échec est signalé sans arrêter le pipeline.
             void saveScript(const Logger& log) const;
             bool prepareRun(size_t& startIndex, const CheckpointNs::CheckpointClass& checkpoint,
