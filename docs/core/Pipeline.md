@@ -5,7 +5,7 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-Il n'y a pas d'exécutable en ligne de commande : le pipeline se lance depuis le code (la GUI, les tests).
+Il n'y a pas d'exécutable en ligne de commande, et la GUI n'appelle pas encore le backend : aujourd'hui, le pipeline se lance seulement depuis le code, par exemple dans un test. Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md).
 
 ```cpp
 PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)
@@ -93,6 +93,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `PairMatches` | `tileIdA`, `tileIdB`, `direction`, `pointsInA`, `pointsInB`, `confidenceScores`, `translationX`, `translationY` |
 | `Positions` | `tileId`, `position`, `rotationRadians` |
 | `Territories` | `tileIndex`, `polygons`, `holes` |
+| `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
+| `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
@@ -110,11 +112,19 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 |---|---|---|---|
 | `import` | `StepsNs::ImportStepClass` | — | `tiles` : `Tiles` |
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `sift` | `StepsNs::SiftStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `lightglue` | `StepsNs::LightGlueStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
+| `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
+| `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
+
+`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
+`export` est terminal : il attend des blocs composites produits par Fusion, étape qui n'est pas encore présente dans ce dépôt.
 
 ## Ajouter un step
 
-1. La classe hérite de `StepNs::StepClass`, dans le namespace `StepsNs` (`include/backend/steps/<nom>_step.h`). Son **constructeur par défaut** remplit `configJson` à partir d'un `ConfigNs::StepConfig` : `name`, `parameters` avec leurs valeurs par défaut, `inputs` et `outputs`. Prendre `PhaseCorrelationStepClass` pour modèle.
-2. `execute()` relit ses paramètres avec `getParameter("nom")`, lit ses entrées avec `dataStore->get<T>("clé")` et écrit ses sorties avec `dataStore->replace("clé", …)`. En cas d'échec, il renvoie `false` avec la raison dans `result["error"]`.
-3. Ajouter une ligne dans `stepRegistry()` (`src/backend/core/pipeline/pipeline_builder.cpp`).
-4. **Le type C++ derrière une clé doit être le même pour tous les steps** : `tiles` est toujours un `DataNs::TileList`, `matches` toujours un `std::vector<DataNs::PairMatches>`. Sinon, `get<T>` lève `std::bad_any_cast` à l'exécution.
+Marche à suivre complète, avec un exemple compilé et testé (en-tête, constructeur, `execute()`, registre, nouveau type et checkpoint, test GoogleTest, fiche) : [steps/AJOUTER_UN_STEP.md](../steps/AJOUTER_UN_STEP.md).
+
+En bref : une classe qui hérite de `StepNs::StepClass`, dont le constructeur par défaut fixe `name`, `parameters`, `inputs` et `outputs` ; une ligne dans `stepRegistry()` ; `REGISTERED_STEP_COUNT` + 1 dans `tests/core/test_pipeline.cpp`. **Le type C++ derrière une clé est le même pour tous les steps**, sinon `get<T>` lève `std::bad_any_cast` à l'exécution.

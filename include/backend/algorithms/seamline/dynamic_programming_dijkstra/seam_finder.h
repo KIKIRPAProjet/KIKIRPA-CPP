@@ -5,7 +5,8 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/cost_map.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <vector>
 
@@ -61,7 +62,7 @@ namespace DynamicProgrammingDijkstraNs {
             CostFunction costFunction = CostFunction::ColorGradient;
             CostMapParameters parameters;
             SolverMethod method = SolverMethod::DynamicProgramming;
-            int corridorRadius = 18;   // rayon du corridor (px), utilisé seulement par DynamicProgrammingDijkstraLocal
+            int corridorRadius = DEFAULT_CORRIDOR_RADIUS;   // rayon du corridor (px), seulement pour DynamicProgrammingDijkstraLocal
 
     };
 

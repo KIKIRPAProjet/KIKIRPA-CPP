@@ -2,8 +2,16 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+    paths-ignore:
+      - 'doc/**'
+      - '**/*.md'
   workflow_dispatch:
+
+concurrency:
+  group : ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -14,6 +22,9 @@ jobs:
     with:
       build-type: Release
       test-labels: "unit|integration"
+
+  build-and-test-windows:
+    uses: ./.github/workflows/build-test-windows.yml
 
   clang-tidy:
     runs-on: ubuntu-24.04
@@ -29,9 +40,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE_SHA: ${{ github.event.before }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
-          PUSH_COMMITS: ${{ toJSON(github.event.commits) }}
         run: |
           set -euo pipefail
 
@@ -40,13 +49,10 @@ jobs:
               changed_files=$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")
               ;;
             push)
-              if [[ "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
-                changed_files=$(git ls-tree -r --name-only "$PUSH_AFTER_SHA")
-              elif git cat-file -e "${PUSH_BEFORE_SHA}^{commit}" 2>/dev/null; then
-                changed_files=$(git diff --name-only "$PUSH_BEFORE_SHA" "$PUSH_AFTER_SHA")
-              else
-                changed_files=$(jq -r '.[] | (.added[]?, .modified[]?, .removed[]?)' <<< "$PUSH_COMMITS")
-              fi
+              # Comme pour une pull request : seulement ce que la branche change par rapport à main,
+              # pour qu'une fusion de main dans la branche ne fasse pas analyser tout le code de main.
+              git fetch --no-tags origin main:refs/remotes/origin/main
+              changed_files=$(git diff --name-only "origin/main...$PUSH_AFTER_SHA")
               ;;
             workflow_dispatch)
               changed_files=$(git ls-files)
@@ -80,6 +86,13 @@ jobs:
             ninja-build \
             nlohmann-json3-dev \
             qt6-base-dev
+
+      - name: Restore LightGlue model
+        if: steps.changed-files.outputs.cpp == 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/linux-clang-tidy/models
+          key: lightglue-model-${{ hashFiles('tests/steps/CMakeLists.txt') }}
 
       - name: Configure with clang-tidy
         if: steps.changed-files.outputs.cpp == 'true'

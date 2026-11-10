@@ -1,0 +1,112 @@
+name: Build and test (Windows)
+
+on:
+  workflow_call:
+    inputs:
+      test-labels:
+        description: CTest label expression
+        required: false
+        type: string
+        default: "unit|integration"
+      package-release:
+        description: Package the executable with its DLLs
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      KIKIRPA_VCPKG_ROOT: C:\vcpkg
+      OpenCV_DIR: C:\opencv\build
+      QT_ROOT: C:\Qt\6.8.3\msvc2022_64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        run: choco install ninja --no-progress -y
+
+      - name: Restore OpenCV
+        id: opencv
+        uses: actions/cache@v4
+        with:
+          path: C:\opencv
+          key: opencv-4.10.0-windows
+
+      - name: Install OpenCV
+        if: steps.opencv.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-windows.exe -OutFile opencv.exe
+          Start-Process .\opencv.exe -ArgumentList '-oC:\', '-y' -Wait
+
+      - name: Restore Qt
+        id: qt
+        uses: actions/cache@v4
+        with:
+          path: C:\Qt
+          key: qt-6.8.3-win64_msvc2022_64
+
+      - name: Install Qt
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install aqtinstall
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+
+      - name: vcpkg version
+        id: vcpkg
+        shell: pwsh
+        run: |
+          echo "commit=$(git -C C:\vcpkg rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+          echo "image=$env:ImageVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Restore vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-x64-windows-tiff-gtest-${{ steps.vcpkg.outputs.image }}-${{ steps.vcpkg.outputs.commit }}
+
+      - name: Install libtiff and GoogleTest
+        run: C:\vcpkg\vcpkg install tiff gtest --triplet x64-windows
+
+      - name: Restore LightGlue model
+        uses: actions/cache@v4
+        with:
+          path: build/windows-aqt/models
+          key: lightglue-model-${{ hashFiles('tests/steps/CMakeLists.txt') }}
+
+      - name: Configure
+        run: cmake --preset windows-aqt
+
+      - name: Build
+        run: cmake --build --preset windows-aqt
+
+      - name: Run CTest
+        run: ctest --preset windows-aqt -L "${{ inputs.test-labels }}"
+
+      # Le programme doit démarrer sur un poste sans outils de développement : l'archive contient
+      # donc les DLL du projet, d'OpenCV et du runtime MSVC.
+      - name: Package release binaries
+        if: inputs.package-release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory release | Out-Null
+          Copy-Item build/windows-aqt/stitching.exe, build/windows-aqt/*.dll release
+          Copy-Item "$env:OpenCV_DIR/x64/vc16/bin/opencv_world4100.dll" release
+          Copy-Item "$env:VCToolsRedistDir/x64/Microsoft.VC143.CRT/*.dll" release
+          ./release/stitching.exe
+          Compress-Archive -Path release/* -DestinationPath "stitching-$env:GITHUB_REF_NAME-windows-x86_64.zip"
+
+      - name: Upload release archive
+        if: inputs.package-release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries-windows
+          path: stitching-${{ github.ref_name }}-windows-x86_64.zip
+          if-no-files-found: error
+          retention-days: 7

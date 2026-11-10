@@ -5,7 +5,7 @@
 
 namespace RejectionNs {
 
-    // À implémenter par chaque méthode de rejet des outliers (RANSAC, vote, MAGSAC++...).
+    // À implémenter par chaque méthode de rejet des outliers (vote 2D, MAGSAC++...).
     class OutlierRejectorClass {
 
         public:
