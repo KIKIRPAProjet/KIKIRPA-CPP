@@ -8,6 +8,7 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/io/file_fingerprint.h"
 #include "core/io/file_replacement.h"
 
 #include <opencv2/core/types.hpp>
@@ -68,23 +69,6 @@ namespace StepsNs {
         }
 
         fs::path makeImagePath(const fs::path& directory) { return directory / "mosaic.tif"; }
-
-        Json outputFingerprint(const fs::path& path) {
-            std::error_code errorCode;
-            const bool exists = fs::exists(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot inspect export output", path, errorCode);
-            if (!exists) {
-                return {{"path", path.u8string()}, {"exists", false}};
-            }
-            const std::uintmax_t fileSize = fs::file_size(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output size", path, errorCode);
-            const auto modifiedTime = fs::last_write_time(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output time", path, errorCode);
-            return {{"path", path.u8string()},
-                    {"exists", true},
-                    {"size", fileSize},
-                    {"modified", modifiedTime.time_since_epoch().count()}};
-        }
 
         fs::path configuredOutputDirectory(const Json& configJson) {
             std::string directory;
@@ -178,7 +162,7 @@ namespace StepsNs {
     }
 
     Json ExportStepClass::externalInputsFingerprint() const {
-        return outputFingerprint(makeImagePath(configuredOutputDirectory(configJson)));
+        return IONs::computeFileFingerprint(makeImagePath(configuredOutputDirectory(configJson)));
     }
 
     bool ExportStepClass::execute() {
