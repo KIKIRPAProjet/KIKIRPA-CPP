@@ -8,6 +8,8 @@ Code :
 
 Tests : `tests/core/test_pyramidal_tiff_reader.cpp`.
 
+Pour écrire une image trop grande pour la mémoire (la mosaïque), bloc par bloc et sans pyramide : `IONs::TiledTiffWriterClass`, voir [TiledTiffWriter.md](TiledTiffWriter.md). Le reader décrit ici relit aussi ses fichiers (niveau `0`).
+
 ## Principe
 
 Un TIFF pyramidal contient plusieurs versions de la même image :
