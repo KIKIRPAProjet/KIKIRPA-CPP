@@ -219,6 +219,7 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
+| `mosaic-crop` | `x`, `y`, `width`, `height`, `outputDirectory` | `mosaic` : `MosaicFiles` | `mosaic` : `MosaicFiles` | [MosaicCropStep.md](steps/MosaicCropStep.md) |
 | `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.

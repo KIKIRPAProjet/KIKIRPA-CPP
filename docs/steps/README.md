@@ -14,6 +14,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
 | `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
+| `mosaic-crop` | `mosaic` | `mosaic` rognée | [MosaicCropStep.md](MosaicCropStep.md) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
 

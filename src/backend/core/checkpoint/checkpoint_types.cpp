@@ -5,6 +5,7 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
+#include "core/data/mosaic_files.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -40,6 +41,38 @@ namespace CheckpointNs {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
             if (!input) throw std::runtime_error("missing " + (directory / (key + ".json")).string());
             return Json::parse(input);
+        }
+
+        // Les pixels restent dans le dossier de la mosaïque, comme pour les tuiles.
+        void saveMosaicFiles(
+            const StepNs::DataStoreClass& store,
+            const std::string& key,
+            const fs::path& directory
+        ) {
+            const auto& mosaic = store.get<DataNs::MosaicFiles>(key);
+            writeJson(directory, key, {
+                {"mosaicPath", mosaic.mosaicPath},
+                {"totalBlocks", mosaic.totalBlocks}
+                });
+        }
+
+        void loadMosaicFiles(
+            StepNs::DataStoreClass& store,
+            const std::string& key,
+            const fs::path& directory
+        ) {
+            const Json data = readJson(directory, key);
+            const DataNs::MosaicFiles mosaic{
+                data.at("mosaicPath").get<std::string>(),
+                data.at("totalBlocks").get<int>()
+            };
+
+            if (mosaic.totalBlocks <= 0 || !fs::is_directory(mosaic.mosaicPath)) {
+                throw std::runtime_error(
+                    "mosaic checkpoint: missing or invalid mosaic directory");
+            }
+
+            store.replace(key, mosaic);
         }
 
         // Un point devient le tableau JSON [x, y].
@@ -264,6 +297,7 @@ namespace CheckpointNs {
             {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
             {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
+            {"MosaicFiles", {saveMosaicFiles, loadMosaicFiles}},
         };
     }
 
