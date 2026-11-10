@@ -8,6 +8,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `phase-correlation` | `tiles` | `matches` | [PhaseCorrelationStep.md](PhaseCorrelationStep.md) |
 | `sift` | `tiles` | `matches` | [SiftStep.md](SiftStep.md) |
 | `lightglue` | `tiles`, le modèle ONNX `modelPath` | `matches` | [LightGlueStep.md](LightGlueStep.md) |
+| `vote-2d` | `matches` | `matches` | [Vote2DStep.md](Vote2DStep.md) |
 | `absolute-pos` | `tiles`, `matches` | `positions` | [AbsolutePosStep.md](AbsolutePosStep.md) |
 | `intensity-correction` | `tiles`, `matches` | `intensityCorrection` | [IntensityCorrectionStep.md](IntensityCorrectionStep.md) |
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |

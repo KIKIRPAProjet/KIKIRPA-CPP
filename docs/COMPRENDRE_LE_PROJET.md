@@ -5,7 +5,8 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | Pour… | Lire |
 |---|---|
 | comprendre le projet dans son ensemble | **ce guide** |
-| compiler | [BUILD.md](BUILD.md) |
+| installer le projet sur son poste et lancer l'application | [DEMARRER.md](DEMARRER.md) |
+| compiler : dépendances et options | [BUILD.md](BUILD.md) |
 | trouver un fichier dans le code | [CARTE_ARCHITECTURE.md](CARTE_ARCHITECTURE.md) |
 | écrire du code et ouvrir une PR | [CONVENTIONS.md](CONVENTIONS.md) |
 | le format du script et les checkpoints en détail | [core/Pipeline.md](core/Pipeline.md) |
@@ -186,6 +187,11 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                     │ phase-correlation  OU  sift  OU  lightglue │    │                   │
                     └───────────────────────────────────────┘         │                   │
                                                    │ matches          │                   │
+                                                   ▼                  │                   │
+                                             ┌───────────┐            │                   │
+                                             │  vote-2d  │            │                   │
+                                             └───────────┘            │                   │
+                                                   │ matches          │                   │
                               ┌────────────────────┼──────────────────┘                   │
                               ▼                    ▼                                      │
                      ┌──────────────┐    ┌──────────────────────┐                         │
@@ -207,6 +213,7 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
+| `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
@@ -267,6 +274,18 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
+
+#### `PairResiduals` (clé `pairResiduals`) : l'écart de chaque paire après ajustement
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.16, 3.78], "residualNorm": 3.95 } ]
+```
+
+- `residual` = translation mesurée − (position B − position A) ajustées, en pixels.
+- Un grand résidu indique une mesure en contradiction avec les autres. Sans boucle dans la grille, il vaut 0.
+- `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
+
+C++ : `std::vector<DataNs::PairResidual>`.
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 

@@ -38,6 +38,14 @@ Les coordonnées sont en pixels pleine résolution.
 Les bords droit et inférieur sont exclus.
 Le parent du dossier de sortie doit exister.
 
+Le frontend doit convertir le rectangle sélectionné sur l'aperçu en
+coordonnées pleine résolution, dans le repère des blocs sources, en tenant
+compte du zoom, du déplacement de l'affichage et de l'origine de la mosaïque.
+
+Le step ne réalise pas cette conversion. Il reçoit directement les paramètres
+`x`, `y`, `width` et `height`. Le coin supérieur gauche du résultat rogné
+devient `(0, 0)`.
+
 ## Fonctionnement
 
 Le step lit ses paramètres et la mosaïque, appelle l'algorithme,

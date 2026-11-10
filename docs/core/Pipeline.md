@@ -93,8 +93,9 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `PairMatches` | `tileIdA`, `tileIdB`, `direction`, `pointsInA`, `pointsInB`, `confidenceScores`, `translationX`, `translationY` |
 | `Positions` | `tileId`, `position`, `rotationRadians` |
 | `Territories` | `tileIndex`, `polygons`, `holes` |
+| `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
+| `PairResiduals` | `tileIdA`, `tileIdB`, `residual`, `residualNorm` (enregistré par `registerType`, dans `steps/absolute_pos_step.cpp`) |
 | `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
-| `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` |
 | `MosaicFiles` | `mosaicPath`, `totalBlocks` ; les blocs PNG restent dans leur dossier et ne sont pas recopiés dans le checkpoint |
 
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
@@ -115,7 +116,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `sift` | `StepsNs::SiftStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `lightglue` | `StepsNs::LightGlueStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
-| `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions` |
+| `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
