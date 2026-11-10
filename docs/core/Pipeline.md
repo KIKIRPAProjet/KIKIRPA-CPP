@@ -93,7 +93,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `PairMatches` | `tileIdA`, `tileIdB`, `direction`, `pointsInA`, `pointsInB`, `confidenceScores`, `translationX`, `translationY` |
 | `Positions` | `tileId`, `position`, `rotationRadians` |
 | `Territories` | `tileIndex`, `polygons`, `holes` |
-| `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` |
+| `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
+| `VerificationReport` | rapport JSON de dimensions et métadonnées (enregistré par `registerType`, voir `core/checkpoint/final_verification_checkpoint.cpp`) |
 | `PairResiduals` | `tileIdA`, `tileIdB`, `residual`, `residualNorm` (enregistré par `registerType`, dans `steps/absolute_pos_step.cpp`) |
 | `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 | `Mosaic` | `imagePath`, `provenancePath`, `maskPath`, `canvasSize`. **Les pixels ne sont pas recopiés** : ils restent dans les TIFF écrits par l'assemblage. |
@@ -119,6 +120,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
+| `final-verification` | `StepsNs::FinalVerificationStepClass` | — (chemins configurés) | `verificationReport` : `VerificationReport` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
 | `export` | `StepsNs::ExportStepClass` | `mosaic` : `Mosaic` | — (publie `mosaic.tif`) |
 
