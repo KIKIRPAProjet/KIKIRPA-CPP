@@ -4,6 +4,10 @@
 #include "algorithms/stitching/phase_correlation/preparation.h"
 
 #include <opencv2/core.hpp>
+#if __has_include(<opencv2/features.hpp>)
+// OpenCV 5 a déplacé goodFeaturesToTrack hors de imgproc.hpp ; OpenCV 4 n'a pas ce header.
+#include <opencv2/features.hpp>
+#endif
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>

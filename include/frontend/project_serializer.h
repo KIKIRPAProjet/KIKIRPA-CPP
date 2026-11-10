@@ -1,5 +1,5 @@
-#ifndef PROJECT_SERIALIZER_H
-#define PROJECT_SERIALIZER_H
+// include/frontend/project_serializer.h
+#pragma once
 
 #include "projectgrid.h"
 
@@ -8,12 +8,12 @@
 #include <QString>
 #include <QStringList>
 
-#include <map>
-
 struct ProjectData
 {
     QString projectName;
     QString outputDirectory;
+    // Page de travail affichée lors du dernier enregistrement, entre 0 et 5.
+    int mode = 0;
     ProjectGrid::State gridState;
     nlohmann::json backendScript;
     QStringList missingFiles;
@@ -54,5 +54,3 @@ public:
                            QString *errorMessage = nullptr,
                            const nlohmann::json &backendScript = {});
 };
-
-#endif

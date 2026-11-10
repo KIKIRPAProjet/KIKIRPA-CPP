@@ -35,6 +35,7 @@ et affiche son chemin. L'utilisateur reste dans l'interface complète.
 2. Sélectionner le `.kikproj`. Vérifier que le résumé distingue les checkpoints valides, les étapes à vérifier, les étapes jamais lancées et les images absentes ou modifiées.
 3. Choisir **Ouvrir** pour restaurer la grille et ses paramètres sans calcul, ou **Ouvrir et reprendre** pour lancer le pipeline à la première étape incomplète.
 4. Modifier une image source avant une seconde ouverture : le résumé doit la signaler et la reprise doit refaire l'import et les étapes dépendantes.
+5. Pendant un calcul, cliquer sur **Annuler** et attendre l'état **En pause**. Rouvrir le projet : le résumé doit afficher l'état et les résultats sauvegardés, et **Ouvrir et reprendre** doit continuer à la première étape incomplète.
 
 Une image manquante, un pipeline invalide ou un dossier de sortie inaccessible empêchent
 la reprise, mais n'empêchent pas d'ouvrir le projet pour consulter ses réglages.

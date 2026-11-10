@@ -7,6 +7,11 @@
 #include "core/step/data_store.h"
 #include "core/step/step.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
 #include <cstddef>
 #include <exception>
 #include <filesystem>
@@ -17,6 +22,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -44,6 +50,19 @@ namespace PipelineNs {
         };
 
         void report(const PipelineClass::Logger& log, const std::string& message, bool isError);
+
+        void replaceFile(const fs::path& temporaryPath, const fs::path& destinationPath) {
+#ifdef _WIN32
+            // Sous Windows, std::filesystem::rename ne remplace pas un fichier existant. MoveFileExW conserve
+            // l'écriture atomique attendue pour run.json, même lors des sauvegardes successives d'un même run.
+            if (!MoveFileExW(temporaryPath.c_str(), destinationPath.c_str(),
+                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                throw std::system_error(static_cast<int>(GetLastError()),
+                                        std::system_category(), "cannot replace run state");
+#else
+            fs::rename(temporaryPath, destinationPath);
+#endif
+        }
 
         std::optional<std::size_t> restoreOutputValues(
             const std::map<std::string, CheckpointProducer>& outputs,
@@ -148,7 +167,7 @@ namespace PipelineNs {
                 output << exportScript().dump(2) << '\n';
                 if (!output) throw std::runtime_error("write failed");
             }
-            fs::rename(temporaryPath, scriptPath);
+            replaceFile(temporaryPath, scriptPath);
         } catch (const std::exception& exception) {
             report(log, "warning: cannot write " + scriptPath.string() + ": " + exception.what(), true);
         }

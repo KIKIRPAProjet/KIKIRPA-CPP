@@ -52,6 +52,11 @@ namespace CheckpointNs {
             void load(size_t stepIndex, const StepNs::StepClass& step, const ConfigNs::DataSlot& output,
                       StepNs::DataStoreClass& dataStore) const;
 
+            // Forme de compatibilité pour les appels existants : construit le DataSlot puis utilise le même
+            // mécanisme de validation et de désérialisation que la nouvelle interface.
+            void load(size_t stepIndex, const StepNs::StepClass& step, const std::string& key,
+                      const std::string& dataType, StepNs::DataStoreClass& dataStore) const;
+
             // Supprime les checkpoints des steps d'index >= firstStepIndex (devenus périmés).
             void removeFrom(size_t firstStepIndex) const;
 

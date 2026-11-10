@@ -14,6 +14,17 @@ SimulationRunner::SimulationRunner(QObject *parent)
 {
 }
 
+SimulationRunner::~SimulationRunner()
+{
+    // Le logger du worker référence cet objet. On attend donc la fin de l'étape courante avant de détruire
+    // l'interface, afin qu'aucun signal ne parte depuis un objet déjà libéré.
+    if (!watcher || !watcher->isRunning())
+        return;
+    if (pipeline)
+        pipeline->requestPause();
+    watcher->waitForFinished();
+}
+
 bool SimulationRunner::isRunning() const
 {
     return running;

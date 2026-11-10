@@ -8,7 +8,7 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (08/11/2026)** : les étapes jusqu'à la seamline existent. L'assemblage, l'export, l'exécutable en ligne de commande et le lien entre l'interface Qt et le calcul sont en cours.
+**État (10/11/2026)** : les étapes jusqu'à la seamline existent. L'interface Qt peut lancer le pipeline backend, afficher son état et le mettre en pause ou le reprendre depuis les checkpoints. L'assemblage, l'export et l'exécutable en ligne de commande restent en cours.
 
 ## Par où commencer
 

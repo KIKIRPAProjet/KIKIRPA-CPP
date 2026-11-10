@@ -170,7 +170,9 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
     gridState.tileDirectory = absolutePath(
         valueFor(QStringLiteral("tileDirectory"), QStringLiteral("tile_directory")).toString(),
         path);
-    if (!readInteger(project, QStringLiteral("gridRows"), QStringLiteral("grid_rows"), 3, 1, 20,
+    if (!readInteger(project, QStringLiteral("mode"), QStringLiteral("mode"), 0, 0, 5,
+                     &loadedProject.mode) ||
+        !readInteger(project, QStringLiteral("gridRows"), QStringLiteral("grid_rows"), 3, 1, 20,
                      &gridState.gridRows) ||
         !readInteger(project, QStringLiteral("gridColumns"), QStringLiteral("grid_columns"), 2, 1,
                      20, &gridState.gridColumns) ||
@@ -202,7 +204,9 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
                   &gridState.overlapsLinked) ||
         !readBool(QStringLiteral("automaticUncertainty"),
                   QStringLiteral("automatic_uncertainty"), true,
-                  &gridState.automaticUncertainty))
+                  &gridState.automaticUncertainty) ||
+        !readBool(QStringLiteral("gridValidated"), QStringLiteral("grid_validated"), false,
+                  &gridState.gridValidated))
         return fail(QStringLiteral("Un paramètre booléen du projet est invalide."));
     if (gridState.overlapsLinked)
         gridState.verticalOverlap = gridState.horizontalOverlap;
@@ -294,8 +298,10 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
     if (!grid.isEmpty() && gridPaths != uniquePaths)
         return fail(QStringLiteral("Les chemins de la grille ne correspondent pas aux tuiles "
                                    "sauvegardées."));
-    gridState.selectedGridCell = 0;
-    gridState.gridValidated = false;
+    if (!readInteger(project, QStringLiteral("selectedGridCell"),
+                     QStringLiteral("selected_grid_cell"), 0, 0,
+                     std::max(0, cellCount - 1), &gridState.selectedGridCell))
+        return fail(QStringLiteral("La cellule sélectionnée est hors de la grille."));
 
     Json expectedFingerprints = Json::object();
     const QJsonValue fingerprintsValue = project.value(QStringLiteral("sourceFingerprints"));
@@ -535,6 +541,7 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     project.insert(QStringLiteral("gridRows"), gridState.gridRows);
     project.insert(QStringLiteral("gridColumns"), gridState.gridColumns);
     project.insert(QStringLiteral("captureOrder"), gridState.captureOrder);
+    project.insert(QStringLiteral("selectedGridCell"), gridState.selectedGridCell);
     project.insert(QStringLiteral("horizontalOverlap"), gridState.horizontalOverlap);
     project.insert(QStringLiteral("verticalOverlap"), gridState.verticalOverlap);
     project.insert(QStringLiteral("overlapsLinked"), gridState.overlapsLinked);
@@ -542,6 +549,7 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     project.insert(QStringLiteral("scaleMmPerPixel"), gridState.scaleMmPerPixel);
     project.insert(QStringLiteral("uncertaintyMargin"), gridState.uncertaintyMargin);
     project.insert(QStringLiteral("automaticUncertainty"), gridState.automaticUncertainty);
+    project.insert(QStringLiteral("gridValidated"), gridState.gridValidated);
     project.insert(QStringLiteral("referenceImage"), gridState.referenceImagePath);
 
     QJsonArray tiles;

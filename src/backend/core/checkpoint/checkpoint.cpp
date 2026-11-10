@@ -221,6 +221,12 @@ namespace CheckpointNs {
         serializer->second.loader(dataStore, output.key, directory);
     }
 
+    void CheckpointClass::load(size_t stepIndex, const StepNs::StepClass& step,
+                               const std::string& key, const std::string& dataType,
+                               StepNs::DataStoreClass& dataStore) const {
+        load(stepIndex, step, ConfigNs::DataSlot{dataType, key}, dataStore);
+    }
+
     void CheckpointClass::removeFrom(size_t firstStepIndex) const {
         if (!enabled() || !fs::is_directory(rootDirectory)) return;
         // Les dossiers de steps se nomment "NN_nom" : on supprime ceux dont NN >= firstStepIndex.

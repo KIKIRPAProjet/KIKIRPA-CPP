@@ -34,6 +34,8 @@ protected:
         state.tilePaths = {firstTile, secondTile};
         state.gridRows = 1;
         state.gridColumns = 2;
+        state.selectedGridCell = 1;
+        state.gridValidated = true;
         state.gridTiles = {
             GridTile{firstTile, QUARTER_TURN_DEGREES, true, false},
             GridTile{secondTile, 0, false, false}
@@ -94,12 +96,15 @@ TEST_F(ProjectSerializerTestClass, RoundTripsGridAndBackendConfiguration)
     QString error;
     ASSERT_TRUE(ProjectSerializer::loadFromFile(projectPath, &loaded, &error)) << error.toStdString();
     EXPECT_EQ(loaded.projectName, QStringLiteral("Study"));
+    EXPECT_EQ(loaded.mode, 1);
     EXPECT_EQ(loaded.gridState.gridRows, 1);
     EXPECT_EQ(loaded.gridState.gridColumns, 2);
     ASSERT_EQ(loaded.gridState.gridTiles.size(), 2);
     EXPECT_EQ(loaded.gridState.gridTiles.at(0).path, firstTile);
     EXPECT_EQ(loaded.gridState.gridTiles.at(0).rotation, QUARTER_TURN_DEGREES);
     EXPECT_TRUE(loaded.gridState.gridTiles.at(0).flipped);
+    EXPECT_EQ(loaded.gridState.selectedGridCell, 1);
+    EXPECT_TRUE(loaded.gridState.gridValidated);
     EXPECT_EQ(loaded.backendScript["pipeline"]["steps"].size(), 2);
     EXPECT_TRUE(loaded.missingFiles.isEmpty());
     EXPECT_TRUE(loaded.modifiedFiles.isEmpty());
@@ -108,6 +113,37 @@ TEST_F(ProjectSerializerTestClass, RoundTripsGridAndBackendConfiguration)
     EXPECT_TRUE(summary.canResume());
     EXPECT_EQ(summary.neverRunSteps,
               QStringList({QStringLiteral("import"), QStringLiteral("phase-correlation")}));
+}
+
+TEST_F(ProjectSerializerTestClass, LoadsLatestRunStateFromCheckpointSidecar)
+{
+    ASSERT_TRUE(save());
+    nlohmann::json savedRun = backendScript();
+    savedRun["run"]["status"] = "paused";
+    savedRun["run"]["completedSteps"] = {"import"};
+    savedRun["run"]["stepResults"] = {{"import", {{"tiles", 2}}}};
+
+    const QString checkpointDirectory =
+        QDir(outputDirectory).filePath(QStringLiteral("checkpoints"));
+    ASSERT_TRUE(QDir().mkpath(checkpointDirectory));
+    QFile runFile(QDir(checkpointDirectory).filePath(QStringLiteral("run.json")));
+    ASSERT_TRUE(runFile.open(QIODevice::WriteOnly));
+    const QByteArray runJson = QByteArray::fromStdString(savedRun.dump(2));
+    ASSERT_EQ(runFile.write(runJson), runJson.size());
+    runFile.close();
+
+    ProjectData loaded;
+    QString error;
+    ASSERT_TRUE(ProjectSerializer::loadFromFile(projectPath, &loaded, &error))
+        << error.toStdString();
+    EXPECT_EQ(loaded.backendScript["run"]["status"], "paused");
+    EXPECT_EQ(loaded.backendScript["run"]["completedSteps"],
+              nlohmann::json::array({"import"}));
+
+    const ProjectResumeSummary summary = ProjectSerializer::summarize(loaded);
+    EXPECT_EQ(summary.runStatus, QStringLiteral("paused"));
+    ASSERT_EQ(summary.availableResults.size(), 1);
+    EXPECT_TRUE(summary.availableResults.first().contains(QStringLiteral("tiles")));
 }
 
 TEST_F(ProjectSerializerTestClass, DetectsChangedAndMissingSourceFiles)

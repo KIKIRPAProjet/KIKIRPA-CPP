@@ -327,7 +327,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(0);
+    // Rouvrir le projet remet l'utilisateur sur la page qu'il avait quittée ; les résultats du backend restent
+    // disponibles indépendamment de cette page grâce aux checkpoints.
+    setMode(projectData.mode);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);

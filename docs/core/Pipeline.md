@@ -5,7 +5,7 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-Il n'y a pas d'exécutable en ligne de commande, et la GUI n'appelle pas encore le backend : aujourd'hui, le pipeline se lance seulement depuis le code, par exemple dans un test. Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md).
+Il n'y a pas encore d'exécutable en ligne de commande. L'interface Qt lance le backend via `SimulationRunner`, affiche la progression et les erreurs, et peut mettre le run en pause. L'état écrit dans `run.json` est relu à l'ouverture du projet `.kikproj` pour afficher les étapes terminées et proposer la reprise. Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md).
 
 ```cpp
 PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)

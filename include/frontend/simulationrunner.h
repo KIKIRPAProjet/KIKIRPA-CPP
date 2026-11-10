@@ -1,5 +1,5 @@
-#ifndef SIMULATIONRUNNER_H
-#define SIMULATIONRUNNER_H
+// include/frontend/simulationrunner.h
+#pragma once
 
 #include <QObject>
 #include <QString>
@@ -18,6 +18,7 @@ class SimulationRunner : public QObject
 
 public:
     explicit SimulationRunner(QObject *parent = nullptr);
+    ~SimulationRunner() override;
 
     bool isRunning() const;
 
@@ -49,5 +50,3 @@ private:
     bool pauseRequested = false;
     bool comparisonVisible = false;
 };
-
-#endif
