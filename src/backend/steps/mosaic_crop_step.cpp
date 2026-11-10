@@ -7,6 +7,7 @@
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <exception>

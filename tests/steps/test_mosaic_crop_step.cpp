@@ -7,7 +7,11 @@
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
-#include <opencv2/core.hpp>
+#include <nlohmann/json_fwd.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <atomic>
@@ -22,6 +26,8 @@ namespace MosaicCropStepTestsNs {
 
     namespace {
 
+        constexpr int INVALID_MOSAIC_VALUE = 42;
+
         using Json = nlohmann::json;
         namespace fs = std::filesystem;
 
@@ -31,7 +37,8 @@ namespace MosaicCropStepTestsNs {
             void SetUp() override {
                 static std::atomic<unsigned int> sequence{ 0 };
                 const auto stamp =
-                    std::chrono::steady_clock::now().time_since_epoch().count();
+                    std::chrono::steady_clock::now()
+                    .time_since_epoch().count();
 
                 directory = fs::temp_directory_path() / (
                     "crop_step_" + std::to_string(stamp) + "_" +
@@ -39,7 +46,13 @@ namespace MosaicCropStepTestsNs {
 
                 ASSERT_TRUE(fs::create_directory(directory));
                 ASSERT_TRUE(fs::create_directory(directory / "source"));
+                ASSERT_NO_FATAL_FAILURE(createSourceImages());
 
+                source = { (directory / "source").string(), 1 };
+                store.replace("mosaic", source);
+            }
+
+            void createSourceImages() {
                 cv::Mat color(4, 4, CV_16UC3);
                 for (int row = 0; row < color.rows; ++row) {
                     for (int column = 0; column < color.cols; ++column) {
@@ -60,9 +73,6 @@ namespace MosaicCropStepTestsNs {
                     provenance));
                 ASSERT_TRUE(cv::imwrite(
                     (directory / "source/mask_x0_y0.png").string(), mask));
-
-                source = { (directory / "source").string(), 1 };
-                store.replace("mosaic", source);
             }
 
             void TearDown() override {
@@ -137,12 +147,12 @@ namespace MosaicCropStepTestsNs {
         }
 
         TEST_F(MosaicCropStepTestClass, RejectsWrongStoredTypeWithoutThrowing) {
-            store.replace("mosaic", 42);
+            store.replace("mosaic", INVALID_MOSAIC_VALUE);
             StepsNs::MosaicCropStepClass step(makeInput());
             step.setDataStore(store);
 
             EXPECT_FALSE(step.execute());
-            EXPECT_EQ(store.get<int>("mosaic"), 42);
+            EXPECT_EQ(store.get<int>("mosaic"), INVALID_MOSAIC_VALUE);
         }
 
         TEST_F(MosaicCropStepTestClass, PreservesInputWhenRectangleIsInvalid) {
