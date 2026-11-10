@@ -69,6 +69,8 @@ ctest --preset macos
 Le preset sélectionne Apple Clang et les chemins Homebrew Qt sur Apple Silicon
 (`/opt/homebrew`) et Intel (`/usr/local`). Le build est généré dans `build/macos/`.
 
+Pour l'exécution locale de l'application ou en cas de problème lié aux plugins Qt sous macOS, voir [RunOnMacos.md](building/RunOnMacos.md).
+
 ## Linux (Ubuntu 24.04)
 
 ```bash
