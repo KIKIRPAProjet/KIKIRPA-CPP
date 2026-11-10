@@ -34,7 +34,7 @@ namespace StepsNs {
 
         using TileByGridPosition = std::map<std::pair<int, int>, DataNs::TileClass*>;
 
-        // Keep path, grid-position and file checks together so invalid tiles cannot be partially accepted.
+        // Regroupe les contrôles du chemin et de la position pour rejeter une tuile invalide sans l'importer.
         // NOLINTNEXTLINE(readability-function-size)
         bool appendExplicitTile(const Json& tile, std::set<fs::path>& paths,
                                 std::set<std::pair<int, int>>& positions,
@@ -61,7 +61,7 @@ namespace StepsNs {
             return true;
         }
 
-        // This helper validates both supported import modes and returns a single actionable error.
+        // Valide les deux modes d'import et fournit une erreur exploitable en cas d'échec.
         // NOLINTNEXTLINE(readability-function-size)
         bool collectImageFiles(const ImportInput& input, const fs::path& directory,
                               const Json& explicitTiles, std::vector<ImageFile>& imageFiles,
@@ -101,7 +101,7 @@ namespace StepsNs {
             return !imageFiles.empty();
         }
 
-        // Reading, converting and publishing one tile is kept atomic for the caller.
+        // Lit l'image, écrit sa pyramide et publie sa fiche seulement si toutes les opérations réussissent.
         // NOLINTNEXTLINE(readability-function-size)
         bool appendPyramidTile(const ImageFile& imageFile, bool explicitTiles,
                                const fs::path& outputDirectory, DataNs::TileList& tiles,
@@ -141,7 +141,7 @@ namespace StepsNs {
             }
         }
 
-        // This is the single orchestration point for a batch import.
+        // Centralise l'orchestration de l'import d'un lot d'images.
         // NOLINTNEXTLINE(readability-function-size)
         bool createPyramids(const std::vector<ImageFile>& imageFiles, bool explicitTiles,
                             const fs::path& directory, DataNs::TileList& tiles,
@@ -231,7 +231,7 @@ namespace StepsNs {
 
     // Étapes : 1. lire les paramètres ; 2. lister et trier les images ; 3. préparer le dossier de sortie ; 4. pour
     // chaque image, créer son TIFF pyramidal et sa fiche ; 5. relier les voisines ; 6. publier les tuiles.
-    // The top-level step deliberately keeps validation and publication order visible.
+    // Garde visibles l'ordre des validations et celui de publication des résultats du step.
     // NOLINTNEXTLINE(readability-function-size)
     bool ImportStepClass::execute() {
         // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.

@@ -1,3 +1,4 @@
+// src/frontend/project_serializer.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : utiliser JSON rend les projets lisibles et transportables entre environnements ;
@@ -22,6 +23,7 @@
 #include <QSaveFile>
 #include <QSet>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -33,6 +35,8 @@ namespace {
 
 using Json = nlohmann::json;
 namespace fs = std::filesystem;
+
+constexpr int MODE_COUNT = 6;
 
 QString absolutePath(const QString &path, const QString &projectFilePath)
 {
@@ -170,7 +174,8 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
     gridState.tileDirectory = absolutePath(
         valueFor(QStringLiteral("tileDirectory"), QStringLiteral("tile_directory")).toString(),
         path);
-    if (!readInteger(project, QStringLiteral("mode"), QStringLiteral("mode"), 0, 0, 5,
+    if (!readInteger(project, QStringLiteral("mode"), QStringLiteral("mode"), 0, 0,
+                     MODE_COUNT - 1,
                      &loadedProject.mode) ||
         !readInteger(project, QStringLiteral("gridRows"), QStringLiteral("grid_rows"), 3, 1, 20,
                      &gridState.gridRows) ||
@@ -531,6 +536,12 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
                                    QString *errorMessage,
                                    const nlohmann::json &backendScript)
 {
+    if (mode < 0 || mode >= MODE_COUNT) {
+        if (errorMessage)
+            *errorMessage = QStringLiteral("La page de travail du projet est invalide.");
+        return false;
+    }
+
     QJsonObject project;
     project.insert(QStringLiteral("formatVersion"), QStringLiteral("2.0"));
     project.insert(QStringLiteral("projectName"), projectName);

@@ -22,7 +22,7 @@ namespace CheckpointNs {
 
 namespace PipelineNs {
 
-    // The JSON type is forward-declared here and provided by the backend JSON headers.
+    // Le type JSON est déclaré en avance ici et défini par les en-têtes JSON du backend.
     // NOLINTBEGIN(misc-include-cleaner)
     using Json = nlohmann::json;
     // NOLINTEND(misc-include-cleaner)

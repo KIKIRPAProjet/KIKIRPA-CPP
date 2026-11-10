@@ -8,12 +8,15 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `phase-correlation` | `tiles` | `matches` | [PhaseCorrelationStep.md](PhaseCorrelationStep.md) |
 | `sift` | `tiles` | `matches` | [SiftStep.md](SiftStep.md) |
 | `lightglue` | `tiles`, le modèle ONNX `modelPath` | `matches` | [LightGlueStep.md](LightGlueStep.md) |
+| `vote-2d` | `matches` | `matches` | [Vote2DStep.md](Vote2DStep.md) |
 | `absolute-pos` | `tiles`, `matches` | `positions` | [AbsolutePosStep.md](AbsolutePosStep.md) |
 | `intensity-correction` | `tiles`, `matches` | `intensityCorrection` | [IntensityCorrectionStep.md](IntensityCorrectionStep.md) |
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
+| `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
+| `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
 
-`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule.
+`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
 
 - Le schéma de l'enchaînement, et le JSON de chaque type de donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 - **Ajouter un step**, avec un exemple complet (code, test, enregistrement, fiche) : [AJOUTER_UN_STEP.md](AJOUTER_UN_STEP.md).
-- Le script JSON, les contrôles de `buildPipeline` et les checkpoints : [core/Pipeline.md](../core/Pipeline.md).
+- Le script JSON, les contrôles de `buildPipeline` et les checkpoints : [core/pipeline.md](../core/pipeline.md).

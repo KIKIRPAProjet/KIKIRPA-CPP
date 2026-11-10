@@ -146,6 +146,15 @@ TEST_F(ProjectSerializerTestClass, LoadsLatestRunStateFromCheckpointSidecar)
     EXPECT_TRUE(summary.availableResults.first().contains(QStringLiteral("tiles")));
 }
 
+TEST_F(ProjectSerializerTestClass, RejectsInvalidSavedMode)
+{
+    QString error;
+    EXPECT_FALSE(ProjectSerializer::saveToFile(
+        projectPath, QStringLiteral("Study"), outputDirectory, 6, state, &error,
+        backendScript()));
+    EXPECT_TRUE(error.contains(QStringLiteral("page")));
+}
+
 TEST_F(ProjectSerializerTestClass, DetectsChangedAndMissingSourceFiles)
 {
     ASSERT_TRUE(save());

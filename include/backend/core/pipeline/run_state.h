@@ -11,8 +11,8 @@
 
 namespace PipelineNs {
 
-    // The JSON macros need the full nlohmann header, which include-cleaner cannot
-    // associate with their generated declarations.
+    // Les macros JSON nécessitent l'en-tête complet de nlohmann, que include-cleaner ne peut pas
+    // associer aux déclarations qu'elles génèrent.
     // NOLINTBEGIN(misc-include-cleaner)
     using Json = nlohmann::json;
 

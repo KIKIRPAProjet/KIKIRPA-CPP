@@ -1,3 +1,4 @@
+// src/frontend/mainwindow.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : la fenêtre principale coordonne les composants sans déplacer leur logique dédiée ;
@@ -12,7 +13,6 @@
  * - ce que ça renvoie : aucune valeur directement, les interactions sont transmises par des signaux ;
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
-//  implemente la fenetre principale de lapplication
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "dialog_helpers.h"
@@ -26,40 +26,19 @@
 #include "workspace_ui.h"
 
 #include <QApplication>
-#include <QButtonGroup>
-#include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFormLayout>
-#include <QGraphicsDropShadowEffect>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
 #include <QKeyEvent>
 #include <QImage>
 #include <QLabel>
-#include <QLineEdit>
-#include <QLineF>
 #include <QMenuBar>
-#include <QMouseEvent>
 #include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPolygonF>
 #include <QProgressBar>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QSpinBox>
-#include <QSplitter>
 #include <QStackedWidget>
-#include <QTabWidget>
-#include <QTableWidget>
-#include <QToolButton>
-#include <QVBoxLayout>
 #include <QStatusBar>
 #include <QAbstractItemView>
 #include <QFontMetrics>
@@ -77,11 +56,30 @@
 #include <windows.h>
 #endif
 
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("KIK-IRPA Assemblage"));
     resize(1228, 780);
     setMinimumSize(920, 600);
+    applyStyleSheet();
+
+    projectGrid = new ProjectGrid(this);
+    simulationRunner = new SimulationRunner(this);
+    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
+    menuBarManager = new MenuBarManager(this);
+    menuBarManager->setupMenus(menuBar());
+    refreshGrid();
+    refreshProjectInfo();
+    setupProjectGridConnections();
+    setupSimulationConnections();
+    setupHomePageConnections();
+    setupMenuConnections();
+    setupPageConnections();
+}
+
+void MainWindow::applyStyleSheet()
+{
     setStyleSheet(QStringLiteral(
         "QMainWindow,QWidget { background:#303030; color:#d5d5d5; font-size:12px; }"
         "QMenuBar,QMenu { background:#242424; color:#dedede; }"
@@ -106,14 +104,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
         "QCheckBox { spacing:7px; }"));
+}
 
-    projectGrid = new ProjectGrid(this);
-    simulationRunner = new SimulationRunner(this);
-    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
-    menuBarManager = new MenuBarManager(this);
-    menuBarManager->setupMenus(menuBar());
-    refreshGrid();
-    refreshProjectInfo();
+void MainWindow::setupProjectGridConnections()
+{
     connect(projectGrid, &ProjectGrid::gridUpdated,
             this, [this]() {
         backendScriptJson.clear();
@@ -137,13 +131,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showReferenceComparison);
     connect(projectGrid, &ProjectGrid::gridValidationCompleted,
             this, &MainWindow::handleGridValidation);
+}
+
+void MainWindow::setupSimulationConnections()
+{
     connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
     connect(simulationRunner, &SimulationRunner::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
     connect(simulationRunner, &SimulationRunner::stepChanged,
-            workspaceUI->currentStepLabel(), &QLabel::setText);
+            this, [this](int stepNumber, const QString &stepName) {
+                workspaceUI->currentStepLabel()->setText(stepName);
+                workspaceUI->setActiveStep(stepNumber);
+    });
     connect(simulationRunner, &SimulationRunner::statusChanged,
             this, &MainWindow::updateStatus);
     connect(simulationRunner, &SimulationRunner::cancellationAvailable,
@@ -153,8 +154,11 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     connect(simulationRunner, &SimulationRunner::runFinished, this, [this]() {
         QFile runFile(QDir(outputDirectory).filePath(
             QStringLiteral("checkpoints/run.json")));
-        if (!runFile.open(QIODevice::ReadOnly))
+        if (!runFile.open(QIODevice::ReadOnly)) {
+            updateStatus(tr("L'état de reprise n'a pas pu être lu : %1")
+                             .arg(runFile.errorString()));
             return;
+        }
         try {
             nlohmann::json script = nlohmann::json::parse(runFile.readAll().toStdString());
             backendScriptJson = QString::fromStdString(script.dump(2));
@@ -184,13 +188,30 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
+    connect(simulationRunner, &SimulationRunner::logMessage,
+            workspaceUI, &WorkspaceUI::appendLog);
+    connect(simulationRunner, &SimulationRunner::mosaicReady,
+            this, [this](const QImage &image) {
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                    canvas->setMosaicPreview(image);
+                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    updateStatus(tr("Mosaïque finale générée (simulation)."));
+                }
+    });
+}
+
+void MainWindow::setupHomePageConnections()
+{
     connect(workspaceUI->homePage(), &HomePage::projectCreationRequested,
             this, &MainWindow::initializeNewProject);
     connect(workspaceUI->homePage(), &HomePage::projectLoaded,
             this, &MainWindow::applyLoadedProject);
     connect(workspaceUI->homePage(), &HomePage::currentProjectRequested,
             this, &MainWindow::openCurrentProjectFromHome);
+}
 
+void MainWindow::setupMenuConnections()
+{
     connect(menuBarManager, &MenuBarManager::newProjectRequested,
             workspaceUI->homePage(), &HomePage::createProject);
     connect(menuBarManager, &MenuBarManager::openProjectRequested,
@@ -248,7 +269,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             tr("KIK-IRPA Assemblage.\n"
                "Les traitements d'image sont exécutés par le pipeline backend et ses checkpoints."));
     });
+}
 
+void MainWindow::setupPageConnections()
+{
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
     });

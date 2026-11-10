@@ -8,6 +8,7 @@
 
 template <typename T>
 class QFutureWatcher;
+class QImage;
 namespace PipelineNs {
 class PipelineClass;
 }
@@ -18,6 +19,7 @@ class SimulationRunner : public QObject
 
 public:
     explicit SimulationRunner(QObject *parent = nullptr);
+    // Demande une pause et attend la fin de l'étape active avant la destruction du runner.
     ~SimulationRunner() override;
 
     bool isRunning() const;
@@ -33,13 +35,15 @@ public slots:
 signals:
     void runStarted();
     void progressAdvanced(int percentage);
-    void stepChanged(const QString &stepName);
+    void stepChanged(int stepNumber, const QString &stepName);
     void runFinished();
     void runCancelled();
     void cancellationAvailable();
     void statusChanged(const QString &message);
     void comparisonRequested();
     void comparisonVisibilityChanged(bool visible);
+    void logMessage(const QString &message);
+    void mosaicReady(const QImage &image);
 
 private:
     void finishPipelineRun();

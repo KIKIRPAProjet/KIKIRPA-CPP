@@ -1,8 +1,11 @@
+// src/frontend/simulationrunner.cpp
 #include "simulationrunner.h"
 
 #include "core/pipeline/pipeline_builder.h"
 
 #include <QFutureWatcher>
+#include <QRegularExpression>
+#include <QStringList>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <exception>
@@ -49,22 +52,43 @@ void SimulationRunner::startPipelineRun(const QString &scriptJson, const QString
     }
 
     pauseRequested = false;
+    QStringList stepNames;
+    const auto &steps = pipeline->getSteps();
+    stepNames.reserve(static_cast<int>(steps.size()));
+    for (const auto &step : steps) {
+        stepNames.append(QString::fromStdString(
+            step->getConfigJson().value("name", std::string{})));
+    }
+    const int totalSteps = stepNames.size();
+
     running = true;
     emit runStarted();
-    emit stepChanged(tr("Préparation du pipeline"));
+    emit stepChanged(0, tr("Préparation du pipeline"));
     emit statusChanged(tr("Démarrage du pipeline…"));
 
     watcher = new QFutureWatcher<bool>(this);
     connect(watcher, &QFutureWatcher<bool>::finished,
             this, &SimulationRunner::finishPipelineRun);
     const std::shared_ptr<PipelineNs::PipelineClass> activePipeline = pipeline;
-    watcher->setFuture(QtConcurrent::run([this, activePipeline]() {
+    watcher->setFuture(QtConcurrent::run([this, activePipeline, stepNames, totalSteps]() {
         try {
-            return activePipeline->run([this](const std::string &message) {
+            return activePipeline->run([this, stepNames, totalSteps](const std::string &message) {
                 const QString text = QString::fromStdString(message);
                 emit statusChanged(text);
-                if (text.startsWith(QStringLiteral("Step ")))
-                    emit stepChanged(text);
+                emit logMessage(text);
+
+                static const QRegularExpression stepPattern(
+                    QStringLiteral("^Step (\\d+)/(\\d+)"));
+                const QRegularExpressionMatch match = stepPattern.match(text);
+                if (!match.hasMatch())
+                    return;
+
+                const int stepNumber = match.captured(1).toInt();
+                emit stepChanged(stepNumber,
+                                 stepNames.value(stepNumber - 1, match.captured(0)));
+                if (totalSteps > 0 && text.contains(QStringLiteral(" OK "))) {
+                    emit progressAdvanced(qBound(0, stepNumber * 100 / totalSteps, 100));
+                }
             });
         } catch (const std::exception &exception) {
             PipelineNs::RunState state = activePipeline->getRunState();
@@ -125,14 +149,14 @@ void SimulationRunner::finishPipelineRun()
     emit progressAdvanced(success ? 100 : 0);
 
     if (pauseRequested || status == PipelineNs::RunStatus::Paused) {
-        emit stepChanged(tr("En pause"));
+        emit stepChanged(0, tr("En pause"));
         emit statusChanged(tr("Pipeline mis en pause. Les checkpoints permettent de reprendre."));
         emit runCancelled();
     } else if (success) {
-        emit stepChanged(tr("Terminé"));
+        emit stepChanged(0, tr("Terminé"));
         emit statusChanged(tr("Pipeline terminé."));
     } else {
-        emit stepChanged(tr("Échec"));
+        emit stepChanged(0, tr("Échec"));
         emit statusChanged(tr("Le pipeline a échoué. Consultez le journal pour le détail."));
     }
     emit runFinished();

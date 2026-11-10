@@ -45,7 +45,7 @@ namespace PipelineNs {
 
     }
 
-    // Validate fields before automatic conversion to reject unknown statuses and wrong JSON types.
+    // Valide les champs avant conversion automatique pour refuser les statuts inconnus et les types JSON incorrects.
     RunState RunState::fromJson(const Json& runJson) {
         if (!runJson.is_object())
             throw std::invalid_argument("field 'run' must be an object");
