@@ -102,13 +102,23 @@ namespace DataNs {
         std::vector<int> isolatedTileIndices;    // tuiles sans voisine exploitable : gain 1, non égalisées
     };
 
-    // Bloc calculé par l'assemblage ; les matrices ont la taille de blockRect.
+    // Un bloc de la mosaïque calculé par l'assemblage, en mémoire le temps de l'écrire sur disque
+    // (IONs::TiledTiffWriterClass) ; les matrices ont la taille de blockRect. Jamais rangé dans le DataStore.
     struct CompositeBlock {
         cv::Mat imageRgb;       // CV_16UC3, canaux RGB
-        cv::Mat provenance;     // CV_16UC1, identifiant de tuile
+        cv::Mat provenance;     // CV_16UC1, TileClass::getId() de la tuile source ; 0 là où mask vaut 0
         cv::Mat mask;           // CV_8UC1, 255 = pixel valide
         cv::Rect blockRect;     // rectangle du bloc sur la mosaïque, en pixels
     };
-    using CompositeBlockList = std::vector<CompositeBlock>;
+
+    // Mosaïque assemblée (type "Mosaic", clé "mosaic"). Les pixels sont sur disque, dans trois TIFF tuilés pleine
+    // résolution (blocs de BLOCK_SIZE, LZW) de canvasSize pixels, écrits bloc par bloc : le DataStore ne garde que les
+    // chemins, jamais l'image (6 octets par pixel).
+    struct Mosaic {
+        std::filesystem::path imagePath;        // CV_16UC3, canaux RGB
+        std::filesystem::path provenancePath;   // CV_16UC1, comme CompositeBlock::provenance
+        std::filesystem::path maskPath;         // CV_8UC1, 255 = pixel valide
+        cv::Size canvasSize;                    // dimensions de la mosaïque, en pixels pleine résolution
+    };
 
 }
