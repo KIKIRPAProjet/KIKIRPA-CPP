@@ -1,17 +1,22 @@
 # PhaseCorrelationStepClass
 
-Code : `steps/phase_correlation_step.h` / `.cpp` (namespace `StepsNs`).
+Code : `steps/phase_correlation_step.h` / `.cpp` (namespace `StepsNs`). Nom dans le script : `phase-correlation`.
 
 Mesure par corrélation de phase la position de chaque tuile par rapport à ses voisines de droite et du dessous (algorithme : [PhaseCorrelationMatcherClass](../algorithms/stitching/phase_correlation/PhaseCorrelation.md)). Le résultat est **toujours en pixels de pleine résolution**, même si l'analyse est faite sur un niveau réduit.
 
-## Contrat
+## Entrées et sorties
 
-|               |                                                                                                                      |
-| ------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `name`        | `"phase-correlation"`                                                                                                |
-| entrée        | `{ "dataType": "Tiles", "key": "tiles" }`                                                                            |
-| sortie        | `{ "dataType": "PairMatches", "key": "matches" }`                                                                    |
-| `getResult()` | `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error` |
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
+| Sortie | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `absolute-pos`, `intensity-correction` |
+
+- **Lit** dans chaque fiche de `tiles` : l'identifiant, les voisines de droite et du dessous, et le chemin de l'image source, relue en entier puis réduite au niveau `niveau` (voir « Lecture des pixels »).
+- **Écrit** dans `matches` une entrée par paire réussie (une tuile A et sa voisine de droite ou du dessous, B) : `tileIdA`, `tileIdB`, `direction`, les points locaux `pointsInA` ↔ `pointsInB` (au plus `nbPoints` ; aucun si la zone commune est trop petite ou si `nbPoints = 0`) avec la NCC de chacun dans `confidenceScores`, et la translation de B dans A (`translationX`, `translationY`). Les coordonnées sont en pixels de pleine résolution, dans le repère de chaque tuile entière. Une paire en échec n'y figure pas : elle est dans `failures`.
+
+Les signes et les axes sont détaillés dans « Conventions ».
+
+`getResult()` : `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error`.
 
 **Paramètres** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de la corrélation de phase : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Ces noms n'ont pas changé avec la migration des algorithmes ; le champ de `PhaseCorrelationNs::Parameters` qui correspond à chacun est donné dans [PhaseCorrelation.md §5](../algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
 
@@ -74,4 +79,6 @@ Une paire non mesurable, ou rejetée par un contrôle de confiance, est ignorée
 
 ## Lecture des pixels
 
-Seul accès aux pixels : `readPixels(tile, level)`. Elle lit aujourd'hui le fichier source, réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`). Elle sera remplacée par `readRegion(tile, level, rectangle)` (Mathias B.) dès que cette fonction existe.
+Seul accès aux pixels : `readPixels(tile, level)`. Elle lit **l'image source entière** (`cv::imread`), puis la réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`).
+
+La lecture directe d'un niveau dans le TIFF pyramidal existe maintenant : `IONs::PyramidalTiffReaderClass::readRegion(level, rectangle, output, error)` ([PyramidalTiff.md](../core/PyramidalTiff.md)). Le step ne l'utilise pas encore. Remplacer `readPixels` par `readRegion` sur `tile.getTiff()` est une tâche à faire : le step ne chargerait plus que le niveau et la bande nécessaires.

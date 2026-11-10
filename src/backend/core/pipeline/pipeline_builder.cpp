@@ -7,6 +7,7 @@
 #include "core/pipeline/run_state.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
+#include "steps/intensity_correction_step.h"
 #include "steps/sift_step.h"
 #include "steps/absolute_pos_step.h"
 #include "steps/lightglue_step.h"
@@ -40,6 +41,7 @@ namespace PipelineNs {
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
+                {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
             };
             return registry;
         }

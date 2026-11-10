@@ -4,17 +4,82 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/dijkstra.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/dynamic_programming.h"
 
+#include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <limits>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace DynamicProgrammingDijkstraNs {
 
     namespace {
 
+        // Extrémités et rayon reçus par solveEdge, regroupés pour les fonctions d'aide.
+        struct EdgeRequest {
+            const cv::Point* start = nullptr;
+            const cv::Point* goal = nullptr;
+            int corridorRadius = DEFAULT_CORRIDOR_RADIUS;
+        };
+
         double computeSecondsSince(std::chrono::steady_clock::time_point startTime) {
             return std::chrono::duration<double>(std::chrono::steady_clock::now() - startTime).count();
+        }
+
+        // La DP descend d'une ligne par pas avec ±1 colonne : si les deux extrémités sont imposées et que
+        // l'écart latéral dépasse la hauteur disponible, aucun chemin DP n'existe.
+        bool isDynamicProgrammingFeasible(const EdgeRequest& request) {
+            if (request.start == nullptr || request.goal == nullptr) return true;
+            return std::abs(request.goal->x - request.start->x) <= request.goal->y - request.start->y;
+        }
+
+        // DP → Dijkstra local, chronométré étape par étape (même enchaînement que
+        // findDynamicProgrammingDijkstraLocalPath). Remplit seedSeconds, refineSeconds et corridorRatio.
+        PathResult solveDynamicProgrammingDijkstraLocal(const cv::Mat& cost, const EdgeRequest& request,
+                                                        SolveResult& output) {
+            if (!isDynamicProgrammingFeasible(request)) {   // pas de graine DP : Dijkstra-8 sur toute la zone
+                const auto refineStartTime = std::chrono::steady_clock::now();
+                PathResult result = findDijkstraPath(cost, request.start, request.goal);
+                output.refineSeconds = computeSecondsSince(refineStartTime);
+                output.corridorRatio = 1.0;
+                return result;
+            }
+            const auto seedStartTime = std::chrono::steady_clock::now();
+            const PathResult seed = findDynamicProgrammingPath(cost, request.start, request.goal);
+            output.seedSeconds = computeSecondsSince(seedStartTime);
+
+            // Le temps de raffinement inclut la construction du corridor.
+            const auto refineStartTime = std::chrono::steady_clock::now();
+            const cv::Mat allowedMask =
+                buildHybridCorridor(seed.path, cost.size(), request.corridorRadius, request.start, request.goal);
+            PathResult result = findDijkstraPath(cost, request.start, request.goal, allowedMask);
+            output.refineSeconds = computeSecondsSince(refineStartTime);
+            output.corridorRatio = double(cv::countNonZero(allowedMask)) / double(allowedMask.total());
+            return result;
+        }
+
+        // Lance la méthode demandée. Lève std::invalid_argument si elle est inconnue.
+        PathResult runMethod(const cv::Mat& cost, SolverMethod method, const EdgeRequest& request, SolveResult& output) {
+            switch (method) {
+                case SolverMethod::DynamicProgramming:
+                    // Repli sur Dijkstra-8 quand les extrémités imposées rendent la DP impossible.
+                    return isDynamicProgrammingFeasible(request)
+                               ? findDynamicProgrammingPath(cost, request.start, request.goal)
+                               : findDijkstraPath(cost, request.start, request.goal);
+                case SolverMethod::Dijkstra8:
+                    return findDijkstraPath(cost, request.start, request.goal);
+                case SolverMethod::DynamicProgrammingDijkstraLocal:
+                    return solveDynamicProgrammingDijkstraLocal(cost, request, output);
+                default:
+                    throw std::invalid_argument("Unknown method");
+            }
         }
 
     }
@@ -40,6 +105,7 @@ namespace DynamicProgrammingDijkstraNs {
         throw std::invalid_argument("Unknown method: " + name);
     }
 
+    // Coût du premier pixel, puis poids de chaque déplacement.
     double computePathObjective(const cv::Mat& inputCost, const std::vector<cv::Point>& path) {
         if (path.empty()) return std::numeric_limits<double>::infinity();
         cv::Mat cost;
@@ -51,6 +117,7 @@ namespace DynamicProgrammingDijkstraNs {
         return total;
     }
 
+    // Estimation en Mio, pas une mesure de la mémoire réellement utilisée.
     double estimateSolverMemoryMegabytes(SolverMethod method, const cv::Size& size, long long maximumHeapSize) {
         const double pixelCount = double(size.area());
         // Tableaux de taille h × w alloués par chaque solveur (le chemin lui-même est négligeable).
@@ -65,47 +132,16 @@ namespace DynamicProgrammingDijkstraNs {
         return std::max(dynamicProgrammingBytes, dijkstraBytes) / bytesPerMegabyte;
     }
 
+    // 5 paramètres, ceux de solve_edge du notebook : API appelée par junctions.cpp et les tests, les 3 derniers
+    // ont une valeur par défaut.
+    // NOLINTNEXTLINE(readability-function-size) : nombre de paramètres seulement, voir ci-dessus
     SolveResult solveEdge(const cv::Mat& cost, SolverMethod method, const cv::Point* start, const cv::Point* goal,
                           int corridorRadius) {
         SolveResult output;
-        output.method = method;
-        PathResult result;
-
-        // La DP descend d'une ligne par pas avec ±1 colonne : si les deux extrémités sont imposées et que
-        // l'écart latéral dépasse la hauteur disponible, aucun chemin DP n'existe → repli sur Dijkstra-8.
-        const bool isDynamicProgrammingInfeasible = start && goal && std::abs(goal->x - start->x) > goal->y - start->y;
+        output.method = method;   // la méthode demandée, même après un repli sur Dijkstra-8
 
         const auto startTime = std::chrono::steady_clock::now();
-        switch (method) {
-            case SolverMethod::DynamicProgramming:
-                result = isDynamicProgrammingInfeasible ? findDijkstraPath(cost, start, goal)
-                                                        : findDynamicProgrammingPath(cost, start, goal);
-                break;
-            case SolverMethod::Dijkstra8:
-                result = findDijkstraPath(cost, start, goal);
-                break;
-            case SolverMethod::DynamicProgrammingDijkstraLocal: {
-                if (isDynamicProgrammingInfeasible) {   // pas de graine DP : Dijkstra-8 sur toute la zone
-                    const auto refineStartTime = std::chrono::steady_clock::now();
-                    result = findDijkstraPath(cost, start, goal);
-                    output.refineSeconds = computeSecondsSince(refineStartTime);
-                    output.corridorRatio = 1.0;
-                    break;
-                }
-                // Même enchaînement que findDynamicProgrammingDijkstraLocalPath, chronométré étape par étape.
-                const auto seedStartTime = std::chrono::steady_clock::now();
-                const PathResult seed = findDynamicProgrammingPath(cost, start, goal);
-                output.seedSeconds = computeSecondsSince(seedStartTime);
-                const auto refineStartTime = std::chrono::steady_clock::now();
-                const cv::Mat allowedMask = buildHybridCorridor(seed.path, cost.size(), corridorRadius, start, goal);
-                result = findDijkstraPath(cost, start, goal, allowedMask);
-                output.refineSeconds = computeSecondsSince(refineStartTime);
-                output.corridorRatio = double(cv::countNonZero(allowedMask)) / double(allowedMask.total());
-                break;
-            }
-            default:
-                throw std::invalid_argument("Unknown method");
-        }
+        PathResult result = runMethod(cost, method, EdgeRequest{start, goal, corridorRadius}, output);
         output.wallSeconds = computeSecondsSince(startTime);
 
         output.path = std::move(result.path);

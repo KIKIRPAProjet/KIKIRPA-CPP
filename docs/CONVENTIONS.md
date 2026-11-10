@@ -189,7 +189,7 @@ Jamais de `catch (...) { }` vide : une erreur avalée est introuvable. Quand on 
 
 ## 8. Structure du code
 
-- **Steps** : une classe `<Nom>StepClass` dans `StepsNs`, qui hérite de `StepNs::StepClass`, avec une struct `<Nom>Input` (paramètres) et `<Nom>Output` (sorties). Marche à suivre : [core/Pipeline.md](core/Pipeline.md#ajouter-un-step).
+- **Steps** : une classe `<Nom>StepClass` dans `StepsNs`, qui hérite de `StepNs::StepClass`, avec une struct `<Nom>Input` (paramètres) et `<Nom>Output` (sorties). Marche à suivre, avec un exemple complet : [steps/AJOUTER_UN_STEP.md](steps/AJOUTER_UN_STEP.md).
 - **Algorithmes** : un dossier par algorithme dans `algorithms/<étape>/<nom>/`. Un algorithme conséquent se découpe comme la corrélation de phase : un header façade (le seul inclus par les steps), un header de types, puis un module par phase (préparation des images, calcul, mise en forme de la sortie). Voir la [carte](CARTE_ARCHITECTURE.md#6-lire-un-algorithme--lexemple-de-la-corrélation-de-phase).
 - **Types partagés** entre steps et algorithmes : dans `core/data/algorithm_types.h` (`DataNs`). Un type par clé du `DataStoreClass`.
 - **Tests** : voir [§12](#12-tests).
@@ -205,10 +205,10 @@ Jamais de `catch (...) { }` vide : une erreur avalée est introuvable. Quand on 
 Les algorithmes ont été migrés (noms anglais, un namespace par dossier, types partagés qualifiés `DataNs::…`, fonctions internes dans un `namespace { }` anonyme) ; `algorithms/legacy_type_aliases.h` a été supprimé. Il reste :
 
 - `tests/` : noms internes en français (`verifier`, `LARGEUR_TUILE`, noms des `TEST(…, QuatreDirections)`…), et en `snake_case` dans `tests/seamline/` (`random_pair`, `maze_grid`, namespace `testmaps`). Les appels aux algorithmes, eux, sont à jour.
-- Sorties console : `graph_cut_step.cpp` écrit ses erreurs sur `std::cerr`, en français, en plus de `result` ; LightGlue écrit des traces `[DEBUG]` sur `std::cout` ; GraphCut (`GraphCutSeamFinderClass`, `ImagePretreatmentClass`) écrit ses erreurs sur `std::cout` et renvoie un `int` (±1) au lieu d'un `bool`.
+- Sorties console : `graph_cut_step.cpp` écrit ses erreurs sur `std::cerr`, en français, en plus de `result` ; GraphCut (`GraphCutSeamFinderClass`, `ImagePretreatmentClass`) écrit ses erreurs sur `std::cout` et renvoie un `int` (±1) au lieu d'un `bool`.
 - Noms gardés pour ne pas casser les scripts et les configurations :
-  - les paramètres des steps existants (`niveau`, `lissage`, `marge`…), alors que les champs C++ correspondants sont en anglais (`PhaseCorrelationInput::level`, `PhaseCorrelationNs::Parameters::smoothingSigma`…) ;
-  - les clés JSON des algorithmes qui n'ont pas encore de step : SIFT (`max_features`, `lowe_ratio`, `contrast_threshold`, `clahe_clip_limit`, en `snake_case`), RANSAC et vote (`ransacReprojThreshold`, `maxIters`, `refineIters`, `seuil`, `case`…), LightGlue (`model_path`) ;
+  - les paramètres du step `phase-correlation` (`niveau`, `lissage`, `marge`…), alors que les champs C++ correspondants sont en anglais (`PhaseCorrelationInput::level`, `PhaseCorrelationNs::Parameters::smoothingSigma`…). Les steps `sift` et `lightglue` exposent, eux, des paramètres en `camelCase` (`maxFeatures`, `modelPath`…) ;
+  - les clés JSON lues par les algorithmes eux-mêmes, que les steps traduisent : SIFT (`max_features`, `lowe_ratio`, `contrast_threshold`, `clahe_clip_limit`, en `snake_case`), LightGlue (`model_path`), vote (`seuil`, `case`, et `ransacReprojThreshold` accepté comme ancien nom de `seuil`) ;
   - les valeurs texte : `"correlation_phase"` dans `PositioningNs::PositioningSettings::matcherName`, les options de `CostMapParameters` (`"noise"`, `"euclidian"`, `"caped"`…) et les noms du notebook (`"color_gradient"`, `"DP"`, `"Dijkstra-8"`).
 
   À renommer quand un step les exposera, avec l'accord de l'équipe.
@@ -218,7 +218,8 @@ Tout nouveau code suit les règles ci-dessus.
 
 ## 10. Documentation
 
-- Une page par algorithme dans `docs/algorithms/<étape>/<nom>/`, une page par step dans `docs/steps/`.
+- Une page par algorithme dans `docs/algorithms/<étape>/<nom>/`, une page par step dans `docs/steps/`. La fiche d'un step commence par ses **entrées et sorties** ; son plan est donné dans [AJOUTER_UN_STEP.md §9](steps/AJOUTER_UN_STEP.md#9-documenter).
+- La vue d'ensemble pour un nouveau venu est [COMPRENDRE_LE_PROJET.md](COMPRENDRE_LE_PROJET.md) : un nouveau step, un nouveau type partagé ou un algorithme branché y ajoute sa ligne.
 - **La [carte de l'architecture](CARTE_ARCHITECTURE.md) reste à jour** : elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
 ## 11. Classes et fonctions
