@@ -28,8 +28,10 @@ concerné. Ne pas installer une bibliothèque ou un paquet propre à la vérific
 Les extensions ne sont pas sensibles à la casse. Les deux fichiers doivent exister et être lisibles au moment de
 l'exécution. Il faut donner les chemins des fichiers, pas ceux des dossiers.
 
-L'algorithme lit les en-têtes et métadonnées; il ne charge ni ne compare les pixels. Les dimensions rapportées sont
-celles enregistrées dans le fichier, sans appliquer de rotation selon l'orientation EXIF/TIFF.
+L'algorithme lit les en-têtes et métadonnées; il ne charge ni ne compare les pixels. Les dimensions existantes
+`dimensions.input` et `dimensions.output` sont celles stockées dans les fichiers. Le rapport ajoute aussi
+`dimensions.displayed`, qui échange largeur et hauteur lorsque l'orientation TIFF/EXIF vaut 5, 6, 7 ou 8.
+Cette conversion décrit l'orientation attendue, sans vérifier ni transformer les pixels.
 
 ## Utilisation dans un pipeline
 
@@ -113,10 +115,11 @@ Le JSON a `status: "report_ready"` quand la lecture et la comparaison sont termi
 | `dimensions.input`, `dimensions.output` | Largeur et hauteur en pixels. |
 | `dimensions.difference` | Écart signé `sortie - référence`, séparément pour la largeur et la hauteur. |
 | `dimensions.outputToInputRatio` | Rapport sortie/référence pour la largeur et la hauteur, ainsi que le rapport des proportions (ratio largeur/hauteur de sortie divisé par celui de référence). |
-| `metadataComparisons` | Pour chaque propriété comparée : valeur de référence, valeur de sortie et booléen `equal`. |
+| `dimensions.displayed` | Même structure d'écarts et de ratios, après prise en compte des orientations TIFF/EXIF 5 à 8. |
+| `metadataComparisons` | Valeurs et égalité des propriétés comparables entre TIFF et JPEG : dimensions, échantillonnage, orientation et tags texte communs. |
 | `iccProfile` | Présence, taille en octets, identité exacte des profils et état de comparaison colorimétrique. |
-| `differences` | Liste des propriétés dont les valeurs diffèrent ou qui sont présentes d'un seul côté. Une différence n'est pas un verdict. |
-| `warnings` | Avertissements, notamment l'absence de profil ICC ou l'impossibilité de déterminer l'équivalence colorimétrique. |
+| `differences` | Écarts sur les propriétés comparables et profils ICC; les propriétés propres à l'encodage ne sont pas traitées comme des différences. |
+| `warnings` | Réserves ICC et avertissement lorsque les dimensions affichées tiennent compte d'une orientation 5 à 8. |
 
 Exemple simplifié :
 
@@ -155,7 +158,11 @@ n'est appliqué. Un ratio supérieur à `1` indique que la mesure de sortie est 
   présence/état EXIF avec dates originales et numérisées quand disponibles.
 - **JPEG** : dimensions, précision et nombre de composantes du frame, marqueur de compression, version et taille
   de miniature JFIF, présence et champs usuels EXIF, commentaires, segments APP et profil ICC réparti en segments.
-  Les segments JPEG comparés sont signalés par marqueur, taille et égalité exacte des octets.
+  Les métadonnées propres au format restent visibles dans `inputImage.metadata`; les segments JPEG ne sont pas
+  comparés à la sortie TIFF.
+- `metadataComparisons` et `differences` ne portent que sur les champs définis comme communs aux formats
+  (dimensions, échantillonnage, orientation et tags texte communs). Les détails d'encodage comme compression,
+  interprétation photométrique et configuration planaire sont informatifs et ne créent pas de faux écarts.
 - Les fichiers TIFF sont inspectés dans leur premier répertoire d'image. Les tags propriétaires arbitraires ne sont
   pas décodés. Les champs non présents ou non lisibles peuvent apparaître comme `null`, `false` ou absents selon le
   champ.
@@ -177,5 +184,6 @@ sert à la reprise du pipeline; il ne remplace pas une copie de sauvegarde des f
 ## Tests
 
 Le test ciblé est `test_final_verification_step` dans `tests/steps/test_final_verification_step.cpp`. Il couvre les
-dimensions/ratios, les métadonnées TIFF, les profils ICC identiques et différents, les segments ICC JPEG, la
-publication du résultat, les checkpoints et les erreurs de lecture.
+dimensions stockées et affichées, la comparaison JPEG vers TIFF sans faux écarts de format, les deux ordres d'octets
+EXIF, les EXIF tronqués, les profils ICC identiques/différents/incomplets, les entrées invalides, la publication du
+résultat et les checkpoints.

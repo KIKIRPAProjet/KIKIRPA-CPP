@@ -18,7 +18,6 @@
 #include <limits>
 #include <map>
 #include <memory>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -77,13 +76,18 @@ namespace VerificationNs {
         constexpr std::uint8_t JPEG_APP1 = 0xE1;
         constexpr std::uint8_t JPEG_APP2 = 0xE2;
         constexpr std::uint8_t JPEG_COMMENT = 0xFE;
+        constexpr std::array<const char*, 11> COMPARABLE_METADATA_PROPERTIES = {
+            "width", "height", "bitsPerSample", "samplesPerPixel", "orientation",
+            "make", "model", "software", "dateTime", "artist", "copyright"
+        };
+        constexpr std::uint16_t FIRST_ROTATED_ORIENTATION = 5;
+        constexpr std::uint16_t LAST_ROTATED_ORIENTATION = 8;
 
         // Définitions de structures pour stocker les métadonnées des images
         struct ImageMetadata {
             std::string format;
             Json properties = Json::object();
             std::vector<std::uint8_t> iccProfile;
-            std::vector<std::pair<std::uint8_t, std::vector<std::uint8_t>>> metadataSegments;
             bool hasIccProfile = false;
         };
 
@@ -496,9 +500,7 @@ namespace VerificationNs {
             }
 
             readJpegExifProperties(marker, payload, state.properties);
-            const bool isIccProfile = collectJpegIccProfile(marker, payload, path, state);
-            if (!jfifSegment && !isIccProfile)
-                state.imageMetadata.metadataSegments.emplace_back(marker, payload);
+            collectJpegIccProfile(marker, payload, path, state);
         }
 
         // Compte et conserve les commentaires JPEG pour que leur contenu puisse être comparé ensuite.
@@ -508,7 +510,6 @@ namespace VerificationNs {
             state.properties["commentBytes"] =
                 state.properties.value("commentBytes", std::size_t{0}) + payload.size();
             state.properties["commentCount"] = state.properties.value("commentCount", std::size_t{0}) + 1;
-            state.imageMetadata.metadataSegments.emplace_back(marker, payload);
         }
 
         // Distribue un segment vers son lecteur spécialisé selon son marqueur JPEG.
@@ -576,64 +577,17 @@ namespace VerificationNs {
             throw std::runtime_error("unsupported image format: " + path.string());
         }
 
-        // Compare l'union des propriétés : les champs manquants d'un côté apparaissent comme null et donc différents.
+        // Compare les champs ayant le même sens dans les deux formats; les détails d'encodage restent informatifs.
         Json compareMetadata(const ImageMetadata& input, const ImageMetadata& output, Json& differences) {
             Json comparisons = Json::object();
-            std::set<std::string> propertyNames;
-            for (auto property = input.properties.begin(); property != input.properties.end(); ++property)
-                propertyNames.insert(property.key());
-            for (auto property = output.properties.begin(); property != output.properties.end(); ++property)
-                propertyNames.insert(property.key());
-
-            for (const std::string& name : propertyNames) {
-                if (name == "metadataSegments") continue;
+            for (const char* name : COMPARABLE_METADATA_PROPERTIES) {
+                if (!input.properties.contains(name) && !output.properties.contains(name)) continue;
                 const Json inputValue = input.properties.contains(name) ? input.properties.at(name) : Json();
                 const Json outputValue = output.properties.contains(name) ? output.properties.at(name) : Json();
                 const bool equal = inputValue == outputValue;
                 comparisons[name] = {{"input", inputValue}, {"output", outputValue}, {"equal", equal}};
                 if (!equal) differences.push_back({{"property", name}, {"input", inputValue}, {"output", outputValue}});
             }
-            return comparisons;
-        }
-
-        // Compare un index de segment en signalant séparément l'absence et le contenu de chaque côté.
-        Json compareJpegMetadataSegment(
-            std::size_t index, const ImageMetadata& input, const ImageMetadata& output, Json& differences
-        ) {
-            const bool inputPresent = index < input.metadataSegments.size();
-            const bool outputPresent = index < output.metadataSegments.size();
-            const auto inputSegment = inputPresent ? input.metadataSegments[index] :
-                std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
-            const auto outputSegment = outputPresent ? output.metadataSegments[index] :
-                std::pair<std::uint8_t, std::vector<std::uint8_t>>{};
-            const bool equal = inputPresent && outputPresent && inputSegment == outputSegment;
-            if (!equal) {
-                differences.push_back({
-                    {"property", "jpegMetadataSegment"},
-                    {"index", index},
-                    {"inputPresent", inputPresent},
-                    {"outputPresent", outputPresent},
-                    {"equal", false}
-                });
-            }
-            return {
-                {"index", index},
-                {"inputPresent", inputPresent},
-                {"outputPresent", outputPresent},
-                {"inputMarker", inputPresent ? Json(inputSegment.first) : Json()},
-                {"outputMarker", outputPresent ? Json(outputSegment.first) : Json()},
-                {"inputBytes", inputPresent ? Json(inputSegment.second.size()) : Json()},
-                {"outputBytes", outputPresent ? Json(outputSegment.second.size()) : Json()},
-                {"equal", equal}
-            };
-        }
-
-        // Aligne les listes de segments par position pour rapporter aussi ceux présents d'un seul côté.
-        Json compareJpegMetadataSegments(const ImageMetadata& input, const ImageMetadata& output, Json& differences) {
-            Json comparisons = Json::array();
-            const std::size_t segmentCount = std::max(input.metadataSegments.size(), output.metadataSegments.size());
-            for (std::size_t segmentIndex = 0; segmentIndex < segmentCount; ++segmentIndex)
-                comparisons.push_back(compareJpegMetadataSegment(segmentIndex, input, output, differences));
             return comparisons;
         }
 
@@ -679,12 +633,11 @@ namespace VerificationNs {
             };
         }
 
-        // Calcule les écarts signés et ratios sortie/référence à partir des dimensions validées des lecteurs.
-        Json compareDimensions(const ImageMetadata& input, const ImageMetadata& output) {
-            const std::int64_t inputWidth = input.properties.at("width").get<std::int64_t>();
-            const std::int64_t inputHeight = input.properties.at("height").get<std::int64_t>();
-            const std::int64_t outputWidth = output.properties.at("width").get<std::int64_t>();
-            const std::int64_t outputHeight = output.properties.at("height").get<std::int64_t>();
+        // Calcule un ensemble de dimensions, ses écarts signés et les ratios sortie/référence.
+        Json compareDimensionValues(
+            std::int64_t inputWidth, std::int64_t inputHeight,
+            std::int64_t outputWidth, std::int64_t outputHeight
+        ) {
             const double inputAspectRatio = static_cast<double>(inputWidth) / static_cast<double>(inputHeight);
             const double outputAspectRatio = static_cast<double>(outputWidth) / static_cast<double>(outputHeight);
             return {
@@ -699,14 +652,53 @@ namespace VerificationNs {
             };
         }
 
+        // Convertit les dimensions stockées en dimensions affichées selon les orientations TIFF/EXIF 5 à 8.
+        std::pair<std::int64_t, std::int64_t> displayedDimensions(const ImageMetadata& metadata) {
+            std::int64_t width = metadata.properties.at("width").get<std::int64_t>();
+            std::int64_t height = metadata.properties.at("height").get<std::int64_t>();
+            const std::uint16_t orientation = metadata.properties.value("orientation", std::uint16_t{1});
+            if (orientation >= FIRST_ROTATED_ORIENTATION && orientation <= LAST_ROTATED_ORIENTATION)
+                std::swap(width, height);
+            return {width, height};
+        }
+
+        // Conserve les mesures brutes existantes et ajoute une comparaison après application de l'orientation.
+        Json compareDimensions(const ImageMetadata& input, const ImageMetadata& output) {
+            Json dimensions = compareDimensionValues(
+                input.properties.at("width").get<std::int64_t>(),
+                input.properties.at("height").get<std::int64_t>(),
+                output.properties.at("width").get<std::int64_t>(),
+                output.properties.at("height").get<std::int64_t>()
+            );
+            const auto inputDisplayed = displayedDimensions(input);
+            const auto outputDisplayed = displayedDimensions(output);
+            dimensions["displayed"] = compareDimensionValues(
+                inputDisplayed.first, inputDisplayed.second, outputDisplayed.first, outputDisplayed.second
+            );
+            return dimensions;
+        }
+
+        // Signale quand les dimensions affichées reposent sur une rotation ou réflexion de 90 degrés.
+        void addDisplayedOrientationWarning(
+            const ImageMetadata& input, const ImageMetadata& output, Json& warnings
+        ) {
+            const auto hasRotatedOrientation = [](const ImageMetadata& metadata) {
+                const std::uint16_t orientation = metadata.properties.value("orientation", std::uint16_t{1});
+                return orientation >= FIRST_ROTATED_ORIENTATION && orientation <= LAST_ROTATED_ORIENTATION;
+            };
+            if (hasRotatedOrientation(input) || hasRotatedOrientation(output))
+                warnings.push_back(
+                    "Displayed dimensions account for orientation values 5 to 8; pixel orientation is not verified"
+                );
+        }
+
         // Construit l'objet public du rapport à partir des résultats spécialisés de chaque comparaison.
         Json createComparisonReport(const std::filesystem::path& inputPath, const std::filesystem::path& outputPath,
                                    const ImageMetadata& input, const ImageMetadata& output) {
             // Les écarts alimentent le rapport; ils ne constituent jamais un verdict de conformité.
             ComparisonDiagnostics diagnostics;
             Json metadataComparisons = compareMetadata(input, output, diagnostics.differences);
-            metadataComparisons["jpegMetadataSegments"] =
-                compareJpegMetadataSegments(input, output, diagnostics.differences);
+            addDisplayedOrientationWarning(input, output, diagnostics.warnings);
             const Json iccComparison = compareIccProfiles(input, output, diagnostics);
             return {
                 {"status", "report_ready"},

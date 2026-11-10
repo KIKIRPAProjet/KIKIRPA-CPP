@@ -300,33 +300,19 @@ Les propriétés commencent avec `orientation: 1` par défaut. Un tag orientatio
 
 ## 6. Comparaison des métadonnées
 
-### 6.1 Propriétés JSON ordinaires
+### 6.1 Propriétés communes aux formats
 
-Le comparateur forme l'union des noms de propriétés présents côté référence et côté sortie. Pour chaque nom :
+La comparaison générique utilise une liste explicite de propriétés qui ont le même sens en TIFF et en JPEG :
+dimensions, bits par échantillon, nombre d'échantillons, orientation et tags texte communs. Les propriétés
+présentes d'un seul côté sont rapportées avec `null` pour l'autre valeur; si aucune des deux images ne possède une
+propriété listée, elle est omise des comparaisons.
 
-- une propriété absente d'un côté est représentée par `null` ;
-- les valeurs sont comparées avec l'égalité JSON exacte (type et contenu compris) ;
-- le détail est ajouté à `metadataComparisons[nom]` avec `input`, `output` et `equal` ;
-- si `equal` est faux, une entrée correspondante est ajoutée dans `differences`.
+Les caractéristiques propres à un encodage (compression, interprétation photométrique, configuration planaire,
+JFIF, marqueurs et états de parsing EXIF) restent disponibles dans `inputImage.metadata` ou
+`outputImage.metadata`, mais ne sont pas transformées en différences. Les segments JPEG ne sont pas comparés aux
+métadonnées d'une sortie TIFF.
 
-La propriété `metadataSegments` est explicitement exclue de cette comparaison générique, car les listes descriptives des APP JPEG ne doivent pas être comparées aux propriétés TIFF. Les données binaires JPEG sont traitées par le comparateur spécialisé ci-dessous.
-
-Cette règle d'union signifie qu'un champ présent seulement dans un JPEG (ex. `jfifVersion`) apparaît tout de même comme différence face au TIFF, avec `null` du côté TIFF.
-
-### 6.2 Segments JPEG bruts
-
-Les listes binaires JPEG sont alignées par index, pas par type de marqueur, contenu ou recherche de correspondance. Pour chaque index jusqu'à la plus longue des deux listes :
-
-- `inputPresent` et `outputPresent` indiquent si une entrée existe des deux côtés ;
-- le marqueur et la taille sont rapportés, ou `null` pour le côté absent ;
-- `equal` est vrai uniquement si les deux entrées existent et si le couple `(marqueur, payload)` est identique octet par octet ;
-- toute différence produit aussi un élément `differences` avec `property: "jpegMetadataSegment"` et l'index concerné.
-
-Conséquence : l'insertion d'un segment générique avant d'autres segments décale les indices et peut faire apparaître plusieurs différences, même si certains payloads identiques sont présents ailleurs. Cette comparaison conserve l'ordre des métadonnées, elle ne tente pas de faire un appariement sémantique.
-
-Le détail par index est rendu dans `metadataComparisons.jpegMetadataSegments`. Les octets complets ne sont pas copiés dans le JSON du rapport, seulement la présence, les marqueurs, les tailles et l'indicateur d'égalité.
-
-### 6.3 Profils ICC
+### 6.2 Profils ICC
 
 Les octets ICC assemblés/lus sont comparés par égalité exacte. Le rapport contient :
 
@@ -344,7 +330,7 @@ Les octets ICC assemblés/lus sont comparés par égalité exacte. Le rapport co
 
 Une différence de présence ou de contenu est ajoutée à `differences` sous `property: "iccProfile"`. Un avertissement est ajouté si un profil manque d'un côté ; si les deux sont présents mais différents, l'avertissement précise qu'aucune conclusion colorimétrique n'est possible sans moteur de gestion des couleurs.
 
-### 6.4 Dimensions, écarts et ratios
+### 6.3 Dimensions, écarts et ratios
 
 Les dimensions déjà validées par les lecteurs sont utilisées pour créer :
 
@@ -353,13 +339,17 @@ Les dimensions déjà validées par les lecteurs sont utilisées pour créer :
 - `outputToInputRatio.width` et `.height` ;
 - `outputToInputRatio.aspectRatio` : rapport entre le ratio d'aspect de la sortie et celui de l'entrée.
 
+Ces champs conservent les dimensions stockées dans les fichiers. Le sous-objet `displayed` reprend les mêmes
+champs après échange de largeur et hauteur pour les orientations 5 à 8. Le rapport ajoute un avertissement quand
+cette orientation influence les dimensions affichées; il ne vérifie pas l'orientation réelle des pixels.
+
 Le rapport de ratio d'aspect vaut :
 
 ```text
 (outputWidth / outputHeight) / (inputWidth / inputHeight)
 ```
 
-Une valeur supérieure à 1 signifie que le ratio largeur/hauteur est plus grand côté sortie ; elle ne suffit pas à déterminer si l'image a été étirée ou si son cadrage a changé. Les différences dimensionnelles apparaissent dans l'objet `dimensions` : elles ne sont pas ajoutées aux `differences` et ne déclenchent pas de verdict.
+Une valeur supérieure à 1 signifie que le ratio largeur/hauteur est plus grand côté sortie ; elle ne suffit pas à déterminer si l'image a été étirée ou si son cadrage a changé. Les écarts dimensionnels sont décrits dans `dimensions` et les propriétés `width`/`height` sont aussi présentes dans `differences` quand elles ne sont pas égales. Ils restent informatifs et ne déclenchent aucun verdict.
 
 ## 7. Forme du rapport JSON
 
@@ -386,7 +376,7 @@ Le rapport de succès a cette structure de premier niveau :
 }
 ```
 
-`inputImage.metadata` et `outputImage.metadata` exposent les données extraites, même lorsque celles-ci diffèrent. `metadataComparisons` détaille les comparaisons par propriété et, pour les références JPEG, par segment brut. `differences` est un inventaire explicite des écarts ; `warnings` contient des réserves sur les profils ICC, pas un verdict.
+`inputImage.metadata` et `outputImage.metadata` exposent les données extraites, y compris les détails spécifiques aux formats. `metadataComparisons` ne contient que les propriétés sémantiquement comparables; les segments JPEG ne sont pas alignés avec le TIFF. `differences` inventorie les écarts de ces propriétés et des profils ICC; `warnings` contient les réserves ICC et d'orientation, pas un verdict.
 
 Le statut `"report_ready"` signifie que les fichiers ont pu être lus et qu'un rapport a été produit. Il ne signifie pas que les deux images sont équivalentes.
 
@@ -419,8 +409,10 @@ Les tests de [`test_final_verification_step.cpp`](../../../tests/steps/test_fina
 
 - les écarts de dimensions et ratios, et l'absence de comparaison de résolution ;
 - les propriétés TIFF et les différences d'orientation ;
+- l'absence de faux écarts d'encodage entre une référence JPEG et une sortie TIFF équivalente ;
+- l'orientation EXIF dans les deux ordres d'octets, ainsi que l'EXIF tronqué ;
 - l'identité binaire des profils ICC et le statut indéterminé lorsque leurs octets diffèrent ;
-- l'extraction de dimensions JPEG et de métadonnées JPEG/ICC ;
+- l'extraction de dimensions JPEG et les erreurs d'entrée invalide, de segment tronqué, de format non pris en charge et de profil ICC incomplet ;
 - la publication du rapport dans le DataStore ;
 - les cas d'erreur de lecture et les entrées externes utilisées par le checkpoint.
 
