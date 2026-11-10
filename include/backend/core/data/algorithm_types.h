@@ -110,7 +110,6 @@ namespace DataNs {
         cv::Mat mask;           // CV_8UC1, 255 = pixel valide
         cv::Rect blockRect;     // rectangle du bloc sur la mosaïque, en pixels
     };
-    using CompositeBlockList = std::vector<CompositeBlock>;
 
     // Mosaïque assemblée (type "Mosaic", clé "mosaic"). Les pixels sont sur disque, dans trois TIFF tuilés pleine
     // résolution (blocs de BLOCK_SIZE, LZW) de canvasSize pixels, écrits bloc par bloc : le DataStore ne garde que les
