@@ -1,8 +1,9 @@
 #include "core/pipeline/pipeline_builder.h"
+#include "core/pipeline/pipeline.h"
 #include "mainwindow.h"
 
 #include <QtCore/QString>
-#include <QtCore/QTimer>
+#include <QtCore/qtimer.h>
 #include <QtWidgets/QApplication>
 
 #include <cstdlib>
@@ -11,19 +12,18 @@
 #include <string>
 
 namespace {
+    int runFrontend(int argumentCount, char** arguments) {
+        QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
+        QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
+        QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
 
-	int runFrontend(int argumentCount, char** arguments) {
-		QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
-		QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
-		QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
-
-		MainWindow window;
-		window.show();
-		if (std::getenv("KIKIRPA_FRONTEND_STARTUP_TEST") != nullptr) {
-			QTimer::singleShot(0, &application, &QApplication::quit);
-		}
-		return QApplication::exec();
-	}
+        MainWindow window;
+        window.show();
+        if (std::getenv("KIKIRPA_FRONTEND_STARTUP_TEST") != nullptr) {
+            QTimer::singleShot(0, &application, &QApplication::quit);
+        }
+        return QApplication::exec();
+    }
 
     int runPipeline(const std::string& scriptPath) {
         try {
@@ -37,7 +37,6 @@ namespace {
             return EXIT_FAILURE;
         }
     }
-
 }
 
 int main(int argc, char* argv[]) {

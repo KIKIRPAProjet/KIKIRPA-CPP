@@ -31,7 +31,7 @@
 #include <utility>
 #include <vector>
 
-namespace fs = std::filesystem;
+namespace FsNs = std::filesystem;
 
 namespace StitchingNs::TestsNs {
 
@@ -158,9 +158,9 @@ void testerExceptionDansUnStep() {
 
 // Deux tuiles 16 bits img_C00_R00.tif et img_C01_R00.tif découpées dans une texture aléatoire floutée,
 // B à DECALAGE_B px à droite de A : vérité exacte
-void creerTuiles(const fs::path& dossier) {
-    fs::remove_all(dossier);
-    fs::create_directories(dossier);
+void creerTuiles(const FsNs::path& dossier) {
+    FsNs::remove_all(dossier);
+    FsNs::create_directories(dossier);
     cv::Mat source(HAUTEUR_TUILE, DECALAGE_B + LARGEUR_TUILE, CV_32F);
     cv::RNG rng(TEXTURE_SEED);
     rng.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
@@ -172,14 +172,14 @@ void creerTuiles(const fs::path& dossier) {
     cv::imwrite((dossier / "img_C01_R00.tif").string(), source16(cv::Rect(DECALAGE_B, 0, LARGEUR_TUILE, HAUTEUR_TUILE)));
 }
 
-Json scriptReel(const fs::path& dossier) {
+Json scriptReel(const FsNs::path& dossier) {
     return script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", dossier.string()}}}),
                    etape("phase-correlation")});
 }
 
 void testerPipelineReel() {
     std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
+    const FsNs::path dossier = FsNs::temp_directory_path() / "kikirpa_test_pipeline";
     creerTuiles(dossier);
 
     PipelineNs::PipelineClass p = PipelineNs::buildPipeline(scriptReel(dossier));
@@ -194,7 +194,7 @@ void testerPipelineReel() {
     const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
     verifier(tuiles.size() == 2, "2 tuiles importées");
     verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get(), "B est la voisine de droite de A");
-    verifier(tuiles.size() == 2 && fs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
+    verifier(tuiles.size() == 2 && FsNs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
 
     const auto& paires = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
     verifier(paires.size() == 1, "1 paire mesurée");
@@ -203,7 +203,7 @@ void testerPipelineReel() {
     verifier(std::abs(m.translationX - DECALAGE_B) < TOLERANCE && std::abs(m.translationY) < TOLERANCE,
              "translation (" + std::to_string(m.translationX) + ", " + std::to_string(m.translationY) + ") = (" +
                  std::to_string(DECALAGE_B) + ", 0)");
-    fs::remove_all(dossier);
+    FsNs::remove_all(dossier);
 }
 
 void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float dx1) {
@@ -222,8 +222,8 @@ void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float d
 
 void testerRepriseReelle() {
     std::cout << "Reprise du pipeline réel sur checkpoints\n";
-    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
-    const fs::path checkpoints = dossier / "checkpoints";
+    const FsNs::path dossier = FsNs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
+    const FsNs::path checkpoints = dossier / "checkpoints";
     creerTuiles(dossier);
 
     PipelineNs::PipelineClass p = PipelineNs::buildPipeline(scriptReel(dossier));
@@ -233,7 +233,7 @@ void testerRepriseReelle() {
     std::string journal;
     const auto log = [&](const std::string& m) { journal += m + "\n"; };
     verifier(p.run(log), "run 1 réussi");
-    verifier(fs::exists(checkpoints / "00_import" / "tiles.json") && fs::exists(checkpoints / "01_phase-correlation" / "matches.json"),
+    verifier(FsNs::exists(checkpoints / "00_import" / "tiles.json") && FsNs::exists(checkpoints / "01_phase-correlation" / "matches.json"),
              "sorties des deux steps écrites");
     const float dx1 = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches").at(0).featureMatches.translationX;
 
@@ -249,7 +249,7 @@ void testerRepriseReelle() {
     verifier(p.run(log), "run 3 réussi");
     verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
              "image modifiée : import et appariement refaits");
-    fs::remove_all(dossier);
+    FsNs::remove_all(dossier);
 }
 
 // Une exception inattendue fait échouer le test : GoogleTest l'attrape et affiche son message
