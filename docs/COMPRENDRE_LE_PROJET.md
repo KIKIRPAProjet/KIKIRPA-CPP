@@ -123,7 +123,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
       { "name": "import",
         "parameters": [
           { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" },
-          { "valueType": "string", "name": "format", "value": ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?" }
+          { "valueType": "string", "name": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
         ] },
       { "name": "phase-correlation",
         "parameters": [ { "valueType": "int", "name": "niveau", "value": 2 } ] },
@@ -137,7 +137,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_r<ligne>_c<colonne>.tif`, alors que le format par défaut d'`import` attend `img_C<colonne>_R<ligne>.tif`. D'où le `format` ci-dessus. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_C<colonne>_R<ligne>.tif` (le format par défaut d'`import`). Un `format` personnalisé doit donc produire des fichiers qui respectent ce nommage. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -207,7 +207,7 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
-| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
+| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
@@ -229,7 +229,7 @@ Dans le DataStore, une donnée est une structure C++. Les types pris en charge p
 Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
 
 ```json
-[ { "id": 0, "source": "D:/oeuvre/tuiles/t_r00_c00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c00_pyramid.tif",
+[ { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 
@@ -262,22 +262,10 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 
 - `position` = coin haut-gauche de la tuile dans le repère de la mosaïque.
 - La tuile de référence est en (0, 0). Les autres peuvent avoir des coordonnées négatives.
-- `tileId` est lu dans le nom du fichier (`_r00_c01`), **ce n'est pas l'`id` numérique**.
+- `tileId` est lu dans le nom du fichier (`_C01_R00`), **ce n'est pas l'`id` numérique**.
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
-
-#### `PairResiduals` (clé `pairResiduals`) : l'écart de chaque paire après ajustement
-
-```json
-[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.16, 3.78], "residualNorm": 3.95 } ]
-```
-
-- `residual` = translation mesurée − (position B − position A) ajustées, en pixels.
-- Un grand résidu indique une mesure en contradiction avec les autres. Sans boucle dans la grille, il vaut 0.
-- `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
-
-C++ : `std::vector<DataNs::PairResidual>`.
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 
@@ -327,7 +315,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 ```json
 { "step": "import",
   "parameters": [ { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" }, … ],
-  "inputs": [ ["t_r00_c00.tif", 145000000, 133456789012345678], … ],
+  "inputs": [ ["t_C00_R00.tif", 145000000, 133456789012345678], … ],
   "outputs": [ { "key": "tiles", "dataType": "Tiles" } ],
   "complete": true }
 ```

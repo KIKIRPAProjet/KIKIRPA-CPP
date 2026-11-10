@@ -8,23 +8,17 @@
 |---|---|---|---|---|
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
-| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` | `dynamic-programming-dijkstra`|
-| Sortie | `pairResiduals` | `PairResiduals` | `std::vector<DataNs::PairResidual>` | pas encore de consommateur |
+| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut`, `dynamic-programming-dijkstra` |
 
 - **Lit** dans `tiles` l'identifiant et le nom du fichier source, d'où il tire la ligne et la colonne. Aucune image n'est relue.
 - **Lit** dans `matches` seulement `tileIdA`, `tileIdB`, `translationX` et `translationY`. Les points et les scores ne servent pas.
 - **Écrit** dans `positions` une entrée par tuile : `tileId` (`rLL_cCC`, ligne et colonne) ; `position`, le coin haut-gauche de la tuile en pixels de pleine résolution, dans le repère de la tuile de référence placée en (0, 0) (les valeurs négatives sont possibles) ; et `rotationRadians`, toujours 0.
-- **Écrit** dans `pairResiduals` une entrée par paire utilisée : l'écart entre la translation mesurée et les positions ajustées (voir [Écart de chaque paire après ajustement](#écart-de-chaque-paire-après-ajustement)).
 
-`AbsolutePosOutput` regroupe `key`, `value`, `type` pour les positions, et `residualsKey`, `residuals`, `residualsType` pour les écarts. `getOutput()` donne les positions et les écarts détaillés ; `getResult()` ne contient qu'un résumé (`pairs`, `positions`, `failures`, `error`). Le type `Positions` est déjà pris en charge par les checkpoints et consommé par GraphCut.
+`AbsolutePosOutput` regroupe `key`, `value`, `type`. `getOutput()` donne les positions détaillées ; `getResult()` ne contient qu'un résumé (`pairs`, `positions`, `failures`, `error`). Le type `Positions` est déjà pris en charge par les checkpoints et consommé par GraphCut.
 
-Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_r<ligne>_c<colonne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
+Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_C<colonne>_R<ligne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
 
-Le format par défaut de `import` (`img_C…_R…`) ne convient donc pas à ce step, ni à `graphcut`, qui exige les mêmes noms. Pour des fichiers `t_r00_c01.tif`, indiquer à `import` un format dont le groupe 1 est la colonne et le groupe 2 la ligne :
-
-```
-t_r(?=\d+_c(\d+)\.tif$)(\d+)_c\d+\.tif
-```
+Le format par défaut de `import` (`img_C(\d+)_R(\d+)\.tif`) produit déjà des noms compatibles avec ce step et avec `graphcut`, qui exigent les mêmes noms.
 
 ## Paramètre
 
@@ -47,28 +41,6 @@ Le solveur commun `PositioningNs::solveRelativePositions()` ajuste toutes les co
 Le type `PairMatches` ne transporte pas d'angle relatif : **ce step ne calcule pas les rotations**, et `rotationRadians` vaut zéro. Le solveur commun accepte aussi des angles additifs, pour préserver le comportement existant de `TilePositioner` ; il ne s'agit pas d'une optimisation générale de poses rigides avec composition de rotations.
 
 La SVD utilise une matrice dense (nombre de contraintes × nombre de tuiles hors référence). Elle convient aux grilles usuelles du projet ; un très grand graphe demanderait un solveur creux.
-
-## Écart de chaque paire après ajustement
-
-Une fois les positions calculées, le step mesure, pour chaque paire utilisée, l'écart entre la translation mesurée et celle des positions ajustées :
-
-```
-résidu = (translationX, translationY) - (positionB - positionA)
-```
-
-Il le publie dans `pairResiduals`, une entrée `DataNs::PairResidual` (`core/data/pair_residual.h`) par paire utilisée, dans l'ordre des paires de `matches` :
-
-- `tileIdA`, `tileIdB` : identifiants numériques des deux tuiles, comme dans `PairMatches` ;
-- `residual` : `(rx, ry)`, en pixels de pleine résolution ;
-- `residualNorm` : la norme de `residual`.
-
-Un grand résidu indique une mesure en contradiction avec les autres : la paire est à vérifier. Les paires ignorées (`failures`) n'ont pas de résidu. Sans boucle dans le graphe des paires (par exemple une ligne de tuiles), chaque paire est la seule à relier ses deux tuiles et son résidu vaut 0. Le résidu mesure donc l'incohérence entre les mesures, pas l'erreur réelle de position.
-
-Le type `PairResiduals` a sa sérialisation de checkpoint, enregistrée par le constructeur du step (`CheckpointClass::registerType`). Le fichier `pairResiduals.json` contient une entrée par paire :
-
-```json
-[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.0, 0.0], "residualNorm": 1.0 } ]
-```
 
 ## Erreurs
 
@@ -95,7 +67,7 @@ Les sorties de l'exécution précédente sont vidées au début de chaque appel,
 
 ## Vérification
 
-Les tests synthétiques couvrent les translations horizontales et verticales signées, une boucle incohérente, une référence explicite, les paires invalides ignorées, les graphes déconnectés, le nettoyage des résultats, la tuile unique, les entrées invalides et l'enregistrement JSON. Les tests vérifient aussi la restauration des positions par checkpoint, les bornes du paramètre entier, les coordonnées de grille dupliquées, la stabilité de la référence après permutation des tuiles, le chaînage JSON avec un matcher existant et l'écart de chaque paire après ajustement sur une boucle incohérente, ainsi que sa restauration par checkpoint.
+Les tests synthétiques couvrent les translations horizontales et verticales signées, une boucle incohérente, une référence explicite, les paires invalides ignorées, les graphes déconnectés, le nettoyage des résultats, la tuile unique, les entrées invalides et l'enregistrement JSON. Les tests vérifient aussi la restauration des positions par checkpoint, les bornes du paramètre entier, les coordonnées de grille dupliquées, la stabilité de la référence après permutation des tuiles et le chaînage JSON avec un matcher existant.
 
 Le solveur est également testé avec une rotation relative pour vérifier le contrat utilisé par l'ancien positionneur.
 

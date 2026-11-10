@@ -9,8 +9,10 @@ add_executable(seam_tests
     test_junctions.cpp
 )
 
-kikirpa_copy_onnxruntime_dlls(seam_tests)
-target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
+target_link_libraries(seam_tests PRIVATE stitching_backend GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(seam_tests PROPERTIES LABELS "unit")
+
+# Tests de la coupe de graphe (GraphCutClass et son step)
+add_subdirectory(graphcut)
