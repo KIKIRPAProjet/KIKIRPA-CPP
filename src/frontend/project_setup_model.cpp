@@ -252,6 +252,12 @@ Json createRunJson(const ProjectSetup &setup) {
 
 } // namespace
 
+fs::path backendScriptPath(const fs::path &outputDirectory,
+                           const std::string &projectName) {
+  return fs::absolute(outputDirectory).lexically_normal() /
+         (safeFileStem(projectName) + ".json");
+}
+
 void ProjectSetupModelClass::setSetup(ProjectSetup newSetup) {
   setup = std::move(newSetup);
 }
@@ -335,11 +341,9 @@ Json ProjectSetupModelClass::createBackendScript() const {
 
 fs::path ProjectSetupModelClass::writeBackendScript() const {
   const Json script = createBackendScript();
-  const fs::path outputDirectory =
-      fs::absolute(setup.outputDirectory).lexically_normal();
-  fs::create_directories(outputDirectory);
   const fs::path destination =
-      outputDirectory / (safeFileStem(setup.projectName) + ".json");
+      backendScriptPath(setup.outputDirectory, setup.projectName);
+  fs::create_directories(destination.parent_path());
   const fs::path temporary = destination.string() + ".tmp";
   {
     std::ofstream output(temporary, std::ios::binary);

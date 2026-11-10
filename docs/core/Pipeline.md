@@ -106,6 +106,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - `StepClass::externalInputsFingerprint()` décrit ce que le step lit hors du pipeline. Elle est gardée dans le manifest.
 - `ImportStepClass` y met le nom, la taille et la date de chaque image source. Une image ajoutée, retirée ou modifiée périme donc le checkpoint de l'import, et toute la suite est refaite.
 
+**État sauvegardé** (`core/pipeline/saved_state.h`, test : `tests/core/test_saved_state.cpp`) : `countSavedSteps(pipeline)` renvoie le nombre de steps de tête déjà faits dont le checkpoint est encore valide, avec la même règle que `run()`. Le prochain run reprendra au step de cet index. L'interface s'en sert à l'ouverture d'un projet pour afficher, dans l'onglet « Chaîne », les étapes faites (✓), l'étape de reprise (▶) et les suivantes (○).
+
 **Pause** : `PipelineClass::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
 
 ## Steps enregistrés

@@ -24,6 +24,9 @@
 #include "project_setup_model.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
+#include "core/pipeline/pipeline.h"
+#include "core/pipeline/pipeline_builder.h"
+#include "core/pipeline/saved_state.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -43,8 +46,10 @@
 #include <QFrame>
 #include <QPixmap>
 #include <QtMath>
+#include <exception>
 #include <functional>
 #include <filesystem>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -292,6 +297,28 @@ void MainWindow::applyLoadedProject(const QString &path)
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    refreshSavedState();
+}
+
+void MainWindow::refreshSavedState()
+{
+    const std::filesystem::path scriptPath =
+        FrontendNs::backendScriptPath(outputDirectory.toStdString(), projectName.toStdString());
+    if (outputDirectory.isEmpty() || !std::filesystem::exists(scriptPath)) {
+        workspaceUI->showSavedState({}, 0);
+        return;
+    }
+    try {
+        // Le pipeline relu donne les steps du script et, d'après les checkpoints, combien sont encore valides
+        const PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(scriptPath);
+        QStringList stepNames;
+        for (const auto &step : pipeline.getSteps())
+            stepNames << QString::fromStdString(step->getConfigJson().value("name", ""));
+        workspaceUI->showSavedState(stepNames, static_cast<int>(PipelineNs::countSavedSteps(pipeline)));
+    } catch (const std::exception &exception) {
+        workspaceUI->showSavedState({}, 0);
+        updateStatus(tr("État sauvegardé illisible : %1").arg(QString::fromStdString(exception.what())));
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()

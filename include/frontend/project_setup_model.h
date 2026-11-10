@@ -35,6 +35,11 @@ struct ProjectSetup {
 
 // Modèle indépendant de l'affichage pour que le parcours puisse être validé
 // sans ouvrir Qt.
+// Chemin du script backend d'un projet : <dossier de sortie>/<nom du projet nettoyé>.json.
+// Le pipeline y réécrit son état après chaque step (voir PipelineClass::setScriptPath).
+std::filesystem::path backendScriptPath(const std::filesystem::path &outputDirectory,
+                                        const std::string &projectName);
+
 class ProjectSetupModelClass {
 
 public:

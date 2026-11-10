@@ -34,6 +34,11 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     
     chainLayout->addWidget(m_stepList);
 
+    // Résumé de l'état sauvegardé, rempli à l'ouverture d'un projet (showSavedState)
+    m_savedStateLabel = new QLabel(this);
+    m_savedStateLabel->setWordWrap(true);
+    chainLayout->addWidget(m_savedStateLabel);
+
     connect(m_stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
@@ -70,4 +75,31 @@ void AssemblyTab::setActiveStep(int stepNumber)
 
     m_stepList->setCurrentRow(stepNumber - 1);
     m_stepList->scrollToItem(m_stepList->item(stepNumber - 1));
+}
+
+void AssemblyTab::showSavedState(const QStringList &stepNames, int savedStepCount)
+{
+    if (stepNames.isEmpty()) {
+        m_savedStateLabel->setText(tr("Aucun calcul sauvegardé pour ce projet."));
+        return;
+    }
+
+    // Une ligne par step du script, numérotée comme dans le pipeline
+    m_stepList->clear();
+    for (int i = 0; i < stepNames.size(); ++i) {
+        QString marker = QStringLiteral("○  ");
+        if (i < savedStepCount)
+            marker = QStringLiteral("✓  ");
+        else if (i == savedStepCount)
+            marker = QStringLiteral("▶  ");
+        auto *item = new QListWidgetItem(marker + QString::number(i + 1) + QStringLiteral("  ") + stepNames.at(i),
+                                         m_stepList);
+        item->setData(Qt::UserRole, i + 1);
+    }
+
+    if (savedStepCount >= stepNames.size())
+        m_savedStateLabel->setText(tr("Toutes les étapes sont sauvegardées (%1/%1).").arg(stepNames.size()));
+    else
+        m_savedStateLabel->setText(tr("%1/%2 étape(s) sauvegardée(s). Le calcul reprendra à : %3.")
+                                       .arg(savedStepCount).arg(stepNames.size()).arg(stepNames.at(savedStepCount)));
 }
