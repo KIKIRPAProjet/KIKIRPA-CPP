@@ -290,23 +290,29 @@ namespace PipelineNs {
             html += "<p>Statut global : <strong>" + escapeHtml(metadata.value("status", "inconnu")) + "</strong></p>";
         }
 
+        void appendHtmlGridDimensions(const Json& grid, std::string& html) {
+            if (grid.contains("rows") && grid.contains("columns"))
+                html += "<p>Grille : " + std::to_string(grid.at("rows").get<int>()) + " × " +
+                    std::to_string(grid.at("columns").get<int>()) + "</p>";
+        }
+
+        void appendHtmlTileOrder(const Json& grid, std::string& html) {
+            if (!grid.contains("tiles") || !grid.at("tiles").is_array()) return;
+            html += "<h2>Ordre d'import configuré</h2><ol>";
+            for (const Json& tile : grid.at("tiles")) {
+                html += "<li>(" + std::to_string(tile.at("row").get<int>() + 1) + ", " +
+                    std::to_string(tile.at("column").get<int>() + 1) + ") — " +
+                    escapeHtml(tile.value("path", std::string())) + "</li>";
+            }
+            html += "</ol>";
+        }
+
         void appendHtmlGrid(const Json& metadata, std::string& html) {
             const Json project = metadata.value("project", Json::object());
-            if (project.is_object() && project.contains("grid") && project.at("grid").is_object()) {
-                const Json& grid = project.at("grid");
-                if (grid.contains("rows") && grid.contains("columns"))
-                    html += "<p>Grille : " + std::to_string(grid.at("rows").get<int>()) + " × " +
-                        std::to_string(grid.at("columns").get<int>()) + "</p>";
-                if (grid.contains("tiles") && grid.at("tiles").is_array()) {
-                    html += "<h2>Ordre d'import configuré</h2><ol>";
-                    for (const Json& tile : grid.at("tiles")) {
-                        html += "<li>(" + std::to_string(tile.at("row").get<int>() + 1) + ", " +
-                            std::to_string(tile.at("column").get<int>() + 1) + ") — " +
-                            escapeHtml(tile.value("path", std::string())) + "</li>";
-                    }
-                    html += "</ol>";
-                }
-            }
+            if (!project.is_object() || !project.contains("grid") || !project.at("grid").is_object()) return;
+            const Json& grid = project.at("grid");
+            appendHtmlGridDimensions(grid, html);
+            appendHtmlTileOrder(grid, html);
         }
 
         void appendHtmlStep(const Json& step, std::string& html) {

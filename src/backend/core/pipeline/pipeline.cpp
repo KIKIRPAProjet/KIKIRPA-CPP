@@ -4,7 +4,9 @@
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
 #include "core/pipeline/pipeline_report.h"
+#include "core/pipeline/run_state.h"
 
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -130,19 +132,19 @@ namespace PipelineNs {
             return reportJson;
         }
 
+        void markUnreachedSteps(Json& reportJson) {
+            for (Json& step : reportJson["steps"]) {
+                if (step.value("status", std::string()) == "notReached")
+                    step["reason"] = "Étape non atteinte : l'exécution s'est arrêtée avant cette étape.";
+            }
+        }
+
         void saveReportStatus(Json& reportJson, const std::string& status,
                               const fs::path& reportPath, const PipelineClass::Logger& log) {
             if (reportPath.empty()) return;
             reportJson["metadata"]["status"] = status;
-            if (status != "running") {
-                reportJson["metadata"]["finishedAt"] = currentTimestamp();
-                if (status == "failed" || status == "paused") {
-                    for (Json& step : reportJson["steps"]) {
-                        if (step.value("status", std::string()) == "notReached")
-                            step["reason"] = "Étape non atteinte : l'exécution s'est arrêtée avant cette étape.";
-                    }
-                }
-            }
+            if (status != "running") reportJson["metadata"]["finishedAt"] = currentTimestamp();
+            if (status == "failed" || status == "paused") markUnreachedSteps(reportJson);
             try {
                 writeReport(reportPath, reportJson);
             } catch (const std::exception& exception) {
@@ -211,40 +213,22 @@ namespace PipelineNs {
         }
     }
 
-    // Quatre phases : 1. choisir le step de départ ; 2. remettre l'état à zéro ; 3. restaurer les sorties des steps sautés ;
-    // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
-    bool PipelineClass::run(const Logger& log) {
-        const size_t stepCount = steps.size();
-        const CheckpointNs::CheckpointClass checkpoint(runState.checkpointDirectory);
-
-        // 1. Où démarrer ?
-        size_t startIndex = 0;
+    bool PipelineClass::prepareRun(size_t& startIndex, const CheckpointNs::CheckpointClass& checkpoint,
+                                   Json& reportJson, const Logger& log) {
+        startIndex = 0;
         if (runState.skipCompletedSteps) startIndex = resolveStart(steps, runState, checkpoint, log);
-        else if (!runState.startFromStep.empty()) report(log, "run.startFromStep ignored: skipCompletedSteps=false restarts from the first step", false);
-        if (startIndex > 0 && startIndex < stepCount) report(log, "resuming at step " + std::to_string(startIndex + 1) + "/" + std::to_string(stepCount), false);
+        else if (!runState.startFromStep.empty())
+            report(log, "run.startFromStep ignored: skipCompletedSteps=false restarts from the first step", false);
+        if (startIndex > 0 && startIndex < steps.size())
+            report(log, "resuming at step " + std::to_string(startIndex + 1) + "/" +
+                        std::to_string(steps.size()), false);
 
-        // 2. État propre : les checkpoints des steps à refaire sont périmés, les consignes sont consommées.
         checkpoint.removeFrom(startIndex);
         runState.completedSteps.resize(startIndex);
         runState.skipCompletedSteps = true;
         runState.startFromStep.clear();
         dataStore = StepNs::DataStoreClass();
-
-        // 3. Restauration des sorties des steps sautés : pour chaque clé, la version du dernier step qui l'a produite.
-        std::map<std::string, std::pair<size_t, std::string>> latestOutputByKey;   // clé -> (index du step producteur, type)
-        for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
-            for (const ConfigNs::DataSlot& outputSlot : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
-                latestOutputByKey[outputSlot.key] = {stepIndex, outputSlot.dataType};
-        try {
-            for (const auto& [key, producer] : latestOutputByKey) checkpoint.load(producer.first, *steps[producer.first], key, producer.second, dataStore);
-        } catch (const std::exception& exception) {
-            report(log, std::string("cannot restore checkpoint: ") + exception.what(), true);
-            runState.status = RunStatus::Failed;
-            saveScript(log);
-            return false;
-        }
-
-        Json reportJson;
+        if (!restoreCompletedOutputs(startIndex, checkpoint, log)) return false;
         try {
             reportJson = createRunReport(startIndex, steps, checkpoint, reportMetadata, reportPath);
         } catch (const std::exception& exception) {
@@ -253,130 +237,195 @@ namespace PipelineNs {
             saveScript(log);
             return false;
         }
+        return true;
+    }
 
-        // 4. Exécution des steps restants.
-        runState.status = RunStatus::Running;
-        saveScript(log);
-        for (size_t stepIndex = startIndex; stepIndex < stepCount; ++stepIndex) {
-            const auto& step = steps[stepIndex];
-            const std::string messagePrefix = "Step " + std::to_string(stepIndex + 1) + "/" + std::to_string(stepCount);
-            Json& stepReport = reportJson["steps"].at(stepIndex);
-
-            if (pauseRequested->exchange(false)) {   // pause demandée : arrêt propre entre deux steps
-                runState.status = RunStatus::Paused;
-                saveReportStatus(reportJson, "paused", reportPath, log);
-                saveScript(log);
-                report(log, messagePrefix + " paused", false);
-                return false;
-            }
-
-            step->setDataStore(dataStore);
-            Json stepInputs;
-            if (!reportPath.empty()) {
-                try {
-                    stepInputs = createStepInputs(*step, dataStore);
-                } catch (const std::exception& exception) {
-                    report(log, messagePrefix + " failed to capture report inputs: " + exception.what(), true);
-                    stepReport["status"] = "failed";
-                    stepReport["summary"] = "Impossible de documenter les entrées de l'étape.";
-                    stepReport["reason"] = exception.what();
-                    saveReportStatus(reportJson, "failed", reportPath, log);
-                    runState.status = RunStatus::Failed;
-                    saveScript(log);
-                    return false;
-                }
-                stepReport["status"] = "running";
-                stepReport["summary"] = "Étape en cours.";
-                stepReport["inputs"] = stepInputs;
-                try {
-                    writeReport(reportPath, reportJson);
-                } catch (const std::exception& exception) {
-                    report(log, messagePrefix + " failed to update execution report: " + exception.what(), true);
-                    runState.status = RunStatus::Failed;
-                    saveScript(log);
-                    return false;
-                }
-            }
-            bool succeeded = false;
-            std::string errorMessage;
-            try {
-                succeeded = step->execute();
-            } catch (const std::exception& exception) {   // une exception d'un step = un step en échec, pas un crash
-                errorMessage = exception.what();
-            }
-            if (!succeeded) {
-                const Json result = step->getResult();
-                std::string failureReason = errorMessage;
-                if (failureReason.empty()) {
-                    if (result.is_object() && result.contains("error")) {
-                        const Json& error = result.at("error");
-                        failureReason = error.is_string() ? error.get<std::string>() : error.dump();
-                    } else {
-                        failureReason = result.dump();
-                    }
-                }
-                std::string failureMessage = messagePrefix;
-                failureMessage += " failed: ";
-                failureMessage += failureReason;
-                report(log, failureMessage, true);
-                if (!reportPath.empty()) {
-                    stepReport["status"] = "failed";
-                    stepReport["summary"] = "L'étape a échoué.";
-                    stepReport["reason"] = failureReason;
-                    stepReport["result"] = result;
-                    saveReportStatus(reportJson, "failed", reportPath, log);
-                }
-                runState.status = RunStatus::Failed;
-                saveScript(log);
-                return false;   // reprise possible : completedSteps et checkpoints sont à jour
-            }
-
-            // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
-            std::string failureReason;
-            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason)) {
-                std::string warningMessage = messagePrefix;
-                warningMessage += " warning: checkpoint incomplete (";
-                warningMessage += failureReason;
-                warningMessage += "), this step will be redone on resume";
-                report(log, warningMessage, false);
-            }
-            if (!reportPath.empty()) {
-                try {
-                    stepReport = createStepReport(stepIndex, *step, dataStore, stepInputs);
-                    if (stepName(*step) == "export" && stepReport["result"].is_object() &&
-                        stepReport["result"].contains("image"))
-                        reportJson["output"] = {
-                            {"path", stepReport["result"]["image"].value("path", std::string())},
-                            {"dimensions", stepReport["result"].value("canvasSize", Json::array())}
-                        };
-                    writeReport(reportPath, reportJson);
-                } catch (const std::exception& exception) {
-                    report(log, messagePrefix + " failed to update execution report: " + exception.what(), true);
-                    runState.status = RunStatus::Failed;
-                    saveScript(log);
-                    return false;
-                }
-            }
-            runState.completedSteps.push_back(stepName(*step));
+    bool PipelineClass::restoreCompletedOutputs(size_t startIndex,
+                                                const CheckpointNs::CheckpointClass& checkpoint,
+                                                const Logger& log) {
+        std::map<std::string, std::pair<size_t, std::string>> latestOutputByKey;
+        for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
+            for (const ConfigNs::DataSlot& output : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
+                latestOutputByKey[output.key] = {stepIndex, output.dataType};
+        try {
+            for (const auto& [key, producer] : latestOutputByKey)
+                checkpoint.load(producer.first, *steps[producer.first], key, producer.second, dataStore);
+        } catch (const std::exception& exception) {
+            report(log, std::string("cannot restore checkpoint: ") + exception.what(), true);
+            runState.status = RunStatus::Failed;
             saveScript(log);
-            report(log, messagePrefix + " OK " + step->getResult().dump(), false);
+            return false;
         }
-        if (startIndex == stepCount && stepCount > 0) report(log, "nothing to do: all steps are already done", false);
-        runState.status = RunStatus::Completed;
+        return true;
+    }
+
+    bool PipelineClass::executeSteps(size_t startIndex, RunContext& context) {
+        for (size_t stepIndex = startIndex; stepIndex < context.stepCount; ++stepIndex) {
+            context.stepIndex = stepIndex;
+            context.messagePrefix = "Step " + std::to_string(stepIndex + 1) + "/" +
+                std::to_string(context.stepCount);
+            if (!executeStep(context)) return false;
+        }
+        return true;
+    }
+
+    bool PipelineClass::handlePause(RunContext& context) {
+        if (!pauseRequested->exchange(false)) return false;
+        runState.status = RunStatus::Paused;
+        saveReportStatus(context.reportJson, "paused", reportPath, context.log);
+        saveScript(context.log);
+        report(context.log, context.messagePrefix + " paused", false);
+        return true;
+    }
+
+    bool PipelineClass::captureStepInputs(RunContext& context) {
+        if (reportPath.empty()) return true;
+        try {
+            context.stepInputs = createStepInputs(*steps[context.stepIndex], dataStore);
+        } catch (const std::exception& exception) {
+            Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
+            report(context.log, context.messagePrefix + " failed to capture report inputs: " + exception.what(), true);
+            stepReport["status"] = "failed";
+            stepReport["summary"] = "Impossible de documenter les entrées de l'étape.";
+            stepReport["reason"] = exception.what();
+            saveReportStatus(context.reportJson, "failed", reportPath, context.log);
+            runState.status = RunStatus::Failed;
+            saveScript(context.log);
+            return false;
+        }
+        Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
+        stepReport["status"] = "running";
+        stepReport["summary"] = "Étape en cours.";
+        stepReport["inputs"] = context.stepInputs;
+        return writeRunningStepReport(context);
+    }
+
+    bool PipelineClass::writeRunningStepReport(RunContext& context) {
+        try {
+            writeReport(reportPath, context.reportJson);
+        } catch (const std::exception& exception) {
+            report(context.log, context.messagePrefix + " failed to update execution report: " + exception.what(), true);
+            runState.status = RunStatus::Failed;
+            saveScript(context.log);
+            return false;
+        }
+        return true;
+    }
+
+    bool PipelineClass::recordFailedStep(const std::string& failureReason, const Json& result,
+                                         RunContext& context) {
+        std::string failureMessage = context.messagePrefix;
+        failureMessage += " failed: ";
+        failureMessage += failureReason;
+        report(context.log, failureMessage, true);
+        if (!reportPath.empty()) {
+            Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
+            stepReport["status"] = "failed";
+            stepReport["summary"] = "L'étape a échoué.";
+            stepReport["reason"] = failureReason;
+            stepReport["result"] = result;
+            saveReportStatus(context.reportJson, "failed", reportPath, context.log);
+        }
+        runState.status = RunStatus::Failed;
+        saveScript(context.log);
+        return false;
+    }
+
+    bool PipelineClass::recordSuccessfulStep(RunContext& context) {
         if (!reportPath.empty()) {
             try {
-                reportJson["metadata"]["status"] = "completed";
-                reportJson["metadata"]["finishedAt"] = currentTimestamp();
-                writeReport(reportPath, reportJson);
+                Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
+                stepReport = createStepReport(context.stepIndex, *steps[context.stepIndex], dataStore,
+                                              context.stepInputs);
+                if (stepName(*steps[context.stepIndex]) == "export" && stepReport["result"].is_object() &&
+                    stepReport["result"].contains("image"))
+                    context.reportJson["output"] = {
+                        {"path", stepReport["result"]["image"].value("path", std::string())},
+                        {"dimensions", stepReport["result"].value("canvasSize", Json::array())}
+                    };
+                writeReport(reportPath, context.reportJson);
             } catch (const std::exception& exception) {
-                report(log, std::string("failed to finalize execution report: ") + exception.what(), true);
+                report(context.log, context.messagePrefix + " failed to update execution report: " +
+                                    exception.what(), true);
                 runState.status = RunStatus::Failed;
-                saveScript(log);
+                saveScript(context.log);
                 return false;
             }
         }
-        saveScript(log);
+        runState.completedSteps.push_back(stepName(*steps[context.stepIndex]));
+        saveScript(context.log);
+        report(context.log, context.messagePrefix + " OK " +
+                            steps[context.stepIndex]->getResult().dump(), false);
         return true;
+    }
+
+    bool PipelineClass::executeConfiguredStep(RunContext& context, std::string& errorMessage) {
+        try {
+            return steps[context.stepIndex]->execute();
+        } catch (const std::exception& exception) {
+            errorMessage = exception.what();
+            return false;
+        }
+    }
+
+    void PipelineClass::saveSuccessfulCheckpoint(RunContext& context) const {
+        std::string failureReason;
+        if (!context.checkpoint.enabled() ||
+            context.checkpoint.save(context.stepIndex, *steps[context.stepIndex], dataStore, failureReason)) return;
+        std::string warning = context.messagePrefix + " warning: checkpoint incomplete (";
+        warning += failureReason;
+        warning += "), this step will be redone on resume";
+        report(context.log, warning, false);
+    }
+
+    bool PipelineClass::executeStep(RunContext& context) {
+        if (handlePause(context)) return false;
+        steps[context.stepIndex]->setDataStore(dataStore);
+        if (!captureStepInputs(context)) return false;
+        std::string errorMessage;
+        const bool succeeded = executeConfiguredStep(context, errorMessage);
+        if (!succeeded) {
+            const Json result = steps[context.stepIndex]->getResult();
+            if (errorMessage.empty())
+                errorMessage = result.is_object() && result.contains("error")
+                    ? (result.at("error").is_string() ? result.at("error").get<std::string>() : result.at("error").dump())
+                    : result.dump();
+            return recordFailedStep(errorMessage, result, context);
+        }
+        saveSuccessfulCheckpoint(context);
+        return recordSuccessfulStep(context);
+    }
+
+    bool PipelineClass::finalizeRun(size_t startIndex, RunContext& context) {
+        if (startIndex == context.stepCount && context.stepCount > 0)
+            report(context.log, "nothing to do: all steps are already done", false);
+        runState.status = RunStatus::Completed;
+        try {
+            if (!reportPath.empty()) {
+                context.reportJson["metadata"]["status"] = "completed";
+                context.reportJson["metadata"]["finishedAt"] = currentTimestamp();
+                writeReport(reportPath, context.reportJson);
+            }
+        } catch (const std::exception& exception) {
+            report(context.log, std::string("failed to finalize execution report: ") + exception.what(), true);
+            runState.status = RunStatus::Failed;
+            saveScript(context.log);
+            return false;
+        }
+        saveScript(context.log);
+        return true;
+    }
+
+    bool PipelineClass::run(const Logger& log) {
+        const CheckpointNs::CheckpointClass checkpoint(runState.checkpointDirectory);
+        Json reportJson;
+        size_t startIndex = 0;
+        if (!prepareRun(startIndex, checkpoint, reportJson, log)) return false;
+        runState.status = RunStatus::Running;
+        saveScript(log);
+        RunContext context{checkpoint, reportJson, log, steps.size()};
+        if (!executeSteps(startIndex, context)) return false;
+        return finalizeRun(startIndex, context);
     }
 
 }
