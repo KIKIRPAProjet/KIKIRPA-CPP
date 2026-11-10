@@ -12,6 +12,12 @@
 
 namespace IONs {
 
+    struct PyramidViewportRequest {
+        cv::Point2d origin;
+        cv::Size viewportSize;
+        double zoomPercent = 100.0;
+    };
+
     struct PyramidViewportRegion {
         int level = 0;                           // niveau lu, 0 = résolution d'origine
         cv::Rect region;                         // rectangle lu dans les coordonnées de `level`
@@ -41,13 +47,11 @@ namespace IONs {
                 std::string& errorMessage
             ) const;
 
-            // Lit la zone visible. origin est en pixels pleine résolution; viewportSize est en
-            // pixels écran; zoomPercent est un facteur d'affichage (100 = 1 pixel source par
-            // pixel écran). Une partie du viewport hors image est tronquée.
+            // Lit la zone visible selon une origine pleine résolution, une taille écran et un
+            // facteur de zoom (100 = 1 pixel source par pixel écran). Les parties hors image
+            // sont tronquées.
             bool readViewport(
-                const cv::Point2d& origin,
-                const cv::Size& viewportSize,
-                double zoomPercent,
+                const PyramidViewportRequest& request,
                 PyramidViewportRegion& output,
                 std::string& errorMessage
             ) const;

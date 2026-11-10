@@ -278,9 +278,11 @@ void ArtworkCanvas::startMosaicRegionRead()
             IONs::PyramidViewportRegion viewport;
             std::string error;
             if (!reader.readViewport(
-                    cv::Point2d(origin.x(), origin.y()),
-                    cv::Size(viewportSize.width(), viewportSize.height()),
-                    zoomPercentValue, viewport, error)) {
+                    IONs::PyramidViewportRequest{
+                        cv::Point2d(origin.x(), origin.y()),
+                        cv::Size(viewportSize.width(), viewportSize.height()),
+                        zoomPercentValue},
+                    viewport, error)) {
                 result.errorMessage = QString::fromStdString(error);
                 return result;
             }

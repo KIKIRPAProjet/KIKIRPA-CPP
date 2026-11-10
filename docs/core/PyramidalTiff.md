@@ -154,9 +154,10 @@ IONs::PyramidViewportRegion result;
 std::string errorMessage;
 
 if (reader.readViewport(
-        originInFullResolution,
-        cv::Size(viewportWidth, viewportHeight),
-        zoomPercent,
+        IONs::PyramidViewportRequest{
+            originInFullResolution,
+            cv::Size(viewportWidth, viewportHeight),
+            zoomPercent},
         result,
         errorMessage)) {
     const cv::Rect2d& sourceRect = result.fullResolutionRegion;
