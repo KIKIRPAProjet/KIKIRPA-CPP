@@ -14,6 +14,7 @@
 #include "steps/export_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
+#include "steps/recouvrement_step.h"
 #include "steps/vote_2d_step.h"
 
 #include <cstddef>
@@ -43,6 +44,7 @@ namespace PipelineNs {
                 {"lightglue", [] { return std::make_unique<StepsNs::LightGlueStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
+                {"recouvrement", [] { return std::make_unique<StepsNs::RecouvrementStepClass>(); }},
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},

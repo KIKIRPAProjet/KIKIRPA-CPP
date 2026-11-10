@@ -237,6 +237,44 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(territories));
         }
 
+        void saveOverlapEstimates(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json estimatesJson = Json::array();
+            for (const DataNs::PairOverlapEstimate& entry : dataStore.get<DataNs::OverlapEstimates>(key)) {
+                estimatesJson.push_back({
+                    {"tileIdA", entry.tileIdA}, {"tileIdB", entry.tileIdB}, {"direction", directionName(entry.direction)},
+                    {"translationX", entry.estimate.translationBInA.x}, {"translationY", entry.estimate.translationBInA.y},
+                    {"overlapFraction", entry.estimate.overlapFraction}, {"peakRatio", entry.estimate.peakRatio},
+                    {"commonAreaInA", {entry.commonAreaInA.x, entry.commonAreaInA.y,
+                                        entry.commonAreaInA.width, entry.commonAreaInA.height}},
+                    {"commonAreaInB", {entry.commonAreaInB.x, entry.commonAreaInB.y,
+                                        entry.commonAreaInB.width, entry.commonAreaInB.height}}
+                });
+            }
+            writeJson(directory, key, estimatesJson);
+        }
+
+        void loadOverlapEstimates(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            DataNs::OverlapEstimates estimates;
+            for (const Json& entryJson : readJson(directory, key)) {
+                DataNs::PairOverlapEstimate entry;
+                entry.tileIdA = entryJson.at("tileIdA").get<int>();
+                entry.tileIdB = entryJson.at("tileIdB").get<int>();
+                entry.direction = readDirection(entryJson.at("direction").get<std::string>());
+                entry.estimate.translationBInA = {entryJson.at("translationX").get<double>(),
+                                                  entryJson.at("translationY").get<double>()};
+                entry.estimate.overlapFraction = entryJson.at("overlapFraction").get<float>();
+                entry.estimate.peakRatio = entryJson.at("peakRatio").get<double>();
+                const auto& areaA = entryJson.at("commonAreaInA");
+                entry.commonAreaInA = {areaA.at(0).get<int>(), areaA.at(1).get<int>(),
+                                       areaA.at(2).get<int>(), areaA.at(3).get<int>()};
+                const auto& areaB = entryJson.at("commonAreaInB");
+                entry.commonAreaInB = {areaB.at(0).get<int>(), areaB.at(1).get<int>(),
+                                       areaB.at(2).get<int>(), areaB.at(3).get<int>()};
+                estimates.push_back(std::move(entry));
+            }
+            dataStore.replace(key, std::move(estimates));
+        }
+
         // Sauvegarde du type "IntensityCorrection" : { tileGains, fieldStrength, isolatedTileIndices }.
         void saveIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             const auto& correction = dataStore.get<DataNs::IntensityCorrection>(key);
@@ -263,6 +301,7 @@ namespace CheckpointNs {
             {"Positions", {savePositions, loadPositions}},
             {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
+            {"OverlapEstimates", {saveOverlapEstimates, loadOverlapEstimates}},
             {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
         };
     }

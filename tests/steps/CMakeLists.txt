@@ -37,6 +37,11 @@ kikirpa_copy_onnxruntime_dlls(test_sift_step)
 target_link_libraries(test_sift_step PRIVATE kikirpa_backend GTest::gtest_main)
 gtest_discover_tests(test_sift_step PROPERTIES LABELS "unit")
 
+add_executable(test_recouvrement_step test_recouvrement_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_recouvrement_step)
+target_link_libraries(test_recouvrement_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_recouvrement_step PROPERTIES LABELS "unit")
+
 add_executable(test_vote_2d_step test_vote_2d_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_vote_2d_step)
 target_link_libraries(test_vote_2d_step PRIVATE kikirpa_backend GTest::gtest_main)
