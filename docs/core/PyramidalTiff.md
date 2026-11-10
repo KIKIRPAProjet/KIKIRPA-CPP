@@ -173,6 +173,14 @@ Le calcul d'un identifiant de requête reste à la charge de la vue : incrément
 pour chaque nouvelle demande et ignorer un résultat asynchrone si son identifiant n'est plus
 celui de la vue courante.
 
+Dans l'application Qt, le canevas du mode Export propose « Ouvrir mosaïque TIFF… ». Après
+ouverture, « Ajuster » affiche l'ensemble, les boutons ou la molette changent le zoom et un
+glisser-déposer déplace l'image. Chaque nouvelle vue utilise `readViewport` en tâche de fond;
+le résultat est dessiné à sa position pleine résolution et seules les réponses de la dernière
+demande sont appliquées. Pour que la vue d'ensemble utilise un niveau réduit, le fichier ouvert
+doit contenir une pyramide. Un TIFF à un seul niveau reste lisible, mais n'offre pas de niveau
+réduit distinct.
+
 ## Lecture par tuiles
 
 Le reader n'a pas besoin de charger tout le niveau en mémoire. Il :

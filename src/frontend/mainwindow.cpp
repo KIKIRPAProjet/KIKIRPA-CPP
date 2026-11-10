@@ -213,9 +213,7 @@ void MainWindow::setupMenuConnections()
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
-        zoomPercent = 100;
-        workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->fitMosaicToView();
     });
     connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
         setMode(mode);

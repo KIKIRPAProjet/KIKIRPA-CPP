@@ -13,6 +13,7 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QFileDialog>
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
@@ -90,15 +91,21 @@ void WorkspaceCenter::createCanvasAndControls()
     
     m_zoomLabel = new QLabel(QStringLiteral("12,4 %"));
     m_zoomLabel->setMinimumWidth(48);
+    m_canvas->setZoomChangedCallback([this](int zoom) {
+        m_mainWindow->zoomPercent = zoom;
+        m_zoomLabel->setText(QString::number(zoom) + QStringLiteral(" %"));
+    });
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
     auto *oneToOne = FrontendUtils::makeButton(QStringLiteral("100 %"), canvasControls);
+    auto *openMosaic = FrontendUtils::makeButton(tr("Ouvrir mosaïque TIFF…"), canvasControls);
     
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
     canvasControlsLayout->addWidget(m_zoomLabel);
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
+    canvasControlsLayout->addWidget(openMosaic);
     canvasControlsLayout->addStretch();
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
@@ -113,13 +120,30 @@ void WorkspaceCenter::createCanvasAndControls()
         m_canvas->setZoom(m_mainWindow->zoomPercent);
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
-        m_zoomLabel->setText(tr("Ajuster"));
-        m_canvas->setZoom(100);
+        m_canvas->fitMosaicToView();
     });
     connect(oneToOne, &QPushButton::clicked, this, [this]() {
         m_mainWindow->zoomPercent = 100;
         m_zoomLabel->setText(QStringLiteral("100 %"));
         m_canvas->setZoom(m_mainWindow->zoomPercent);
+    });
+    connect(openMosaic, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Ouvrir une mosaïque TIFF"), QString(),
+            tr("Images TIFF (*.tif *.tiff)"));
+        if (path.isEmpty())
+            return;
+
+        QString errorMessage;
+        if (!m_canvas->setMosaicTiff(path, &errorMessage)) {
+            QMessageBox::warning(this, tr("Ouverture impossible"),
+                tr("La mosaïque TIFF n’a pas pu être ouverte :\n%1").arg(errorMessage));
+            return;
+        }
+
+        m_mainWindow->setMode(5);
+        m_mainWindow->updateStatus(
+            tr("Mosaïque ouverte : %1").arg(QFileInfo(path).fileName()));
     });
 
 }
