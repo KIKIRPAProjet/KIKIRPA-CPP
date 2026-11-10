@@ -156,16 +156,18 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
                    tr("Masque d'exclusion — proposition"));
     } else if (modeValue == kModeAssembly || modeValue == kModeExport) {
-        p.setPen(QPen(QColor("#df4038"), 2));
-        QPainterPath seam;
-        seam.moveTo(x0 + imageW * 0.72, y0);
-        seam.cubicTo(x0 + imageW * 0.68, y0 + imageH * .20,
-                     x0 + imageW * .83, y0 + imageH * .29,
-                     x0 + imageW * .65, y0 + imageH * .44);
-        seam.cubicTo(x0 + imageW * .58, y0 + imageH * .70,
-                     x0 + imageW * .76, y0 + imageH * .76,
-                     x0 + imageW * .69, y0 + imageH);
-        p.drawPath(seam);
+        if(seamVisible){
+            p.setPen(QPen(QColor("#df4038"), 2));
+            QPainterPath seam;
+            seam.moveTo(x0 + imageW * 0.72, y0);
+            seam.cubicTo(x0 + imageW * 0.68, y0 + imageH * .20,
+                        x0 + imageW * .83, y0 + imageH * .29,
+                        x0 + imageW * .65, y0 + imageH * .44);
+            seam.cubicTo(x0 + imageW * .58, y0 + imageH * .70,
+                        x0 + imageW * .76, y0 + imageH * .76,
+                        x0 + imageW * .69, y0 + imageH);
+            p.drawPath(seam);
+        }
         if (comparison) {
             p.setPen(QPen(QColor("#f0cf36"), 2));
             p.drawLine(x0 + imageW / 2, y0, x0 + imageW / 2, y0 + imageH);
@@ -180,4 +182,12 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                QString::number(zoomPercent) + QStringLiteral(" %"));
+}
+
+void ArtworkCanvas::setSeamVisible(bool visible)
+{
+    if(seamVisible != visible){
+        seamVisible = visible;
+        update();
+    }
 }
