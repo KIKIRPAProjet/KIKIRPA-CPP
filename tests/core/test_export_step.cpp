@@ -10,6 +10,7 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -131,6 +132,7 @@ TEST(ExportStepTest, WritesOnlyTheCompositeMosaic) {
     EXPECT_EQ(output.canvasSize, cv::Size(2, 2));
     EXPECT_EQ(output.blockCount, 1u);
     EXPECT_EQ(output.imagePath, temporaryDirectory.path / "mosaic.tif");
+    EXPECT_EQ(output.jpegPath, temporaryDirectory.path / "mosaic.jpg");
     EXPECT_FALSE(output.isBigTiff);
 
     const TiffTileReadResult tiff = readFirstTiffTile(output.imagePath);
@@ -142,11 +144,16 @@ TEST(ExportStepTest, WritesOnlyTheCompositeMosaic) {
     EXPECT_EQ(pixel[0], TEST_PIXEL_VALUES[3]);
     EXPECT_EQ(pixel[1], TEST_PIXEL_VALUES[4]);
     EXPECT_EQ(pixel[2], TEST_PIXEL_VALUES[5]);
+    const cv::Mat jpeg = cv::imread(output.jpegPath.string(), cv::IMREAD_COLOR);
+    ASSERT_FALSE(jpeg.empty());
+    EXPECT_EQ(jpeg.size(), cv::Size(2, 2));
+    EXPECT_EQ(jpeg.type(), CV_8UC3);
 
     std::vector<std::string> filesInOutput;
     for (const fs::directory_entry& entry : fs::directory_iterator(temporaryDirectory.path))
         filesInOutput.push_back(entry.path().filename().string());
-    EXPECT_EQ(filesInOutput, std::vector<std::string>{"mosaic.tif"});
+    std::sort(filesInOutput.begin(), filesInOutput.end());
+    EXPECT_EQ(filesInOutput, (std::vector<std::string>{"mosaic.jpg", "mosaic.tif"}));
 }
 
 TEST(ExportStepTest, RejectsIncompleteBlockGrid) {

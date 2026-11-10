@@ -4,7 +4,7 @@ Code : [export_step.h](../../include/backend/steps/export_step.h) / [export_step
 
 ## Rôle
 
-Dernier step du pipeline. Il écrit uniquement l'image composite produite par l'assemblage dans un fichier TIFF. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé.
+Dernier step du pipeline. Il écrit l'image composite produite par l'assemblage dans un TIFF pleine résolution et un aperçu JPEG. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé.
 
 ## Contrat
 
@@ -26,17 +26,17 @@ Les rectangles doivent former une grille complète alignée sur `DataNs::BLOCK_S
 
 ## Fichier produit
 
-Le seul fichier créé ou remplacé par le step est `mosaic.tif`, une image couleur 16 bits à trois canaux. Le TIFF est tuilé en blocs de 512 × 512 pixels, pleine résolution uniquement et compressé en LZW. Le TIFF classique ou BigTIFF est choisi selon une estimation conservatrice de la taille.
+Le step crée ou remplace `mosaic.tif`, une image couleur 16 bits à trois canaux, et `mosaic.jpg`, une version couleur 8 bits avec une qualité JPEG de 95. Le TIFF est tuilé en blocs de 512 × 512 pixels, pleine résolution uniquement et compressé en LZW. Le TIFF classique ou BigTIFF est choisi selon une estimation conservatrice de la taille.
 
 Le fichier est d'abord écrit sous un nom temporaire, puis publié en remplacement du fichier de destination afin qu'une erreur d'écriture ne détruise pas la mosaïque existante. Les éventuels fichiers annexes provenant d'anciennes exécutions ne sont pas supprimés automatiquement.
 
-`getOutput()` fournit le chemin final, les dimensions inférées de la mosaïque, le nombre de blocs et l'indication TIFF/BigTIFF. `getResult()` résume ces informations pour le journal du pipeline.
+`getOutput()` fournit les chemins finaux, les dimensions inférées de la mosaïque, le nombre de blocs et l'indication TIFF/BigTIFF. `getResult()` résume ces informations pour le journal du pipeline.
 
 ## Échecs et reprise
 
 Le step échoue avec `result["error"]` si l'entrée manque, si les blocs sont vides, mal typés, mal dimensionnés, dupliqués ou si la grille est incomplète, ou si la création/l'écriture du fichier échoue. Le répertoire de sortie est créé s'il n'existe pas.
 
-L'empreinte de reprise suit l'existence, la taille et la date de modification de `mosaic.tif`. Si le fichier est supprimé ou modifié, le checkpoint de ce step est considéré périmé.
+L'empreinte de reprise suit l'existence, la taille et la date de modification de `mosaic.tif` et `mosaic.jpg`. Si l'un des fichiers est supprimé ou modifié, le checkpoint de ce step est considéré périmé.
 
 Le checkpoint ne sérialise pas actuellement `CompositeBlockList`. Un producteur qui déclare cette sortie aura un checkpoint incomplet et sera rejoué à la reprise. Ajouter une sérialisation des blocs serait coûteux et doit être décidé avec le contrat de Fusion, plutôt que d'écrire implicitement les matrices dans le JSON du checkpoint.
 

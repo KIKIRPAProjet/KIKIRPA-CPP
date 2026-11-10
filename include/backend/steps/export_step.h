@@ -20,17 +20,17 @@ namespace StepsNs {
 
     struct ExportOutput {
         std::filesystem::path imagePath;   // TIFF composite
+        std::filesystem::path jpegPath;    // JPEG aperçu
         cv::Size canvasSize;               // dimensions globales en pixels
         std::size_t blockCount = 0;        // blocs écrits
         bool isBigTiff = false;
     };
 
-    // Écrit les blocs composites dans un unique TIFF tuilé (TIFF classique ou BigTIFF
-    // selon la taille estimée).
+    // Écrit les blocs composites dans un TIFF tuilé et un aperçu JPEG.
     //
     // Nom : "export". Paramètre : outputDirectory (string, vide = Téléchargements).
     // Entrée : "CompositeBlocks" ("compositeBlocks").
-    // Sortie de fichier : mosaic.tif.
+    // Sorties de fichiers : mosaic.tif et mosaic.jpg.
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 

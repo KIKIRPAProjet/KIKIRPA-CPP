@@ -13,6 +13,8 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -24,6 +26,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <memory>
@@ -64,7 +67,8 @@ namespace StepsNs {
         };
 
         struct OutputPaths {
-            fs::path image;
+            fs::path tiff;
+            fs::path jpeg;
         };
 
         struct PendingFile {
@@ -92,7 +96,7 @@ namespace StepsNs {
         }
 
         OutputPaths makeOutputPaths(const fs::path& directory) {
-            return {directory / "mosaic.tif"};
+            return {directory / "mosaic.tif", directory / "mosaic.jpg"};
         }
 
         fs::path temporaryPath(const fs::path& path) {
@@ -128,7 +132,8 @@ namespace StepsNs {
                 errorMessage = "composite canvas dimensions exceed the supported range";
                 return false;
             }
-            const auto gridPosition = std::make_pair(rectangle.x / DataNs::BLOCK_SIZE, rectangle.y / DataNs::BLOCK_SIZE);
+            const auto gridPosition =
+                std::make_pair(rectangle.x / DataNs::BLOCK_SIZE, rectangle.y / DataNs::BLOCK_SIZE);
             if (!grid.blocks.emplace(gridPosition, &block).second) {
                 errorMessage = "multiple composite blocks occupy the same grid position";
                 return false;
@@ -276,6 +281,37 @@ namespace StepsNs {
             return true;
         }
 
+        bool writeImageJpeg(const BlockIndex& blockByGridPosition, cv::Size canvasSize,
+                            const fs::path& outputPath, std::string& errorMessage) {
+            cv::Mat imageRgb = cv::Mat::zeros(canvasSize, CV_8UC3);
+            for (const auto& entry : blockByGridPosition) {
+                const DataNs::CompositeBlock& block = *entry.second;
+                cv::Mat image8;
+                block.imageRgb.convertTo(image8, CV_8UC3, 1.0 / 257.0);
+                cv::Mat imageBgr;
+                cv::cvtColor(image8, imageBgr, cv::COLOR_RGB2BGR);
+                imageBgr.copyTo(imageRgb(cv::Rect(block.blockRect.x, block.blockRect.y,
+                                                  block.blockRect.width, block.blockRect.height)));
+            }
+            std::vector<std::uint8_t> encoded;
+            if (!cv::imencode(".jpg", imageRgb, encoded, {cv::IMWRITE_JPEG_QUALITY, 95})) {
+                errorMessage = "cannot write JPEG '" + outputPath.string() + "'";
+                return false;
+            }
+            std::ofstream outputFile(outputPath, std::ios::binary);
+            if (!outputFile) {
+                errorMessage = "cannot open output JPEG '" + outputPath.string() + "'";
+                return false;
+            }
+            outputFile.write(reinterpret_cast<const char*>(encoded.data()),
+                             static_cast<std::streamsize>(encoded.size()));
+            if (!outputFile) {
+                errorMessage = "cannot write JPEG '" + outputPath.string() + "'";
+                return false;
+            }
+            return true;
+        }
+
         void publishFile(const PendingFile& file) {
 #ifdef _WIN32
             if (!MoveFileExW(file.temporaryPath.c_str(), file.destinationPath.c_str(),
@@ -286,7 +322,9 @@ namespace StepsNs {
 #else
             std::error_code errorCode;
             fs::rename(file.temporaryPath, file.destinationPath, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot replace output", file.temporaryPath, file.destinationPath, errorCode);
+            if (errorCode)
+                throw fs::filesystem_error("cannot replace output", file.temporaryPath,
+                                           file.destinationPath, errorCode);
 #endif
         }
 
@@ -301,21 +339,24 @@ namespace StepsNs {
         };
 
         Json outputFingerprint(const OutputPaths& paths) {
-            const fs::path& path = paths.image;
-            std::error_code errorCode;
-            const bool exists = fs::exists(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot inspect export output", path, errorCode);
-            if (!exists) {
-                return {{"path", path.u8string()}, {"exists", false}};
-            }
-            const std::uintmax_t fileSize = fs::file_size(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output size", path, errorCode);
-            const auto modifiedTime = fs::last_write_time(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output time", path, errorCode);
-            return {{"path", path.u8string()},
-                    {"exists", true},
-                    {"size", fileSize},
-                    {"modified", modifiedTime.time_since_epoch().count()}};
+            auto fingerprintFile = [](const fs::path& path) {
+                std::error_code errorCode;
+                const bool exists = fs::exists(path, errorCode);
+                if (errorCode) throw fs::filesystem_error("cannot inspect export output", path, errorCode);
+                Json file = {{"path", path.u8string()}, {"exists", exists}};
+                if (exists) {
+                    const std::uintmax_t fileSize = fs::file_size(path, errorCode);
+                    if (errorCode) throw fs::filesystem_error("cannot read export output size", path, errorCode);
+                    const auto modifiedTime = fs::last_write_time(path, errorCode);
+                    if (errorCode) throw fs::filesystem_error("cannot read export output time", path, errorCode);
+                    file["size"] = fileSize;
+                    file["modified"] = modifiedTime.time_since_epoch().count();
+                }
+                return file;
+            };
+            Json fingerprint = fingerprintFile(paths.tiff);
+            fingerprint["jpeg"] = fingerprintFile(paths.jpeg);
+            return fingerprint;
         }
 
         fs::path configuredOutputDirectory(const Json& configJson) {
@@ -339,6 +380,16 @@ namespace StepsNs {
             return true;
         }
 
+        bool writeJpegOutputFile(const BlockIndex& blocks, cv::Size canvasSize, const fs::path& destination,
+                                 std::string& errorMessage) {
+            const PendingFile pendingFile{temporaryPath(destination), destination};
+            TemporaryFileCleanup cleanup;
+            cleanup.paths.push_back(pendingFile.temporaryPath);
+            if (!writeImageJpeg(blocks, canvasSize, pendingFile.temporaryPath, errorMessage)) return false;
+            publishFile(pendingFile);
+            return true;
+        }
+
         bool prepareOutputDirectory(const Json& config, fs::path& directory, Json& result) {
             directory = configuredOutputDirectory(config);
             std::error_code directoryError;
@@ -351,8 +402,10 @@ namespace StepsNs {
 
         void recordExportSuccess(const OutputPaths& paths, const DataNs::CompositeBlockList& blocks,
                                  ExportOutput& output, Json& result) {
-            output.imagePath = paths.image;
-            result["image"] = {{"path", paths.image.u8string()}, {"bigTiff", output.isBigTiff}};
+            output.imagePath = paths.tiff;
+            output.jpegPath = paths.jpeg;
+            result["image"] = {{"path", paths.tiff.u8string()}, {"bigTiff", output.isBigTiff}};
+            result["jpeg"] = {{"path", paths.jpeg.u8string()}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             output.blockCount = blocks.size();
             result["blockCount"] = output.blockCount;
@@ -370,8 +423,13 @@ namespace StepsNs {
             if (!prepareOutputDirectory(config, directory, result)) return false;
             const OutputPaths paths = makeOutputPaths(directory);
             TiffWriteStatus writeStatus;
-            if (!writeOutputFile(blockByGridPosition, output.canvasSize, paths.image, writeStatus)) {
+            if (!writeOutputFile(blockByGridPosition, output.canvasSize, paths.tiff, writeStatus)) {
                 result["error"] = writeStatus.errorMessage;
+                return false;
+            }
+            std::string jpegError;
+            if (!writeJpegOutputFile(blockByGridPosition, output.canvasSize, paths.jpeg, jpegError)) {
+                result["error"] = jpegError;
                 return false;
             }
             output.isBigTiff = writeStatus.isBigTiff;
