@@ -9,9 +9,11 @@
 
 namespace StepsNs {
 
+    constexpr float DEFAULT_OVERLAP = 0.2f;
+
     // Paramètres de l'estimation des zones de recouvrement.
     struct RecouvrementInput {
-        float overlap = 0.2f;
+        float overlap = DEFAULT_OVERLAP;
         PhaseCorrelationNs::Parameters parameters;
     };
 
@@ -32,6 +34,7 @@ namespace StepsNs {
             const RecouvrementOutput& getOutput() const { return output; }
 
         private:
+            bool estimatePairs(float overlap, const PhaseCorrelationNs::Parameters& parameters);
             RecouvrementOutput output;
 
     };

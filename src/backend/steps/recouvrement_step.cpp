@@ -3,9 +3,11 @@
 
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "steps/phase_correlation_step.h"
 
+#include <opencv2/core/mat.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -108,24 +110,25 @@ namespace StepsNs {
             parameters.minimumPeakRatio = getParameter("minimumPeakRatio").get<float>();
             parameters.railMargin = getParameter("railMargin").get<float>();
             parameters.minimumValidFraction = getParameter("minimumValidFraction").get<float>();
-            OverlapEstimationNs::OverlapEstimatorClass estimator(parameters);
-
-            const auto pairs = findNeighbourPairs(dataStore->get<DataNs::TileList>("tiles"));
-            if (pairs.empty()) throw std::runtime_error("recouvrement: no neighboring tile pairs");
-
-            for (const NeighbourPair& pair : pairs) {
-                const auto estimate = estimatePair(pair, overlap, estimator, result["failures"]);
-                if (!estimate.commonAreaInA.empty()) output.value.push_back(estimate);
-            }
-            result["pairs"] = output.value.size();
-            if (output.value.empty()) throw std::runtime_error("recouvrement: no pair could be estimated");
-
-            dataStore->replace(output.key, output.value);
-            return true;
+            return estimatePairs(overlap, parameters);
         } catch (const std::exception& exception) {
             result["error"] = exception.what();
             return false;
         }
+    }
+
+    bool RecouvrementStepClass::estimatePairs(float overlap, const PhaseCorrelationNs::Parameters& parameters) {
+        OverlapEstimationNs::OverlapEstimatorClass estimator(parameters);
+        const auto pairs = findNeighbourPairs(dataStore->get<DataNs::TileList>("tiles"));
+        if (pairs.empty()) throw std::runtime_error("recouvrement: no neighboring tile pairs");
+        for (const NeighbourPair& pair : pairs) {
+            const auto estimate = estimatePair(pair, overlap, estimator, result["failures"]);
+            if (!estimate.commonAreaInA.empty()) output.value.push_back(estimate);
+        }
+        result["pairs"] = output.value.size();
+        if (output.value.empty()) throw std::runtime_error("recouvrement: no pair could be estimated");
+        dataStore->replace(output.key, output.value);
+        return true;
     }
 
 }

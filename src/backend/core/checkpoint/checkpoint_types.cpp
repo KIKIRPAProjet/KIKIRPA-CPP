@@ -270,7 +270,7 @@ namespace CheckpointNs {
                 const auto& areaB = entryJson.at("commonAreaInB");
                 entry.commonAreaInB = {areaB.at(0).get<int>(), areaB.at(1).get<int>(),
                                        areaB.at(2).get<int>(), areaB.at(3).get<int>()};
-                estimates.push_back(std::move(entry));
+                estimates.push_back(entry);
             }
             dataStore.replace(key, std::move(estimates));
         }
