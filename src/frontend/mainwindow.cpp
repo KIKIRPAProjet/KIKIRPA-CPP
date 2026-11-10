@@ -13,38 +13,45 @@
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
 //  implemente la fenetre principale de lapplication
+
+// src/frontend/mainwindow.cpp
 #include "mainwindow.h"
+
 #include "artworkcanvas.h"
+#include "core/pipeline/pipeline_builder.h"
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
 #include "menubar_manager.h"
-#include "projectgrid.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
+#include "projectgrid.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
 
+#include <nlohmann/json.hpp>
+
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QKeyEvent>
+#include <QFontMetrics>
+#include <QFrame>
 #include <QImage>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
-#include <QAbstractItemView>
-#include <QFontMetrics>
-#include <QFrame>
-#include <QPixmap>
 #include <QtMath>
-#include <functional>
+
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -54,6 +61,25 @@
 #include <windows.h>
 #endif
 
+namespace {
+
+    // Noms techniques des étapes réelles enregistrées dans le registre backend (PipelineBuilder).
+    const std::vector<std::string> BACKEND_STEP_NAMES = {
+        "import", "phase-correlation", "absolute-pos", "intensity-correction", "graphcut"
+    };
+
+    // Construit la liste ordonnée des 5 étapes du pipeline backend avec leurs paramètres nominaux.
+    nlohmann::json makePipelineSteps(const std::filesystem::path& inputDirectory, double overlapFraction) {
+        return nlohmann::json::array({
+            {{"name", "import"}, {"parameters", {{{"name", "path"}, {"valueType", "string"}, {"value", inputDirectory.string()}}}}},
+            {{"name", "phase-correlation"}, {"parameters", {{{"name", "overlap"}, {"valueType", "float"}, {"value", static_cast<float>(overlapFraction)}}}}},
+            {{"name", "absolute-pos"}, {"parameters", {{{"name", "referenceTileId"}, {"valueType", "int"}, {"value", 0}}}}},
+            {{"name", "intensity-correction"}, {"parameters", nlohmann::json::array()}},
+            {{"name", "graphcut"}, {"parameters", nlohmann::json::array()}}
+        });
+    }
+
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -486,23 +512,70 @@ void MainWindow::saveProject()
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
+QString MainWindow::generatePipelineScript(int firstStep)
+const {
+    namespace fs = std::filesystem;
+    const auto& gridState = projectGrid->state();
+
+    // Détermine les dossiers d'entrée et de sortie (avec le sous-dossier dédié aux checkpoints).
+    const fs::path inputDir = gridState.tileDirectory.isEmpty()
+        ? fs::current_path()
+        : fs::u8path(gridState.tileDirectory.toStdString());
+    const fs::path outDir = outputDirectory.isEmpty()
+        ? (inputDir / "output")
+        : fs::u8path(outputDirectory.toStdString());
+    const fs::path checkpointDir = outDir / "checkpoints";
+
+    // Convertit le taux de recouvrement en fraction et définit l'étape de départ pour une relance ciblée.
+    const double overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
+    const std::string startStep = (firstStep > 1 && firstStep <= static_cast<int>(BACKEND_STEP_NAMES.size()))
+        ? BACKEND_STEP_NAMES[firstStep - 1] : "";
+
+    const nlohmann::json script = {
+        {"pipeline", {{"steps", makePipelineSteps(inputDir, overlap)}}},
+        {"run", {{"status", "idle"}, {"completedSteps", nlohmann::json::array()},
+                 {"skipCompletedSteps", true}, {"startFromStep", startStep},
+                 {"checkpointDirectory", checkpointDir.string()}}}
+    };
+
+    // Valide la cohérence des étapes et des types avant de créer le worker asynchrone.
+    try {
+        static_cast<void>(PipelineNs::buildPipeline(script));
+    } catch (const std::exception& exception) {
+        QMessageBox::critical(nullptr, tr("Erreur de configuration"),
+            tr("Pipeline invalide : %1").arg(exception.what()));
+        return QString();
+    }
+    return QString::fromStdString(script.dump(2));
+}
+
 void MainWindow::requestRun(int firstStep)
 {
     if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+        updateStatus(tr("Une exécution du pipeline est déjà en cours."));
         return;
     }
+    // Vérification préalable : au moins une tuile doit être chargée dans la grille.
     if (projectGrid->state().tilePaths.isEmpty()) {
-        const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
-            tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer != QMessageBox::Yes)
-            return;
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de lancer le pipeline de calcul."));
+        return;
     }
-    if (firstStep > 1) {
-        if (!DialogHelpers::confirmRunRestart(this, firstStep))
-            return;
+    // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep)) {
+        return;
     }
+
+    // Génère et valide le script complet destiné au backend.
+    const QString scriptJson = generatePipelineScript(firstStep);
+    if (scriptJson.isEmpty()) return;
+
+    const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(BACKEND_STEP_NAMES.size()))
+        ? QString::fromStdString(BACKEND_STEP_NAMES[firstStep - 1]) : QString();
+
+    // Transmet la configuration à la façade asynchrone puis démarre le calcul.
+    simulationRunner->setScriptJson(scriptJson);
+    simulationRunner->setStartFromStepName(startStep);
     simulationRunner->startRun(firstStep);
 }
 
