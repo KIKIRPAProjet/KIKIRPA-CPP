@@ -116,15 +116,21 @@ namespace {
                 StepsNs::GraphCutInput input;
                 input.scale = scale;
                 for (const TileSpec& spec : specs) {
-                    const std::string path = (tileDirectory / ("tile_" + spec.id + ".tif")).string();
+                    // spec.id est sous la forme "rLL_cCC" (ex: "r00_c01")
+                    // Le backend exige un nom de fichier terminant par _C<colonne>_R<ligne>.tif
+                    std::string row = spec.id.substr(1, 2);
+                    std::string col = spec.id.substr(4, 2);
+                    std::string fileName = "tile_C" + col + "_R" + row + ".tif";
+                    
+                    const std::string path = (tileDirectory / fileName).string();
                     const bool isWritten = cv::imwrite(path, makeTileImage(spec));
                     EXPECT_TRUE(isWritten) << "Unable to write " << path;
+                    
                     input.tilePaths.push_back(path);
                     input.positions.push_back({spec.id, cv::Point2d(spec.position.x, spec.position.y)});
                 }
                 return input;
             }
-
             std::filesystem::path tileDirectory;
 
     };
