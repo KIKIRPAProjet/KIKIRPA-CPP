@@ -35,16 +35,16 @@ SimulationRunner::SimulationRunner(QObject *parent)
         pipeline.reset();
 
         if (status == PipelineNs::RunStatus::Paused) {
-            emit stepChanged(tr("Annulée"));
+            emit stepChanged(0, tr("Annulée"));
             emit statusChanged(tr("Exécution interrompue entre deux étapes."));
             emit runCancelled();
         } else if (succeeded) {
             emit progressAdvanced(100);
-            emit stepChanged(tr("Terminé"));
+            emit stepChanged(0, tr("Terminé"));
             emit statusChanged(tr("Exécution terminée. Le rapport est archivé."));
             emit runFinished();
         } else {
-            emit stepChanged(tr("Échec"));
+            emit stepChanged(0, tr("Échec"));
             emit statusChanged(tr("L'exécution a échoué. Consultez le rapport archivé pour le motif."));
             emit runFailed(tr("Le pipeline a échoué. Le rapport d'exécution contient le motif disponible."));
         }
@@ -98,7 +98,6 @@ void SimulationRunner::startRun(int firstStep, const QString &scriptPath,
             if (!output)
                 throw std::runtime_error("Impossible d'écrire la configuration archivée.");
         }
-
         auto newPipeline = std::make_shared<PipelineNs::PipelineClass>(
             PipelineNs::buildPipeline(sourceJson));
         PipelineNs::RunState runState;
@@ -122,7 +121,9 @@ void SimulationRunner::startRun(int firstStep, const QString &scriptPath,
         watcher->setFuture(QtConcurrent::run([this, currentPipeline]() {
             try {
                 return currentPipeline->run([this, currentPipeline](const std::string &message) {
-                    emit statusChanged(QString::fromUtf8(message.c_str()));
+                    const QString statusMessage = QString::fromUtf8(message.c_str());
+                    emit statusChanged(statusMessage);
+                    emit logMessage(statusMessage);
 
                     std::size_t stepNumber = 0;
                     std::size_t stepCount = 0;
@@ -130,7 +131,8 @@ void SimulationRunner::startRun(int firstStep, const QString &scriptPath,
                         stepNumber > 0 && stepNumber <= currentPipeline->getSteps().size()) {
                         const auto &step = currentPipeline->getSteps()[stepNumber - 1];
                         const PipelineNs::Json config = step->getConfigJson();
-                        emit stepChanged(QString::fromStdString(config.value("name", std::string())));
+                        emit stepChanged(static_cast<int>(stepNumber),
+                                         QString::fromStdString(config.value("name", std::string())));
                         if (stepCount > 0)
                             emit progressAdvanced(static_cast<int>((stepNumber - 1) * 100 / stepCount));
                         if (message.find(" OK ") != std::string::npos && stepCount > 0)

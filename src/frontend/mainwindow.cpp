@@ -152,7 +152,10 @@ void MainWindow::setupSimulationConnections()
     connect(simulationRunner, &SimulationRunner::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
     connect(simulationRunner, &SimulationRunner::stepChanged,
-            workspaceUI->currentStepLabel(), &QLabel::setText);
+            this, [this](int stepNumber, const QString &stepName) {
+                workspaceUI->currentStepLabel()->setText(stepName);
+                workspaceUI->setActiveStep(stepNumber);
+    });
     connect(simulationRunner, &SimulationRunner::statusChanged,
             this, &MainWindow::updateStatus);
     connect(simulationRunner, &SimulationRunner::cancellationAvailable,
@@ -170,6 +173,16 @@ void MainWindow::setupSimulationConnections()
     connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
+    });
+    connect(simulationRunner, &SimulationRunner::logMessage,
+            workspaceUI, &WorkspaceUI::appendLog);
+    connect(simulationRunner, &SimulationRunner::mosaicReady,
+            this, [this](const QImage &image) {
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                    canvas->setMosaicPreview(image);
+                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    updateStatus(tr("Mosaïque finale générée (simulation)."));
+                }
     });
 }
 

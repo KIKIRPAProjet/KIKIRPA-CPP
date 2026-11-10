@@ -9,6 +9,8 @@
 template <typename T>
 class QFutureWatcher;
 
+class QImage;
+
 namespace PipelineNs {
 class PipelineClass;
 }
@@ -36,7 +38,7 @@ public slots:
 signals:
     void runStarted();
     void progressAdvanced(int percentage);
-    void stepChanged(const QString &stepName);
+    void stepChanged(int stepNumber, const QString &stepName);
     void runFinished();
     void runCancelled();
     void runFailed(const QString &message);
@@ -44,6 +46,8 @@ signals:
     void statusChanged(const QString &message);
     void comparisonRequested();
     void comparisonVisibilityChanged(bool visible);
+    void logMessage(const QString &message);
+    void mosaicReady(const QImage &image);
 
 private:
     QFutureWatcher<bool> *watcher = nullptr;
