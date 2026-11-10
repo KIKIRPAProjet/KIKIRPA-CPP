@@ -5,7 +5,8 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | Pour… | Lire |
 |---|---|
 | comprendre le projet dans son ensemble | **ce guide** |
-| compiler | [BUILD.md](BUILD.md) |
+| installer le projet sur son poste et lancer l'application | [DEMARRER.md](DEMARRER.md) |
+| compiler : dépendances et options | [BUILD.md](BUILD.md) |
 | trouver un fichier dans le code | [CARTE_ARCHITECTURE.md](CARTE_ARCHITECTURE.md) |
 | écrire du code et ouvrir une PR | [CONVENTIONS.md](CONVENTIONS.md) |
 | le format du script et les checkpoints en détail | [core/Pipeline.md](core/Pipeline.md) |
