@@ -160,7 +160,7 @@ namespace {
     }
 
     // Ajoute un entier au payload EXIF dans l'ordre des octets annoncé par son en-tête TIFF.
-    void appendExifInteger(std::vector<std::uint8_t>& payload, std::uint32_t value, std::size_t byteCount,
+    void appendExifInteger(std::vector<std::uint8_t>& payload, std::size_t byteCount, std::uint32_t value,
                            bool littleEndian) {
         for (std::size_t index = 0; index < byteCount; ++index) {
             const std::size_t shiftIndex = littleEndian ? index : byteCount - index - 1;
@@ -173,22 +173,22 @@ namespace {
         std::vector<std::uint8_t> payload{'E', 'x', 'i', 'f', 0, 0};
         payload.push_back(littleEndian ? 'I' : 'M');
         payload.push_back(littleEndian ? 'I' : 'M');
-        appendExifInteger(payload, TEST_EXIF_TIFF_MAGIC, 2, littleEndian);
-        appendExifInteger(payload, TEST_EXIF_FIRST_IFD_OFFSET, 4, littleEndian);
-        appendExifInteger(payload, truncated ? 1 : 2, 2, littleEndian);
+        appendExifInteger(payload, 2, TEST_EXIF_TIFF_MAGIC, littleEndian);
+        appendExifInteger(payload, 4, TEST_EXIF_FIRST_IFD_OFFSET, littleEndian);
+        appendExifInteger(payload, 2, truncated ? 1 : 2, littleEndian);
         if (truncated) return payload;
 
-        appendExifInteger(payload, TEST_EXIF_ORIENTATION_TAG, 2, littleEndian);
-        appendExifInteger(payload, 3, 2, littleEndian);
-        appendExifInteger(payload, 1, 4, littleEndian);
-        appendExifInteger(payload, TEST_EXIF_ORIENTATION, 2, littleEndian);
-        appendExifInteger(payload, 0, 2, littleEndian);
+        appendExifInteger(payload, 2, TEST_EXIF_ORIENTATION_TAG, littleEndian);
+        appendExifInteger(payload, 2, 3, littleEndian);
+        appendExifInteger(payload, 4, 1, littleEndian);
+        appendExifInteger(payload, 2, TEST_EXIF_ORIENTATION, littleEndian);
+        appendExifInteger(payload, 2, 0, littleEndian);
 
-        appendExifInteger(payload, TEST_EXIF_MAKE_TAG, 2, littleEndian);
+        appendExifInteger(payload, 2, TEST_EXIF_MAKE_TAG, littleEndian);
         appendExifInteger(payload, 2, 2, littleEndian);
         appendExifInteger(payload, 4, 4, littleEndian);
         payload.insert(payload.end(), {'K', 'I', 'K', 0});
-        appendExifInteger(payload, 0, 4, littleEndian);
+        appendExifInteger(payload, 4, 0, littleEndian);
         return payload;
     }
 
