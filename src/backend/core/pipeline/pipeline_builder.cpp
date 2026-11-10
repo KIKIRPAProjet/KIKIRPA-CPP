@@ -20,6 +20,7 @@
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
 #include "steps/sift_step.h"
+#include "steps/vote_2d_step.h"
 
 #include <cstddef>
 #include <exception>
@@ -54,6 +55,7 @@ namespace PipelineNs {
                 // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
                 {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
+                {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
             };
             return registry;
         }
