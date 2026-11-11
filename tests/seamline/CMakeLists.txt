@@ -10,6 +10,12 @@ add_executable(seam_tests
     test_graph_cut.cpp
 )
 
+kikirpa_copy_onnxruntime_dlls(seam_tests)
+target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(seam_tests PROPERTIES LABELS "unit")
+
 target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
