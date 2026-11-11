@@ -55,11 +55,14 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase googletest
 ```
 
-La formule `opencv` doit fournir OpenCV 4.x ; OpenCV 5 n'est pas encore pris en
-charge et sera refusé par CMake.
+La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore
+pris en charge et sera refusé par CMake : il faut la formule `opencv@4`. Elle est
+*keg-only* (Homebrew ne la lie pas dans `/opt/homebrew`), donc le preset **macos**
+ajoute son dossier à `CMAKE_PREFIX_PATH`. Si `opencv` (version 5) est aussi
+installé, ce chemin passe en premier et c'est bien OpenCV 4 qui est trouvé.
 
 Dans VS Code, choisir le preset **macos** lorsqu'il est demandé, ou utiliser :
 
@@ -69,7 +72,7 @@ cmake --build --preset macos
 ctest --preset macos
 ```
 
-Le preset sélectionne Apple Clang et les chemins Homebrew Qt sur Apple Silicon
+Le preset sélectionne Apple Clang et les chemins Homebrew de Qt et d'OpenCV 4 sur Apple Silicon
 (`/opt/homebrew`) et Intel (`/usr/local`). Le build est généré dans `build/macos/`.
 
 ## Linux (Ubuntu 24.04)
