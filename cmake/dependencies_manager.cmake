@@ -4,7 +4,14 @@
 # REQUIRED indique que la configuration échoue si OpenCV n'est pas disponible.
 # OpenCV est utilisé pour le traitement des images et les différents
 # algorithmes du projet.
-find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs stitching dnn)
+find_package(OpenCV 4 REQUIRED COMPONENTS core imgproc imgcodecs stitching dnn)
+
+# Certaines configurations de paquetages acceptent une version plus récente
+# que celle demandée ci-dessus. OpenCV 5 n'est pas encore pris en charge.
+if(OpenCV_VERSION VERSION_GREATER_EQUAL "5.0")
+    message(FATAL_ERROR
+        "OpenCV ${OpenCV_VERSION} is not supported. This project requires OpenCV 4.x.")
+endif()
 
 # Recherche libtiff.
 # Cette bibliothèque est notamment utilisée pour la lecture et l'écriture
