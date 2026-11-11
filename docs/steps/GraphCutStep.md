@@ -32,7 +32,7 @@ Calcule les **lignes de raccord** (seamlines) entre les tuiles déjà placées, 
    - chaque position est retrouvée **par le nom du fichier** : `parseTileName` lit la fin du nom `_C<colonne>_R<ligne>.tif` (ou `.tiff`, casse indifférente) et fabrique l'identifiant `rLL_cCC` (ligne, colonne, deux chiffres au minimum), celui que produit `absolute-pos`. Exemple : `tile_C07_R03.tif` donne `r03_c07`. Une image qui ne suit pas ce nommage fait échouer le step (voir [ImportStep.md](ImportStep.md)) ;
    - les coins sont **arrondis au pixel**. Ils sont ensuite décalés pour que le plus petit soit en (0, 0) : les positions de `absolute-pos` peuvent être négatives, celles de la mosaïque ne le sont pas ;
    - **la rotation (`rotationRadians`) est ignorée.**
-4. **Coupe de graphe** (`computeSeamline`) : la coupe de graphe d'OpenCV (`COST_COLOR`) est appliquée paire par paire, sur les images réduites de `scale`. Il n'y a jamais plus de deux tuiles en mémoire. Elle produit une **carte de provenance**, une image 8 bits de la taille de la mosaïque en pleine résolution, où chaque pixel porte le numéro de la tuile choisie (255 = aucune). D'où la limite : **moins de 255 tuiles**.
+4. **Coupe de graphe** (`computeSeamline`) : la coupe de graphe d'OpenCV (`COST_COLOR`) est appliquée paire par paire, sur les images réduites de `scale`. Chaque tuile est lue et réduite une seule fois, à sa première paire, puis libérée dès qu'aucune paire suivante ne l'utilise. Elle produit une **carte de provenance**, une image 8 bits de la taille de la mosaïque en pleine résolution, où chaque pixel porte le numéro de la tuile choisie (255 = aucune). D'où la limite : **moins de 255 tuiles**.
 5. **Polygones** (`extractPolygons`) : les contours de chaque territoire, trous compris, sont extraits de la carte de provenance.
 
 ## Ce qui est écrit dans le checkpoint (`territories.json`)
@@ -58,9 +58,7 @@ Les territoires sont conçus pour former un **pavage exact** : chaque pixel couv
 
 ## Mémoire
 
-Les images sont relues depuis les fichiers source, deux à la fois, puis réduites.
-
-En revanche, la carte de provenance (1 octet par pixel) fait **la taille de la mosaïque entière en pleine résolution**. Pour une mosaïque de 300 millions de pixels, c'est environ 300 Mo. À surveiller sur les grandes œuvres.
+Chaque tuile est lue depuis son fichier source et réduite de `scale` **une seule fois**, à sa première paire, puis gardée tant qu'une paire à venir en a besoin et libérée après sa dernière paire. Les paires sont traitées dans l'ordre des tuiles (`i`, puis `j > i`) ; avec le format par défaut d'`import` (`img_C…_R…`, trié par nom, donc colonne par colonne), il reste en mémoire environ une colonne de tuiles réduites, plus deux. Une tuile qui ne chevauche aucune autre n'est jamais lue.
 
 ## Qui utilise les territoires
 
