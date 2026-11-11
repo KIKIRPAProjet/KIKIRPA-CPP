@@ -60,6 +60,7 @@ struct PairAlignmentInfo {
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false);
 QLabel *mutedLabel(const QString &text, QWidget *parent);
+QString formatZoom(double zoomPercent);
 
 QVector<PairAlignmentInfo> defaultPairAlignments();
 

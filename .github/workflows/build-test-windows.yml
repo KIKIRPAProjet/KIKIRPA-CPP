@@ -58,6 +58,10 @@ jobs:
           python -m pip install aqtinstall
           python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
 
+      - name: Add Qt to PATH
+        shell: pwsh
+        run: echo "$env:QT_ROOT\bin" >> $env:GITHUB_PATH
+
       - name: vcpkg version
         id: vcpkg
         shell: pwsh

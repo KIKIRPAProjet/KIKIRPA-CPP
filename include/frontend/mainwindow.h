@@ -94,7 +94,7 @@ private:
     QString outputDirectory;
     bool projectCreated = false;
     int currentMode = 4;
-    int zoomPercent = 12;
+    double zoomPercent = 12.0;
     bool panelsVisible = true;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
