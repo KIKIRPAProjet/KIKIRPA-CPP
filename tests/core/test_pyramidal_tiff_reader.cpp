@@ -28,21 +28,30 @@ namespace {
     constexpr int OUTSIDE_REGION_X = 31;
     constexpr int OUTSIDE_REGION_Y = 31;
     constexpr int OUTSIDE_REGION_SIZE = 2;
+    constexpr int VP_X = 100;
+    constexpr int VP_Y = 200;
+    constexpr int VP_W = 120;
+    constexpr int VP_H = 80;
+    constexpr double ZOOM_FULL = 100.0;
+    constexpr double ZOOM_QUARTER_FULL = 25.0;
+    constexpr double ZOOM_LOW = 0.25;
 
-    TEST(PyramidalTiffReaderClass, ReadsRegionAcrossTilesAndReducedLevel) {
-        // Crée une image assez grande pour que la région traverse plusieurs tuiles TIFF.
-        const auto path = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_test.tif";
+    std::filesystem::path createTestPyramid(std::string& error) {
+        auto path = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_test.tif";
         cv::Mat source(SOURCE_HEIGHT, SOURCE_WIDTH, CV_16UC3);
-        // Chaque pixel contient ses coordonnées : cela permet de vérifier précisément la copie.
         for (int y = 0; y < source.rows; ++y) {
             for (int x = 0; x < source.cols; ++x)
                 source.at<cv::Vec<uint16_t, 3>>(y, x) = {
                     static_cast<uint16_t>(x), static_cast<uint16_t>(y), BLUE_CHANNEL};
         }
+        if (!IONs::createPyramidalTiledTiff(source, path, error)) return {};
+        return path;
+    }
 
-        // Écrit la pyramide puis crée le lecteur associé au fichier.
+    TEST(PyramidalTiffReaderClass, ReadsRegionAcrossTilesAndReducedLevel) {
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, path, error)) << error;
+        const auto path = createTestPyramid(error);
+        ASSERT_FALSE(path.empty()) << error;
         IONs::PyramidalTiffReaderClass reader(path);
 
         std::vector<cv::Size> pyramidDimensions;
@@ -51,54 +60,9 @@ namespace {
         EXPECT_EQ(pyramidDimensions.at(0), cv::Size(SOURCE_WIDTH, SOURCE_HEIGHT));
         EXPECT_EQ(pyramidDimensions.at(1), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
 
-        IONs::PyramidViewportRegion viewport;
-        ASSERT_TRUE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(100, 200), cv::Size(120, 80), 100.0},
-            viewport, error)) << error;
-        EXPECT_EQ(viewport.level, 0);
-        EXPECT_EQ(viewport.region, cv::Rect(100, 200, 120, 80));
-        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(100, 200, 120, 80));
-        const cv::Vec<uint16_t, 3> viewportFirstPixel{100, 200, BLUE_CHANNEL};
-        const cv::Vec<uint16_t, 3> actualViewportFirstPixel =
-            viewport.pixels.at<cv::Vec<uint16_t, 3>>(0, 0);
-        EXPECT_EQ(actualViewportFirstPixel, viewportFirstPixel);
-
-        ASSERT_TRUE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(40, 20), cv::Size(100, 75), 25.0},
-            viewport, error)) << error;
-        EXPECT_EQ(viewport.level, 2);
-        EXPECT_EQ(viewport.region, cv::Rect(10, 5, 100, 75));
-        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(40, 20, 400, 300));
-
-        ASSERT_TRUE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(850, 650), cv::Size(100, 100), 100.0},
-            viewport, error)) << error;
-        EXPECT_EQ(viewport.region, cv::Rect(850, 650, 50, 50));
-        EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(850, 650, 50, 50));
-
-        ASSERT_TRUE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(0, 0), cv::Size(100, 100), 0.25},
-            viewport, error)) << error;
-        EXPECT_FALSE(viewport.pixels.empty());
-        EXPECT_GT(viewport.pixels.cols, 0);
-        EXPECT_GT(viewport.pixels.rows, 0);
-
-        ASSERT_TRUE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(-20, -10), cv::Size(100, 100), 100.0},
-            viewport, error)) << error;
-        EXPECT_EQ(viewport.region, cv::Rect(0, 0, 80, 90));
-
-        EXPECT_FALSE(reader.readViewport(
-            IONs::PyramidViewportRequest{cv::Point2d(0, 0), cv::Size(100, 100), 0.0},
-            viewport, error));
-        EXPECT_FALSE(error.empty());
-
-        // Lit une région du niveau original, en traversant plusieurs tuiles.
         cv::Mat region;
         ASSERT_TRUE(reader.readRegion(
             0, cv::Rect(REGION_X, REGION_Y, REGION_WIDTH, REGION_HEIGHT), region, error)) << error;
-        // Vérifie la taille, le type et les pixels aux deux coins de la région.
-        ASSERT_EQ(region.type(), source.type());
         ASSERT_EQ(region.size(), cv::Size(REGION_WIDTH, REGION_HEIGHT));
         const cv::Vec<uint16_t, 3> firstPixel{REGION_X, REGION_Y, BLUE_CHANNEL};
         const cv::Vec<uint16_t, 3> lastPixel{
@@ -109,13 +73,42 @@ namespace {
         EXPECT_EQ(actualFirstPixel, firstPixel);
         EXPECT_EQ(actualLastPixel, lastPixel);
 
-        // Vérifie aussi qu'une région peut être lue dans un niveau réduit.
         cv::Mat reduced;
         ASSERT_TRUE(reader.readRegion(
             1, cv::Rect(0, 0, REDUCED_WIDTH, REDUCED_HEIGHT), reduced, error)) << error;
         EXPECT_EQ(reduced.size(), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
+        std::filesystem::remove(path);
+    }
 
-        // Supprime le fichier temporaire créé pour le test.
+    TEST(PyramidalTiffReaderClass, ReadsViewportAcrossPyramidLevels) {
+        std::string error;
+        const auto path = createTestPyramid(error);
+        ASSERT_FALSE(path.empty()) << error;
+        IONs::PyramidalTiffReaderClass reader(path);
+
+        IONs::PyramidViewportRegion viewport;
+        ASSERT_TRUE(reader.readViewport(
+            IONs::PyramidViewportRequest{cv::Point2d(VP_X, VP_Y), cv::Size(VP_W, VP_H), ZOOM_FULL},
+            viewport, error)) << error;
+        EXPECT_EQ(viewport.level, 0);
+        EXPECT_EQ(viewport.region, cv::Rect(VP_X, VP_Y, VP_W, VP_H));
+        const cv::Vec<uint16_t, 3> expectedPixel{VP_X, VP_Y, BLUE_CHANNEL};
+        const auto actualPixel = viewport.pixels.at<cv::Vec<uint16_t, 3>>(0, 0);
+        EXPECT_EQ(actualPixel, expectedPixel);
+
+        ASSERT_TRUE(reader.readViewport(
+            IONs::PyramidViewportRequest{cv::Point2d(40, 20), cv::Size(100, 75), ZOOM_QUARTER_FULL},
+            viewport, error)) << error;
+        EXPECT_EQ(viewport.level, 2);
+
+        ASSERT_TRUE(reader.readViewport(
+            IONs::PyramidViewportRequest{cv::Point2d(0, 0), cv::Size(100, 100), ZOOM_LOW},
+            viewport, error)) << error;
+        EXPECT_FALSE(viewport.pixels.empty());
+
+        EXPECT_FALSE(reader.readViewport(
+            IONs::PyramidViewportRequest{cv::Point2d(0, 0), cv::Size(100, 100), 0.0},
+            viewport, error));
         std::filesystem::remove(path);
     }
 

@@ -50,12 +50,15 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     return label;
 }
 
+constexpr double ROUND_EPSILON = 0.05;
+constexpr double ZOOM_DECIMAL_THRESHOLD = 10.0;
+
 QString formatZoom(double zoomPercent)
 {
-    if (std::abs(zoomPercent - std::round(zoomPercent)) < 0.05) {
+    if (std::abs(zoomPercent - std::round(zoomPercent)) < ROUND_EPSILON) {
         return QString::number(static_cast<int>(std::round(zoomPercent))) + QStringLiteral(" %");
     }
-    QString text = QString::number(zoomPercent, 'f', zoomPercent < 10.0 ? 2 : 1);
+    QString text = QString::number(zoomPercent, 'f', zoomPercent < ZOOM_DECIMAL_THRESHOLD ? 2 : 1);
     while (text.contains(QLatin1Char('.')) &&
            (text.endsWith(QLatin1Char('0')) || text.endsWith(QLatin1Char('.')))) {
         if (text.endsWith(QLatin1Char('.'))) {

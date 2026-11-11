@@ -15,6 +15,11 @@
 #include <QFileInfo>
 #include <QFileDialog>
 
+namespace {
+constexpr double DEFAULT_CANVAS_ZOOM = 12.0;
+constexpr int MODE_EXPORT = 5;
+}
+
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
 {
@@ -89,7 +94,7 @@ void WorkspaceCenter::createCanvasAndControls()
     auto *minus = FrontendUtils::makeButton(QStringLiteral("−"), canvasControls);
     auto *plus = FrontendUtils::makeButton(QStringLiteral("+"), canvasControls);
     
-    m_zoomLabel = new QLabel(FrontendUtils::formatZoom(12.0));
+    m_zoomLabel = new QLabel(FrontendUtils::formatZoom(DEFAULT_CANVAS_ZOOM));
     m_zoomLabel->setMinimumWidth(48);
     m_canvas->setZoomChangedCallback([this](double zoom) {
         m_mainWindow->zoomPercent = zoom;
@@ -139,7 +144,7 @@ void WorkspaceCenter::createCanvasAndControls()
             return;
         }
 
-        m_mainWindow->setMode(5);
+        m_mainWindow->setMode(MODE_EXPORT);
         m_mainWindow->updateStatus(
             tr("Mosaïque ouverte : %1").arg(QFileInfo(path).fileName()));
     });

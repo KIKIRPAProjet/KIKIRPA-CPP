@@ -213,34 +213,35 @@ void ArtworkCanvas::fitMosaicToView()
 
 void ArtworkCanvas::zoomIn()
 {
-    constexpr double kZoomThreshold = 5.0;
-    constexpr double kZoomFactor = 1.25;
-    constexpr double kZoomStep = 5.0;
+    constexpr double ZOOM_THRESHOLD = 5.0;
+    constexpr double ZOOM_FACTOR = 1.25;
+    constexpr double ZOOM_STEP = 5.0;
+    constexpr double ZOOM_INCREMENT = 0.25;
     const double currentZoom = zoomPercent;
     double newZoom = 0.0;
-    if (currentZoom < kZoomThreshold) {
-        newZoom = currentZoom * kZoomFactor;
+    if (currentZoom < ZOOM_THRESHOLD) {
+        newZoom = currentZoom * ZOOM_FACTOR;
         if (newZoom <= currentZoom)
-            newZoom = currentZoom + 0.25;
+            newZoom = currentZoom + ZOOM_INCREMENT;
     } else {
-        newZoom = currentZoom + kZoomStep;
+        newZoom = currentZoom + ZOOM_STEP;
     }
     setZoom(std::min(kMaximumZoom, newZoom));
 }
 
 void ArtworkCanvas::zoomOut()
 {
-    constexpr double kZoomThreshold = 5.0;
-    constexpr double kZoomFactor = 1.25;
-    constexpr double kZoomStep = 5.0;
+    constexpr double ZOOM_THRESHOLD = 5.0;
+    constexpr double ZOOM_FACTOR = 1.25;
+    constexpr double ZOOM_STEP = 5.0;
     const double currentZoom = zoomPercent;
     double newZoom = 0.0;
-    if (currentZoom > kZoomThreshold) {
-        newZoom = currentZoom - kZoomStep;
+    if (currentZoom > ZOOM_THRESHOLD) {
+        newZoom = currentZoom - ZOOM_STEP;
         if (newZoom < 1.0)
-            newZoom = std::max(kMinimumFitZoom, currentZoom / kZoomFactor);
+            newZoom = std::max(kMinimumFitZoom, currentZoom / ZOOM_FACTOR);
     } else {
-        newZoom = currentZoom / kZoomFactor;
+        newZoom = currentZoom / ZOOM_FACTOR;
     }
     setZoom(std::max(kMinimumFitZoom, newZoom));
 }

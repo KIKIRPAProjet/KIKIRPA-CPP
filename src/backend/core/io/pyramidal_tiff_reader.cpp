@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <cmath>
 #include <cstring>
-#include <exception>
 #include <filesystem>
 #include <limits>
 #include <string>
@@ -199,37 +198,27 @@ namespace IONs {
             return firstX < copiedRect.x + copiedRect.width && firstY < copiedRect.y + copiedRect.height;
         }
 
-        bool readTile(
-            RegionReadContext& context,
-            int tileX,
-            int tileY
-        ) {
-            const uint32_t tileOriginX = static_cast<uint32_t>(tileX) * context.tile.width;
-            const uint32_t tileOriginY = static_cast<uint32_t>(tileY) * context.tile.height;
-            const cv::Rect tileRect{
-                static_cast<int>(tileOriginX),
-                static_cast<int>(tileOriginY),
-                static_cast<int>(context.tile.width),
-                static_cast<int>(context.tile.height)
-            };
+        bool readTile(RegionReadContext& context, int tileX, int tileY) {
+            const uint32_t originX = static_cast<uint32_t>(tileX) * context.tile.width;
+            const uint32_t originY = static_cast<uint32_t>(tileY) * context.tile.height;
+            const cv::Rect tileRect{static_cast<int>(originX), static_cast<int>(originY),
+                                    static_cast<int>(context.tile.width),
+                                    static_cast<int>(context.tile.height)};
             const cv::Rect copiedRect = tileRect & context.region;
             if (copiedRect.width <= 0 || copiedRect.height <= 0 ||
                 !tileContainsSampledPixels(context, copiedRect)) {
                 return true;
             }
 
-            const ttile_t tileIndex = TIFFComputeTile(
-                context.tiffFile, tileOriginX, tileOriginY, 0, 0);
-            const tmsize_t decodedBytes = TIFFReadEncodedTile(
+            const ttile_t tileIndex = TIFFComputeTile(context.tiffFile, originX, originY, 0, 0);
+            const tmsize_t decoded = TIFFReadEncodedTile(
                 context.tiffFile, tileIndex, context.tileBuffer.data(), context.tile.size);
-            if (decodedBytes < static_cast<tmsize_t>(context.tile.requiredBytes)) {
+            if (decoded < static_cast<tmsize_t>(context.tile.requiredBytes)) {
                 context.errorMessage = "cannot read TIFF tile";
                 return false;
             }
 
-            const cv::Point tileOrigin(
-                static_cast<int>(tileOriginX), static_cast<int>(tileOriginY));
-            copyTilePixels(context, copiedRect, tileOrigin);
+            copyTilePixels(context, copiedRect, cv::Point(static_cast<int>(originX), static_cast<int>(originY)));
             return true;
         }
 
@@ -328,12 +317,8 @@ namespace IONs {
             return calculateSubsampleStep(request.region, tile, request.maxMemoryBytes);
         }
 
-        bool readOpenedRegion(
-            TIFF* tiffFile,
-            const ReadRequest& request,
-            cv::Mat& output,
-            std::string& errorMessage
-        ) {
+        bool readOpenedRegion(TIFF* tiffFile, const ReadRequest& request,
+                              cv::Mat& output, std::string& errorMessage) {
             if (!selectLevel(tiffFile, request.level, errorMessage)) return false;
 
             ImageMetadata image;
@@ -350,13 +335,11 @@ namespace IONs {
             const int step = determineSubsampleStep(request, tile, errorMessage);
             if (step <= 0) return false;
 
-            const int outWidth = (request.region.width + step - 1) / step;
-            const int outHeight = (request.region.height + step - 1) / step;
-            output.create(outHeight, outWidth, image.type);
+            output.create((request.region.height + step - 1) / step,
+                          (request.region.width + step - 1) / step, image.type);
 
             std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
-            RegionReadContext context{
-                tiffFile, request.region, step, tile, output, tileBuffer, errorMessage};
+            RegionReadContext context{tiffFile, request.region, step, tile, output, tileBuffer, errorMessage};
             return readTiles(context);
         }
 
@@ -383,6 +366,12 @@ namespace IONs {
                 dimensions.emplace_back(image.width, image.height);
             }
             return true;
+        }
+
+        bool isViewportRequestValid(const PyramidViewportRequest& request) {
+            return request.viewportSize.width > 0 && request.viewportSize.height > 0 &&
+                   std::isfinite(request.origin.x) && std::isfinite(request.origin.y) &&
+                   std::isfinite(request.zoomPercent) && request.zoomPercent > 0.0;
         }
 
         bool calculateViewportBounds(
@@ -575,32 +564,24 @@ namespace IONs {
     ) const {
         errorMessage.clear();
         output = {};
-
-        if (request.viewportSize.width <= 0 || request.viewportSize.height <= 0 ||
-            !std::isfinite(request.origin.x) || !std::isfinite(request.origin.y) ||
-            !std::isfinite(request.zoomPercent) || request.zoomPercent <= 0.0) {
+        if (!isViewportRequestValid(request)) {
             errorMessage = "viewport dimensions and zoom must be positive and coordinates finite";
             return false;
         }
 
         std::vector<cv::Size> dimensions;
-        if (!readPyramidDimensions(dimensions, errorMessage))
-            return false;
-        if (dimensions.empty()) {
-            errorMessage = "TIFF pyramid has no image levels";
-            return false;
-        }
-        const double scale = request.zoomPercent / 100.0;
-        const cv::Size fullSize = dimensions.front();
-        ViewportBounds bounds;
-        if (!calculateViewportBounds(request, fullSize, bounds, errorMessage)) {
+        if (!readPyramidDimensions(dimensions, errorMessage) || dimensions.empty()) {
+            if (errorMessage.empty()) errorMessage = "TIFF pyramid has no image levels";
             return false;
         }
 
-        const int selectedLevel = selectViewportLevel(dimensions, scale);
+        const cv::Size fullSize = dimensions.front();
+        ViewportBounds bounds;
+        if (!calculateViewportBounds(request, fullSize, bounds, errorMessage)) return false;
+
+        const int selectedLevel = selectViewportLevel(dimensions, request.zoomPercent / 100.0);
         const ViewportLevelRequest levelRequest{
-            selectedLevel, bounds, fullSize,
-            dimensions.at(static_cast<size_t>(selectedLevel))};
+            selectedLevel, bounds, fullSize, dimensions.at(static_cast<size_t>(selectedLevel))};
         return readViewportLevel(tiffPath, levelRequest, output, errorMessage);
     }
 
