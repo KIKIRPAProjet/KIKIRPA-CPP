@@ -4,15 +4,64 @@
 #include "algorithms/seamline/graph_cut/graph_cut_seam_finder.h"
 #include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
+#include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/step/step.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
-#include <iostream>
+#include <cstddef>
+#include <exception>
 #include <string>
 #include <vector>
 
 namespace StepsNs {
+
+    namespace {
+
+        // La carte de provenance est sur 8 bits et réserve une valeur à « aucune tuile » : il reste NO_TILE tuiles possibles.
+        constexpr std::size_t MAX_TILE_COUNT = static_cast<std::size_t>(GraphCutNs::NO_TILE) - 1;
+
+
+        // Contrôles : au moins une tuile, pas trop de tuiles, une position par tuile, facteur de réduction valide.
+        // Renvoie false au premier problème, avec la cause dans result["error"].
+        bool checkInputs(const GraphCutInput& resolvedInput, StepNs::Json& result) {
+            if (resolvedInput.tilePaths.empty()) {
+                result["error"] = "No tile provided for graph cut step";
+                return false;
+            }
+            if (resolvedInput.tilePaths.size() > MAX_TILE_COUNT) {
+                result["error"] = "Too many tiles provided for graph cut step (got " +
+                                  std::to_string(resolvedInput.tilePaths.size()) + ", max " + std::to_string(MAX_TILE_COUNT) + ")";
+                return false;
+            }
+            if (resolvedInput.positions.size() != resolvedInput.tilePaths.size()) {
+                result["error"] = "The number of positions (" + std::to_string(resolvedInput.positions.size()) +
+                                  ") doesn't match the number of tile paths (" + std::to_string(resolvedInput.tilePaths.size()) + ")";
+                return false;
+            }
+            if (resolvedInput.scale <= 0.0 || resolvedInput.scale > 1.0) {
+                result["error"] = "Reduction scale must be greater than 0 and at most 1, got " + std::to_string(resolvedInput.scale);
+                return false;
+            }
+            return true;
+        }
+
+        // Prétraitement : tailles des tuiles, coins dans la mosaïque et masques réduits.
+        // Renvoie false en cas d'échec, avec la cause dans result["error"].
+        bool preprocessTiles(const GraphCutInput& resolvedInput, GraphCutNs::PreprocessedTiles& tiles, StepNs::Json& result) {
+            GraphCutNs::ImagePretreatmentClass imagePretreatment;
+            const int status = imagePretreatment.processImages(resolvedInput.positions, resolvedInput.tilePaths, resolvedInput.scale,
+                                                               tiles);
+            if (status < 0) {
+                result["error"] = "Image pretreatment error: " + imagePretreatment.getErrorMessage();
+                return false;
+            }
+            return true;
+        }
+
+    }
 
     // Déclare l'identité du step : son nom, son paramètre `scale` (valeur par défaut = celle de l'entrée), les données
     // qu'il lit (tuiles et positions) et celle qu'il produit (territoires). Le pipeline s'en sert pour vérifier l'enchaînement.
@@ -25,71 +74,52 @@ namespace StepsNs {
         configJson = stepConfig;
     }
 
-    bool GraphCutStepClass::execute() {
-        // 1. Lecture des entrées. Par défaut celles de `input` (appel direct) ; dans un pipeline, les données du
-        // DataStoreClass les remplacent. Le facteur de réduction est toujours relu dans la configuration, pour tenir
-        // compte d'un JSON chargé après la construction.
-        std::vector<std::string> tilePaths = input.tilePaths;
-        std::vector<DataNs::TilePositionData> positions = input.positions;
-        double scale = input.scale;
+    bool GraphCutStepClass::readInputs(GraphCutInput& resolvedInput) {
+        resolvedInput = input;
         try {
             if (dataStore && dataStore->has("tiles")) {
-                tilePaths.clear();
+                resolvedInput.tilePaths.clear();
+                // L'algorithme relit les images depuis les fichiers d'origine.
                 for (const auto& tile : dataStore->get<DataNs::TileList>("tiles"))
-                    tilePaths.push_back(tile->getSource().string());   // l'algorithme relit les images depuis les fichiers d'origine
+                    resolvedInput.tilePaths.push_back(tile->getSource().string());
             }
             if (dataStore && dataStore->has("positions"))
-                positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
-            scale = getParameter("scale").get<double>();
+                resolvedInput.positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
+            resolvedInput.scale = getParameter("scale").get<double>();
         } catch (const std::exception& exception) {
-            std::cerr << "Erreur de lecture des entrées : " << exception.what() << std::endl;
-            result["error"] = std::string("Lecture des entrées impossible : ") + exception.what();
+            result["error"] = std::string("Impossible to read inputs: ") + exception.what();
             return false;
         }
+        return true;
+    }
 
-        // 2. Contrôles : au moins une tuile, une position par tuile, facteur de réduction valide.
-        if (tilePaths.empty()) {
-            std::cerr << "Erreur : aucune tuile fournie pour le step GraphCut." << std::endl;
-            result["error"] = "Aucune tuile fournie pour le step GraphCut.";
+    bool GraphCutStepClass::execute() {
+        GraphCutInput resolvedInput;
+        if (!readInputs(resolvedInput))
             return false;
-        }
-        if (positions.size() != tilePaths.size()) {
-            std::cerr << "Erreur : le nombre de positions ne correspond pas au nombre de tuiles." << std::endl;
-            result["error"] = "Le nombre de positions ne correspond pas au nombre de tuiles.";
+        if (!checkInputs(resolvedInput, result))
             return false;
-        }
-        if (scale <= 0.0 || scale > 1.0) {
-            std::cerr << "Erreur : le facteur de réduction doit être compris entre 0 et 1." << std::endl;
-            result["error"] = "Le facteur de réduction doit être compris entre 0 et 1.";
+        GraphCutNs::PreprocessedTiles tiles;
+        if (!preprocessTiles(resolvedInput, tiles, result))
             return false;
-        }
-
-        // 3. Prétraitement : tailles des tuiles, coins dans la mosaïque (pleine résolution et réduits) et masques réduits.
-        GraphCutNs::GraphCutSeamFinderClass graphCut;
-        std::vector<cv::UMat> masksUmatSmall;
-        std::vector<cv::Point> originalCorners, cornersSmall;
-        std::vector<cv::Size> tileSizes;
-        GraphCutNs::ImagePretreatmentClass imagePretreatment;
-        cv::Mat finalMosaic;
+        GraphCutNs::GraphCutSeamFinderClass graphCut;         // Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la mosaïque).
         cv::Mat indexMatrix;
-        if (imagePretreatment.processImages(positions, tilePaths, scale, tileSizes, masksUmatSmall, originalCorners, cornersSmall) < 0) {
-            std::cerr << "Erreur lors du prétraitement des images." << std::endl;
-            result["error"] = "Erreur lors du prétraitement des images.";
+        const GraphCutNs::FullResolutionGeometry fullResolution{tiles.tileSizes, tiles.originalCorners};
+        GraphCutNs::ReducedGrid reducedGrid{resolvedInput.scale, tiles.cornersSmall, tiles.masksUmatSmall};
+        const bool isCutDone = graphCut.computeSeamline(resolvedInput.tilePaths, fullResolution, reducedGrid, indexMatrix);
+        if (!isCutDone) {
+            result["error"] = "Graph cut computation error: " + graphCut.getErrorMessage();
             return false;
         }
-
-        // 4. Coupe de graphe : produit la carte de provenance `indexMatrix` (la tuile choisie pour chaque pixel de la
-        // mosaïque) et une mosaïque d'aperçu (`finalMosaic`, non utilisée ici).
-        if (graphCut.computeSeamline(tilePaths, tileSizes, originalCorners, scale, cornersSmall, masksUmatSmall, finalMosaic, indexMatrix) < 0) {
-            std::cerr << "Echec du calcul du GraphCut." << std::endl;
-            result["error"] = "Echec du calcul du GraphCut.";
-            return false;
-        }
-
-        // 5. Territoires : les polygones de chaque tuile sont extraits de la carte de provenance, puis rangés dans le
+        // Territoires : les polygones de chaque tuile sont extraits de la carte de provenance, puis rangés dans le
         // DataStoreClass pour les steps suivants.
-        output.territories = graphCut.extractPolygons(indexMatrix, static_cast<int>(tilePaths.size()));
-        if (dataStore) dataStore->replace("territories", output.territories);
+        std::vector<cv::Rect> tileRects;
+        tileRects.reserve(tiles.tileSizes.size());
+        for (std::size_t tileIndex = 0; tileIndex < tiles.tileSizes.size(); ++tileIndex)
+            tileRects.emplace_back(tiles.originalCorners[tileIndex], tiles.tileSizes[tileIndex]);
+        output.territories = graphCut.extractPolygons(indexMatrix, tileRects);
+        if (dataStore)
+            dataStore->replace("territories", output.territories);
         result["territories"] = output.territories.size();
         return true;
     }

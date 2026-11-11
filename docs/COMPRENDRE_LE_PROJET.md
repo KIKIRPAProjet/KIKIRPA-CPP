@@ -124,7 +124,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
       { "name": "import",
         "parameters": [
           { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" },
-          { "valueType": "string", "name": "format", "value": ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?" }
+          { "valueType": "string", "name": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
         ] },
       { "name": "phase-correlation",
         "parameters": [ { "valueType": "int", "name": "niveau", "value": 2 } ] },
@@ -138,7 +138,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_r<ligne>_c<colonne>.tif`, alors que le format par défaut d'`import` attend `img_C<colonne>_R<ligne>.tif`. D'où le `format` ci-dessus. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_C<colonne>_R<ligne>.tif` (le format par défaut d'`import`). Un `format` personnalisé doit donc produire des fichiers qui respectent ce nommage. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -238,7 +238,7 @@ Dans le DataStore, une donnée est une structure C++. Les types pris en charge p
 Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
 
 ```json
-[ { "id": 0, "source": "D:/oeuvre/tuiles/t_r00_c00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c00_pyramid.tif",
+[ { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 
@@ -271,7 +271,7 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 
 - `position` = coin haut-gauche de la tuile dans le repère de la mosaïque.
 - La tuile de référence est en (0, 0). Les autres peuvent avoir des coordonnées négatives.
-- `tileId` est lu dans le nom du fichier (`_r00_c01`), **ce n'est pas l'`id` numérique**.
+- `tileId` est lu dans le nom du fichier (`_C01_R00`), **ce n'est pas l'`id` numérique**.
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
@@ -287,6 +287,7 @@ C++ : `std::vector<DataNs::TilePositionData>`.
 - `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
 
 C++ : `std::vector<DataNs::PairResidual>`.
+
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 
@@ -350,7 +351,7 @@ C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`
 ```json
 { "step": "import",
   "parameters": [ { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" }, … ],
-  "inputs": [ ["t_r00_c00.tif", 145000000, 133456789012345678], … ],
+  "inputs": [ ["t_C00_R00.tif", 145000000, 133456789012345678], … ],
   "outputs": [ { "key": "tiles", "dataType": "Tiles" } ],
   "complete": true }
 ```
@@ -386,7 +387,6 @@ Où en est-on :
 - **Assemblage (Fusion)** : PR #69 (brouillon).
 - **Export** : step `export` sur main ([ExportStep.md](steps/ExportStep.md)).
 - **Contrat entre les deux** : l'assemblage fournit la clé `mosaic` (`DataNs::Mosaic`). Son `imagePath` est un TIFF tuilé RGB 16 bits de `canvasSize` pixels ; l'export le contrôle puis le copie (temporaire puis renommage). Il ne publie ni la provenance ni le masque. Aucune image entière ne passe par la mémoire, ni dans l'assemblage, ni dans l'export.
-- `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide en attendant le vrai assemblage.
 
 ---
 
@@ -428,7 +428,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 - **Aucun step ne lit le TIFF pyramidal.** Tous relisent l'image source entière (`cv::imread`), puis la réduisent si besoin. `readRegion` existe mais n'est pas utilisé.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
-- `graphcut` alloue deux images de la taille de la mosaïque entière (1 + 3 octets par pixel).
+- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
 - `MemoryScopeClass` n'est utilisé par aucun step.
 
 ---

@@ -52,7 +52,7 @@ namespace StepsNs {
                 int row = 0, column = 0;
                 std::string name;
                 if (!GraphCutNs::ImagePretreatmentClass::parseTileName(tile->getSource().string(), row, column, name))
-                    throw std::invalid_argument("absolute-pos: tile filename must end in _r<row>_c<column>.tif[f]");
+                    throw std::invalid_argument("absolute-pos: tile filename must end in _C<column>_R<row>.tif[f]");
                 if (!names.insert(name).second) throw std::invalid_argument("absolute-pos: duplicate tile grid position");
                 index.names.push_back(std::move(name));
                 index.ids.push_back(tile->getId());   // pour retrouver l'id d'une tuile à partir de son indice (résidus)
