@@ -2,51 +2,75 @@
 
 Code : [export_step.h](../../include/backend/steps/export_step.h) / [export_step.cpp](../../src/backend/steps/export_step.cpp), namespace `StepsNs`.
 
-## Rôle
+Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite sur disque par l'assemblage, sous le nom `mosaic.tif` dans le dossier choisi. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé, et les pixels ne passent pas par la mémoire : le fichier est copié tel quel.
 
-Dernier step du pipeline. Il écrit uniquement l'image composite produite par l'assemblage dans un fichier TIFF. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé.
+## Entrées et sorties
 
-## Contrat
+| Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
+|---|---|---|---|---|
+| Entrée | `mosaic` | `Mosaic` | `DataNs::Mosaic` | l'assemblage (`fusion`, pas encore sur main) |
+| Sortie | — | — | — | aucune : ce step termine le pipeline ; il écrit `mosaic.tif` |
 
-| Élément | Valeur |
-|---|---|
-| Nom du step | `export` |
-| Paramètre | `outputDirectory` (`string`), vide par défaut : dossier Téléchargements de l'utilisateur courant |
-| Entrée `compositeBlocks` | Type logique `CompositeBlocks`, type C++ `DataNs::CompositeBlockList` |
-| Sorties DataStore | Aucune : ce step termine le pipeline |
+`DataNs::Mosaic` est défini dans `core/data/algorithm_types.h`. C'est une description légère : les chemins de trois TIFF tuilés (image, provenance, masque) et `canvasSize`, les dimensions de la mosaïque. L'export lit seulement :
 
-`CompositeBlock` est défini dans `core/data/algorithm_types.h`. L'export lit dans chaque bloc uniquement :
+- `imagePath` : TIFF tuilé RGB 16 bits, écrit bloc par bloc par l'assemblage avec `IONs::TiledTiffWriterClass` ([core/TiledTiffWriter.md](../core/TiledTiffWriter.md)) ;
+- `canvasSize` : comparé aux dimensions lues dans l'en-tête du TIFF.
 
-- `imageRgb` : `CV_16UC3`, trois canaux couleur ;
-- `blockRect` : `cv::Rect` donnant la position du bloc sur la mosaïque.
+`provenancePath` et `maskPath` ne sont pas exportés.
 
-Les autres champs du bloc (`provenance` et `mask`) ne sont pas exportés et ne sont pas requis par ce step. Ils peuvent être conservés par le contrat partagé pour les traitements internes ou futurs.
+`getOutput()` fournit le chemin publié, les dimensions et l'indication TIFF/BigTIFF (lue dans l'en-tête). `getResult()` contient `image` (`path`, `bigTiff`) et `canvasSize`, ou `error`.
 
-Les rectangles doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` (512 pixels). Les blocs de bord peuvent être plus petits. L'assemblage doit fournir une liste qui couvre toute la grille de sortie.
+## Paramètre
 
-## Fichier produit
+| Nom | Type | Défaut | Rôle |
+|---|---|---|---|
+| `outputDirectory` | string | vide | dossier où publier `mosaic.tif` ; vide = dossier Téléchargements de l'utilisateur courant. Créé s'il n'existe pas |
 
-Le seul fichier créé ou remplacé par le step est `mosaic.tif`, une image couleur 16 bits à trois canaux. Le TIFF est tuilé en blocs de 512 × 512 pixels, pleine résolution uniquement et compressé en LZW. Le TIFF classique ou BigTIFF est choisi selon une estimation conservatrice de la taille.
+## Fonctionnement
 
-Le fichier est d'abord écrit sous un nom temporaire, puis publié en remplacement du fichier de destination afin qu'une erreur d'écriture ne détruise pas la mosaïque existante. Les éventuels fichiers annexes provenant d'anciennes exécutions ne sont pas supprimés automatiquement.
+1. **Contrôle** : l'en-tête de `imagePath` est lu sans décoder de pixel. Le fichier doit être un TIFF tuilé, à 3 canaux de 16 bits, aux dimensions de `canvasSize`.
+2. **Publication** : `IONs::copyFileReplacing` copie le fichier sous un nom temporaire dans `outputDirectory`, puis le renomme en `mosaic.tif`, en remplaçant un éventuel ancien fichier. Une erreur pendant la copie ne détruit donc pas la mosaïque existante, et le temporaire est supprimé.
 
-`getOutput()` fournit le chemin final, les dimensions inférées de la mosaïque, le nombre de blocs et l'indication TIFF/BigTIFF. `getResult()` résume ces informations pour le journal du pipeline.
+Le format du fichier (blocs de 512 × 512, LZW, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
 
-## Échecs et reprise
+**Copie et non déplacement** : la sortie de l'assemblage reste en place. On peut ainsi refaire l'export (par exemple vers un autre dossier) sans refaire l'assemblage, dont le checkpoint reste valable. Le prix est la place sur le disque : l'image existe deux fois. Si `imagePath` est déjà `outputDirectory/mosaic.tif`, rien n'est copié.
 
-Le step échoue avec `result["error"]` si l'entrée manque, si les blocs sont vides, mal typés, mal dimensionnés, dupliqués ou si la grille est incomplète, ou si la création/l'écriture du fichier échoue. Le répertoire de sortie est créé s'il n'existe pas.
+Les fichiers annexes d'anciennes exécutions ne sont pas supprimés.
 
-L'empreinte de reprise suit l'existence, la taille et la date de modification de `mosaic.tif`. Si le fichier est supprimé ou modifié, le checkpoint de ce step est considéré périmé.
+## Erreurs
 
-Le checkpoint ne sérialise pas actuellement `CompositeBlockList`. Un producteur qui déclare cette sortie aura un checkpoint incomplet et sera rejoué à la reprise. Ajouter une sérialisation des blocs serait coûteux et doit être décidé avec le contrat de Fusion, plutôt que d'écrire implicitement les matrices dans le JSON du checkpoint.
+`execute()` renvoie `false`, avec la cause dans `result["error"]`, si :
+
+- l'entrée `mosaic` manque ;
+- `canvasSize` n'est pas strictement positive ;
+- l'image est introuvable ou illisible ;
+- ses dimensions diffèrent de `canvasSize`, ou ce n'est pas un TIFF tuilé RGB 16 bits ;
+- le dossier de sortie ne peut pas être créé, ou la copie ou le renommage échoue.
+
+## Checkpoint
+
+L'export n'a pas de sortie dans le DataStore. Son empreinte de reprise (`externalInputsFingerprint`) suit l'existence, la taille et la date de modification de `mosaic.tif` : si le fichier publié est supprimé ou modifié, le checkpoint de ce step est périmé et l'export est refait.
+
+L'entrée `Mosaic` a sa sérialisation dans `pipelineTypes()` (`core/checkpoint/checkpoint_types.cpp`) : seuls les chemins et les dimensions sont écrits, les pixels restent dans les TIFF.
+
+```json
+{ "imagePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_mask.tif",
+  "canvasSize": [17400, 6810] }
+```
+
+## Mémoire
+
+Aucune image n'est chargée : l'en-tête est lu par libtiff et la copie passe par le système de fichiers.
 
 ## État de l'enchaînement
 
-Le registre expose `export`, mais le dépôt ne contient pas encore de step de fusion qui produise `compositeBlocks`. En conséquence, `buildPipeline` rejettera un script qui utilise `export` tant qu'un producteur précédent ne sera pas implémenté et enregistré.
+Le registre expose `export`, mais aucun step de `main` ne produit encore `mosaic`. `buildPipeline` refuse donc un script qui utilise `export` tant que l'assemblage (`fusion`) n'est pas enregistré.
 
-## Test ciblé
+## Tests
 
-La cible `export_step_tests` est définie dans `tests/core/CMakeLists.txt`. Après configuration du preset du système et compilation, CTest permet de lancer uniquement ces tests :
+`tests/core/test_export_step.cpp` (cible `export_step_tests`) : publication de l'image seule à la place d'un ancien `mosaic.tif`, contenu relu identique, sortie de l'assemblage conservée ; refus d'une image aux mauvaises dimensions ou qui n'est pas RGB 16 bits ; image ou entrée manquante ; empreinte qui suit le fichier publié. Les images sont synthétiques, écrites avec `TiledTiffWriterClass` dans un dossier temporaire.
 
 ```text
 cmake --build --preset windows-aqt --target export_step_tests

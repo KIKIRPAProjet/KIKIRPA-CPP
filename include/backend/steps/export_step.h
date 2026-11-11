@@ -5,7 +5,6 @@
 
 #include <opencv2/core/types.hpp>
 
-#include <cstddef>
 #include <filesystem>
 #include <string>
 
@@ -19,27 +18,25 @@ namespace StepsNs {
     };
 
     struct ExportOutput {
-        std::filesystem::path imagePath;   // TIFF composite
+        std::filesystem::path imagePath;   // TIFF composite publié
         cv::Size canvasSize;               // dimensions globales en pixels
-        std::size_t blockCount = 0;        // blocs écrits
         bool isBigTiff = false;
     };
 
-    // Écrit les blocs composites dans un unique TIFF tuilé (TIFF classique ou BigTIFF
-    // selon la taille estimée).
+    // Publie l'image de la mosaïque assemblée sous outputDirectory/mosaic.tif : contrôle de son en-tête (dimensions,
+    // RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas par la mémoire.
     //
     // Nom : "export". Paramètre : outputDirectory (string, vide = Téléchargements).
-    // Entrée : "CompositeBlocks" ("compositeBlocks").
-    // Sortie de fichier : mosaic.tif.
+    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif (ni provenance ni masque).
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 
         public:
             explicit ExportStepClass(const ExportInput& initialInput = {});
             bool execute() override;
-            // Empreinte des fichiers exportés, pour refaire ce step si un résultat a disparu ou changé.
+            // Empreinte du fichier exporté, pour refaire ce step si le résultat a disparu ou changé.
             Json externalInputsFingerprint() const override;
-            // Chemins et dimensions renseignés après une exécution réussie.
+            // Chemin et dimensions renseignés après une exécution réussie.
             const ExportOutput& getOutput() const { return output; }
 
         private:
