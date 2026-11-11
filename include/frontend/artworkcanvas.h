@@ -2,6 +2,7 @@
 #define ARTWORKCANVAS_H
 
 #include "projectgrid.h"
+#include "frontendutils.h"
 
 #include <QRect>
 #include <QRectF>
@@ -54,6 +55,9 @@ public:
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     void setMosaicPreview(const QImage &image);
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
+    void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
+    void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
+    void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -117,6 +121,9 @@ private:
     bool panningMosaic = false;
     std::function<void(double)> zoomChangedCallback;
     bool seamVisible = true;
+    bool alignmentErrorVisible = true;
+    bool pairOverlayMode = false;
+    FrontendUtils::PairAlignmentInfo currentPair;
 };
 
 #endif // ARTWORKCANVAS_H

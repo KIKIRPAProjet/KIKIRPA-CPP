@@ -80,6 +80,10 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
     mosaicRequestTimer->setInterval(35);
     connect(mosaicRequestTimer, &QTimer::timeout,
             this, &ArtworkCanvas::startMosaicRegionRead);
+    const auto defaultPairs = FrontendUtils::defaultPairAlignments();
+    if (!defaultPairs.isEmpty()) {
+        currentPair = defaultPairs.first();
+    }
 }
 
 ArtworkCanvas::~ArtworkCanvas()
@@ -387,6 +391,13 @@ void ArtworkCanvas::acceptMosaicRegion(
     update();
 }
 
+//enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
+void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
+{
+    currentPair = pair;
+    update();
+}
+
 void ArtworkCanvas::setGridState(int rows, int columns, int order,
                                  const QVector<GridTile> &tiles, int selectedCell)
 {
@@ -497,6 +508,8 @@ int ArtworkCanvas::gridCellAt(const QPoint &point) const
     return -1;
 }
 
+// Dessine la zone de recouvrement (orange) et les points retenus (verts) / rejetés (rouges) de la paire courante.
+// exemple avant la connection au backend : les positions (x, y) des points sont simulées en attendant la connexion avec Matches::pointsInA / pointsInB du backend.
 void ArtworkCanvas::paintEvent(QPaintEvent *)
 {
     QPainter p(this);
@@ -567,30 +580,122 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     const int y0 = (height() - imageH) / 2;
 
     const QRect firstImageRect(x0, y0, imageW, imageH);
+    const int indexA = (!imagePaths.isEmpty() && currentPair.tileIndexA >= 0)
+                           ? (currentPair.tileIndexA % imagePaths.size())
+                           : 0;
+    const int indexB = (!imagePaths.isEmpty() && currentPair.tileIndexB >= 0)
+                           ? (currentPair.tileIndexB % imagePaths.size())
+                           : qMin(1, qMax(0, static_cast<int>(imagePaths.size()) - 1));
+
     if (!imagePaths.isEmpty())
-        drawPhoto(p, firstImageRect, imagePaths.first());
+        drawPhoto(p, firstImageRect, imagePaths.at(indexA));
     else
         drawPainting(p, firstImageRect);
     if (pair) {
-        const QRect secondImageRect(x0 + imageW + gutter, y0, imageW, imageH);
+        // Si le bouton « Superposer (différence) » est actif, la tuile B est superposée sur la zone de recouvrement de A
+        const int overlapW = qMax(36, imageW * 35 / 100);
+        const QRect secondImageRect = pairOverlayMode
+            ? QRect(firstImageRect.right() - overlapW, y0, imageW, imageH)
+            : QRect(x0 + imageW + gutter, y0, imageW, imageH);
+
+        if (pairOverlayMode)
+            p.setOpacity(0.65);
         if (imagePaths.size() > 1)
-            drawPhoto(p, secondImageRect, imagePaths.at(1));
+            drawPhoto(p, secondImageRect, imagePaths.at(indexB));
         else
             drawPainting(p, secondImageRect);
-        p.setPen(QPen(QColor("#39b9e8"), 2));
-        for (int i = 0; i < 10; ++i) {
-            const QPoint a(x0 + imageW - 10 + (i * 31) % qMax(1, imageW / 3),
-                           y0 + imageH / 3 + i * imageH / 20);
-            const QPoint b(x0 + imageW + gutter + 15 + (i * 37) % qMax(1, imageW / 3),
-                           a.y() + (i % 3 - 1) * 8);
-            p.drawEllipse(a, 3, 3);
-            p.drawEllipse(b, 3, 3);
+        if (pairOverlayMode)
+            p.setOpacity(1.0);
+
+        // Zone de recouvrement (encadré orange en pointillés)
+        const QRect overlapRectA(firstImageRect.right() - overlapW, y0, overlapW, imageH);
+        const QRect overlapRectB(secondImageRect.left(), y0, overlapW, imageH);
+        p.fillRect(overlapRectA, QColor(217, 130, 43, 28));
+        if (!pairOverlayMode)
+            p.fillRect(overlapRectB, QColor(217, 130, 43, 28));
+
+        QPen overlapPen(QColor("#d9822b"), 1.5, Qt::DashLine);
+        p.setPen(overlapPen);
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(overlapRectA);
+        if (!pairOverlayMode)
+            p.drawRect(overlapRectB);
+
+        const int inliersToDraw = qBound(4, currentPair.shownInliers, 16);
+        const int outliersToDraw = qBound(0, currentPair.shownOutliers, 6);
+
+        // Points rejetés (faible confiance) en pointillés rouges
+        QPen outlierLinePen(QColor("#e05a52"), 1.2, Qt::DashLine);
+        QPen outlierCirclePen(QColor("#e05a52"), 1.8);
+        for (int i = 0; i < outliersToDraw; ++i) {
+            const QPoint a(overlapRectA.left() + 10 + (i * 23) % qMax(1, overlapW - 20),
+                           y0 + imageH / 5 + i * (imageH / 5));
+            const QPoint b(overlapRectB.left() + 12 + (i * 29) % qMax(1, overlapW - 20),
+                           a.y() + ((i % 2 == 0) ? -14 : 16));
+            p.setPen(outlierCirclePen);
+            p.drawEllipse(a, 4, 4);
+            p.drawEllipse(b, 4, 4);
+            p.setPen(outlierLinePen);
             p.drawLine(a, b);
         }
+
+        // Points retenus (haute confiance) en vert
+        QPen inlierLinePen(QColor("#4ec978"), 1.2, Qt::SolidLine);
+        QPen inlierCirclePen(QColor("#4ec978"), 1.8);
+        for (int i = 0; i < inliersToDraw; ++i) {
+            const QPoint a(overlapRectA.left() + 8 + (i * 19) % qMax(1, overlapW - 16),
+                           y0 + imageH * 2 / 5 + (i * (imageH / 2)) / qMax(1, inliersToDraw));
+            const QPoint b(overlapRectB.left() + 10 + (i * 19) % qMax(1, overlapW - 16),
+                           a.y() + (i % 3 - 1) * 3);
+            p.setPen(inlierCirclePen);
+            p.drawEllipse(a, 4, 4);
+            p.drawEllipse(b, 4, 4);
+            p.setPen(inlierLinePen);
+            p.drawLine(a, b);
+        }
+
+        /* À décommenter lors de la connexion au backend (remplace les 2 boucles simulées ci-dessus) ---
+        const double wA = qMax(1, currentPair.tileSizeA.width());
+        const double hA = qMax(1, currentPair.tileSizeA.height());
+        const double wB = qMax(1, currentPair.tileSizeB.width());
+        const double hB = qMax(1, currentPair.tileSizeB.height());
+
+        for (int i = 0; i < currentPair.pointsInA.size() && i < currentPair.pointsInB.size(); ++i) {
+            const QPointF &ptA = currentPair.pointsInA.at(i);
+            const QPointF &ptB = currentPair.pointsInB.at(i);
+            const QPoint a(firstImageRect.left()  + qRound(ptA.x() * imageW / wA),
+                           firstImageRect.top()   + qRound(ptA.y() * imageH / hA));
+            const QPoint b(secondImageRect.left() + qRound(ptB.x() * imageW / wB),
+                           secondImageRect.top()  + qRound(ptB.y() * imageH / hB));
+
+            const bool inlier = (i < currentPair.isInlier.size()) ? currentPair.isInlier.at(i) : true;
+            p.setPen(inlier ? inlierCirclePen : outlierCirclePen);
+            p.drawEllipse(a, 4, 4);
+            p.drawEllipse(b, 4, 4);
+            p.setPen(inlier ? inlierLinePen : outlierLinePen);
+            p.drawLine(a, b);
+        }
+        */
+
+        const QString tileALabel = currentPair.tileA.isEmpty() ? QStringLiteral("r00_c00") : currentPair.tileA;
+        const QString tileBLabel = currentPair.tileB.isEmpty() ? QStringLiteral("r00_c01") : currentPair.tileB;
         p.setPen(QColor("#eeeeee"));
-        p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft, tr("Tuile A  r00_c00"));
-        p.drawText(QRect(x0 + imageW + gutter, y0 - 24, imageW, 20),
-                   Qt::AlignLeft, tr("Tuile B  r00_c01"));
+        p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
+                   tr("Tuile A  %1").arg(tileALabel));
+        p.drawText(QRect(secondImageRect.left(), y0 - 24, imageW, 20),
+                   Qt::AlignLeft, tr("Tuile B  %1").arg(tileBLabel));
+
+        // Affichage de l'erreur d'alignement par paire sur le canevas (si le calque est activé)
+        if (alignmentErrorVisible) {
+            const QColor badgeBg = currentPair.isDubious() ? QColor(217, 130, 43, 220) : QColor(56, 158, 92, 220);
+            const QRect errorBadgeRect(overlapRectA.left() + 4, y0 + 8,
+                                       qMax(130, overlapW * 2), 22);
+            p.fillRect(errorBadgeRect, badgeBg);
+            p.setPen(currentPair.isDubious() ? QColor("#1c1c1c") : QColor("#ffffff"));
+            p.drawText(errorBadgeRect, Qt::AlignCenter,
+                       tr("Erreur paire : %1 px")
+                           .arg(QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+        }
         return;
     }
 
@@ -628,7 +733,17 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.setPen(QPen(QColor("#e4ca37"), 1));
         p.setBrush(Qt::NoBrush);
         p.drawRect(QRect(x0, y0, imageW, imageH));
-        p.drawRect(QRect(x0 + imageW * .58, y0, imageW * .20, imageH));
+        if (alignmentErrorVisible) {
+            const QRect errorZoneRect(x0 + imageW * .58, y0, imageW * .20, imageH);
+            p.fillRect(errorZoneRect, QColor(228, 202, 55, 35));
+            p.drawRect(errorZoneRect);
+            p.setPen(QColor("#f0cf36"));
+            p.drawText(QRect(errorZoneRect.left() - 20, y0 - 22, errorZoneRect.width() + 80, 20),
+                       Qt::AlignLeft,
+                       tr("Erreur %1 : %2 px")
+                           .arg(currentPair.pairLabel(),
+                                QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+        }
     }
 
     p.setPen(QColor("#dddddd"));
@@ -640,6 +755,22 @@ void ArtworkCanvas::setSeamVisible(bool visible)
 {
     if(seamVisible != visible){
         seamVisible = visible;
+        update();
+    }
+}
+
+void ArtworkCanvas::setAlignmentErrorVisible(bool visible)
+{
+    if (alignmentErrorVisible != visible) {
+        alignmentErrorVisible = visible;
+        update();
+    }
+}
+
+void ArtworkCanvas::setPairOverlayMode(bool enabled)
+{
+    if (pairOverlayMode != enabled) {
+        pairOverlayMode = enabled;
         update();
     }
 }
