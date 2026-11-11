@@ -40,7 +40,7 @@ namespace {
     DataNs::TileList makeTiles(int count = 3) {
         DataNs::TileList tiles;
         for (int index = 0; index < count; ++index) {
-            auto path = "tile_r01_c0" + std::to_string(index + 1) + ".tif";
+            auto path = "tile_C0" + std::to_string(index + 1) + "_R01.tif";
             tiles.push_back(std::make_shared<DataNs::TileClass>(index, path, "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1));
         }
         return tiles;
@@ -228,7 +228,7 @@ namespace {
         StepsNs::AbsolutePosStepClass step;
         step.setDataStore(store);
         EXPECT_FALSE(step.execute());
-        tiles[1] = std::make_shared<DataNs::TileClass>(1, "tile_r01_c01.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
+        tiles[1] = std::make_shared<DataNs::TileClass>(1, "tile_C01_R01.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
         store.replace("tiles", tiles);
         EXPECT_FALSE(step.execute());
     }
