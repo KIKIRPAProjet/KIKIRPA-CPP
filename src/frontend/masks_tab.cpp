@@ -26,6 +26,9 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
             else if(name == tr("Lignes de couture")){
                 m_canvas->setSeamVisible(checked);
             }
+            else if (name == tr("Erreur d'alignement")) {
+                m_canvas->setAlignmentErrorVisible(checked);
+            }
         });
     }
     layersLayout->addStretch();

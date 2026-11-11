@@ -18,6 +18,8 @@ public:
                         WorkspaceCenter *centerArea, QWidget *parent = nullptr);
 
     GridTab *gridTab() const { return m_gridTab; }
+    AlignmentTab *alignmentTab() const { return m_alignmentTab; }
+    void showPairTab();
 
     void updateGridState(const ProjectGrid::State &gridState);
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
