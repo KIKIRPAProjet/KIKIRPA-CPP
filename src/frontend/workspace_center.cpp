@@ -89,11 +89,11 @@ void WorkspaceCenter::createCanvasAndControls()
     auto *minus = FrontendUtils::makeButton(QStringLiteral("−"), canvasControls);
     auto *plus = FrontendUtils::makeButton(QStringLiteral("+"), canvasControls);
     
-    m_zoomLabel = new QLabel(QStringLiteral("12,4 %"));
+    m_zoomLabel = new QLabel(FrontendUtils::formatZoom(12.0));
     m_zoomLabel->setMinimumWidth(48);
-    m_canvas->setZoomChangedCallback([this](int zoom) {
+    m_canvas->setZoomChangedCallback([this](double zoom) {
         m_mainWindow->zoomPercent = zoom;
-        m_zoomLabel->setText(QString::number(zoom) + QStringLiteral(" %"));
+        m_zoomLabel->setText(FrontendUtils::formatZoom(zoom));
     });
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
@@ -110,22 +110,16 @@ void WorkspaceCenter::createCanvasAndControls()
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
     connect(minus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::max(5, m_mainWindow->zoomPercent - 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->zoomOut();
     });
     connect(plus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::min(1600, m_mainWindow->zoomPercent + 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->zoomIn();
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
         m_canvas->fitMosaicToView();
     });
     connect(oneToOne, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->setZoom(100.0);
     });
     connect(openMosaic, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(

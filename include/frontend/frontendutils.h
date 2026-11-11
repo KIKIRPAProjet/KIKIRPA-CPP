@@ -17,6 +17,7 @@ extern const QStringList MODE_NAMES;
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false);
 QLabel *mutedLabel(const QString &text, QWidget *parent);
+QString formatZoom(double zoomPercent);
 
 }
 

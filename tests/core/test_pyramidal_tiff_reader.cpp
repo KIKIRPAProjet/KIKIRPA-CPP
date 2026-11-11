@@ -77,6 +77,13 @@ namespace {
         EXPECT_EQ(viewport.fullResolutionRegion, cv::Rect2d(850, 650, 50, 50));
 
         ASSERT_TRUE(reader.readViewport(
+            IONs::PyramidViewportRequest{cv::Point2d(0, 0), cv::Size(100, 100), 0.25},
+            viewport, error)) << error;
+        EXPECT_FALSE(viewport.pixels.empty());
+        EXPECT_GT(viewport.pixels.cols, 0);
+        EXPECT_GT(viewport.pixels.rows, 0);
+
+        ASSERT_TRUE(reader.readViewport(
             IONs::PyramidViewportRequest{cv::Point2d(-20, -10), cv::Size(100, 100), 100.0},
             viewport, error)) << error;
         EXPECT_EQ(viewport.region, cv::Rect(0, 0, 80, 90));

@@ -32,13 +32,17 @@ class ArtworkCanvas final : public QWidget
 {
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
+    ~ArtworkCanvas() override;
 
     void setMode(int mode) { modeValue = mode; update(); }
-    void setZoom(int zoom);
-    int zoomPercentValue() const { return zoomPercent; }
+    void setZoom(double zoom);
+    double zoomPercentValue() const { return zoomPercent; }
     void fitMosaicToView();
+    void zoomIn();
+    void zoomOut();
+    void clearMosaic();
     bool setMosaicTiff(const QString &path, QString *errorMessage = nullptr);
-    void setZoomChangedCallback(std::function<void(int)> callback);
+    void setZoomChangedCallback(std::function<void(double)> callback);
     void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell);
@@ -80,10 +84,10 @@ private:
     void requestMosaicRegion();
     void startMosaicRegionRead();
     void acceptMosaicRegion(quint64 requestId, const MosaicRegionResult &result);
-    void updateZoom(int zoom, bool notify);
+    void updateZoom(double zoom, bool notify);
 
     int modeValue = 4;
-    int zoomPercent = 12;
+    double zoomPercent = 12.0;
     double mosaicScale = 0.12;
     QStringList imagePaths;
     QVector<GridTile> gridTiles;
@@ -111,7 +115,7 @@ private:
     bool mosaicReadPending = false;
     QPoint lastPanPosition;
     bool panningMosaic = false;
-    std::function<void(int)> zoomChangedCallback;
+    std::function<void(double)> zoomChangedCallback;
     bool seamVisible = true;
 };
 

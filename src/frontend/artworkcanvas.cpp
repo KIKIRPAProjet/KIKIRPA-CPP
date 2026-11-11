@@ -1,4 +1,5 @@
 #include "artworkcanvas.h"
+#include "frontendutils.h"
 
 #include "core/io/pyramidal_tiff_reader.h"
 
@@ -81,6 +82,33 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
             this, &ArtworkCanvas::startMosaicRegionRead);
 }
 
+ArtworkCanvas::~ArtworkCanvas()
+{
+    if (mosaicRequestTimer)
+        mosaicRequestTimer->stop();
+    if (activeMosaicRead) {
+        activeMosaicRead->disconnect();
+        activeMosaicRead->waitForFinished();
+    }
+}
+
+void ArtworkCanvas::clearMosaic()
+{
+    mosaicTiffPath.clear();
+    mosaicSize = {};
+    mosaicOrigin = {};
+    mosaicRegionImage = {};
+    mosaicRegionInFullResolution = {};
+    mosaicRegionLevel = -1;
+    mosaicReadError.clear();
+    m_mosaicPreview = {};
+    mosaicReadPending = false;
+    ++mosaicRequestId;
+    if (mosaicRequestTimer)
+        mosaicRequestTimer->stop();
+    update();
+}
+
 bool ArtworkCanvas::setMosaicTiff(const QString &path, QString *errorMessage)
 {
     if (path.isEmpty()) {
@@ -135,25 +163,24 @@ void ArtworkCanvas::setMosaicPreview(const QImage &image)
     update();
 }
 
-void ArtworkCanvas::setZoomChangedCallback(std::function<void(int)> callback)
+void ArtworkCanvas::setZoomChangedCallback(std::function<void(double)> callback)
 {
     zoomChangedCallback = std::move(callback);
 }
 
-void ArtworkCanvas::updateZoom(int zoom, bool notify)
+void ArtworkCanvas::updateZoom(double zoom, bool notify)
 {
     zoomPercent = zoom;
     if (notify && zoomChangedCallback)
         zoomChangedCallback(zoomPercent);
 }
 
-void ArtworkCanvas::setZoom(int zoom)
+void ArtworkCanvas::setZoom(double zoom)
 {
-    const double boundedZoom = std::clamp(
-        static_cast<double>(zoom), kMinimumFitZoom, kMaximumZoom);
+    const double boundedZoom = std::clamp(zoom, kMinimumFitZoom, kMaximumZoom);
     if (mosaicTiffPath.isEmpty()) {
         mosaicScale = boundedZoom / 100.0;
-        updateZoom(qRound(boundedZoom), true);
+        updateZoom(boundedZoom, true);
         update();
         return;
     }
@@ -163,7 +190,7 @@ void ArtworkCanvas::setZoom(int zoom)
 void ArtworkCanvas::fitMosaicToView()
 {
     if (mosaicTiffPath.isEmpty() || mosaicSize.isEmpty()) {
-        updateZoom(100, true);
+        updateZoom(100.0, true);
         mosaicScale = 1.0;
         update();
         return;
@@ -174,10 +201,44 @@ void ArtworkCanvas::fitMosaicToView()
         static_cast<double>(contentSize.width()) / mosaicSize.width(),
         static_cast<double>(contentSize.height()) / mosaicSize.height());
     mosaicScale = std::clamp(scale, kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
-    updateZoom(qMax(1, qRound(mosaicScale * 100.0)), true);
+    updateZoom(mosaicScale * 100.0, true);
     mosaicOrigin = {};
     requestMosaicRegion();
     update();
+}
+
+void ArtworkCanvas::zoomIn()
+{
+    constexpr double kZoomThreshold = 5.0;
+    constexpr double kZoomFactor = 1.25;
+    constexpr double kZoomStep = 5.0;
+    const double currentZoom = zoomPercent;
+    double newZoom = 0.0;
+    if (currentZoom < kZoomThreshold) {
+        newZoom = currentZoom * kZoomFactor;
+        if (newZoom <= currentZoom)
+            newZoom = currentZoom + 0.25;
+    } else {
+        newZoom = currentZoom + kZoomStep;
+    }
+    setZoom(std::min(kMaximumZoom, newZoom));
+}
+
+void ArtworkCanvas::zoomOut()
+{
+    constexpr double kZoomThreshold = 5.0;
+    constexpr double kZoomFactor = 1.25;
+    constexpr double kZoomStep = 5.0;
+    const double currentZoom = zoomPercent;
+    double newZoom = 0.0;
+    if (currentZoom > kZoomThreshold) {
+        newZoom = currentZoom - kZoomStep;
+        if (newZoom < 1.0)
+            newZoom = std::max(kMinimumFitZoom, currentZoom / kZoomFactor);
+    } else {
+        newZoom = currentZoom / kZoomFactor;
+    }
+    setZoom(std::max(kMinimumFitZoom, newZoom));
 }
 
 QRectF ArtworkCanvas::mosaicImageRect() const
@@ -213,7 +274,7 @@ void ArtworkCanvas::applyMosaicZoom(double zoomPercent, const QPointF &anchor)
         (anchor.y() - oldImage.top()) / mosaicScale);
     mosaicScale = std::clamp(zoomPercent / 100.0,
                              kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
-    updateZoom(qMax(1, qRound(mosaicScale * 100.0)), true);
+    updateZoom(mosaicScale * 100.0, true);
 
     const double imageWidth = mosaicSize.width() * mosaicScale;
     const double imageHeight = mosaicSize.height() * mosaicScale;
@@ -449,7 +510,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
         p.setPen(QColor("#dddddd"));
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
-                   QString::number(zoomPercent) + QStringLiteral(" %"));
+                   FrontendUtils::formatZoom(zoomPercent));
         return; // On arrête de dessiner ici
     }
 
@@ -475,9 +536,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.restore();
 
         p.setPen(QColor("#dddddd"));
+        const QString zoomStr = FrontendUtils::formatZoom(zoomPercent);
         const QString zoomDetails = mosaicRegionLevel >= 0
-            ? QStringLiteral("%1 % — niveau %2").arg(zoomPercent).arg(mosaicRegionLevel)
-            : QStringLiteral("%1 % — chargement…").arg(zoomPercent);
+            ? QStringLiteral("%1 — niveau %2").arg(zoomStr).arg(mosaicRegionLevel)
+            : QStringLiteral("%1 — chargement…").arg(zoomStr);
         p.drawText(QRect(14, height() - 30, 220, 20), Qt::AlignLeft, zoomDetails);
         return;
     }
@@ -571,7 +633,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
-               QString::number(zoomPercent) + QStringLiteral(" %"));
+               FrontendUtils::formatZoom(zoomPercent));
 }
 
 void ArtworkCanvas::setSeamVisible(bool visible)

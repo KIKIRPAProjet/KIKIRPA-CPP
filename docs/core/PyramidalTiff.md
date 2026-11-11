@@ -182,7 +182,11 @@ glisser-déposer déplace l'image. Chaque nouvelle vue utilise `readViewport` en
 le résultat est dessiné à sa position pleine résolution et seules les réponses de la dernière
 demande sont appliquées. Pour que la vue d'ensemble utilise un niveau réduit, le fichier ouvert
 doit contenir une pyramide. Un TIFF à un seul niveau reste lisible, mais n'offre pas de niveau
-réduit distinct.
+réduit distinct. Pour prévenir l'épuisement de la mémoire lors d'un fort dézoom ou d'un affichage
+complet (« Ajuster ») sur une image sans pyramide ou avec une pyramide courte, `readViewport`
+plafonne l'allocation mémoire (64 Mio) et applique un sous-échantillonnage régulier des tuiles
+si la région dépasse ce seuil. De même, `readRegion` protège le processus en refusant les
+allocations brutes dépassant 256 Mio.
 
 ## Lecture par tuiles
 

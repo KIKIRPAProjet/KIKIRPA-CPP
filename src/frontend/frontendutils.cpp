@@ -21,6 +21,8 @@
 #include <QPushButton>
 #include <QtMath>
 
+#include <cmath>
+
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
@@ -46,6 +48,23 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     auto *label = new QLabel(text, parent);
     label->setProperty("muted", true);
     return label;
+}
+
+QString formatZoom(double zoomPercent)
+{
+    if (std::abs(zoomPercent - std::round(zoomPercent)) < 0.05) {
+        return QString::number(static_cast<int>(std::round(zoomPercent))) + QStringLiteral(" %");
+    }
+    QString text = QString::number(zoomPercent, 'f', zoomPercent < 10.0 ? 2 : 1);
+    while (text.contains(QLatin1Char('.')) &&
+           (text.endsWith(QLatin1Char('0')) || text.endsWith(QLatin1Char('.')))) {
+        if (text.endsWith(QLatin1Char('.'))) {
+            text.chop(1);
+            break;
+        }
+        text.chop(1);
+    }
+    return text + QStringLiteral(" %");
 }
 
 }

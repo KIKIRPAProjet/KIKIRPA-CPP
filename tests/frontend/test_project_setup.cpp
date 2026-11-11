@@ -1,4 +1,5 @@
 #include "project_setup_model.h"
+#include "frontendutils.h"
 
 #include "core/pipeline/pipeline_builder.h"
 
@@ -139,6 +140,16 @@ TEST_F(ProjectSetupTestClass, AcceptsPositionsChosenInExistingGrid) {
             fs::absolute(setup.tiles[0].path).string());
   EXPECT_EQ(tiles.back().at("row"), 2);
   EXPECT_EQ(tiles.back().at("column"), 1);
+}
+
+TEST(FrontendUtilsTestClass, FormatsZoomWithDecimalsAndIntegers) {
+  EXPECT_EQ(FrontendUtils::formatZoom(100.0).toStdString(), "100 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(12.0).toStdString(), "12 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(12.4).toStdString(), "12.4 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(2.0).toStdString(), "2 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(0.25).toStdString(), "0.25 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(0.2).toStdString(), "0.2 %");
+  EXPECT_EQ(FrontendUtils::formatZoom(1.6).toStdString(), "1.6 %");
 }
 
 } // namespace
