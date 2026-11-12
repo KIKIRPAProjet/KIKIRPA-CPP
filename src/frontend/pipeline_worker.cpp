@@ -231,7 +231,8 @@ QImage PipelineWorkerClass::generatePreviewImage() {
             const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
             const QImage mosaic = renderPositionsMosaic(positions, tiles);
             if (!mosaic.isNull()) return mosaic;
-        } catch (const std::exception&) {
+        } catch (const std::exception& exception) {
+            emit logMessageReceived(tr("Avertissement rendu mosaïque : %1").arg(exception.what()), QStringLiteral("warning"));
         }
     }
 
@@ -239,7 +240,8 @@ QImage PipelineWorkerClass::generatePreviewImage() {
     if (dataStore.has("tiles")) {
         try {
             return renderFallbackPreview(dataStore.get<DataNs::TileList>("tiles"));
-        } catch (const std::exception&) {
+        } catch (const std::exception& exception) {
+            emit logMessageReceived(tr("Avertissement rendu de repli : %1").arg(exception.what()), QStringLiteral("warning"));
         }
     }
     return QImage();
