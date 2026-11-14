@@ -1,5 +1,5 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// include/frontend/mainwindow.h
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
@@ -7,6 +7,7 @@
 #include <QVector>
 #include "frontendutils.h"
 
+class QCloseEvent;
 class QKeyEvent;
 class QWidget;
 class ProjectGrid;
@@ -41,6 +42,9 @@ private:
 
     void keyPressEvent(QKeyEvent *event) override;
 
+    // Intercepte la fermeture de la fenêtre pour interrompre proprement un éventuel calcul en cours.
+    void closeEvent(QCloseEvent *event) override;
+
     // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
     void setupProjectGridConnections();
@@ -66,6 +70,8 @@ private:
     void setMode(int mode);
     void refreshProjectInfo();
     void saveProject();
+    // Construit et valide le script JSON décrivant la suite des étapes backend.
+    QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
     void showExportDialog();
     void updateStatus(const QString &message);
@@ -100,5 +106,3 @@ private:
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
 };
-
-#endif
