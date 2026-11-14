@@ -47,4 +47,5 @@ private:
 
     QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
+    QPushButton *m_stopButton = nullptr;
 };

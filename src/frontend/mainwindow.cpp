@@ -706,9 +706,19 @@ const {
     const std::string startStep = (firstStep > 1 && firstStep <= static_cast<int>(BACKEND_STEP_NAMES.size()))
         ? BACKEND_STEP_NAMES[firstStep - 1] : "";
 
+    // Si on démarre après l'étape 1, on déclare au backend les étapes antérieures comme terminées
+    // afin qu'il recharge leurs données depuis les checkpoints sans les recalculer.
+    nlohmann::json completedStepsArray = nlohmann::json::array();
+    if (firstStep > 1) {
+        const int maxStep = qMin(firstStep - 1, static_cast<int>(BACKEND_STEP_NAMES.size()));
+        for (int i = 0; i < maxStep; ++i) {
+            completedStepsArray.push_back(BACKEND_STEP_NAMES[i]);
+        }
+    }
+
     const nlohmann::json script = {
         {"pipeline", {{"steps", makePipelineSteps(inputDir, overlap)}}},
-        {"run", {{"status", "idle"}, {"completedSteps", nlohmann::json::array()},
+        {"run", {{"status", "idle"}, {"completedSteps", completedStepsArray},
                  {"skipCompletedSteps", true}, {"startFromStep", startStep},
                  {"checkpointDirectory", checkpointDir.string()}}}
     };

@@ -20,6 +20,8 @@ class SimulationRunner : public QObject {
         bool isRunning() const { return running; }
         bool isPaused() const { return paused; }
         int firstStep() const { return firstStepNumber; }
+        int pausedStep() const { return pausedStepNumber; }
+        void resetPausedState() { paused = false; pausedStepNumber = 0; }
 
         void setScriptJson(const QString& scriptJsonText) { scriptJson = scriptJsonText; }
         const QString& getScriptJson() const { return scriptJson; }
@@ -77,5 +79,6 @@ class SimulationRunner : public QObject {
         bool running = false;
         bool paused = false;
         bool comparisonVisible = false;
+        int pausedStepNumber = 0;
 
 };

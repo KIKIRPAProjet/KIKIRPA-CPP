@@ -76,6 +76,14 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     stageLayout->addWidget(m_runButton);
     connect(m_runButton, &QPushButton::clicked, this, &TopToolbars::handleRunButtonClicked);
 
+    m_stopButton = FrontendUtils::makeButton(tr("⏹ Arrêter"), stages);
+    m_stopButton->setObjectName(QStringLiteral("stopPipelineButton"));
+    m_stopButton->setVisible(false);
+    stageLayout->addWidget(m_stopButton);
+    connect(m_stopButton, &QPushButton::clicked, this, [this]() {
+        if (m_simulationRunner) m_simulationRunner->cancelRun();
+    });
+
     auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
     connect(compare, &QPushButton::clicked, m_simulationRunner, &SimulationRunner::showComparison);
@@ -118,7 +126,9 @@ void TopToolbars::handleRunButtonClicked()
     if (m_simulationRunner->isRunning()) {
         m_simulationRunner->pauseRun();
     } else if (m_simulationRunner->isPaused()) {
-        m_simulationRunner->resumeRun();
+        const int nextStep = m_simulationRunner->pausedStep() + 1;
+        m_simulationRunner->resetPausedState();
+        m_mainWindow->requestRun(nextStep);   
     } else {
         m_mainWindow->requestRun(1);
     }
@@ -128,13 +138,16 @@ void TopToolbars::updateRunButtonState()
 {
     if (!m_runButton || !m_simulationRunner) return;
 
-    // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend.
+    // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend (+ afficher / masquer le bouton Stop).
     if (m_simulationRunner->isRunning()) {
         m_runButton->setText(tr("⏸ Pause"));
+        if (m_stopButton) m_stopButton->setVisible(false); // Masqué pendant le calcul : seul Pause est affiché
     } else if (m_simulationRunner->isPaused()) {
         m_runButton->setText(tr("▶ Reprendre"));
+        if (m_stopButton) m_stopButton->setVisible(true);  // Affiché lorsque le calcul est en pause
     } else {
         m_runButton->setText(tr("▶ Tout lancer"));
+        if (m_stopButton) m_stopButton->setVisible(false); // Masqué au repos
     }
 }
 

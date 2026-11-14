@@ -85,9 +85,10 @@ void SimulationRunner::setupProgressConnections() {
 // Branche les signaux de fin ou d'interruption du worker (mise en pause, annulation, succès final avec la mosaïque ou erreur) pour actualiser l'état global et libérer le thread.
 void SimulationRunner::setupStateConnections() {
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
-    connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
+        connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
         running = false;
         paused = true;
+        pausedStepNumber = atStep;
         emit pausedStateChanged(true);
         emit statusChanged(tr("Pipeline en pause après l'étape %1 (%2).").arg(atStep).arg(name));
         cleanUpThread();
@@ -176,10 +177,17 @@ void SimulationRunner::resumeRun() {
 
 void SimulationRunner::cancelRun() {
     // Interrompt d'urgence le calcul en cours.
-    if (!running) return;
-    if (worker) {
-        emit statusChanged(tr("Demande d'annulation en cours..."));
+    if (!running && !paused) return;
+    if (worker && running) {
+        emit statusChanged(tr("Interruption du calcul en cours..."));
         worker->requestCancel();
+    } else if (paused) {
+        resetPausedState();
+        emit pausedStateChanged(false);
+        emit stepChanged(0, tr("Annulée"));
+        emit statusChanged(tr("Exécution annulée."));
+        emit runCancelled();
+        cleanUpThread();
     }
 }
 
