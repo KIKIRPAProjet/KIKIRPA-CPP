@@ -38,6 +38,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -810,4 +811,27 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         return;
     }
     QMainWindow::keyPressEvent(event);
+}
+
+// Sécurise la fermeture : si un calcul est en cours dans le QThread secondaire,
+// demande confirmation à l'opérateur avant d'ordonner l'arrêt du worker pour éviter
+// un arrêt brutal en pleine écriture de fichier ou une fuite de ressources.
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (simulationRunner && simulationRunner->isRunning()) {
+        const QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            tr("Calcul en cours"),
+            tr("Un calcul du pipeline est en cours d'exécution.\n"
+               "Voulez-vous vraiment l'interrompre et quitter l'application ?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+
+        if (reply != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+        simulationRunner->cancelRun();
+    }
+    event->accept();
 }

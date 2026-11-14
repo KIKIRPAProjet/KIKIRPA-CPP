@@ -1,5 +1,5 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// include/frontend/mainwindow.h
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
@@ -7,6 +7,7 @@
 #include <QVector>
 #include "frontendutils.h"
 
+class QCloseEvent;
 class QKeyEvent;
 class QWidget;
 class ProjectGrid;
@@ -40,6 +41,9 @@ private:
     friend class WorkspaceStatusBar;
 
     void keyPressEvent(QKeyEvent *event) override;
+
+    // Intercepte la fermeture de la fenêtre pour interrompre proprement un éventuel calcul en cours.
+    void closeEvent(QCloseEvent *event) override;
 
     // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
@@ -102,5 +106,3 @@ private:
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
 };
-
-#endif
