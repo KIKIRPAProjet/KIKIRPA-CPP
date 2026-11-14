@@ -43,6 +43,7 @@ void TopToolbars::createToolbar()
     static_cast<QVBoxLayout *>(layout())->addWidget(toolbar);
 }
 
+//permet de naviguer entre les paires précédentes et suivantes
 void TopToolbars::createModesBar()
 {
     QWidget *stages = new QWidget(this);
@@ -54,13 +55,28 @@ void TopToolbars::createModesBar()
     modeGroup->setExclusive(true);
     
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
-        auto *button = FrontendUtils::makeButton(QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i)), stages);
+        const QString label = (i == 3)
+            ? QStringLiteral("!   %1").arg(FrontendUtils::MODE_NAMES.at(i))
+            : QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
+        auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
         modeGroup->addButton(button, i);
         stageLayout->addWidget(button);
         connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
     }
+
+    auto *prevPairBtn = FrontendUtils::makeButton(tr("‹ Préc."), stages);
+    prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
+    stageLayout->addWidget(prevPairBtn);
+    connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
+
+    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante N ›"), stages);
+    nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
+    stageLayout->addWidget(nextDubiousBtn);
+    connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
+
+    stageLayout->addStretch();
 
     auto *run = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
     stageLayout->addWidget(run);
@@ -105,5 +121,23 @@ void TopToolbars::updateTitle(const QString &projectName, const QString &modalit
     if (auto *title = findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
         title->setText(tr("%1 — %2 — KIK-IRPA Assemblage")
                            .arg(projectName, modality));
+    }
+}
+
+//affichage du nombre de paire douteuse da coté du mode "alignement" dans la bar d'outils
+void TopToolbars::updateDubiousState(int dubiousCount)
+{
+    if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
+        if (dubiousCount > 0) {
+            alignBtn->setText(QStringLiteral("!   %1 (%2)")
+                                  .arg(FrontendUtils::MODE_NAMES.at(3))
+                                  .arg(dubiousCount));
+        } else {
+            alignBtn->setText(QStringLiteral("✓   %1")
+                                  .arg(FrontendUtils::MODE_NAMES.at(3)));
+        }
+    }
+    if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
+        nextDubiousBtn->setEnabled(dubiousCount > 0);
     }
 }

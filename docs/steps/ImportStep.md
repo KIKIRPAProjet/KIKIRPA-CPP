@@ -26,27 +26,9 @@ Premier step de tout pipeline. Il repère les images d'un dossier, lit la ligne 
 
 Un fichier dont le nom ne correspond pas au format est ignoré sans message.
 
-## ⚠️ Le format par défaut ne convient pas à la suite du pipeline
+## Compatibilité avec la suite du pipeline
 
-`absolute-pos` et `graphcut` relisent la ligne et la colonne dans le nom du fichier, avec un motif fixe : le nom doit **finir par `_r<ligne>_c<colonne>.tif`** (ou `.tiff`) (`GraphCutNs::ImagePretreatmentClass::parseTileName`). Avec le format par défaut (`img_C…_R…`), ces deux steps échouent.
-
-Pour des fichiers `…_r00_c01.tif`, donner à `import` un format qui met la colonne dans le groupe 1 et la ligne dans le groupe 2. Une anticipation `(?=…)` capture d'abord la colonne, placée après la ligne dans le nom :
-
-```
-.*_r(?=\d+_c(\d+)\.tiff?$)(\d+)_c\d+\.tiff?
-```
-
-Dans le JSON, chaque `\` est doublé :
-
-```json
-{ "name": "import",
-  "parameters": [
-    { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" },
-    { "valueType": "string", "name": "format", "value": ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?" }
-  ] }
-```
-
-Unifier les deux conventions de nommage est une tâche à faire.
+`absolute-pos` et `graphcut` relisent la ligne et la colonne dans le nom du fichier, avec un motif fixe : le nom doit **finir par `_C<colonne>_R<ligne>.tif`** (ou `.tiff`) (`GraphCutNs::ImagePretreatmentClass::parseTileName`). Le format par défaut (`img_C(\d+)_R(\d+)\.tif`) respecte ce motif. Avec un autre format, le nom des fichiers doit tout de même finir ainsi, sinon ces deux steps échouent.
 
 ## Fonctionnement
 
@@ -74,9 +56,9 @@ Le TIFF pyramidal est **réécrit à chaque exécution** du step, même s'il exi
 
 ```json
 [
-  { "id": 0, "source": "D:/oeuvre/tuiles/t_r00_c00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c00_pyramid.tif",
+  { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 },
-  { "id": 1, "source": "D:/oeuvre/tuiles/t_r00_c01.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c01_pyramid.tif",
+  { "id": 1, "source": "D:/oeuvre/tuiles/t_C01_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C01_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": 0, "right": -1, "top": -1, "bottom": 3 }
 ]
 ```

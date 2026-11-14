@@ -45,6 +45,10 @@ public:
     QLabel *zoomLabel() const;
     QTabWidget *rightTabs() const;
     QTabWidget *bottomTabs() const;
+    RightPanel *rightPanel() const { return m_rightPanel; }
+    BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
+    TopToolbars *topToolbars() const { return m_topToolbars; }
+    WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;
     QComboBox *captureOrderCombo() const;
