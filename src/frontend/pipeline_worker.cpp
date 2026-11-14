@@ -21,6 +21,9 @@
 
 namespace {
 
+    // Expression régulière pour décoder les messages backend : "Step X/Y OK" ou "Step X/Y failed".
+    const QRegularExpression STEP_PROGRESS_REGEX(QStringLiteral(R"(Step\s+(\d+)/(\d+)\s+([A-Za-z]+))"));
+
     // Largeur cible de la vignette d'aperçu pour préserver les performances de l'UI.
     constexpr int PREVIEW_TARGET_WIDTH = 1200;
 
@@ -151,8 +154,7 @@ void PipelineWorkerClass::handleLogMessage(const QString& message, int totalStep
 
     // Décode le format standard des messages backend : "Step X/Y OK" ou "Step X/Y failed"
     // La progression n'est pas temporisée : elle reflète l'achèvement effectif de chaque algorithme.
-    static const QRegularExpression regex(QStringLiteral(R"(Step\s+(\d+)/(\d+)\s+([A-Za-z]+))"));
-    const QRegularExpressionMatch match = regex.match(message);
+    const QRegularExpressionMatch match = STEP_PROGRESS_REGEX.match(message);
     if (!match.hasMatch()) return;
 
     const int stepIndex = match.captured(1).toInt();

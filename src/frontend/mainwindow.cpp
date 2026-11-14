@@ -513,6 +513,7 @@ void MainWindow::setMode(int mode)
     }
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
+
     const QStringList descriptions = {
         tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
         tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
@@ -685,6 +686,7 @@ void MainWindow::saveProject()
 }
 
 QString MainWindow::generatePipelineScript(int firstStep)
+
 const {
     namespace fs = std::filesystem;
     const auto& gridState = projectGrid->state();
