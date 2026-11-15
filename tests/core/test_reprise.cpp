@@ -60,6 +60,12 @@ constexpr int COTE_POLYGONE = 10;
 constexpr double GAIN_TUILE_0 = 0.75;
 constexpr double GAIN_TUILE_1 = 1.25;
 constexpr double FORCE_CHAMP = -0.03125;
+constexpr double ESTIMATION_TRANSLATION_X = 319.875;
+constexpr double ESTIMATION_TRANSLATION_Y = -0.03125;
+constexpr float ESTIMATION_RECOUVREMENT = 0.1875F;
+constexpr double ESTIMATION_RAPPORT_PIC = 2.5;
+constexpr int ESTIMATION_LARGEUR_COMMUNE = 80;
+constexpr int ESTIMATION_ORIGINE_EN_A = 320;
 
 // Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
@@ -296,6 +302,19 @@ DataNs::Mosaic mosaiqueDEssai() {
             fs::u8path("fusion/mosaic_mask.tif"), cv::Size(LARGEUR_TUILE, HAUTEUR_TUILE)};
 }
 
+DataNs::PairOverlapEstimate estimationDEssai() {
+    DataNs::PairOverlapEstimate estimation;
+    estimation.tileIdA = 0;
+    estimation.tileIdB = 1;
+    estimation.direction = DataNs::Direction::Right;
+    estimation.estimate.translationBInA = {ESTIMATION_TRANSLATION_X, ESTIMATION_TRANSLATION_Y};
+    estimation.estimate.overlapFraction = ESTIMATION_RECOUVREMENT;
+    estimation.estimate.peakRatio = ESTIMATION_RAPPORT_PIC;
+    estimation.commonAreaInA = {ESTIMATION_ORIGINE_EN_A, 0, ESTIMATION_LARGEUR_COMMUNE, HAUTEUR_TUILE};
+    estimation.commonAreaInB = {0, 0, ESTIMATION_LARGEUR_COMMUNE, HAUTEUR_TUILE};
+    return estimation;
+}
+
 void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
     auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
@@ -308,6 +327,7 @@ void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     avant.replace("seamlines", DataNs::Seamlines{coutureDEssai()});
     avant.replace("intensityCorrection", DataNs::IntensityCorrection{{GAIN_TUILE_0, GAIN_TUILE_1}, FORCE_CHAMP, {1}});
     avant.replace("mosaic", mosaiqueDEssai());
+    avant.replace("overlapEstimates", DataNs::OverlapEstimates{estimationDEssai()});
 }
 
 void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
@@ -352,6 +372,19 @@ void verifierCouturesEtCorrection(const StepNs::DataStoreClass& apres) {
              "Mosaic : chemins et dimensions");
 }
 
+void verifierEstimationsDeRecouvrement(const StepNs::DataStoreClass& apres) {
+    const DataNs::PairOverlapEstimate attendue = estimationDEssai();
+    const auto& estimations = apres.get<DataNs::OverlapEstimates>("overlapEstimates");
+    verifier(estimations.size() == 1 && estimations[0].tileIdA == attendue.tileIdA &&
+                 estimations[0].tileIdB == attendue.tileIdB && estimations[0].direction == attendue.direction &&
+                 estimations[0].estimate.translationBInA == attendue.estimate.translationBInA &&
+                 estimations[0].estimate.overlapFraction == attendue.estimate.overlapFraction &&
+                 estimations[0].estimate.peakRatio == attendue.estimate.peakRatio &&
+                 estimations[0].commonAreaInA == attendue.commonAreaInA &&
+                 estimations[0].commonAreaInB == attendue.commonAreaInB,
+             "OverlapEstimates : translation, recouvrement et zones communes");
+}
+
 // Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
 void testerTypesDuPipeline(const fs::path& dossier) {
     std::cout << "Sérialisation des types du pipeline\n";
@@ -362,7 +395,8 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     // ne peuvent pas diverger. Ajouter un type sans l'éprouver fait échouer ce test, avec son nom.
     const std::pair<const char*, const char*> cles[] = {
         {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
-        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"}};
+        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"},
+        {"OverlapEstimates", "overlapEstimates"}};
 
     std::set<std::string> attendus;
     for (const auto& entree : cles) attendus.insert(entree.first);
@@ -385,6 +419,7 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     verifierTuilesEtAppariements(apres);
     verifierPositionsEtTerritoires(apres);
     verifierCouturesEtCorrection(apres);
+    verifierEstimationsDeRecouvrement(apres);
 }
 
 // Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en
