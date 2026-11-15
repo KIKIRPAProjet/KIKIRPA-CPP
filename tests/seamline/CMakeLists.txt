@@ -15,8 +15,3 @@ target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 include(GoogleTest)
 gtest_discover_tests(seam_tests PROPERTIES LABELS "unit")
-
-target_link_libraries(seam_tests PRIVATE kikirpa_backend GTest::gtest_main)
-
-include(GoogleTest)
-gtest_discover_tests(seam_tests PROPERTIES LABELS "unit")
