@@ -1,12 +1,12 @@
-// tests/steps/test_recouvrement_step.cpp
-// Tests unitaires pour RecouvrementStepClass (steps/recouvrement_step.h).
+// tests/steps/test_overlap_estimation_step.cpp
+// Tests unitaires pour OverlapEstimationStepClass (steps/overlap_estimation_step.h).
 // GoogleTest, ctest -L unit : sans DataStore, paramètres invalides, paires horizontale et verticale,
 // grille 2×2, paire sans recouvrement estimable.
 
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
-#include "steps/recouvrement_step.h"
+#include "steps/overlap_estimation_step.h"
 
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
@@ -53,7 +53,7 @@ struct Directory {
     std::filesystem::path path;
     Directory() {
         const auto stamp = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-        path = std::filesystem::temp_directory_path() / ("recouvrement-step-" + std::to_string(stamp));
+        path = std::filesystem::temp_directory_path() / ("overlap-estimation-step-" + std::to_string(stamp));
         require(std::filesystem::create_directory(path), "create isolated test directory");
     }
     ~Directory() { std::error_code error; std::filesystem::remove_all(path, error); }
@@ -78,8 +78,8 @@ std::shared_ptr<DataNs::TileClass> saveTile(const Directory& dir, const cv::Mat&
     return std::make_shared<DataNs::TileClass>(tileId, file, std::filesystem::path{}, image.cols, image.rows, image.type());
 }
 
-StepsNs::RecouvrementInput defaultParameters() {
-    StepsNs::RecouvrementInput input;
+StepsNs::OverlapEstimationInput defaultParameters() {
+    StepsNs::OverlapEstimationInput input;
     input.overlap = TEST_OVERLAP;
     return input;
 }
@@ -87,14 +87,14 @@ StepsNs::RecouvrementInput defaultParameters() {
 // === Tests ===
 
 // Sans DataStore, le step doit échouer proprement.
-TEST(RecouvrementStepTest, FailsWithoutDataStore) {
-    StepsNs::RecouvrementStepClass step;
+TEST(OverlapEstimationStepTest, FailsWithoutDataStore) {
+    StepsNs::OverlapEstimationStepClass step;
     EXPECT_FALSE(step.execute());
     EXPECT_FALSE(step.getResult().at("error").get<std::string>().empty());
 }
 
 // overlap invalide : hors de ]0, 1[.
-TEST(RecouvrementStepTest, RejectsInvalidOverlap) {
+TEST(OverlapEstimationStepTest, RejectsInvalidOverlap) {
     Directory dir;
     const auto source = makeTexture();
     auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);
@@ -105,16 +105,16 @@ TEST(RecouvrementStepTest, RejectsInvalidOverlap) {
     StepNs::DataStoreClass data;
     data.replace("tiles", DataNs::TileList{tileA, tileB});
 
-    StepsNs::RecouvrementInput input = defaultParameters();
+    StepsNs::OverlapEstimationInput input = defaultParameters();
     input.overlap = 0.f;   // invalide
-    StepsNs::RecouvrementStepClass step(input);
+    StepsNs::OverlapEstimationStepClass step(input);
     step.setDataStore(data);
     EXPECT_FALSE(step.execute());
     EXPECT_FALSE(step.getResult().at("error").get<std::string>().empty());
 }
 
 // Paire horizontale (voisine de droite) : un seul PairOverlapEstimate attendu.
-TEST(RecouvrementStepTest, ProducesOneEstimateForHorizontalPair) {
+TEST(OverlapEstimationStepTest, ProducesOneEstimateForHorizontalPair) {
     Directory dir;
     const auto source = makeTexture();
     auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);
@@ -125,7 +125,7 @@ TEST(RecouvrementStepTest, ProducesOneEstimateForHorizontalPair) {
     StepNs::DataStoreClass data;
     data.replace("tiles", DataNs::TileList{tileA, tileB});
 
-    StepsNs::RecouvrementStepClass step(defaultParameters());
+    StepsNs::OverlapEstimationStepClass step(defaultParameters());
     step.setDataStore(data);
     ASSERT_TRUE(step.execute()) << step.getResult().dump();
 
@@ -143,12 +143,12 @@ TEST(RecouvrementStepTest, ProducesOneEstimateForHorizontalPair) {
                 static_cast<double>(TILE_SHIFT), static_cast<double>(TRANSLATION_TOLERANCE));
     // Le step doit écrire la clé dans le DataStore.
     EXPECT_EQ(step.getResult().at("pairs").get<std::size_t>(), 1u);
-    const auto& stored = data.get<DataNs::OverlapEstimates>("overlap-estimates");
+    const auto& stored = data.get<DataNs::OverlapEstimates>("overlapEstimates");
     ASSERT_EQ(stored.size(), 1u);
 }
 
 // Paire verticale (voisine du dessous) : un seul PairOverlapEstimate attendu.
-TEST(RecouvrementStepTest, ProducesOneEstimateForVerticalPair) {
+TEST(OverlapEstimationStepTest, ProducesOneEstimateForVerticalPair) {
     Directory dir;
     const auto source = makeTexture();
     auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);
@@ -159,7 +159,7 @@ TEST(RecouvrementStepTest, ProducesOneEstimateForVerticalPair) {
     StepNs::DataStoreClass data;
     data.replace("tiles", DataNs::TileList{tileA, tileB});
 
-    StepsNs::RecouvrementStepClass step(defaultParameters());
+    StepsNs::OverlapEstimationStepClass step(defaultParameters());
     step.setDataStore(data);
     ASSERT_TRUE(step.execute()) << step.getResult().dump();
 
@@ -171,7 +171,7 @@ TEST(RecouvrementStepTest, ProducesOneEstimateForVerticalPair) {
 }
 
 // Grille 2×2 : trois paires (A→B, A→C, B→D ou C→D selon l'ordre) — toutes doivent être estimées.
-TEST(RecouvrementStepTest, Produces3EstimatesForA2x2Grid) {
+TEST(OverlapEstimationStepTest, Produces3EstimatesForA2x2Grid) {
     Directory dir;
     const auto source = makeTexture();
     auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);
@@ -186,7 +186,7 @@ TEST(RecouvrementStepTest, Produces3EstimatesForA2x2Grid) {
     StepNs::DataStoreClass data;
     data.replace("tiles", DataNs::TileList{tileA, tileB, tileC, tileD});
 
-    StepsNs::RecouvrementStepClass step(defaultParameters());
+    StepsNs::OverlapEstimationStepClass step(defaultParameters());
     step.setDataStore(data);
     ASSERT_TRUE(step.execute()) << step.getResult().dump();
 
@@ -204,18 +204,18 @@ TEST(RecouvrementStepTest, Produces3EstimatesForA2x2Grid) {
 }
 
 // La configuration par défaut doit pouvoir être lue par importConfig (aller-retour JSON).
-TEST(RecouvrementStepTest, ConfigRoundTrip) {
-    StepsNs::RecouvrementStepClass step;
+TEST(OverlapEstimationStepTest, ConfigRoundTrip) {
+    StepsNs::OverlapEstimationStepClass step;
     const auto exported = step.getConfigJson();
     // importConfig ne doit pas lever d'exception.
     EXPECT_NO_THROW(step.importConfig(exported));
-    EXPECT_EQ(step.getConfigJson().at("name").get<std::string>(), "recouvrement");
+    EXPECT_EQ(step.getConfigJson().at("name").get<std::string>(), "overlap-estimation");
 }
 
-// La sortie est bien enregistrée sous la clé "overlap-estimates" de type "OverlapEstimates".
-TEST(RecouvrementStepTest, OutputKeyAndType) {
-    StepsNs::RecouvrementStepClass step;
-    EXPECT_EQ(step.getOutput().key, "overlap-estimates");
+// La sortie est bien enregistrée sous la clé "overlapEstimates" de type "OverlapEstimates".
+TEST(OverlapEstimationStepTest, OutputKeyAndType) {
+    StepsNs::OverlapEstimationStepClass step;
+    EXPECT_EQ(step.getOutput().key, "overlapEstimates");
     EXPECT_EQ(step.getOutput().type, "OverlapEstimates");
 }
 

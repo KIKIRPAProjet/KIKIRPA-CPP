@@ -1,4 +1,4 @@
-// include/backend/steps/recouvrement_step.h
+// include/backend/steps/overlap_estimation_step.h
 #pragma once
 
 #include "algorithms/stitching/phase_correlation/phase_correlation_types.h"
@@ -9,33 +9,33 @@
 
 namespace StepsNs {
 
-    constexpr float DEFAULT_RECOUVREMENT_OVERLAP = 0.2f;
+    constexpr float DEFAULT_OVERLAP_FRACTION = 0.2f;
 
     // Paramètres de l'estimation des zones de recouvrement.
-    struct RecouvrementInput {
-        float overlap = DEFAULT_RECOUVREMENT_OVERLAP;
+    struct OverlapEstimationInput {
+        float overlap = DEFAULT_OVERLAP_FRACTION;
         PhaseCorrelationNs::Parameters parameters;
     };
 
     // Estimations publiées sous la clé overlap-estimates.
-    struct RecouvrementOutput {
-        std::string key = "overlap-estimates";
+    struct OverlapEstimationOutput {
+        std::string key = "overlapEstimates";
         DataNs::OverlapEstimates value;
         std::string type = "OverlapEstimates";
     };
 
     // Estime la translation et la zone commune des voisines droite et dessous de chaque tuile.
     // Les paires impossibles à mesurer sont signalées dans getResult()["failures"].
-    class RecouvrementStepClass : public StepNs::StepClass {
+    class OverlapEstimationStepClass : public StepNs::StepClass {
 
         public:
-            explicit RecouvrementStepClass(const RecouvrementInput& input = {});
+            explicit OverlapEstimationStepClass(const OverlapEstimationInput& input = {});
             bool execute() override;
-            const RecouvrementOutput& getOutput() const { return output; }
+            const OverlapEstimationOutput& getOutput() const { return output; }
 
         private:
             bool estimatePairs(float overlap, const PhaseCorrelationNs::Parameters& parameters);
-            RecouvrementOutput output;
+            OverlapEstimationOutput output;
 
     };
 
