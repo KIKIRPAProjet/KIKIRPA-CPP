@@ -17,6 +17,7 @@ namespace CheckpointNs {
     //   "Seamlines"    Seamlines
     //   "Territories"  std::vector<TileTerritory>
     //   "IntensityCorrection"  IntensityCorrection : gains par tuile et force du champ d'éclairage
+    //   "Mosaic"       Mosaic : chemins des trois TIFF et dimensions (les pixels restent dans les TIFF, non recopiés)
     // Nouveau type : une entrée dans pipelineTypes() (checkpoint_types.cpp) ou un appel à CheckpointClass::registerType.
     std::map<std::string, std::pair<CheckpointClass::Saver, CheckpointClass::Loader>> pipelineTypes();
 

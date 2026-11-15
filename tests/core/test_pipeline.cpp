@@ -23,21 +23,21 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
-#include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace FsNs = std::filesystem;
+
+namespace fs = std::filesystem;
 
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
 constexpr int PHASE_PARAMETER_COUNT = 15;
-constexpr std::size_t REGISTERED_STEP_COUNT = 8;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -88,8 +88,18 @@ public:
 
 void testerRegistre() {
     std::cout << "Registre des steps\n";
+    const std::set<std::string> attendus = {
+        "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification", "fusion",
+        "graphcut", "import", "intensity-correction", "lightglue", "overlap-estimation",
+        "phase-correlation", "sift", "vote-2d"};
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == REGISTERED_STEP_COUNT, "8 steps enregistrés");
+    const std::set<std::string> enregistres(noms.begin(), noms.end());
+
+    for (const auto& nom : enregistres)
+        verifier(attendus.count(nom) == 1, "step '" + nom + "' presente dans le registre mais pas attendu");
+    for (const auto& nom : attendus)
+        verifier(enregistres.count(nom) == 1, "step '" + nom + "' attendu mais absent du registre");
+
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -158,9 +168,9 @@ void testerExceptionDansUnStep() {
 
 // Deux tuiles 16 bits img_C00_R00.tif et img_C01_R00.tif découpées dans une texture aléatoire floutée,
 // B à DECALAGE_B px à droite de A : vérité exacte
-void creerTuiles(const FsNs::path& dossier) {
-    FsNs::remove_all(dossier);
-    FsNs::create_directories(dossier);
+void creerTuiles(const fs::path& dossier) {
+    fs::remove_all(dossier);
+    fs::create_directories(dossier);
     cv::Mat source(HAUTEUR_TUILE, DECALAGE_B + LARGEUR_TUILE, CV_32F);
     cv::RNG rng(TEXTURE_SEED);
     rng.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
@@ -172,14 +182,14 @@ void creerTuiles(const FsNs::path& dossier) {
     cv::imwrite((dossier / "img_C01_R00.tif").string(), source16(cv::Rect(DECALAGE_B, 0, LARGEUR_TUILE, HAUTEUR_TUILE)));
 }
 
-Json scriptReel(const FsNs::path& dossier) {
+Json scriptReel(const fs::path& dossier) {
     return script({etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", dossier.string()}}}),
                    etape("phase-correlation")});
 }
 
 void testerPipelineReel() {
     std::cout << "Pipeline import -> phase-correlation sur deux tuiles 16 bits\n";
-    const FsNs::path dossier = FsNs::temp_directory_path() / "kikirpa_test_pipeline";
+    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline";
     creerTuiles(dossier);
 
     PipelineNs::PipelineClass p = PipelineNs::buildPipeline(scriptReel(dossier));
@@ -194,7 +204,7 @@ void testerPipelineReel() {
     const auto& tuiles = p.getDataStore().get<DataNs::TileList>("tiles");
     verifier(tuiles.size() == 2, "2 tuiles importées");
     verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get(), "B est la voisine de droite de A");
-    verifier(tuiles.size() == 2 && FsNs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
+    verifier(tuiles.size() == 2 && fs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
 
     const auto& paires = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
     verifier(paires.size() == 1, "1 paire mesurée");
@@ -203,7 +213,7 @@ void testerPipelineReel() {
     verifier(std::abs(m.translationX - DECALAGE_B) < TOLERANCE && std::abs(m.translationY) < TOLERANCE,
              "translation (" + std::to_string(m.translationX) + ", " + std::to_string(m.translationY) + ") = (" +
                  std::to_string(DECALAGE_B) + ", 0)");
-    FsNs::remove_all(dossier);
+    fs::remove_all(dossier);
 }
 
 void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float dx1) {
@@ -222,8 +232,8 @@ void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float d
 
 void testerRepriseReelle() {
     std::cout << "Reprise du pipeline réel sur checkpoints\n";
-    const FsNs::path dossier = FsNs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
-    const FsNs::path checkpoints = dossier / "checkpoints";
+    const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
+    const fs::path checkpoints = dossier / "checkpoints";
     creerTuiles(dossier);
 
     PipelineNs::PipelineClass p = PipelineNs::buildPipeline(scriptReel(dossier));
@@ -233,7 +243,7 @@ void testerRepriseReelle() {
     std::string journal;
     const auto log = [&](const std::string& m) { journal += m + "\n"; };
     verifier(p.run(log), "run 1 réussi");
-    verifier(FsNs::exists(checkpoints / "00_import" / "tiles.json") && FsNs::exists(checkpoints / "01_phase-correlation" / "matches.json"),
+    verifier(fs::exists(checkpoints / "00_import" / "tiles.json") && fs::exists(checkpoints / "01_phase-correlation" / "matches.json"),
              "sorties des deux steps écrites");
     const float dx1 = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches").at(0).featureMatches.translationX;
 
@@ -249,7 +259,7 @@ void testerRepriseReelle() {
     verifier(p.run(log), "run 3 réussi");
     verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
              "image modifiée : import et appariement refaits");
-    FsNs::remove_all(dossier);
+    fs::remove_all(dossier);
 }
 
 // Une exception inattendue fait échouer le test : GoogleTest l'attrape et affiche son message

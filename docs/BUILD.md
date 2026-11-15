@@ -1,5 +1,7 @@
 # Compiler KIKIRPA-CPP
 
+Première installation sur un poste, pas à pas, avec les problèmes courants : [DEMARRER.md](DEMARRER.md). Cette page est la référence : dépendances, presets et options du build.
+
 ## Dépendances
 
 | Dépendance | Obligatoire | Rôle |
@@ -40,8 +42,9 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
    setx QT_ROOT C:\Qt\6.10.3\msvc2022_64
    ```
    `KIKIRPA_VCPKG_ROOT` évite le conflit avec la variable `VCPKG_ROOT` que Visual Studio peut définir pour son propre vcpkg.
-6. **Compiler et tester**, depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat` :
+6. **Compiler et tester** avec `python scripts/demarrer.py --tests`, depuis n'importe quel terminal ([DEMARRER.md](DEMARRER.md) § 4). À la main : depuis un terminal « x64 Native Tools Command Prompt for VS 2022 », ou après avoir lancé `vcvars64.bat`, avec la console en UTF-8 :
    ```bat
+   chcp 65001
    cmake --preset windows-aqt
    cmake --build --preset windows-aqt
    ctest --preset windows-aqt
@@ -55,11 +58,14 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase googletest
 ```
 
-La formule `opencv` doit fournir OpenCV 4.x ; OpenCV 5 n'est pas encore pris en
-charge et sera refusé par CMake.
+La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore
+pris en charge et sera refusé par CMake : il faut la formule `opencv@4`. Elle est
+*keg-only* (Homebrew ne la lie pas dans `/opt/homebrew`), donc le preset **macos**
+ajoute son dossier à `CMAKE_PREFIX_PATH`. Si `opencv` (version 5) est aussi
+installé, ce chemin passe en premier et c'est bien OpenCV 4 qui est trouvé.
 
 Dans VS Code, choisir le preset **macos** lorsqu'il est demandé, ou utiliser :
 
@@ -69,8 +75,10 @@ cmake --build --preset macos
 ctest --preset macos
 ```
 
-Le preset sélectionne Apple Clang et les chemins Homebrew Qt sur Apple Silicon
+Le preset sélectionne Apple Clang et les chemins Homebrew de Qt et d'OpenCV 4 sur Apple Silicon
 (`/opt/homebrew`) et Intel (`/usr/local`). Le build est généré dans `build/macos/`.
+
+Pour l'exécution locale de l'application ou en cas de problème lié aux plugins Qt sous macOS, voir [RunOnMacos.md](building/RunOnMacos.md).
 
 ## Linux (Ubuntu 24.04)
 

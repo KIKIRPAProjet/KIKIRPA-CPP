@@ -243,3 +243,17 @@ void WorkspaceUI::createWorkspace()
 
     m_pages->addWidget(m_workspace);
 }
+
+void WorkspaceUI::appendLog(const QString &message)
+{
+    if (m_bottomTabs) {
+        m_bottomTabs->appendLog(message);
+    }
+}
+
+void WorkspaceUI::setActiveStep(int stepNumber)
+{
+    if (m_rightPanel) {
+        m_rightPanel->setActiveStep(stepNumber);
+    }
+}

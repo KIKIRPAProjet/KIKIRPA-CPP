@@ -205,7 +205,7 @@ Jamais de `catch (...) { }` vide : une erreur avalée est introuvable. Quand on 
 Les algorithmes ont été migrés (noms anglais, un namespace par dossier, types partagés qualifiés `DataNs::…`, fonctions internes dans un `namespace { }` anonyme) ; `algorithms/legacy_type_aliases.h` a été supprimé. Il reste :
 
 - `tests/` : noms internes en français (`verifier`, `LARGEUR_TUILE`, noms des `TEST(…, QuatreDirections)`…), et en `snake_case` dans `tests/seamline/` (`random_pair`, `maze_grid`, namespace `testmaps`). Les appels aux algorithmes, eux, sont à jour.
-- Sorties console : `graph_cut_step.cpp` écrit ses erreurs sur `std::cerr`, en français, en plus de `result` ; GraphCut (`GraphCutSeamFinderClass`, `ImagePretreatmentClass`) écrit ses erreurs sur `std::cout` et renvoie un `int` (±1) au lieu d'un `bool`.
+- Retours d'erreur : `ImagePretreatmentClass::processImages` renvoie un `int` (1 ou -1) au lieu d'un `bool`. Ni le step `graphcut` ni ses algorithmes n'écrivent sur la console : la cause d'un échec est lue par `getErrorMessage()` puis placée dans `result["error"]`.
 - Noms gardés pour ne pas casser les scripts et les configurations :
   - les paramètres du step `phase-correlation` (`niveau`, `lissage`, `marge`…), alors que les champs C++ correspondants sont en anglais (`PhaseCorrelationInput::level`, `PhaseCorrelationNs::Parameters::smoothingSigma`…). Les steps `sift` et `lightglue` exposent, eux, des paramètres en `camelCase` (`maxFeatures`, `modelPath`…) ;
   - les clés JSON lues par les algorithmes eux-mêmes, que les steps traduisent : SIFT (`max_features`, `lowe_ratio`, `contrast_threshold`, `clahe_clip_limit`, en `snake_case`), LightGlue (`model_path`), vote (`seuil`, `case`, et `ransacReprojThreshold` accepté comme ancien nom de `seuil`) ;

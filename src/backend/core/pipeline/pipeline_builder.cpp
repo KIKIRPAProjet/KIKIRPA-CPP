@@ -2,17 +2,22 @@
 #include "core/pipeline/pipeline_builder.h"
 
 #include "core/config/pipeline_config.h"
-#include "core/step/step.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/step.h"
+#include "steps/absolute_pos_step.h"
 #include "steps/dynamic_programming_dijkstra_step.h"
+#include "steps/export_step.h"
+#include "steps/final_verification_step.h"
+#include "steps/fusion_step.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/intensity_correction_step.h"
-#include "steps/sift_step.h"
-#include "steps/absolute_pos_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/phase_correlation_step.h"
+#include "steps/overlap_estimation_step.h"
+#include "steps/sift_step.h"
+#include "steps/vote_2d_step.h"
 
 #include <cstddef>
 #include <exception>
@@ -41,9 +46,15 @@ namespace PipelineNs {
                 {"lightglue", [] { return std::make_unique<StepsNs::LightGlueStepClass>(); }},
                 {"import", [] { return std::make_unique<StepsNs::ImportStepClass>(); }},
                 {"phase-correlation", [] { return std::make_unique<StepsNs::PhaseCorrelationStepClass>(); }},
+                {"overlap-estimation", [] { return std::make_unique<StepsNs::OverlapEstimationStepClass>(); }},
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
+                {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},
+                // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
+                {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
+                {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
+                {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
             };
             return registry;
         }
