@@ -15,7 +15,7 @@ namespace StepsNs {
     using Json = StepNs::Json;
 
     struct FusionInput {
-        // Dossier des trois TIFF de la mosaïque. Vide : <dossier temporaire du système>/kikirpa-fusion.
+        // Dossier des trois TIFF de la mosaïque. Vide : <dossier des images>/.cache/mosaic, à côté du cache d'import.
         std::string outputDirectory;
     };
 
@@ -65,7 +65,7 @@ namespace StepsNs {
     // mémoire. Chaque bloc est calculé par renderBlock puis écrit aussitôt dans trois TIFF tuilés (image RGB 16 bits,
     // provenance 16 bits, masque 8 bits) avec IONs::TiledTiffWriterClass. Le DataStore ne reçoit que leurs chemins.
     //
-    // Nom : "fusion". Paramètre : outputDirectory (string).
+    // Nom : "fusion". Paramètre : outputDirectory (string, vide = <dossier des images>/.cache/mosaic).
     // Entrées : "Tiles" ("tiles"), "Positions" ("positions"), "Territories" ("territories") ; "intensityCorrection"
     // est appliquée si un step précédent l'a produite (lue sans être déclarée : le moteur n'a pas d'entrée facultative).
     // Sortie : "Mosaic" ("mosaic").
@@ -74,7 +74,8 @@ namespace StepsNs {
         public:
             explicit FusionStepClass(const FusionInput& initialInput = {});
             bool execute() override;
-            // Empreinte des trois TIFF produits : le step est refait si l'un d'eux disparaît ou change.
+            // Empreinte des trois TIFF produits : le step est refait si l'un d'eux disparaît ou change. Sans
+            // outputDirectory, elle n'est connue qu'après execute() (nulle avant).
             Json externalInputsFingerprint() const override;
             const FusionOutput& getOutput() const { return output; }
 

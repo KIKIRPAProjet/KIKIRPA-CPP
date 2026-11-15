@@ -59,11 +59,21 @@ namespace StepsNs {
             const DataNs::IntensityCorrection* intensityCorrection = nullptr;   // nul : pas de correction
         };
 
+        // Dossier demandé par le paramètre outputDirectory ; chemin vide si le paramètre est vide.
         fs::path configuredOutputDirectory(const Json& configJson) {
             std::string directory;
             for (const Json& parameter : configJson.at("parameters"))
                 if (parameter.at("name") == "outputDirectory") directory = parameter.at("value").get<std::string>();
-            return directory.empty() ? fs::temp_directory_path() / "kikirpa-fusion" : fs::u8path(directory);
+            return fs::u8path(directory);
+        }
+
+        // Sans outputDirectory : <dossier des images>/.cache/mosaic, à côté du cache d'import (.cache/pyramids). Un
+        // dossier par œuvre, sur le disque des données : deux pipelines ne s'écrasent pas, et rien ne s'accumule dans
+        // le dossier temporaire du système. `tiles` ne doit pas être vide.
+        fs::path resolveOutputDirectory(const Json& configJson, const DataNs::TileList& tiles) {
+            const fs::path configuredDirectory = configuredOutputDirectory(configJson);
+            if (!configuredDirectory.empty()) return configuredDirectory;
+            return tiles.front()->getSource().parent_path() / ".cache" / "mosaic";
         }
 
         DataNs::Mosaic makeMosaicPaths(const fs::path& directory, cv::Size canvasSize) {
@@ -314,8 +324,14 @@ namespace StepsNs {
         configJson = stepConfig;
     }
 
+    // Sans outputDirectory, le dossier dépend des tuiles, que le step ne connaît que pendant execute() : l'empreinte
+    // suit alors les fichiers du dernier execute(). Un step qui n'a pas encore tourné (reprise dans un nouveau
+    // processus) n'a pas d'empreinte : son checkpoint est périmé et fusion est refait.
     Json FusionStepClass::externalInputsFingerprint() const {
-        const DataNs::Mosaic mosaic = makeMosaicPaths(configuredOutputDirectory(configJson), {});
+        const fs::path configuredDirectory = configuredOutputDirectory(configJson);
+        const DataNs::Mosaic mosaic = configuredDirectory.empty() ? output.value
+                                                                  : makeMosaicPaths(configuredDirectory, {});
+        if (mosaic.imagePath.empty()) return Json();
         return Json::array({IONs::computeFileFingerprint(mosaic.imagePath),
                             IONs::computeFileFingerprint(mosaic.provenancePath),
                             IONs::computeFileFingerprint(mosaic.maskPath)});
@@ -328,8 +344,9 @@ namespace StepsNs {
             if (!dataStore) throw std::runtime_error("fusion: data store is not available");
             // Après un échec, l'ancienne mosaïque ne doit plus être publiée.
             dataStore->replace(output.key, DataNs::Mosaic{});
-            const FusionContext context = buildFusionContext(readInputs(*dataStore));
-            output.value = makeMosaicPaths(configuredOutputDirectory(configJson), context.canvasSize);
+            const FusionInputs inputs = readInputs(*dataStore);
+            const FusionContext context = buildFusionContext(inputs);
+            output.value = makeMosaicPaths(resolveOutputDirectory(configJson, inputs.tiles), context.canvasSize);
             writeMosaic(context, output.value);
             dataStore->replace(output.key, output.value);
             result["image"] = output.value.imagePath.u8string();

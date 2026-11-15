@@ -32,7 +32,9 @@ Code : [fusion_step.h](../../include/backend/steps/fusion_step.h) / [fusion_step
 
 | Nom | Type | Défaut | Rôle |
 |---|---|---|---|
-| `outputDirectory` | string | vide | dossier des trois TIFF, créé si besoin. Vide : `<dossier temporaire du système>/kikirpa-fusion`. Pour une vraie œuvre, choisir un disque avec de la place : l'image seule fait environ 6 octets par pixel avant compression |
+| `outputDirectory` | string | vide | dossier des trois TIFF, créé si besoin. Vide : `<dossier des images>/.cache/mosaic/`, à côté du cache d'import (`.cache/pyramids/`). Il faut de la place sur ce disque : l'image seule fait environ 6 octets par pixel avant compression |
+
+**Dossier par défaut.** Le « dossier des images » est celui du fichier source de la première tuile (`getSource()`), c'est-à-dire le `path` donné à `import`. La mosaïque d'une œuvre reste ainsi avec ses données, sur le même disque, et deux œuvres ne partagent jamais le même dossier. `import` ne lit que les fichiers placés directement dans le dossier des images : il ne voit pas `.cache/`. Le dossier n'est jamais vidé par le pipeline ; un nouvel assemblage remplace les trois fichiers.
 
 ## Fonctionnement
 
@@ -66,13 +68,15 @@ Au début de `execute()`, `mosaic` est remplacé par une description vide : apr�
 `Mosaic` est sérialisé dans `pipelineTypes()` ; les pixels restent dans les TIFF.
 
 ```json
-{ "imagePath": "C:/Users/…/Temp/kikirpa-fusion/mosaic_image.tif",
-  "provenancePath": "C:/Users/…/Temp/kikirpa-fusion/mosaic_provenance.tif",
-  "maskPath": "C:/Users/…/Temp/kikirpa-fusion/mosaic_mask.tif",
+{ "imagePath": "D:/oeuvre/.cache/mosaic/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/.cache/mosaic/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/.cache/mosaic/mosaic_mask.tif",
   "canvasSize": [17400, 6810] }
 ```
 
 `externalInputsFingerprint()` suit l'existence, la taille et la date des trois fichiers : si l'un disparaît ou change, le checkpoint est périmé et l'assemblage est refait à la reprise.
+
+**Reprise avec le dossier par défaut.** Sans `outputDirectory`, le dossier dépend des tuiles, que le step ne connaît que pendant `execute()`. Or le moteur demande l'empreinte **avant** de restaurer les données (`resolveStart`). Dans le processus qui a exécuté `fusion`, l'empreinte suit les fichiers écrits. Dans un **nouveau processus**, elle est inconnue (JSON nul) : le checkpoint de `fusion` est tenu pour périmé et l'assemblage est **refait**, ainsi que les steps suivants. Le résultat est correct, mais le temps d'assemblage est payé une seconde fois. Pour qu'une reprise saute `fusion`, donner `outputDirectory` dans le script.
 
 ## Mémoire
 
@@ -83,7 +87,8 @@ Par bloc : le bloc lui-même (512² × 9 octets, environ 2,4 Mo), la région lue
 - Pas de fondu le long de la couture : chaque pixel vient d'une seule tuile.
 - La rotation des positions est ignorée (comme `graphcut`, et `absolute-pos` donne toujours 0).
 - Le calcul des coins est écrit deux fois (ici et dans `processImages`) : `FusionStepTest.ComputesTheSameCornersAsGraphCut` vérifie qu'ils concordent. `processImages` pourra appeler `computeMosaicCorners` quand `image_pretreatment.cpp` sera repris.
-- Deux pipelines lancés en même temps avec le dossier par défaut écriraient au même endroit.
+- Deux pipelines lancés en même temps **sur le même dossier d'images** avec le dossier par défaut écriraient au même endroit.
+- Avec le dossier par défaut, une reprise dans un nouveau processus refait `fusion` (voir « Checkpoint »).
 
 ## Tests
 
@@ -96,6 +101,7 @@ Par bloc : le bloc lui-même (512² × 9 octets, environ 2,4 Mo), la région lue
 - division par le gain, tuile isolée non corrigée, tuiles 8 bits passées en 16 bits ;
 - échecs : position manquante (aucune mosaïque publiée, aucun fichier), nom de fichier sans `_C<colonne>_R<ligne>` ;
 - coins identiques à ceux de `processImages` pour des positions fractionnaires et négatives ;
-- bout en bout `fusion` → `export` ; empreinte qui suit les fichiers produits ; chaînage accepté après `graphcut`, refusé sans.
+- bout en bout `fusion` → `export` ; empreinte qui suit les fichiers produits ; chaînage accepté après `graphcut`, refusé sans ;
+- sans `outputDirectory` : les trois fichiers vont dans `<dossier des images>/.cache/mosaic/`, et l'empreinte, nulle avant `execute()`, suit ensuite les fichiers.
 
 `tests/brightness_equalization/test_region_correction.cpp` vérifie que corriger une tuile région par région redonne `correctTile`.

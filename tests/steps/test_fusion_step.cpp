@@ -399,6 +399,41 @@ TEST(FusionStepTest, FingerprintFollowsTheProducedFiles) {
     EXPECT_NE(step.externalInputsFingerprint(), fingerprint);
 }
 
+// Sans outputDirectory, la mosaïque va dans <dossier des images>/.cache/mosaic, à côté du cache d'import.
+TEST(FusionStepTest, WritesNextToTheImagesWithoutOutputDirectory) {
+    const TemporaryDirectoryClass temporaryDirectory;
+    StepNs::DataStoreClass dataStore;
+    const fs::path imageDirectory = temporaryDirectory.path / "tiles";
+    fillTwoTileStore(dataStore, imageDirectory, smallScene());
+    StepsNs::FusionStepClass step = makeFusionStep(fs::path(), dataStore);
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+
+    const DataNs::Mosaic& mosaic = dataStore.get<DataNs::Mosaic>("mosaic");
+    const fs::path expectedDirectory = imageDirectory / ".cache" / "mosaic";
+    EXPECT_EQ(mosaic.imagePath, expectedDirectory / "mosaic_image.tif");
+    EXPECT_EQ(mosaic.provenancePath, expectedDirectory / "mosaic_provenance.tif");
+    EXPECT_EQ(mosaic.maskPath, expectedDirectory / "mosaic_mask.tif");
+    EXPECT_TRUE(fs::exists(mosaic.imagePath));
+}
+
+// Sans outputDirectory, le dossier vient des tuiles : l'empreinte n'existe qu'après execute(), puis suit les fichiers.
+TEST(FusionStepTest, FingerprintWithoutOutputDirectoryIsKnownAfterExecute) {
+    const TemporaryDirectoryClass temporaryDirectory;
+    StepNs::DataStoreClass dataStore;
+    fillTwoTileStore(dataStore, temporaryDirectory.path / "tiles", smallScene());
+    StepsNs::FusionStepClass step = makeFusionStep(fs::path(), dataStore);
+    EXPECT_TRUE(step.externalInputsFingerprint().is_null());
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const Json fingerprint = step.externalInputsFingerprint();
+    EXPECT_FALSE(fingerprint.is_null());
+
+    fs::remove(dataStore.get<DataNs::Mosaic>("mosaic").maskPath);
+
+    EXPECT_NE(step.externalInputsFingerprint(), fingerprint);
+}
+
 // Chaînage : fusion a besoin des territoires de graphcut, et export de la mosaïque de fusion.
 TEST(FusionStepTest, IsChainedBetweenGraphCutAndExport) {
     const Json chained = {{"pipeline", {{"steps", {{{"name", "import"}}, {{"name", "phase-correlation"}},
