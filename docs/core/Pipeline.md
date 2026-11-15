@@ -5,13 +5,42 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-L'exécutable peut lancer un script JSON directement :
+### En ligne de commande
 
 ```sh
-build/<preset>/stitching --pipeline pipeline.json
+build/<preset>/stitching --pipeline pipeline.json            # exécute tous les steps
+build/<preset>/stitching --pipeline pipeline.json --resume   # reprend le run précédent
+build/<preset>/stitching --help
 ```
 
-Ajouter `.exe` au chemin sous Windows. Le processus renvoie un code non nul si le script est invalide ou si un step échoue. Sans `--pipeline`, le point d'entrée réserve le lancement au frontend, qui n'est pas encore intégré sur cette branche.
+Ajouter `.exe` sous Windows. Sans argument (ou avec des options de Qt comme `-platform`), `stitching` ouvre l'interface graphique. Une option longue inconnue (`--pipline`…) est refusée avec le code 2 : elle n'ouvre pas la fenêtre.
+
+- **Chemins relatifs** : les chemins écrits dans le script (`path` d'`import`, `outputDirectory`, `run.checkpointDirectory`…) se lisent **depuis le dossier du script**, quel que soit le dossier d'où l'on lance la commande. Seul le chemin du script lui-même se lit depuis le dossier courant.
+- **Messages** : la progression (`Step 3/7 OK {...}`) va sur la sortie standard. Un échec est résumé sur la sortie d'erreur, avec le numéro du step, son nom et sa cause.
+- **Codes de sortie** :
+
+| Code | Signification |
+|---|---|
+| 0 | tous les steps ont réussi |
+| 1 | un step a échoué : le run s'est arrêté, les steps précédents restent faits |
+| 2 | ligne de commande ou script invalide (step ou paramètre inconnu, entrée manquante, JSON mal formé) : aucun step n'a tourné |
+| 3 | erreur de fichier : script introuvable ou illisible, état de reprise illisible |
+
+**Reprise.** Elle demande un `run.checkpointDirectory` dans le script. Pendant le run, l'état (`completedSteps`) est réécrit après chaque step dans `<checkpointDirectory>/run.json` ; **le script de l'utilisateur n'est jamais modifié**.
+- Avec `--resume`, les steps déjà faits dont le checkpoint est encore valide (mêmes paramètres, mêmes entrées) sont sautés, et le run reprend au premier step à refaire. On peut donc corriger le paramètre d'un step qui a échoué, puis reprendre : seuls ce step et les suivants sont refaits.
+- Sans `--resume`, tous les steps sont refaits et les anciens checkpoints sont remplacés.
+- `run.startFromStep` n'a d'effet qu'avec `--resume`.
+- `fusion` sans `outputDirectory` est refait à chaque reprise (voir [FusionStep.md](../steps/FusionStep.md#checkpoint)).
+
+### Depuis le code
+
+```cpp
+PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile("pipeline.json");   // ou buildPipeline(json)
+bool ok = pipeline.run([](const std::string& message) { std::cout << message << '\n'; });
+const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");   // sorties des steps
+```
+
+Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE_LE_PROJET.md). Reprise depuis le code : [plus bas](#reprise-pause-checkpoints).
 
 ## Format du script
 
@@ -73,7 +102,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - `status` : `idle`, `running`, `paused`, `failed` ou `completed` ;
 - `completedSteps` : les noms des steps déjà faits, dans l'ordre.
 
-**Les consignes, écrites par l'appelant (la GUI), et remises à leur défaut au démarrage :**
+**Les consignes, écrites par l'appelant (la GUI, la ligne de commande), et remises à leur défaut au démarrage :**
 - `skipCompletedSteps` (`true` par défaut) : saute les steps déjà faits dont le checkpoint est valide ; `false` : repart de zéro ;
 - `startFromStep` : le nom du step où (re)démarrer. Il ne peut pas être après le premier step à refaire.
 

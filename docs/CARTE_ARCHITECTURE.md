@@ -32,13 +32,13 @@ Les liens ouvrent les fichiers.
 
 ## 1. Vue d'ensemble
 
-Le projet a trois couches. Les **algorithmes** sont les plus fournis. L'**orchestration** est en place : un script JSON se construit, se valide, s'exécute et se reprend. Il manque les steps de fin de chaîne (assemblage, export), et un point d'entrée pour l'utilisateur : ni ligne de commande ni interface sur `main`.
+Le projet a trois couches. Les **algorithmes** sont les plus fournis. L'**orchestration** est en place : un script JSON se construit, se valide, s'exécute et se reprend. La chaîne va de l'import à l'export et se lance en ligne de commande (`stitching --pipeline`) ; l'interface Qt n'appelle pas encore le calcul.
 
 ```txt
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ ENTRÉES              src/main.cpp (vide)  ·  src/frontend/ (PipelineJson)  │
-│                      pas de ligne de commande : le pipeline se lance       │
-│                      depuis le code (GUI à venir, tests)                   │
+│ ENTRÉES              src/main.cpp : stitching --pipeline <script.json>     │
+│                      (ligne de commande, reprise --resume) ; sans          │
+│                      argument, fenêtre Qt (src/frontend/, calcul simulé)   │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ ORCHESTRATION        core/  : script JSON → buildPipeline → PipelineClass  │
 │                               → StepClass → DataStoreClass ; reprise :     │
@@ -192,7 +192,7 @@ cmake/               un fichier par partie du build
 
 | Fichier                                                                 | Rôle                                                                                                                                                                                                                         |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [CMakeLists.txt](../CMakeLists.txt)                                     | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (vide, nom provisoire).                                                       |
+| [CMakeLists.txt](../CMakeLists.txt)                                     | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (ligne de commande ou interface graphique, nom provisoire).                                                       |
 | [cmake/clang_tidy.cmake](../cmake/clang_tidy.cmake)                     | Option `ENABLE_CLANG_TIDY` (désactivée par défaut) : passe chaque fichier dans clang-tidy à la compilation. Règles dans [.clang-tidy](../.clang-tidy).                                                                       |
 | [cmake/dependencies_manager.cmake](../cmake/dependencies_manager.cmake) | OpenCV, libtiff et **Qt 6 obligatoires** ; nlohmann_json et ONNX Runtime 1.20.1 téléchargés s'ils ne sont pas fournis.                                                                                                       |
 | [cmake/backend.cmake](../cmake/backend.cmake)                           | Cible `kikirpa_backend` (lib statique de tout `src/backend`), liaison à ONNX Runtime et `opencv_dnn`, fonction `kikirpa_copy_onnxruntime_dlls`, option `/utf-8` pour MSVC.                                                  |
@@ -202,7 +202,7 @@ cmake/               un fichier par partie du build
 | [CMakePresets.json](../CMakePresets.json)                               | Presets `windows-aqt` (Qt via aqt, libtiff et GoogleTest via vcpkg ; variables `KIKIRPA_VCPKG_ROOT`, `OpenCV_DIR` et `QT_ROOT`), `linux`, `macos` (Homebrew) et `linux-clang-tidy`. Build dans `build/<preset>/`.            |
 | [README.md](../README.md)                                               | Présentation, état du projet, index de la documentation, compilation en bref et organisation du dépôt. |
 | [.github/workflows/](../.github/workflows/)                             | `ci.yml` (build et tests à chaque push et PR, plus clang-tidy sur les fichiers C++ modifiés d'une PR), `release.yml` (tag `v*`, publie des `.zip` de binaires), `build-test.yml` (job commun Ubuntu) et `build-test-windows.yml` (job MSVC). |
-| [src/main.cpp](../src/main.cpp)                                         | Réservé au frontend : **vide** (`TODO`).                                                                                                                                                                                     |
+| [src/main.cpp](../src/main.cpp) | Point d'entrée de `stitching`. `--pipeline <script.json> [--resume]` exécute un script (chemins relatifs au script, état de reprise dans `<checkpoints>/run.json`, codes de sortie 0 à 3) ; sans argument, ouvre la fenêtre Qt. Voir [Pipeline.md](core/Pipeline.md#lancer-un-pipeline). |
 
 ### `core/` : le moteur
 
@@ -337,6 +337,7 @@ Tous en GoogleTest et lancés par `ctest`, avec le label `unit` (environ 150 tes
 | [phase_correlation/](../tests/phase_correlation/) 🆕             | `PhaseCorrelation.*` (3), `PhaseCorrelationConfidence.*` (10) | Paires générées à vérité sous-pixel exacte dans les 4 directions, les deux passes, les cas limites ; contrôles de confiance. `etude_confiance` est compilé mais n'est pas un test (outil de l'étude, voir [EtudeConfiance.md](algorithms/stitching/phase_correlation/EtudeConfiance.md)). |
 | [seamline/](../tests/seamline/)                                  | 71 tests                                 | `DynamicProgrammingDijkstraNs` : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook.                                                                                                                                                                                                              |
 | [steps/](../tests/steps/)                                        | `SiftStepTest.*` (7), `LightGlueStepTest.*` (5), `AbsolutePosStep.*` et `PositionSolver.*` (15), `FusionStepTest.*` (15) | Steps d'appariement (formats 8/16 bits, repères, succès partiels, JSON ; inférence LightGlue remplacée par une fabrique de test) et placement global (contraintes, graphe déconnecté, référence). Assemblage : pixels, provenance et masque autour d'une couture, grille de blocs, trous, gains, dossier de sortie par défaut, empreinte, chaînage `graphcut` → `fusion` → `export`.                                                                                         |
+| [cli/](../tests/cli/) | `CommandLineTestClass.*` (11), `cli_default_frontend` | L'exécutable `stitching` lancé comme par un utilisateur : aide, option inconnue, codes de sortie, chemins relatifs au script, reprise avec `--resume`. Tuiles générées par le test. |
 
 Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` (modèle : [tests/brightness_equalization/CMakeLists.txt](../tests/brightness_equalization/CMakeLists.txt)), et une ligne `add_subdirectory` dans [cmake/tests_runner.cmake](../cmake/tests_runner.cmake) ; l'exécutable de test se lie à `kikirpa_backend`.
 
@@ -442,7 +443,7 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 
 | Ce qu'on pourrait croire                                                             | La réalité                                                                                                                                                                                                                                                                                                                         |
 | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.cpp` lance le pipeline                                                         | Il est vide (réservé au frontend). Il n'y a **plus de ligne de commande** (`stitching_run` a été retiré par #43) : le pipeline se lance depuis le code.                                                                                                                                                                            |
+| `main.cpp` lance le pipeline | Seulement avec `--pipeline <script.json>` : sans argument, il ouvre l'interface graphique, qui ne lance pas encore le calcul. (`stitching_run`, l'ancienne ligne de commande, a été retiré par #43.) |
 | Les `inputs` et `outputs` du JSON définissent les entrées et sorties                 | Ils sont ignorés à la lecture : c'est le constructeur du step qui les fixe. Seules les **valeurs** des paramètres sont reprises du JSON.                                                                                                                                                                                           |
 | Un ancien script JSON (`options`, `type`, `key`) se relit                            | Non 🆕 : le format a changé avec #50 (`parameters`, `valueType`, `name`). Les anciens checkpoints sont jugés périmés et refaits.                                                                                                                                                                                                   |
 | Les checkpoints sont actifs par défaut                                               | Non : `checkpointDirectory` est vide par défaut. Il faut le remplir dans `RunState` (champ `run.checkpointDirectory` du script).                                                                                                                                                                                                   |

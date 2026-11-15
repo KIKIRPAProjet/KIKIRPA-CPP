@@ -8,9 +8,9 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (08/11/2026)** : les étapes jusqu'à la seamline existent. L'assemblage, l'export et le lien entre l'interface Qt et le calcul sont en cours.
+**État (15/11/2026)** : toutes les étapes, de l'import à l'export, existent et s'enchaînent en ligne de commande. Le lien entre l'interface Qt et le calcul est en cours.
 
-Un pipeline JSON se lance avec `build/<preset>/stitching --pipeline <script.json>` (ajouter `.exe` sous Windows). Sans cette option, le point d'entrée réserve le lancement au frontend, encore en développement sur cette branche.
+Un pipeline JSON se lance avec `build/<preset>/stitching --pipeline <script.json>` (ajouter `.exe` sous Windows), et se reprend après un échec avec `--resume`. Options, codes de sortie et reprise : [docs/core/Pipeline.md](docs/core/Pipeline.md#lancer-un-pipeline). Sans argument, `stitching` ouvre l'interface graphique.
 
 ## Par où commencer
 
