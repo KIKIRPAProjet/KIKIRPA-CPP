@@ -24,6 +24,7 @@
 #include "project_setup_model.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
+#include "core/io/unicode_path.h"
 #include "alignment_tab.h"
 #include "bottom_tabs.h"
 #include "right_panel.h"
@@ -589,8 +590,8 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
     FrontendNs::ProjectSetup setup;
     setup.projectName = projectName.toStdString();
-    setup.inputDirectory = gridState.tileDirectory.toStdString();
-    setup.outputDirectory = outputDirectory.toStdString();
+    setup.inputDirectory = IONs::pathFromUtf8(gridState.tileDirectory.toStdString());   // toStdString : UTF-8
+    setup.outputDirectory = IONs::pathFromUtf8(outputDirectory.toStdString());
     setup.gridRows = gridState.gridRows;
     setup.gridColumns = gridState.gridColumns;
     setup.filenameFormat.clear();
@@ -601,7 +602,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         const GridTile &tile = gridState.gridTiles.at(index);
         if (tile.empty || tile.path.isEmpty())
             continue;
-        setup.tiles.push_back({std::filesystem::path(tile.path.toStdString()),
+        setup.tiles.push_back({IONs::pathFromUtf8(tile.path.toStdString()),
                                index / gridState.gridColumns,
                                index % gridState.gridColumns});
     }
@@ -624,7 +625,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                      .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
-            .arg(QString::fromStdString(scriptPath.string())));
+            .arg(QString::fromStdString(IONs::pathToUtf8(scriptPath))));
 }
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)

@@ -2,6 +2,7 @@
 #include "core/pipeline/pipeline_builder.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/run_state.h"
 #include "core/step/step.h"
@@ -138,17 +139,17 @@ namespace PipelineNs {
     // Trois étapes : ouvrir le fichier, l'analyser en JSON, construire le pipeline. Chaque erreur nomme le fichier.
     PipelineClass buildPipelineFromFile(const std::filesystem::path& scriptFile) {
         std::ifstream input(scriptFile, std::ios::binary);
-        if (!input) throw std::runtime_error("cannot open " + scriptFile.string());
+        if (!input) throw std::runtime_error("cannot open " + IONs::pathToUtf8(scriptFile));
         Json scriptJson;
         try {
             scriptJson = Json::parse(input);
         } catch (const Json::parse_error& exception) {
-            throw std::runtime_error("invalid JSON in " + scriptFile.string() + ": " + exception.what());
+            throw std::runtime_error("invalid JSON in " + IONs::pathToUtf8(scriptFile) + ": " + exception.what());
         }
         try {
             return buildPipeline(scriptJson);
         } catch (const std::invalid_argument& exception) {
-            throw std::invalid_argument(scriptFile.string() + ": " + exception.what());   // indique quel fichier est en cause
+            throw std::invalid_argument(IONs::pathToUtf8(scriptFile) + ": " + exception.what());   // indique quel fichier est en cause
         }
     }
 

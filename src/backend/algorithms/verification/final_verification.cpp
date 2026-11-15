@@ -1,5 +1,6 @@
 // src/backend/algorithms/verification/final_verification.cpp
 #include "algorithms/verification/final_verification.h"
+#include "core/io/unicode_path.h"
 
 #include <nlohmann/json_fwd.hpp>
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner): l'algorithme construit et manipule des objets JSON.
@@ -100,7 +101,7 @@ namespace VerificationNs {
         // L'algorithme ne décode pas les pixels : il extrait les métadonnées TIFF ou parcourt les segments JPEG.
         // Normalise l'extension pour que la sélection du lecteur accepte aussi les suffixes en majuscules.
         std::string lowerExtension(const std::filesystem::path& path) {
-            std::string extension = path.extension().string();
+            std::string extension = IONs::pathToUtf8(path.extension());
             std::transform(extension.begin(), extension.end(), extension.begin(),
                            [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
             return extension;
@@ -114,8 +115,8 @@ namespace VerificationNs {
 
         // Ouvre le TIFF avec un deleter RAII afin que tous les chemins de sortie appellent TIFFClose.
         std::unique_ptr<TIFF, decltype(&TIFFClose)> openTiff(const std::filesystem::path& path) {
-            std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(TIFFOpen(path.string().c_str(), "r"), TIFFClose);
-            if (!tiffFile) throw std::runtime_error("cannot open TIFF: " + path.string());
+            std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(IONs::openTiff(path, "r"), TIFFClose);
+            if (!tiffFile) throw std::runtime_error("cannot open TIFF: " + IONs::pathToUtf8(path));
             return tiffFile;
         }
 
@@ -126,10 +127,10 @@ namespace VerificationNs {
             const bool dimensionsRead = TIFFGetField(tiffFile, TIFFTAG_IMAGEWIDTH, &width) &&
                                         TIFFGetField(tiffFile, TIFFTAG_IMAGELENGTH, &height);
             if (!dimensionsRead || width == 0 || height == 0)
-                throw std::runtime_error("TIFF has missing or invalid dimensions: " + path.string());
+                throw std::runtime_error("TIFF has missing or invalid dimensions: " + IONs::pathToUtf8(path));
             const auto maximumDimension = static_cast<std::uint32_t>(std::numeric_limits<int>::max());
             if (width > maximumDimension || height > maximumDimension)
-                throw std::runtime_error("TIFF dimensions exceed the supported report range: " + path.string());
+                throw std::runtime_error("TIFF dimensions exceed the supported report range: " + IONs::pathToUtf8(path));
             properties["width"] = width;
             properties["height"] = height;
         }
@@ -409,14 +410,14 @@ namespace VerificationNs {
         std::vector<std::uint8_t> readJpegSegmentPayload(std::istream& input, const std::filesystem::path& path) {
             std::array<std::uint8_t, JPEG_LENGTH_FIELD_SIZE> lengthBytes{};
             if (!input.read(reinterpret_cast<char*>(lengthBytes.data()), static_cast<std::streamsize>(lengthBytes.size())))
-                throw std::runtime_error("truncated JPEG segment: " + path.string());
+                throw std::runtime_error("truncated JPEG segment: " + IONs::pathToUtf8(path));
             const std::uint16_t segmentLength = readBigEndian16(lengthBytes.data());
             if (segmentLength < JPEG_LENGTH_FIELD_SIZE)
-                throw std::runtime_error("invalid JPEG segment length: " + path.string());
+                throw std::runtime_error("invalid JPEG segment length: " + IONs::pathToUtf8(path));
             std::vector<std::uint8_t> payload(segmentLength - JPEG_LENGTH_FIELD_SIZE);
             if (!payload.empty() &&
                 !input.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payload.size())))
-                throw std::runtime_error("truncated JPEG segment: " + path.string());
+                throw std::runtime_error("truncated JPEG segment: " + IONs::pathToUtf8(path));
             return payload;
         }
 
@@ -425,10 +426,10 @@ namespace VerificationNs {
                                      const std::filesystem::path& path, Json& properties) {
             if (!isStartOfFrame(marker)) return;
             if (payload.size() < JPEG_FRAME_HEADER_SIZE)
-                throw std::runtime_error("invalid JPEG frame header: " + path.string());
+                throw std::runtime_error("invalid JPEG frame header: " + IONs::pathToUtf8(path));
             const std::uint16_t height = readBigEndian16(payload.data() + JPEG_FRAME_HEIGHT_OFFSET);
             const std::uint16_t width = readBigEndian16(payload.data() + JPEG_FRAME_WIDTH_OFFSET);
-            if (width == 0 || height == 0) throw std::runtime_error("JPEG has invalid dimensions: " + path.string());
+            if (width == 0 || height == 0) throw std::runtime_error("JPEG has invalid dimensions: " + IONs::pathToUtf8(path));
             properties["width"] = width;
             properties["height"] = height;
             properties["bitsPerSample"] = payload[JPEG_FRAME_PRECISION_OFFSET];
@@ -453,10 +454,10 @@ namespace VerificationNs {
             // ICC peut occuper plusieurs APP2 : conserver l'index permet de réassembler le profil dans l'ordre.
             if (chunkIndex == 0 || chunkCount == 0 || chunkIndex > chunkCount ||
                 (state.expectedIccChunks != 0 && state.expectedIccChunks != chunkCount))
-                throw std::runtime_error("invalid JPEG ICC profile segments: " + path.string());
+                throw std::runtime_error("invalid JPEG ICC profile segments: " + IONs::pathToUtf8(path));
             state.expectedIccChunks = chunkCount;
             if (state.iccChunks.count(chunkIndex) != 0)
-                throw std::runtime_error("duplicate JPEG ICC profile segment: " + path.string());
+                throw std::runtime_error("duplicate JPEG ICC profile segment: " + IONs::pathToUtf8(path));
             state.iccChunks.emplace(chunkIndex, std::vector<std::uint8_t>(
                 payload.begin() + static_cast<std::ptrdiff_t>(chunkCountOffset + 1), payload.end()));
             return true;
@@ -523,7 +524,7 @@ namespace VerificationNs {
         // Vérifie que le frame existe puis assemble les fragments ICC dans leur ordre numéroté.
         ImageMetadata finishJpegMetadata(const std::filesystem::path& path, JpegMetadataState& state) {
             if (!state.properties.contains("width") || !state.properties.contains("height"))
-                throw std::runtime_error("JPEG has no supported frame header: " + path.string());
+                throw std::runtime_error("JPEG has no supported frame header: " + IONs::pathToUtf8(path));
             if (!state.properties.contains("exifPresent")) {
                 state.properties["exifPresent"] = false;
                 state.properties["exifPayloadBytes"] = 0;
@@ -534,11 +535,11 @@ namespace VerificationNs {
             if (state.expectedIccChunks != 0) {
                 // Refuser un profil partiel ou désordonné plutôt que de comparer des octets incomplets.
                 if (state.iccChunks.size() != state.expectedIccChunks)
-                    throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
+                    throw std::runtime_error("incomplete JPEG ICC profile: " + IONs::pathToUtf8(path));
                 for (unsigned int index = 1; index <= state.expectedIccChunks; ++index) {
                     const auto chunk = state.iccChunks.find(index);
                     if (chunk == state.iccChunks.end())
-                        throw std::runtime_error("incomplete JPEG ICC profile: " + path.string());
+                        throw std::runtime_error("incomplete JPEG ICC profile: " + IONs::pathToUtf8(path));
                     state.imageMetadata.iccProfile.insert(
                         state.imageMetadata.iccProfile.end(), chunk->second.begin(), chunk->second.end());
                 }
@@ -552,12 +553,12 @@ namespace VerificationNs {
         // Parcourt uniquement l'en-tête JPEG avant SOS, suffisant pour lire frame et métadonnées sans les pixels.
         ImageMetadata readJpegMetadata(const std::filesystem::path& path) {
             std::ifstream input(path, std::ios::binary);
-            if (!input) throw std::runtime_error("cannot open JPEG: " + path.string());
+            if (!input) throw std::runtime_error("cannot open JPEG: " + IONs::pathToUtf8(path));
             const std::array<std::uint8_t, JPEG_LENGTH_FIELD_SIZE> signature = {
                 static_cast<std::uint8_t>(input.get()), static_cast<std::uint8_t>(input.get())
             };
             if (signature[0] != JPEG_MARKER_PREFIX || signature[1] != JPEG_START_OF_IMAGE)
-                throw std::runtime_error("invalid JPEG signature: " + path.string());
+                throw std::runtime_error("invalid JPEG signature: " + IONs::pathToUtf8(path));
 
             JpegMetadataState state;
             std::uint8_t marker = 0;
@@ -574,7 +575,7 @@ namespace VerificationNs {
             const std::string extension = lowerExtension(path);
             if (extension == ".tif" || extension == ".tiff") return readTiffMetadata(path);
             if (extension == ".jpg" || extension == ".jpeg") return readJpegMetadata(path);
-            throw std::runtime_error("unsupported image format: " + path.string());
+            throw std::runtime_error("unsupported image format: " + IONs::pathToUtf8(path));
         }
 
         // Compare les champs ayant le même sens dans les deux formats; les détails d'encodage restent informatifs.
@@ -702,8 +703,8 @@ namespace VerificationNs {
             const Json iccComparison = compareIccProfiles(input, output, diagnostics);
             return {
                 {"status", "report_ready"},
-                {"inputImage", {{"path", inputPath.string()}, {"format", input.format}, {"metadata", input.properties}}},
-                {"outputImage", {{"path", outputPath.string()}, {"format", output.format}, {"metadata", output.properties}}},
+                {"inputImage", {{"path", IONs::pathToUtf8(inputPath)}, {"format", input.format}, {"metadata", input.properties}}},
+                {"outputImage", {{"path", IONs::pathToUtf8(outputPath)}, {"format", output.format}, {"metadata", output.properties}}},
                 {"dimensions", compareDimensions(input, output)},
                 {"metadataComparisons", metadataComparisons},
                 {"iccProfile", iccComparison},
@@ -722,7 +723,7 @@ namespace VerificationNs {
         // La sortie doit rester un TIFF, tandis que le format de la référence choisit son lecteur.
         const std::string outputExtension = lowerExtension(outputImagePath);
         if (outputExtension != ".tif" && outputExtension != ".tiff")
-            throw std::runtime_error("reconstructed image must be a TIFF: " + outputImagePath.string());
+            throw std::runtime_error("reconstructed image must be a TIFF: " + IONs::pathToUtf8(outputImagePath));
         const ImageMetadata inputMetadata = readImageMetadata(inputImagePath);
         const ImageMetadata outputMetadata = readImageMetadata(outputImagePath);
         return createComparisonReport(inputImagePath, outputImagePath, inputMetadata, outputMetadata);

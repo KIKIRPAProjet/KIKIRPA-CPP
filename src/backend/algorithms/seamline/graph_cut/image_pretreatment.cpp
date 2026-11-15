@@ -13,6 +13,7 @@
 #include <tiff.h>
 #include "core/data/algorithm_types.h"
 #include "core/data/mosaic_corners.h"
+#include "core/io/unicode_path.h"
 #include <cstdio>
 #include <string>
 #include <map>
@@ -78,7 +79,7 @@ namespace GraphCutNs {
     // La transparence est supprimée, les niveaux de gris sont dupliqués sur trois canaux.
     // Renvoie une image vide si la lecture échoue.
     cv::Mat ImagePretreatmentClass::read16Bit(const std::string& path) {
-        cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat rawImage = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (rawImage.empty()) return rawImage;
         return toUnsigned16Bit(toThreeChannels(rawImage));
     }
@@ -93,7 +94,7 @@ namespace GraphCutNs {
     // réduction, comme à l'origine. Réduire d'abord en 8 bits arrondirait les valeurs interpolées à l'entier et décalerait
     // légèrement les coûts, donc, mesuré sur des tuiles de test, des pixels de la mosaïque changeraient de tuile.
     cv::Mat ImagePretreatmentClass::readSmallFloat(const std::string& path, double scale) {
-        cv::Mat image = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat image = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (image.empty()) return image;
 
         if (image.depth() != CV_16U)
@@ -154,7 +155,7 @@ namespace GraphCutNs {
         // complète (comportement d'origine). Renvoie false si l'image est illisible ou vide.
         bool readImageSize(const std::string& imagePath, cv::Size& size) {
             using TiffHandle = std::unique_ptr<TIFF, decltype(&TIFFClose)>;
-            const TiffHandle tiffFile(TIFFOpen(imagePath.c_str(), "r"), &TIFFClose);
+            const TiffHandle tiffFile(IONs::openTiff(IONs::pathFromUtf8(imagePath), "r"), &TIFFClose);
             if (tiffFile) {
                 std::uint32_t width = 0;
                 std::uint32_t height = 0;

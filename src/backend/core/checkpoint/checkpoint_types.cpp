@@ -4,6 +4,7 @@
 #include "core/checkpoint/checkpoint.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -32,13 +33,13 @@ namespace CheckpointNs {
         void writeJson(const fs::path& directory, const std::string& key, const Json& value) {
             std::ofstream output(directory / (key + ".json"), std::ios::binary);
             output << value.dump();
-            if (!output) throw std::runtime_error("cannot write " + (directory / (key + ".json")).string());
+            if (!output) throw std::runtime_error("cannot write " + IONs::pathToUtf8(directory / (key + ".json")));
         }
 
         // Lit <directory>/<key>.json. Lève std::runtime_error s'il est absent.
         Json readJson(const fs::path& directory, const std::string& key) {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
-            if (!input) throw std::runtime_error("missing " + (directory / (key + ".json")).string());
+            if (!input) throw std::runtime_error("missing " + IONs::pathToUtf8(directory / (key + ".json")));
             return Json::parse(input);
         }
 
@@ -108,7 +109,7 @@ namespace CheckpointNs {
             for (const Json& tileJson : tilesJson) {
                 const fs::path tiffPath = fs::u8path(tileJson.at("tiff").get<std::string>());
                 // Les pixels ne sont pas recopiés dans le checkpoint : le TIFF pyramidal doit toujours exister.
-                if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + tiffPath.string());
+                if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + IONs::pathToUtf8(tiffPath));
                 tiles.push_back(std::make_shared<DataNs::TileClass>(tileJson.at("id").get<int>(), fs::u8path(tileJson.at("source").get<std::string>()),
                                                                     tiffPath, tileJson.at("width").get<int>(), tileJson.at("height").get<int>(),
                                                                     tileJson.at("type").get<int>()));

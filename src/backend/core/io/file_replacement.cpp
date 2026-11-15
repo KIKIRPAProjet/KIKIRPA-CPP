@@ -5,6 +5,7 @@
 #endif
 #endif
 #include "core/io/file_replacement.h"
+#include "core/io/unicode_path.h"
 
 #include <atomic>
 #include <chrono>
@@ -36,14 +37,14 @@ namespace IONs {
         if (MoveFileExW(temporaryPath.c_str(), destinationPath.c_str(),
                         MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
             return true;
-        errorMessage = "cannot replace '" + destinationPath.string() + "': " +
+        errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " +
                        std::system_category().message(static_cast<int>(GetLastError()));
         return false;
 #else
         std::error_code errorCode;
         fs::rename(temporaryPath, destinationPath, errorCode);
         if (!errorCode) return true;
-        errorMessage = "cannot replace '" + destinationPath.string() + "': " + errorCode.message();
+        errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " + errorCode.message();
         return false;
 #endif
     }
@@ -54,7 +55,7 @@ namespace IONs {
         const fs::path temporaryPath = makeTemporaryPath(destinationPath);
         fs::copy_file(sourcePath, temporaryPath, errorCode);
         if (errorCode) {
-            errorMessage = "cannot copy '" + sourcePath.string() + "': " + errorCode.message();
+            errorMessage = "cannot copy '" + IONs::pathToUtf8(sourcePath) + "': " + errorCode.message();
         } else if (replaceFile(temporaryPath, destinationPath, errorMessage)) {
             return true;
         }

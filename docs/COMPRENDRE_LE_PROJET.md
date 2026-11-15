@@ -83,39 +83,19 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 
 ## 3. Faire tourner le pipeline aujourd'hui
 
-### Il n'y a pas encore d'exécutable
+### En ligne de commande
 
-`src/main.cpp` (l'exécutable `stitching`) ne contient qu'un `TODO`, et la GUI n'appelle pas le backend. Aujourd'hui, le pipeline se lance seulement depuis du code C++ : un test, ou un `main` écrit pour l'occasion. Écrire le vrai exécutable en ligne de commande est une tâche à faire.
+Compiler la cible `stitching`, écrire le script ci-dessous (par exemple dans `D:/oeuvre/pipeline.json`), puis :
 
-Pour essayer sur ses propres images, remplacer **localement** le contenu de `src/main.cpp` par ceci, sans le committer :
-
-```cpp
-#include "core/pipeline/pipeline_builder.h"
-
-#include <iostream>
-
-int main(int argc, char** argv) {
-    if (argc < 2) { std::cerr << "usage: stitching <script.json>\n"; return 2; }
-    try {
-        PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(argv[1]);
-
-        PipelineNs::RunState runState = pipeline.getRunState();
-        runState.checkpointDirectory = "output/checkpoints";   // les sorties de chaque step y sont écrites
-        pipeline.setRunState(runState);
-        pipeline.setScriptPath("output/checkpoints/run.json");
-
-        const bool ok = pipeline.run([](const std::string& message) { std::cout << message << '\n'; });
-        return ok ? 0 : 1;
-    } catch (const std::exception& exception) {   // script invalide : step inconnu, entrée manquante...
-        std::cerr << exception.what() << '\n';
-        return 2;
-    }
-}
+```sh
+build/<preset>/stitching --pipeline D:/oeuvre/pipeline.json
 ```
 
-Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`build/<preset>/stitching pipeline.json`).
+Après un échec, corriger la cause (un paramètre, un fichier) puis relancer avec `--resume` : les steps déjà faits ne sont pas refaits. Sans argument, `stitching` ouvre l'interface graphique, qui n'appelle pas encore le calcul. Options et codes de sortie : [core/Pipeline.md](core/Pipeline.md#lancer-un-pipeline).
 
-### Un script qui va jusqu'au bout de ce qui existe
+### Un script de l'import à l'export
+
+Les chemins relatifs se lisent depuis le dossier du script : ici, les images sont dans `D:/oeuvre/tuiles/`.
 
 ```json
 {
@@ -123,7 +103,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
     "steps": [
       { "name": "import",
         "parameters": [
-          { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" },
+          { "valueType": "string", "name": "path", "value": "tuiles" },
           { "valueType": "string", "name": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
         ] },
       { "name": "phase-correlation",
@@ -131,9 +111,13 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
       { "name": "absolute-pos" },
       { "name": "intensity-correction" },
       { "name": "graphcut",
-        "parameters": [ { "valueType": "float", "name": "scale", "value": 0.25 } ] }
+        "parameters": [ { "valueType": "float", "name": "scale", "value": 0.25 } ] },
+      { "name": "fusion" },
+      { "name": "export",
+        "parameters": [ { "valueType": "string", "name": "outputDirectory", "value": "resultat" } ] }
     ]
-  }
+  },
+  "run": { "checkpointDirectory": "checkpoints" }
 }
 ```
 
@@ -153,13 +137,15 @@ Step 3/5 OK {"failures":[],"pairs":7,"positions":6}
 ...
 ```
 
-En cas d'échec : `Step 3/5 failed: <raison>`, et le run s'arrête.
+En cas d'échec : `Step 3/5 failed: <raison>`, et le run s'arrête. La sortie d'erreur rappelle le step fautif et la commande `--resume` à lancer.
 
 ### Ce que l'on trouve sur le disque
 
 ```
 D:/oeuvre/tuiles/.cache/pyramids/      un TIFF pyramidal par image, écrit par import
-output/checkpoints/
+D:/oeuvre/tuiles/.cache/mosaic/        la mosaïque assemblée par fusion (image, provenance, masque)
+D:/oeuvre/resultat/mosaic.tif          l'image publiée par export
+D:/oeuvre/checkpoints/
 ├── run.json                           le script complet + l'état du run, réécrit après chaque step
 ├── 00_import/
 │   ├── tiles.json                     la sortie du step
@@ -167,10 +153,12 @@ output/checkpoints/
 ├── 01_phase-correlation/  matches.json, manifest.json
 ├── 02_absolute-pos/       positions.json, manifest.json
 ├── 03_intensity-correction/  intensityCorrection.json, manifest.json
-└── 04_graphcut/           territories.json, manifest.json
+├── 04_graphcut/           territories.json, manifest.json
+├── 05_fusion/             mosaic.json, manifest.json
+└── 06_export/             manifest.json
 ```
 
-Relancer le même script reprend où le run s'était arrêté, et saute les steps dont le checkpoint est encore valide. Détails : [core/Pipeline.md](core/Pipeline.md#reprise-pause-checkpoints).
+Relancer le même script avec `--resume` reprend où le run s'était arrêté, et saute les steps dont le checkpoint est encore valide. Détails : [core/Pipeline.md](core/Pipeline.md#reprise-pause-checkpoints).
 
 ---
 
@@ -458,7 +446,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 ## 8. Compilation et CI
 
 - **Compiler** : [BUILD.md](BUILD.md). Toutes les dépendances sont obligatoires : OpenCV avec `dnn`, libtiff, Qt 6, GoogleTest, nlohmann_json, ONNX Runtime. Les deux dernières sont téléchargées automatiquement par CMake.
-- **Cibles** : `kikirpa_backend` (bibliothèque : moteur, steps, algorithmes), `kikirpa_frontend` (bibliothèque Qt), `stitching` (l'exécutable, vide pour l'instant) et les exécutables de tests.
+- **Cibles** : `kikirpa_backend` (bibliothèque : moteur, steps, algorithmes), `kikirpa_frontend` (bibliothèque Qt), `stitching` (l'exécutable : interface graphique sans argument, pipeline avec `--pipeline`) et les exécutables de tests.
 - **Tests** : `ctest --preset <preset>`. Ce sont uniquement des tests GoogleTest, rangés par dossier dans `tests/`.
 
 La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
@@ -514,7 +502,6 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 - **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle (§5) ; fondu le long des coutures, si besoin.
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
-- **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
 - **Unifier le nommage des fichiers** entre `import` et `absolute-pos` / `graphcut`.

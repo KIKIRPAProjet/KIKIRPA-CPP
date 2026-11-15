@@ -10,6 +10,7 @@
 #include "core/io/file_fingerprint.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -89,7 +90,7 @@ namespace StepsNs {
                 positionByTileId[tilePosition.tileId] = tilePosition.position;
             std::vector<cv::Point2d> positions;
             for (const auto& tile : inputs.tiles) {
-                const std::string sourcePath = tile->getSource().string();
+                const std::string sourcePath = IONs::pathToUtf8(tile->getSource());
                 int row = 0;
                 int column = 0;
                 std::string tileId;

@@ -2,12 +2,15 @@
 #include "steps/import_step.h"
 
 #include "core/config/pipeline_config.h"
+#include "core/data/tile.h"
 #include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/unicode_path.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -37,11 +40,11 @@ namespace StepsNs {
     // (execute() échouera de toute façon).
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
-            const fs::path directory = getParameter("path").get<std::string>();
+            const fs::path directory = IONs::pathFromUtf8(getParameter("path").get<std::string>());
             const std::regex filenamePattern(getParameter("format").get<std::string>(), std::regex::icase);
             std::map<std::string, Json> filesByName;
             for (const auto& entry : fs::directory_iterator(directory)) {
-                const std::string fileName = entry.path().filename().string();
+                const std::string fileName = IONs::pathToUtf8(entry.path().filename());
                 if (!entry.is_regular_file() || !std::regex_match(fileName, filenamePattern)) continue;
                 filesByName[fileName] = {static_cast<long long>(entry.file_size()),
                                          static_cast<long long>(entry.last_write_time().time_since_epoch().count())};
@@ -59,10 +62,10 @@ namespace StepsNs {
     bool ImportStepClass::execute() {
         // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
         const ImportInput input{getParameter("path").get<std::string>(), getParameter("format").get<std::string>()};
-        const fs::path directory = input.path;
+        const fs::path directory = IONs::pathFromUtf8(input.path);
 
         if (!fs::is_directory(directory)) {
-            result["error"] = "not a directory: " + directory.string();
+            result["error"] = "not a directory: " + IONs::pathToUtf8(directory);
             return false;
         }
 
@@ -82,14 +85,14 @@ namespace StepsNs {
         struct ImageFile { fs::path filePath; int column, row; };
         std::vector<ImageFile> imageFiles;
         for (const auto& entry : fs::directory_iterator(directory)) {
-            const std::string fileName = entry.path().filename().string();
+            const std::string fileName = IONs::pathToUtf8(entry.path().filename());
             std::smatch nameMatch;
             if (!entry.is_regular_file() || !std::regex_match(fileName, nameMatch, filenamePattern)) continue;
             imageFiles.push_back({entry.path(), std::stoi(nameMatch[1].str()), std::stoi(nameMatch[2].str())});
         }
 
         if (imageFiles.empty()) {
-            result["error"] = "no file matching '" + input.format + "' in " + directory.string();
+            result["error"] = "no file matching '" + input.format + "' in " + IONs::pathToUtf8(directory);
             return false;
         }
 
@@ -108,7 +111,7 @@ namespace StepsNs {
         if (!fs::create_directories(outputDirectory, errorCode)
             && errorCode) {
             result["error"] =
-                "cannot create output directory " + outputDirectory.string()
+                "cannot create output directory " + IONs::pathToUtf8(outputDirectory)
                 + ": " + errorCode.message();
             return false;
         }
@@ -117,19 +120,21 @@ namespace StepsNs {
         DataNs::TileList tiles;
         std::map<std::pair<int, int>, DataNs::TileClass*> tileByGridPosition;   // (colonne, ligne) -> tuile
         for (const auto& imageFile : imageFiles) {
-            const cv::Mat image = cv::imread(imageFile.filePath.string(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+            const cv::Mat image = IONs::readImage(imageFile.filePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
             if (image.empty()) {
-                result["error"] = "cannot read " + imageFile.filePath.string();
+                result["error"] = "cannot read " + IONs::pathToUtf8(imageFile.filePath);
                 return false;
             }
 
             // Un TIFF par image, nommé d'après l'image d'origine : <nom>_pyramid.tif.
-            const fs::path pyramidPath = outputDirectory / (imageFile.filePath.stem().string() + "_pyramid.tif");
+            fs::path pyramidFileName = imageFile.filePath.stem();
+            pyramidFileName += "_pyramid.tif";
+            const fs::path pyramidPath = outputDirectory / pyramidFileName;
 
             std::string errorMessage;
             if (!IONs::createPyramidalTiledTiff(image, pyramidPath, errorMessage)) {
                 result["error"] =
-                    "cannot create " + pyramidPath.string() + ": " + errorMessage;
+                    "cannot create " + IONs::pathToUtf8(pyramidPath) + ": " + errorMessage;
                 return false;
             }
 
