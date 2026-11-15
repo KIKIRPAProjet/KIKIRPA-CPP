@@ -170,8 +170,8 @@ TEST(OverlapEstimationStepTest, ProducesOneEstimateForVerticalPair) {
                 static_cast<double>(TILE_SHIFT), static_cast<double>(TRANSLATION_TOLERANCE));
 }
 
-// Grille 2×2 : trois paires (A→B, A→C, B→D ou C→D selon l'ordre) — toutes doivent être estimées.
-TEST(OverlapEstimationStepTest, Produces3EstimatesForA2x2Grid) {
+// Grille 2×2 : quatre paires voisines (deux à droite, deux en dessous) — toutes doivent être estimées.
+TEST(OverlapEstimationStepTest, Produces4EstimatesForA2x2Grid) {
     Directory dir;
     const auto source = makeTexture();
     auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);

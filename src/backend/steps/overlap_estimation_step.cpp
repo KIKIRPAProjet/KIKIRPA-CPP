@@ -52,9 +52,11 @@ namespace StepsNs {
             return pairs;
         }
 
-        DataNs::PairOverlapEstimate estimatePair(const NeighbourPair& pair, float overlap,
-                                                  OverlapEstimationNs::OverlapEstimatorClass& estimator,
-                                                  Json& failures) {
+        // Une paire non mesurable ne fait pas échouer le step : la raison part dans `failures` et la paire
+        // est simplement absente du résultat.
+        std::optional<DataNs::PairOverlapEstimate> estimatePair(const NeighbourPair& pair, float overlap,
+                                                                 OverlapEstimationNs::OverlapEstimatorClass& estimator,
+                                                                 Json& failures) {
             const cv::Mat imageA = PhaseCorrelationStepClass::readPixels(*pair.tileA, 0);
             const cv::Mat imageB = PhaseCorrelationStepClass::readPixels(*pair.tileB, 0);
             if (imageA.empty() || imageB.empty())
@@ -65,7 +67,7 @@ namespace StepsNs {
             if (!estimate) {
                 failures.push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
                                     {"reason", estimator.getFailureReason()}});
-                return {};
+                return std::nullopt;
             }
 
             const auto commonAreas = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(
@@ -73,11 +75,11 @@ namespace StepsNs {
             if (commonAreas.first.empty() || commonAreas.second.empty()) {
                 failures.push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
                                     {"reason", "estimated tiles have no common area"}});
-                return {};
+                return std::nullopt;
             }
 
-            return {pair.tileA->getId(), pair.tileB->getId(), pair.direction, *estimate,
-                    commonAreas.first, commonAreas.second};
+            return DataNs::PairOverlapEstimate{pair.tileA->getId(), pair.tileB->getId(), pair.direction, *estimate,
+                                               commonAreas.first, commonAreas.second};
         }
 
     }
@@ -86,10 +88,10 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "overlap-estimation";
         stepConfig.parameters = {{"float", "overlap", input.overlap},
-                                 {"float", "smoothingSigma", static_cast<float>(input.parameters.smoothingSigma)},
-                                 {"float", "minimumPeakRatio", static_cast<float>(input.parameters.minimumPeakRatio)},
-                                 {"float", "railMargin", static_cast<float>(input.parameters.railMargin)},
-                                 {"float", "minimumValidFraction", static_cast<float>(input.parameters.minimumValidFraction)}};
+                                 {"float", "smoothingSigma", input.parameters.smoothingSigma},
+                                 {"float", "minimumPeakRatio", input.parameters.minimumPeakRatio},
+                                 {"float", "railMargin", input.parameters.railMargin},
+                                 {"float", "minimumValidFraction", input.parameters.minimumValidFraction}};
         stepConfig.inputs = {{"Tiles", "tiles"}};
         stepConfig.outputs = {{output.type, output.key}};
         configJson = stepConfig;
@@ -97,7 +99,7 @@ namespace StepsNs {
 
     bool OverlapEstimationStepClass::execute() {
         output.value.clear();
-        result = {{"pairs", 0}, {"failures", Json::array()}, {"error", ""}};
+        result = {{"pairs", 0}, {"failures", Json::array()}};
         try {
             if (!dataStore) throw std::invalid_argument("overlap-estimation: DataStore is not attached");
             dataStore->replace(output.key, DataNs::OverlapEstimates{});
@@ -107,10 +109,10 @@ namespace StepsNs {
                 throw std::invalid_argument("overlap-estimation: overlap must be greater than 0 and less than 1");
 
             PhaseCorrelationNs::Parameters parameters;
-            parameters.smoothingSigma = getParameter("smoothingSigma").get<float>();
-            parameters.minimumPeakRatio = getParameter("minimumPeakRatio").get<float>();
-            parameters.railMargin = getParameter("railMargin").get<float>();
-            parameters.minimumValidFraction = getParameter("minimumValidFraction").get<float>();
+            parameters.smoothingSigma = getParameter("smoothingSigma").get<double>();
+            parameters.minimumPeakRatio = getParameter("minimumPeakRatio").get<double>();
+            parameters.railMargin = getParameter("railMargin").get<double>();
+            parameters.minimumValidFraction = getParameter("minimumValidFraction").get<double>();
             return estimatePairs(overlap, parameters);
         } catch (const std::exception& exception) {
             result["error"] = exception.what();
@@ -124,7 +126,7 @@ namespace StepsNs {
         if (pairs.empty()) throw std::runtime_error("overlap-estimation: no neighboring tile pairs");
         for (const NeighbourPair& pair : pairs) {
             const auto estimate = estimatePair(pair, overlap, estimator, result["failures"]);
-            if (!estimate.commonAreaInA.empty()) output.value.push_back(estimate);
+            if (estimate) output.value.push_back(*estimate);
         }
         result["pairs"] = output.value.size();
         if (output.value.empty()) throw std::runtime_error("overlap-estimation: no pair could be estimated");

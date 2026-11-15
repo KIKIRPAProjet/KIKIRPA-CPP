@@ -17,7 +17,7 @@ namespace StepsNs {
         PhaseCorrelationNs::Parameters parameters;
     };
 
-    // Estimations publiées sous la clé overlap-estimates.
+    // Estimations publiées sous la clé overlapEstimates.
     struct OverlapEstimationOutput {
         std::string key = "overlapEstimates";
         DataNs::OverlapEstimates value;
@@ -25,7 +25,14 @@ namespace StepsNs {
     };
 
     // Estime la translation et la zone commune des voisines droite et dessous de chaque tuile.
-    // Les paires impossibles à mesurer sont signalées dans getResult()["failures"].
+    // Les paires impossibles à mesurer sont signalées dans getResult()["failures"] : elles n'arrêtent pas le step.
+    //
+    // Nom : "overlap-estimation".   Paramètres : overlap, smoothingSigma, minimumPeakRatio, railMargin,
+    // minimumValidFraction (tous de type "float", c'est-à-dire double en C++).
+    // Entrée : "Tiles" (clé "tiles").   Sortie : "OverlapEstimates" (clé "overlapEstimates").
+    //
+    // Étapes de execute() : lecture des tuiles, contrôle de overlap, recherche des paires voisines (voisines
+    // droite et dessous, dédoublonnées), estimation de chacune, publication des paires mesurées.
     class OverlapEstimationStepClass : public StepNs::StepClass {
 
         public:
