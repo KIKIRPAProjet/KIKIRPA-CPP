@@ -5,6 +5,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | Step (`name`) | Lit | Écrit | Fiche |
 |---|---|---|---|
 | `import` | les images du dossier `path` | `tiles` | [ImportStep.md](ImportStep.md) |
+| `overlap-estimation` | `tiles` | `overlapEstimates` | [OverlapEstimationStep.md](OverlapEstimationStep.md) |
 | `phase-correlation` | `tiles` | `matches` | [PhaseCorrelationStep.md](PhaseCorrelationStep.md) |
 | `sift` | `tiles` | `matches` | [SiftStep.md](SiftStep.md) |
 | `lightglue` | `tiles`, le modèle ONNX `modelPath` | `matches` | [LightGlueStep.md](LightGlueStep.md) |
@@ -15,7 +16,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
 
-`phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
+`overlap-estimation` mesure le recouvrement réel de chaque paire : c'est la première passe commune aux trois méthodes d'appariement, qui la font encore chacune en interne. `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
 
 - Le schéma de l'enchaînement, et le JSON de chaque type de donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 - **Ajouter un step**, avec un exemple complet (code, test, enregistrement, fiche) : [AJOUTER_UN_STEP.md](AJOUTER_UN_STEP.md).
