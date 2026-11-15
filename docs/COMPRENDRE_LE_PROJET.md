@@ -34,10 +34,10 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
-| 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
-| 9 | Export | Écrire le fichier final | 🟡 `export` (attend la mosaïque écrite par l'assemblage) |
+| 8 | Assemblage | Fabriquer l'image finale | ✅ `fusion` (bloc par bloc, sans fondu) |
+| 9 | Export | Écrire le fichier final | ✅ `export` |
 
-**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step `export` publie l'image que l'assemblage aura écrite sur disque, bloc par bloc (§5).
+**Sur `main`, le pipeline va des tuiles jusqu'à l'image finale** : `fusion` écrit la mosaïque sur disque bloc par bloc, `export` la publie (§5). Elle n'a pas encore été produite sur une vraie œuvre.
 
 ---
 
@@ -201,8 +201,11 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                               ▼                                                           │
                          ┌──────────┐◄───────────────────────────────────────────────────┘
                          │ graphcut │──► territories
-                         └──────────┘
-                                         (assemblage et export : pas encore sur main)
+                         └──────────┘        │
+                                             ▼     (+ tiles, positions, intensityCorrection)
+                                        ┌────────┐             ┌────────┐
+                                        │ fusion │──► mosaic ──►│ export │──► mosaic.tif
+                                        └────────┘             └────────┘
 ```
 
 Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines` — c'est l'autre méthode de couture, à côté de `graphcut`. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
@@ -220,7 +223,8 @@ Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inte
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `export` | `outputDirectory` | `mosaic` : `Mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
+| `fusion` | `outputDirectory` | `tiles`, `positions`, `territories` (+ `intensityCorrection` si présente) | `mosaic` : `Mosaic` | [FusionStep.md](steps/FusionStep.md) |
+| `export` | `outputDirectory` | `mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 `final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
@@ -371,21 +375,21 @@ C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **L'export est sur `main`, pas encore l'assemblage.**
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. Les deux sont sur `main` : `fusion` puis `export`.
 
-Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
+Ce que fait l'assemblage (`fusion`, [FusionStep.md](steps/FusionStep.md)), pour chaque bloc de 512 × 512 de la mosaïque :
 
-1. lire ses pixels (fichier source ou TIFF pyramidal) ;
-2. corriger sa luminosité : diviser par `tileGains[i] · exp(fieldStrength · r²)`. Ce calcul existe déjà dans `BrightnessEqualizationNs::OutputClass` (`algorithms/brightness_equalization/output.h`) ;
-3. la placer à sa `position`, après le même décalage que `graphcut` (coin le plus petit en (0, 0)) ;
-4. ne garder que les pixels qui tombent dans son **territoire** ;
-5. écrire le résultat dans l'image finale, **par blocs** et sans jamais garder toute la mosaïque en mémoire (§6).
+1. pour chaque tuile qui touche le bloc, placée à sa `position` après le même décalage que `graphcut` (coin le plus petit vers (0, 0)), dessiner son **territoire** sur le bloc ;
+2. lire dans son TIFF pyramidal **seulement** la partie qui tombe dans le bloc (`readRegion`) ;
+3. corriger sa luminosité : diviser par `tileGains[i] · exp(fieldStrength · r²)` (`BrightnessEqualizationNs::OutputClass::correctRegion`, `algorithms/brightness_equalization/output.h`) ;
+4. copier ses pixels sous le masque du territoire ;
+5. écrire le bloc sur disque, puis passer au suivant : la mosaïque n'est jamais entière en mémoire (§6).
 
 L'assemblage écrit chaque bloc **dès qu'il est calculé**, avec `IONs::TiledTiffWriterClass`, dans trois TIFF tuilés (image, provenance, masque). Il ne range dans le DataStore que leur description, `mosaic` (§4). L'export publie ensuite l'image sous le nom `mosaic.tif`.
 
 Où en est-on :
 
-- **Assemblage (Fusion)** : PR #69 (brouillon).
+- **Assemblage** : step `fusion` sur main ([FusionStep.md](steps/FusionStep.md)). Pas de fondu le long de la couture.
 - **Export** : step `export` sur main ([ExportStep.md](steps/ExportStep.md)).
 - **Contrat entre les deux** : l'assemblage fournit la clé `mosaic` (`DataNs::Mosaic`). Son `imagePath` est un TIFF tuilé RGB 16 bits de `canvasSize` pixels ; l'export le contrôle puis le copie (temporaire puis renommage). Il ne publie ni la provenance ni le masque. Aucune image entière ne passe par la mémoire, ni dans l'assemblage, ni dans l'export.
 
@@ -427,7 +431,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 ### Ce qui ne respecte pas encore ces règles
 
-- **Aucun step ne lit le TIFF pyramidal.** Tous relisent l'image source entière (`cv::imread`), puis la réduisent si besoin. `readRegion` existe mais n'est pas utilisé.
+- **Seul `fusion` lit le TIFF pyramidal** (`readRegion`, une région par bloc). Les autres steps relisent l'image source entière (`cv::imread`), puis la réduisent si besoin.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
 - `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
 - `MemoryScopeClass` n'est utilisé par aucun step.
@@ -508,7 +512,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : écrire l'assemblage sur le writer par blocs et le contrat `mosaic`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
+- **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle (§5) ; fondu le long des coutures, si besoin.
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.

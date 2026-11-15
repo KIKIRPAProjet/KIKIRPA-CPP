@@ -10,7 +10,7 @@ Calcule les **lignes de raccord** (seamlines) entre les tuiles déjà placées, 
 |---|---|---|---|---|
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Entrée | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `absolute-pos` |
-| Sortie | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | aucun step sur main : l'assemblage (PR #69) |
+| Sortie | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | `fusion` |
 
 - **Lit** dans `tiles` le chemin de chaque image source, relue deux à la fois puis réduite de `scale`.
 - **Lit** dans `positions` la position de chaque tuile, retrouvée par le nom `rLL_cCC` tiré du nom de fichier. La rotation est ignorée.
@@ -30,7 +30,7 @@ Calcule les **lignes de raccord** (seamlines) entre les tuiles déjà placées, 
 2. **Contrôles** : au moins une tuile, autant de positions que de tuiles, `scale` dans ]0, 1].
 3. **Prétraitement** (`ImagePretreatmentClass::processImages`) :
    - chaque position est retrouvée **par le nom du fichier** : `parseTileName` lit la fin du nom `_C<colonne>_R<ligne>.tif` (ou `.tiff`, casse indifférente) et fabrique l'identifiant `rLL_cCC` (ligne, colonne, deux chiffres au minimum), celui que produit `absolute-pos`. Exemple : `tile_C07_R03.tif` donne `r03_c07`. Une image qui ne suit pas ce nommage fait échouer le step (voir [ImportStep.md](ImportStep.md)) ;
-   - les coins sont **arrondis au pixel**. Ils sont ensuite décalés pour que le plus petit soit en (0, 0) : les positions de `absolute-pos` peuvent être négatives, celles de la mosaïque ne le sont pas ;
+   - les coins sont **décalés puis arrondis au pixel** par `DataNs::computeMosaicCorners` ([mosaic_corners.h](../../include/backend/core/data/mosaic_corners.h)) : le minimum des positions est soustrait **sans être arrondi**, puis chaque coin est arrondi (`cvRound`). La tuile la plus à gauche est donc en x = 0 et la plus haute en y = 0 : les positions de `absolute-pos` peuvent être négatives, celles de la mosaïque ne le sont pas. `fusion` place ses pixels avec la même fonction, ce qui garantit que les territoires tombent sur les tuiles ;
    - **la rotation (`rotationRadians`) est ignorée.**
 4. **Coupe de graphe** (`computeSeamline`) : la coupe de graphe d'OpenCV (`COST_COLOR`) est appliquée paire par paire, sur les images réduites de `scale`. Chaque tuile est lue et réduite une seule fois, à sa première paire, puis libérée dès qu'aucune paire suivante ne l'utilise. Elle produit une **carte de provenance**, une image 8 bits de la taille de la mosaïque en pleine résolution, où chaque pixel porte le numéro de la tuile choisie (255 = aucune). D'où la limite : **moins de 255 tuiles**.
 5. **Polygones** (`extractPolygons`) : les contours de chaque territoire, trous compris, sont extraits de la carte de provenance.
@@ -62,7 +62,7 @@ Chaque tuile est lue depuis son fichier source et réduite de `scale` **une seul
 
 ## Qui utilise les territoires
 
-Aucun step sur main. L'assemblage (PR #69, en cours) devra prendre, pour chaque pixel de la mosaïque, la tuile dont le territoire le contient. Le front pourra dessiner les polygones pour montrer la vraie seamline.
+`fusion` prend, pour chaque pixel de la mosaïque, la tuile dont le territoire le contient ([FusionStep.md](FusionStep.md)), avec la même règle de dessin que `verifyTiling` (le contour d'un trou appartient au territoire). Le front pourra dessiner les polygones pour montrer la vraie seamline.
 
 ## Erreurs
 

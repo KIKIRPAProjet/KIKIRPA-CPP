@@ -35,6 +35,7 @@ Il faut décider de cinq choses.
 | `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | `intensity-correction` |
 | `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | `graphcut` |
 | `seamlines` | `Seamlines` | `DataNs::Seamlines` | `dynamic-programming-dijkstra` |
+| `mosaic` | `Mosaic` | `DataNs::Mosaic` | `fusion` |
 
 Ce que contient chaque donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 

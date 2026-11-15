@@ -15,6 +15,8 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
 | `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
+| `fusion` | `tiles` (TIFF pyramidaux, région par région), `positions`, `territories`, `intensityCorrection` si présente | `mosaic` (trois TIFF écrits bloc par bloc) | [FusionStep.md](FusionStep.md) |
+| `export` | `mosaic` | `mosaic.tif` dans `outputDirectory` | [ExportStep.md](ExportStep.md) |
 
 `overlap-estimation` mesure le recouvrement réel de chaque paire : c'est la première passe commune aux trois méthodes d'appariement, qui la font encore chacune en interne. `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
 

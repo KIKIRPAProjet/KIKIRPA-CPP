@@ -9,6 +9,7 @@
 #include "steps/dynamic_programming_dijkstra_step.h"
 #include "steps/export_step.h"
 #include "steps/final_verification_step.h"
+#include "steps/fusion_step.h"
 #include "steps/graph_cut_step.h"
 #include "steps/import_step.h"
 #include "steps/intensity_correction_step.h"
@@ -49,6 +50,7 @@ namespace PipelineNs {
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
+                {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},
                 // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
                 {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
