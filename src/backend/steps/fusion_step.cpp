@@ -5,6 +5,7 @@
 #include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/mosaic_corners.h"
 #include "core/data/tile.h"
 #include "core/io/file_fingerprint.h"
 #include "core/io/pyramidal_tiff_reader.h"
@@ -13,7 +14,6 @@
 
 #include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
-#include <opencv2/core/fast_math.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
@@ -157,7 +157,7 @@ namespace StepsNs {
 
         FusionContext buildFusionContext(const FusionInputs& inputs) {
             validateInputs(inputs);
-            const std::vector<cv::Point> corners = computeMosaicCorners(findTilePositions(inputs));
+            const std::vector<cv::Point> corners = DataNs::computeMosaicCorners(findTilePositions(inputs));
             std::vector<std::vector<TerritoryPolygon>> polygonsByTileIndex = indexTerritories(inputs);
             FusionContext context;
             for (std::size_t tileIndex = 0; tileIndex < inputs.tiles.size(); ++tileIndex) {
@@ -287,24 +287,6 @@ namespace StepsNs {
                     hasIntensityCorrection ? &dataStore.get<DataNs::IntensityCorrection>("intensityCorrection") : nullptr};
         }
 
-    }
-
-    std::vector<cv::Point> computeMosaicCorners(const std::vector<cv::Point2d>& positions) {
-        double minimumX = std::numeric_limits<double>::infinity();
-        double minimumY = std::numeric_limits<double>::infinity();
-        for (const cv::Point2d& position : positions) {
-            minimumX = std::min(minimumX, position.x);
-            minimumY = std::min(minimumY, position.y);
-        }
-        // Soustraire puis arrondir, dans cet ordre, comme graphcut : arrondir avant de soustraire peut décaler d'un
-        // pixel (cvRound arrondit les demi-pixels au pair) et les territoires ne tomberaient plus sur les tuiles.
-        const double offsetX = std::floor(minimumX);
-        const double offsetY = std::floor(minimumY);
-        std::vector<cv::Point> corners;
-        corners.reserve(positions.size());
-        for (const cv::Point2d& position : positions)
-            corners.emplace_back(cvRound(position.x - offsetX), cvRound(position.y - offsetY));
-        return corners;
     }
 
     DataNs::CompositeBlock renderBlock(const cv::Rect& blockRect, const FusionContext& context) {

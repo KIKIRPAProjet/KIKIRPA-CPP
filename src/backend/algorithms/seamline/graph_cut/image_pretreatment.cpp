@@ -13,13 +13,13 @@
 #include <tiff.h>
 #include <algorithm>
 #include "core/data/algorithm_types.h"
+#include "core/data/mosaic_corners.h"
 #include <cmath>
 #include <cstdio>
 #include <string>
 #include <map>
 #include <regex>
 #include <vector>
-#include <limits>
 #include <memory>
 #include <cstdint>
 
@@ -213,27 +213,6 @@ namespace GraphCutNs {
             return true;
         }
 
-        // Déplace les positions dans un repère de mosaïque à coordonnées positives ou nulles.
-        // Soustrait les minima arrondis vers le bas, puis arrondit les positions au pixel.
-        // Toutes les tuiles subissent la même translation avant cet arrondi.
-        std::vector<cv::Point> toMosaicCorners(const std::vector<cv::Point2d>& rawCorners) {
-            double minimumX = std::numeric_limits<double>::max();
-            double minimumY = std::numeric_limits<double>::max();
-
-            for (const cv::Point2d& corner : rawCorners) {
-                minimumX = std::min(minimumX, corner.x);
-                minimumY = std::min(minimumY, corner.y);
-            }
-            const double offsetX = std::floor(minimumX);
-            const double offsetY = std::floor(minimumY);
-            std::vector<cv::Point> originalCorners;
-            // Réserve la taille, sinon clang-tidy est pas content
-            originalCorners.reserve(rawCorners.size());
-            for (const cv::Point2d& corner : rawCorners)
-                originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
-            return originalCorners;
-        }
-
         // Convertit les positions pleine résolution vers la grille réduite.
         // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
         std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
@@ -270,7 +249,8 @@ namespace GraphCutNs {
             errorMessage = "No tile provided for image pretreatment";
             return -1;
         }
-        tiles.originalCorners = toMosaicCorners(rawCorners);
+        // Repère partagé avec fusion : les territoires et les pixels de la mosaïque tombent ainsi au même endroit.
+        tiles.originalCorners = DataNs::computeMosaicCorners(rawCorners);
         tiles.cornersSmall = toSmallCorners(tiles.originalCorners, scale);
         return 1;
     }

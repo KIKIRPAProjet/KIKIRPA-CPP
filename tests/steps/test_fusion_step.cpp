@@ -3,6 +3,7 @@
 
 #include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/mosaic_corners.h"
 #include "core/data/tile.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/pyramidal_tiff_writer.h"
@@ -60,6 +61,9 @@ namespace {
     // Translation commune qui rend toutes les positions négatives.
     constexpr double NEGATIVE_OFFSET_X = -1000.0;
     constexpr double NEGATIVE_OFFSET_Y = -20.0;
+    // Origine fractionnaire et négative de l'audit (QW4) : floor(-12,005) = -13 laissait la colonne 0 vide.
+    constexpr double FRACTIONAL_OFFSET_X = -12.005;
+    constexpr double FRACTIONAL_OFFSET_Y = -20.4;
 
     class TemporaryDirectoryClass {
         public:
@@ -220,6 +224,19 @@ TEST(FusionStepTest, NegativePositionsGiveTheSameMosaic) {
     EXPECT_TRUE(areEqual(shifted.mask, reference.mask));
 }
 
+// QW4 : avec une origine fractionnaire et négative, la mosaïque n'a ni pixel de trop ni colonne (ou ligne) 0 vide.
+TEST(FusionStepTest, FractionalNegativePositionsLeaveNoEmptyBorder) {
+    const TemporaryDirectoryClass temporaryDirectory;
+    TwoTileScene scene = smallScene();
+    scene.origin = {FRACTIONAL_OFFSET_X, FRACTIONAL_OFFSET_Y};
+
+    const MosaicImages images = runTwoTileFusion(temporaryDirectory.path, scene);
+
+    EXPECT_EQ(images.mask.size(), cv::Size(SMALL_TILE_SHIFT + SMALL_TILE_WIDTH, SMALL_TILE_HEIGHT));
+    EXPECT_EQ(cv::countNonZero(images.mask != VALID_PIXEL), 0);
+    EXPECT_EQ(images.imageRgb.at<cv::Vec3w>(0, 0), expectedRgb(LEFT_TILE_ID, 0, 0));
+}
+
 // Mosaïque de plus d'un bloc : grille complète depuis (0, 0), blocs de bord compris, chaque pixel à sa place.
 TEST(FusionStepTest, CoversTheWholeBlockGridOfALargeMosaic) {
     const TemporaryDirectoryClass temporaryDirectory;
@@ -348,10 +365,10 @@ TEST(FusionStepTest, FailsWhenATileNameHasNoGridPosition) {
     EXPECT_NE(step.getResult().value("error", "").find("_C<column>_R<row>"), std::string::npos);
 }
 
-// Les coins doivent être ceux de graphcut, au pixel près, y compris pour des positions fractionnaires et négatives.
-TEST(FusionStepTest, ComputesTheSameCornersAsGraphCut) {
+// graphcut place ses territoires dans le repère de DataNs::computeMosaicCorners, celui où fusion place les pixels.
+TEST(FusionStepTest, GraphCutUsesTheSharedMosaicCorners) {
     const TemporaryDirectoryClass temporaryDirectory;
-    const std::vector<cv::Point2d> positions{{-3.5, 2.5}, {10.2, -7.7}, {0.5, 0.49}, {-2.5, -7.5}};
+    const std::vector<cv::Point2d> positions{{-12.005, 2.5}, {10.2, -7.7}, {0.5, 0.49}, {-2.5, -7.5}};
     std::vector<DataNs::TilePositionData> namedPositions;
     std::vector<std::string> tilePaths;
     for (std::size_t tileIndex = 0; tileIndex < positions.size(); ++tileIndex) {
@@ -365,7 +382,7 @@ TEST(FusionStepTest, ComputesTheSameCornersAsGraphCut) {
     ASSERT_EQ(pretreatment.processImages(namedPositions, tilePaths, 1.0, graphCutTiles), 1)
         << pretreatment.getErrorMessage();
 
-    EXPECT_EQ(StepsNs::computeMosaicCorners(positions), graphCutTiles.originalCorners);
+    EXPECT_EQ(DataNs::computeMosaicCorners(positions), graphCutTiles.originalCorners);
 }
 
 TEST(FusionStepTest, MosaicIsPublishedByExport) {

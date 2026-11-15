@@ -44,7 +44,7 @@ namespace StepsNs {
         std::vector<TerritoryPolygon> territory;
     };
 
-    // Tuiles placées et dimensions de la mosaïque, repère des territoires (coin le plus petit vers (0, 0)).
+    // Tuiles placées et dimensions de la mosaïque, dans le repère des territoires (DataNs::computeMosaicCorners).
     struct FusionContext {
         std::vector<PlacedTile> tiles;
         cv::Size canvasSize;
@@ -55,11 +55,6 @@ namespace StepsNs {
     // l'intersection tuile / bloc, et seulement si le territoire de la tuile touche le bloc. Pixel sans territoire :
     // image et provenance à 0, masque à 0. Lève std::runtime_error si un TIFF ne peut pas être lu.
     DataNs::CompositeBlock renderBlock(const cv::Rect& blockRect, const FusionContext& context);
-
-    // Coin haut-gauche de chaque tuile dans la mosaïque, calculé exactement comme graphcut, dont les territoires
-    // dépendent (GraphCutNs::ImagePretreatmentClass::processImages, étape 3) : le minimum des positions, arrondi
-    // vers le bas, est soustrait, puis le résultat est arrondi au pixel (cvRound).
-    std::vector<cv::Point> computeMosaicCorners(const std::vector<cv::Point2d>& positions);
 
     // Assemblage : écrit la mosaïque pleine résolution bloc par bloc (DataNs::BLOCK_SIZE), sans jamais la garder en
     // mémoire. Chaque bloc est calculé par renderBlock puis écrit aussitôt dans trois TIFF tuilés (image RGB 16 bits,

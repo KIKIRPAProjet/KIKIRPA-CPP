@@ -38,7 +38,7 @@ Code : [fusion_step.h](../../include/backend/steps/fusion_step.h) / [fusion_step
 
 ## Fonctionnement
 
-1. **Placement** : les coins des tuiles sont calculés **exactement comme `graphcut`** (`computeMosaicCorners`, même calcul que `ImagePretreatmentClass::processImages`, étape 3) : le minimum des positions, arrondi vers le bas, est soustrait, puis chaque coin est arrondi au pixel (`cvRound`). Les territoires sont dans ce repère ; arrondir avant de soustraire décalerait d'un pixel dans certains cas. La mosaïque commence en (0, 0) et mesure `max(coin + taille)` des tuiles.
+1. **Placement** : les coins des tuiles sont calculés par `DataNs::computeMosaicCorners` ([mosaic_corners.h](../../include/backend/core/data/mosaic_corners.h)), **la même fonction que `graphcut`** : le minimum des positions est soustrait sans être arrondi, puis chaque coin est arrondi au pixel (`cvRound`). Les territoires sont dans ce repère. La tuile la plus à gauche est en x = 0, la plus haute en y = 0, et la mosaïque mesure `max(coin + taille)` des tuiles : aucune ligne ni colonne vide sur les bords haut et gauche.
 2. **Grille** : des blocs de `DataNs::BLOCK_SIZE` (512) depuis (0, 0), ligne par ligne ; ceux des bords droit et bas sont plus petits.
 3. **Un bloc** (`renderBlock`, fonction pure) : pour chaque tuile qui chevauche le bloc,
    - le territoire est dessiné sur l'intersection, polygone par polygone (`cv::drawContours`, avec la règle de `GraphCutSeamFinderClass::verifyTiling` : un trou est vidé mais son contour appartient au territoire) ;
@@ -86,7 +86,7 @@ Par bloc : le bloc lui-même (512² × 9 octets, environ 2,4 Mo), la région lue
 
 - Pas de fondu le long de la couture : chaque pixel vient d'une seule tuile.
 - La rotation des positions est ignorée (comme `graphcut`, et `absolute-pos` donne toujours 0).
-- Le calcul des coins est écrit deux fois (ici et dans `processImages`) : `FusionStepTest.ComputesTheSameCornersAsGraphCut` vérifie qu'ils concordent. `processImages` pourra appeler `computeMosaicCorners` quand `image_pretreatment.cpp` sera repris.
+- Un checkpoint `graphcut` écrit avant le passage à `DataNs::computeMosaicCorners` (minimum arrondi vers le bas) peut avoir des territoires décalés d'un pixel par rapport aux coins actuels. Le moteur ne le détecte pas : refaire `graphcut` (`startFromStep`) pour un run commencé avant.
 - Deux pipelines lancés en même temps **sur le même dossier d'images** avec le dossier par défaut écriraient au même endroit.
 - Avec le dossier par défaut, une reprise dans un nouveau processus refait `fusion` (voir « Checkpoint »).
 
@@ -100,7 +100,7 @@ Par bloc : le bloc lui-même (512² × 9 octets, environ 2,4 Mo), la région lue
 - contour d'un trou attribué au territoire qui l'entoure ;
 - division par le gain, tuile isolée non corrigée, tuiles 8 bits passées en 16 bits ;
 - échecs : position manquante (aucune mosaïque publiée, aucun fichier), nom de fichier sans `_C<colonne>_R<ligne>` ;
-- coins identiques à ceux de `processImages` pour des positions fractionnaires et négatives ;
+- `graphcut` utilise les mêmes coins (`processImages`), et une origine fractionnaire et négative (-12,005) ne laisse ni colonne 0 vide ni pixel de trop ;
 - bout en bout `fusion` → `export` ; empreinte qui suit les fichiers produits ; chaînage accepté après `graphcut`, refusé sans ;
 - sans `outputDirectory` : les trois fichiers vont dans `<dossier des images>/.cache/mosaic/`, et l'empreinte, nulle avant `execute()`, suit ensuite les fichiers.
 

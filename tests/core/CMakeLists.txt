@@ -29,3 +29,8 @@ gtest_discover_tests(reprise_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(pyramidal_tiff_reader_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(tiled_tiff_writer_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(export_step_tests PROPERTIES LABELS "unit")
+
+add_executable(mosaic_corners_tests test_mosaic_corners.cpp)
+kikirpa_copy_onnxruntime_dlls(mosaic_corners_tests)
+target_link_libraries(mosaic_corners_tests PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(mosaic_corners_tests PROPERTIES LABELS "unit")
