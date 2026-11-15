@@ -16,6 +16,7 @@ build/<preset>/stitching --help
 Ajouter `.exe` sous Windows. Sans argument (ou avec des options de Qt comme `-platform`), `stitching` ouvre l'interface graphique. Une option longue inconnue (`--pipline`…) est refusée avec le code 2 : elle n'ouvre pas la fenêtre.
 
 - **Chemins relatifs** : les chemins écrits dans le script (`path` d'`import`, `outputDirectory`, `run.checkpointDirectory`…) se lisent **depuis le dossier du script**, quel que soit le dossier d'où l'on lance la commande. Seul le chemin du script lui-même se lit depuis le dossier courant.
+- **Caractères non ASCII** : dossiers, noms de tuiles et sorties peuvent contenir n'importe quel caractère (« œuvre_été », « 作品 »). Le script est lu en UTF-8, les arguments de la commande aussi (relus en UTF-16 sous Windows), et les messages sortent en UTF-8 (la console Windows est passée en UTF-8 le temps du run). Règle de code : [CONVENTIONS.md §8](../CONVENTIONS.md#8-structure-du-code), « Chemins ».
 - **Messages** : la progression (`Step 3/7 OK {...}`) va sur la sortie standard. Un échec est résumé sur la sortie d'erreur, avec le numéro du step, son nom et sa cause.
 - **Codes de sortie** :
 
