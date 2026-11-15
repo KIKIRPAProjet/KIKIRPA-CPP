@@ -11,10 +11,8 @@
 #include <opencv2/core/saturate.hpp>      // Pour cv::saturate_cast
 #include <tiffio.h>
 #include <tiff.h>
-#include <algorithm>
 #include "core/data/algorithm_types.h"
 #include "core/data/mosaic_corners.h"
-#include <cmath>
 #include <cstdio>
 #include <string>
 #include <map>
@@ -22,6 +20,7 @@
 #include <vector>
 #include <memory>
 #include <cstdint>
+#include <utility>
 
 
 namespace GraphCutNs {
@@ -103,7 +102,7 @@ namespace GraphCutNs {
         if (scale < 1.0) {
             cv::Mat smallImage;
             cv::resize(image, smallImage, cv::Size(), scale, scale, cv::INTER_LINEAR);
-            image = smallImage;   // l'image pleine résolution n'a plus de référence : sa mémoire est libérée ici
+            image = std::move(smallImage);   // l'image pleine résolution n'a plus de référence : mémoire libérée ici
         }
 
         cv::Mat floatImage;
@@ -217,6 +216,7 @@ namespace GraphCutNs {
         // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
         std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
             std::vector<cv::Point> smallCorners;
+            smallCorners.reserve(originalCorners.size());
             for (size_t tileIndex = 0; tileIndex < originalCorners.size(); ++tileIndex)
                 smallCorners.push_back(cv::Point(cvFloor(originalCorners[tileIndex].x * scale),
                                                  cvFloor(originalCorners[tileIndex].y * scale)));

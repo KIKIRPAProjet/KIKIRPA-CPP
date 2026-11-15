@@ -71,7 +71,7 @@ namespace StepsNs {
         // dossier par œuvre, sur le disque des données : deux pipelines ne s'écrasent pas, et rien ne s'accumule dans
         // le dossier temporaire du système. `tiles` ne doit pas être vide.
         fs::path resolveOutputDirectory(const Json& configJson, const DataNs::TileList& tiles) {
-            const fs::path configuredDirectory = configuredOutputDirectory(configJson);
+            fs::path configuredDirectory = configuredOutputDirectory(configJson);
             if (!configuredDirectory.empty()) return configuredDirectory;
             return tiles.front()->getSource().parent_path() / ".cache" / "mosaic";
         }

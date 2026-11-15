@@ -3,7 +3,8 @@
 
 #include "algorithms/brightness_equalization/brightness_equalization_types.h"
 
-#include <opencv2/core.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 #include <cstddef>
 #include <string>

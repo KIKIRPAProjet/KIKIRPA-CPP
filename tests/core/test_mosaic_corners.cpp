@@ -9,6 +9,10 @@
 
 namespace {
 
+    // Translation entière commune, appliquée à toutes les positions.
+    constexpr double TRANSLATION_X = -1000.0;
+    constexpr double TRANSLATION_Y = 250.0;
+
     int minimumX(const std::vector<cv::Point>& corners) {
         return std::min_element(corners.begin(), corners.end(),
                                 [](const cv::Point& first, const cv::Point& second) { return first.x < second.x; })->x;
@@ -39,7 +43,8 @@ TEST(MosaicCornersTest, PutsTheSmallestFractionalPositionAtZero) {
 TEST(MosaicCornersTest, IgnoresACommonIntegerTranslation) {
     const std::vector<cv::Point2d> positions{{0.25, 3.5}, {402.6, -1.2}, {-7.75, 300.4}};
     std::vector<cv::Point2d> shifted;
-    for (const cv::Point2d& position : positions) shifted.push_back(position + cv::Point2d(-1000.0, 250.0));
+    shifted.reserve(positions.size());
+    for (const cv::Point2d& position : positions) shifted.push_back(position + cv::Point2d(TRANSLATION_X, TRANSLATION_Y));
 
     EXPECT_EQ(DataNs::computeMosaicCorners(shifted), DataNs::computeMosaicCorners(positions));
 }
