@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **09/11/2026**. La branche `fe/export` ajoute un step d'export, en attente de PR. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **10/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -35,9 +35,9 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
 | 8 | Assemblage | Fabriquer l'image finale | ❌ PR #69 en cours |
-| 9 | Export | Écrire le fichier final | 🟡 branche `fe/export`, en attente de PR |
+| 9 | Export | Écrire le fichier final | 🟡 `export` (attend la mosaïque écrite par l'assemblage) |
 
-**En une phrase : aujourd'hui, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step facultatif `final-verification` peut comparer des fichiers fournis explicitement; l'assemblage et l'export du pipeline restent à réaliser.
+**Sur `main`, le pipeline calcule tout ce qu'il faut pour fabriquer la mosaïque (positions, gains, coutures), mais ne la fabrique pas encore.** Le step `export` publie l'image que l'assemblage aura écrite sur disque, bloc par bloc (§5).
 
 ---
 
@@ -124,7 +124,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
       { "name": "import",
         "parameters": [
           { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" },
-          { "valueType": "string", "name": "format", "value": ".*_r(?=\\d+_c(\\d+)\\.tiff?$)(\\d+)_c\\d+\\.tiff?" }
+          { "valueType": "string", "name": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
         ] },
       { "name": "phase-correlation",
         "parameters": [ { "valueType": "int", "name": "niveau", "value": 2 } ] },
@@ -138,7 +138,7 @@ Puis compiler la cible `stitching` et la lancer avec le script ci-dessous (`buil
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_r<ligne>_c<colonne>.tif`, alors que le format par défaut d'`import` attend `img_C<colonne>_R<ligne>.tif`. D'où le `format` ci-dessus. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_C<colonne>_R<ligne>.tif` (le format par défaut d'`import`). Un `format` personnalisé doit donc produire des fichiers qui respectent ce nommage. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -219,14 +219,14 @@ Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inten
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
+| `export` | `outputDirectory` | `mosaic` : `Mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 `final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
 
 ### Les types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. `CompositeBlocks` est échangé en mémoire et n'est pas encore sérialisé. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -238,7 +238,7 @@ Dans le DataStore, une donnée est une structure C++. Les types pris en charge p
 Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
 
 ```json
-[ { "id": 0, "source": "D:/oeuvre/tuiles/t_r00_c00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c00_pyramid.tif",
+[ { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 
@@ -271,7 +271,7 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 
 - `position` = coin haut-gauche de la tuile dans le repère de la mosaïque.
 - La tuile de référence est en (0, 0). Les autres peuvent avoir des coordonnées négatives.
-- `tileId` est lu dans le nom du fichier (`_r00_c01`), **ce n'est pas l'`id` numérique**.
+- `tileId` est lu dans le nom du fichier (`_C01_R00`), **ce n'est pas l'`id` numérique**.
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
@@ -287,6 +287,7 @@ C++ : `std::vector<DataNs::TilePositionData>`.
 - `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
 
 C++ : `std::vector<DataNs::PairResidual>`.
+
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 
@@ -328,11 +329,20 @@ C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
-#### `CompositeBlocks` (clé `compositeBlocks`) : les blocs d'image assemblés
+#### `Mosaic` (clé `mosaic`) : la mosaïque assemblée, sur disque
 
-Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
+```json
+{ "imagePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_mask.tif",
+  "canvasSize": [17400, 6810] }
+```
 
-C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints.
+- Les pixels ne sont **jamais** dans le DataStore : seulement les chemins de trois TIFF tuilés pleine résolution, de `canvasSize` pixels, écrits bloc par bloc ([core/TiledTiffWriter.md](core/TiledTiffWriter.md)).
+- `imagePath` : RGB 16 bits. `provenancePath` : 16 bits, l'`id` de la tuile d'où vient chaque pixel. `maskPath` : 8 bits, 255 = pixel valide (la provenance n'a pas de sens là où le masque vaut 0).
+- Le repère est celui des territoires : coin le plus petit en (0, 0).
+
+C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`, au même endroit, est le format d'**un** bloc en mémoire, le temps de l'écrire ; il ne passe pas par le DataStore.
 
 #### Les deux fichiers du moteur
 
@@ -341,7 +351,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 ```json
 { "step": "import",
   "parameters": [ { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" }, … ],
-  "inputs": [ ["t_r00_c00.tif", 145000000, 133456789012345678], … ],
+  "inputs": [ ["t_C00_R00.tif", 145000000, 133456789012345678], … ],
   "outputs": [ { "key": "tiles", "dataType": "Tiles" } ],
   "complete": true }
 ```
@@ -360,7 +370,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **Aucun des deux n'est encore sur `main`.**
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. **L'export est sur `main`, pas encore l'assemblage.**
 
 Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 
@@ -370,14 +380,13 @@ Ce que l'assemblage devra faire, pour chaque tuile, une à la fois :
 4. ne garder que les pixels qui tombent dans son **territoire** ;
 5. écrire le résultat dans l'image finale, **par blocs** et sans jamais garder toute la mosaïque en mémoire (§6).
 
-L'export écrit les blocs composites dans un TIFF tuilé `mosaic.tif`.
+L'assemblage écrit chaque bloc **dès qu'il est calculé**, avec `IONs::TiledTiffWriterClass`, dans trois TIFF tuilés (image, provenance, masque). Il ne range dans le DataStore que leur description, `mosaic` (§4). L'export publie ensuite l'image sous le nom `mosaic.tif`.
 
 Où en est-on :
 
 - **Assemblage (Fusion)** : PR #69 (brouillon).
-- **Export** : branche `fe/export`, qui ajoute le step `export` et son type partagé.
-- **Contrat entre les deux** : Fusion doit fournir la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque bloc doit contenir `imageRgb` en `CV_16UC3` et un `blockRect` aligné sur `DataNs::BLOCK_SIZE`, avec une grille complète. L'export n'écrit pas `provenance` ni `mask`.
-- `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide en attendant le vrai assemblage.
+- **Export** : step `export` sur main ([ExportStep.md](steps/ExportStep.md)).
+- **Contrat entre les deux** : l'assemblage fournit la clé `mosaic` (`DataNs::Mosaic`). Son `imagePath` est un TIFF tuilé RGB 16 bits de `canvasSize` pixels ; l'export le contrôle puis le copie (temporaire puis renommage). Il ne publie ni la provenance ni le masque. Aucune image entière ne passe par la mémoire, ni dans l'assemblage, ni dans l'export.
 
 ---
 
@@ -419,7 +428,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 - **Aucun step ne lit le TIFF pyramidal.** Tous relisent l'image source entière (`cv::imread`), puis la réduisent si besoin. `readRegion` existe mais n'est pas utilisé.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
-- `graphcut` alloue deux images de la taille de la mosaïque entière (1 + 3 octets par pixel).
+- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
 - `MemoryScopeClass` n'est utilisé par aucun step.
 
 ---
@@ -498,7 +507,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : faire correspondre les sorties de Fusion au contrat `CompositeBlocks`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
+- **Fusion et Export** : écrire l'assemblage sur le writer par blocs et le contrat `mosaic`, puis tester la chaîne de bout en bout sur une mosaïque réelle (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Le branchement du front** (§9) et le choix d'une seule interface.

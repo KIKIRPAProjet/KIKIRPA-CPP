@@ -8,7 +8,7 @@ Première installation sur un poste, pas à pas, avec les problèmes courants : 
 |---|---|---|
 | CMake ≥ 3.21 (presets) et Ninja | oui | build |
 | Compilateur C++17 | oui | MSVC 2022 sous Windows, GCC ou Clang sous Linux |
-| OpenCV 4, avec le module `dnn` | oui | images, algorithmes |
+| OpenCV 4, avec le module `dnn` | oui | images, algorithmes ; OpenCV 5 n'est pas pris en charge |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
 | ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
@@ -58,8 +58,14 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase googletest
 ```
+
+La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore
+pris en charge et sera refusé par CMake : il faut la formule `opencv@4`. Elle est
+*keg-only* (Homebrew ne la lie pas dans `/opt/homebrew`), donc le preset **macos**
+ajoute son dossier à `CMAKE_PREFIX_PATH`. Si `opencv` (version 5) est aussi
+installé, ce chemin passe en premier et c'est bien OpenCV 4 qui est trouvé.
 
 Dans VS Code, choisir le preset **macos** lorsqu'il est demandé, ou utiliser :
 
@@ -69,7 +75,7 @@ cmake --build --preset macos
 ctest --preset macos
 ```
 
-Le preset sélectionne Apple Clang et les chemins Homebrew Qt sur Apple Silicon
+Le preset sélectionne Apple Clang et les chemins Homebrew de Qt et d'OpenCV 4 sur Apple Silicon
 (`/opt/homebrew`) et Intel (`/usr/local`). Le build est généré dans `build/macos/`.
 
 Pour l'exécution locale de l'application ou en cas de problème lié aux plugins Qt sous macOS, voir [RunOnMacos.md](building/RunOnMacos.md).
@@ -84,7 +90,9 @@ cmake --build --preset linux
 ctest --preset linux
 ```
 
-C'est la configuration de la CI (`.github/workflows/build-test.yml`).
+`libopencv-dev` doit fournir OpenCV 4.x. La configuration CMake refuse OpenCV 5,
+qui n'est pas pris en charge. C'est la configuration de la CI
+(`.github/workflows/build-test.yml`).
 
 ### Vérifications clang-tidy
 

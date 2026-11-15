@@ -3,25 +3,21 @@
 
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tiled_tiff_writer.h"
 #include "core/step/data_store.h"
 
 #include <gtest/gtest.h>
+#include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
-#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
-#include <tiff.h>
-#include <tiffio.h>
 
 #include <algorithm>
-#include <array>
 #include <chrono>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <fstream>
-#include <memory>
-#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -31,21 +27,13 @@ using Json = StepsNs::Json;
 
 namespace {
 
-    constexpr std::array<std::uint16_t, 12> TEST_PIXEL_VALUES{
-        100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200,
-    };
+    // Deux blocs : un complet et un bloc de bord.
+    constexpr int CANVAS_WIDTH = DataNs::BLOCK_SIZE + 88;
+    constexpr int CANVAS_HEIGHT = 300;
+    constexpr double LEFT_VALUE = 100.0;
+    constexpr double RIGHT_VALUE = 3000.0;
 
-    struct TiffMetadata {
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-        std::uint16_t bitsPerSample = 0;
-        std::uint16_t sampleCount = 0;
-    };
-
-    struct TiffTileReadResult {
-        TiffMetadata metadata;
-        cv::Mat tile;
-    };
+    cv::Size testCanvasSize() { return {CANVAS_WIDTH, CANVAS_HEIGHT}; }
 
     class TemporaryDirectoryClass {
         public:
@@ -60,15 +48,39 @@ namespace {
                 fs::remove_all(path, errorCode);
             }
 
+            TemporaryDirectoryClass(const TemporaryDirectoryClass&) = delete;
+            TemporaryDirectoryClass& operator=(const TemporaryDirectoryClass&) = delete;
+
             fs::path path;
     };
 
-    DataNs::CompositeBlock makeBlock() {
-        DataNs::CompositeBlock block;
-        block.blockRect = cv::Rect(0, 0, 2, 2);
-        block.imageRgb = cv::Mat(2, 2, CV_16UC3);
-        std::copy(TEST_PIXEL_VALUES.begin(), TEST_PIXEL_VALUES.end(), block.imageRgb.ptr<std::uint16_t>());
-        return block;
+    // Image de référence : le premier bloc d'une couleur, le bloc de bord d'une autre.
+    cv::Mat makeReferenceImage(int type) {
+        // Canaux différents : une inversion RGB / BGR se verrait.
+        cv::Mat image(testCanvasSize(), type, cv::Scalar(LEFT_VALUE, 2 * LEFT_VALUE, 3 * LEFT_VALUE));
+        image(cv::Rect(DataNs::BLOCK_SIZE, 0, CANVAS_WIDTH - DataNs::BLOCK_SIZE, CANVAS_HEIGHT))
+            .setTo(cv::Scalar(RIGHT_VALUE, 2 * RIGHT_VALUE, 3 * RIGHT_VALUE));
+        return image;
+    }
+
+    // Écrit l'image comme le ferait l'assemblage : bloc par bloc, avec le writer partagé.
+    void writeTiledImage(const fs::path& path, const cv::Mat& image) {
+        IONs::TiledTiffWriterClass writer;
+        std::string errorMessage;
+        ASSERT_TRUE(writer.open(path, image.size(), image.type(), errorMessage)) << errorMessage;
+        for (int blockX = 0; blockX < image.cols; blockX += DataNs::BLOCK_SIZE) {
+            const cv::Rect blockRect(blockX, 0, std::min(DataNs::BLOCK_SIZE, image.cols - blockX), image.rows);
+            ASSERT_TRUE(writer.writeBlock(blockRect.tl(), image(blockRect), errorMessage)) << errorMessage;
+        }
+        ASSERT_TRUE(writer.close(errorMessage)) << errorMessage;
+    }
+
+    DataNs::Mosaic makeMosaic(const fs::path& directory, int imageType) {
+        DataNs::Mosaic mosaic;
+        mosaic.imagePath = directory / "mosaic_image.tif";
+        mosaic.canvasSize = testCanvasSize();
+        writeTiledImage(mosaic.imagePath, makeReferenceImage(imageType));
+        return mosaic;
     }
 
     void configureOutputDirectory(StepsNs::ExportStepClass& step, const fs::path& directory) {
@@ -79,95 +91,91 @@ namespace {
         step.importConfig(config);
     }
 
-    TiffMetadata readTiffMetadata(TIFF* tiff) {
-        TiffMetadata metadata;
-        if (!TIFFGetField(tiff, TIFFTAG_IMAGEWIDTH, &metadata.width) ||
-            !TIFFGetField(tiff, TIFFTAG_IMAGELENGTH, &metadata.height) ||
-            !TIFFGetField(tiff, TIFFTAG_BITSPERSAMPLE, &metadata.bitsPerSample) ||
-            !TIFFGetField(tiff, TIFFTAG_SAMPLESPERPIXEL, &metadata.sampleCount)) {
-            throw std::runtime_error("cannot read TIFF image metadata");
+    std::vector<std::string> fileNames(const fs::path& directory) {
+        std::vector<std::string> names;
+        for (const fs::directory_entry& entry : fs::directory_iterator(directory))
+            names.push_back(entry.path().filename().string());
+        return names;
+    }
+
+    struct ExportFixture {
+        TemporaryDirectoryClass temporaryDirectory;
+        fs::path fusionDirectory = temporaryDirectory.path / "fusion";
+        fs::path outputDirectory = temporaryDirectory.path / "output";
+        StepNs::DataStoreClass dataStore;
+        StepsNs::ExportStepClass step;
+
+        explicit ExportFixture(int imageType) {
+            dataStore.replace("mosaic", makeMosaic(fusionDirectory, imageType));
+            configureOutputDirectory(step, outputDirectory);
+            step.setDataStore(dataStore);
         }
-        return metadata;
-    }
-
-    cv::Mat readFirstTiffTile(TIFF* tiff, const TiffMetadata& metadata) {
-        const ttile_t tileIndex = TIFFComputeTile(tiff, 0, 0, 0, 0);
-        const tmsize_t tileBytes = TIFFTileSize(tiff);
-        if (tileBytes <= 0) throw std::runtime_error("invalid TIFF tile size");
-        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(tileBytes));
-        if (TIFFReadEncodedTile(tiff, tileIndex, bytes.data(), tileBytes) <= 0)
-            throw std::runtime_error("cannot read TIFF tile");
-        const int type = metadata.bitsPerSample == 16 && metadata.sampleCount == 3 ? CV_16UC3 :
-                         metadata.bitsPerSample == 16 ? CV_16UC1 : CV_8UC1;
-        cv::Mat tile(static_cast<int>(DataNs::BLOCK_SIZE), static_cast<int>(DataNs::BLOCK_SIZE), type);
-        std::copy(bytes.begin(), bytes.end(), tile.data);
-        return tile;
-    }
-
-    TiffTileReadResult readFirstTiffTile(const fs::path& path) {
-        TIFF* rawTiff = TIFFOpen(path.string().c_str(), "r");
-        if (!rawTiff) throw std::runtime_error("cannot open TIFF " + path.string());
-        const std::unique_ptr<TIFF, decltype(&TIFFClose)> tiff(rawTiff, &TIFFClose);
-        const TiffMetadata metadata = readTiffMetadata(tiff.get());
-        return {metadata, readFirstTiffTile(tiff.get(), metadata)};
-    }
+    };
 
 }
 
-TEST(ExportStepTest, WritesOnlyTheCompositeMosaic) {
-    TemporaryDirectoryClass temporaryDirectory;
-    StepsNs::ExportStepClass step;
-    configureOutputDirectory(step, temporaryDirectory.path);
-    std::ofstream existingFile(temporaryDirectory.path / "mosaic.tif");
-    existingFile << "old output";
-    existingFile.close();
+TEST(ExportStepTest, PublishesOnlyTheMosaicImage) {
+    ExportFixture fixture(CV_16UC3);
+    fs::create_directories(fixture.outputDirectory);
+    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old output";
 
-    StepNs::DataStoreClass dataStore;
-    dataStore.replace("compositeBlocks", DataNs::CompositeBlockList{makeBlock()});
-    step.setDataStore(dataStore);
-
-    ASSERT_TRUE(step.execute()) << step.getResult().dump();
-    const StepsNs::ExportOutput& output = step.getOutput();
-    EXPECT_EQ(output.canvasSize, cv::Size(2, 2));
-    EXPECT_EQ(output.blockCount, 1u);
-    EXPECT_EQ(output.imagePath, temporaryDirectory.path / "mosaic.tif");
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const StepsNs::ExportOutput& output = fixture.step.getOutput();
+    EXPECT_EQ(output.imagePath, fixture.outputDirectory / "mosaic.tif");
+    EXPECT_EQ(output.canvasSize, testCanvasSize());
     EXPECT_FALSE(output.isBigTiff);
 
-    const TiffTileReadResult tiff = readFirstTiffTile(output.imagePath);
-    EXPECT_EQ(tiff.metadata.width, 2u);
-    EXPECT_EQ(tiff.metadata.height, 2u);
-    EXPECT_EQ(tiff.metadata.bitsPerSample, 16);
-    EXPECT_EQ(tiff.metadata.sampleCount, 3);
-    const cv::Vec<std::uint16_t, 3> pixel = tiff.tile.at<cv::Vec<std::uint16_t, 3>>(0, 1);
-    EXPECT_EQ(pixel[0], TEST_PIXEL_VALUES[3]);
-    EXPECT_EQ(pixel[1], TEST_PIXEL_VALUES[4]);
-    EXPECT_EQ(pixel[2], TEST_PIXEL_VALUES[5]);
-
-    std::vector<std::string> filesInOutput;
-    for (const fs::directory_entry& entry : fs::directory_iterator(temporaryDirectory.path))
-        filesInOutput.push_back(entry.path().filename().string());
-    EXPECT_EQ(filesInOutput, std::vector<std::string>{"mosaic.tif"});
+    cv::Mat published;
+    std::string errorMessage;
+    ASSERT_TRUE(IONs::PyramidalTiffReaderClass(output.imagePath)
+                    .readRegion(0, cv::Rect({0, 0}, testCanvasSize()), published, errorMessage)) << errorMessage;
+    EXPECT_EQ(cv::norm(published, makeReferenceImage(CV_16UC3), cv::NORM_INF), 0.0);
+    EXPECT_EQ(fileNames(fixture.outputDirectory), std::vector<std::string>{"mosaic.tif"});
+    // La sortie de l'assemblage reste en place : l'export peut être refait sans refaire l'assemblage.
+    EXPECT_TRUE(fs::exists(fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath));
 }
 
-TEST(ExportStepTest, RejectsIncompleteBlockGrid) {
-    TemporaryDirectoryClass temporaryDirectory;
+TEST(ExportStepTest, RejectsAnImageThatDoesNotMatchTheCanvasSize) {
+    ExportFixture fixture(CV_16UC3);
+    DataNs::Mosaic mosaic = fixture.dataStore.get<DataNs::Mosaic>("mosaic");
+    mosaic.canvasSize.width += 1;
+    fixture.dataStore.replace("mosaic", mosaic);
+
+    EXPECT_FALSE(fixture.step.execute());
+    EXPECT_NE(fixture.step.getResult().value("error", "").find("canvas size"), std::string::npos);
+    EXPECT_FALSE(fs::exists(fixture.outputDirectory / "mosaic.tif"));
+}
+
+TEST(ExportStepTest, RejectsAnImageThatIsNotRgb16) {
+    ExportFixture fixture(CV_16UC1);
+
+    EXPECT_FALSE(fixture.step.execute());
+    EXPECT_NE(fixture.step.getResult().value("error", "").find("16-bit RGB"), std::string::npos);
+    EXPECT_FALSE(fs::exists(fixture.outputDirectory / "mosaic.tif"));
+}
+
+TEST(ExportStepTest, ReportsAMissingMosaicImage) {
+    ExportFixture fixture(CV_16UC3);
+    fs::remove(fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath);
+
+    EXPECT_FALSE(fixture.step.execute());
+    EXPECT_NE(fixture.step.getResult().value("error", "").find("cannot open mosaic image"), std::string::npos);
+}
+
+TEST(ExportStepTest, ReportsAMissingMosaicInput) {
     StepsNs::ExportStepClass step;
-    configureOutputDirectory(step, temporaryDirectory.path);
     StepNs::DataStoreClass dataStore;
-    DataNs::CompositeBlock block = makeBlock();
-    block.blockRect.x = DataNs::BLOCK_SIZE;
-    dataStore.replace("compositeBlocks", DataNs::CompositeBlockList{block});
     step.setDataStore(dataStore);
 
     EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult().value("error", "").find("complete output grid"), std::string::npos);
+    EXPECT_NE(step.getResult().value("error", "").find("mosaic"), std::string::npos);
 }
 
-TEST(ExportStepTest, ReportsMissingCompositeBlocks) {
-    StepsNs::ExportStepClass step;
-    StepNs::DataStoreClass dataStore;
-    step.setDataStore(dataStore);
+// L'empreinte suit mosaic.tif : le checkpoint de l'export se périme si le fichier publié disparaît.
+TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
+    ExportFixture fixture(CV_16UC3);
+    EXPECT_FALSE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
 
-    EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult().value("error", "").find("compositeBlocks"), std::string::npos);
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    EXPECT_TRUE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
 }

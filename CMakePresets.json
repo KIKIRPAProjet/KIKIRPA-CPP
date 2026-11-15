@@ -20,7 +20,7 @@
     {
       "name": "linux",
       "displayName": "Linux (paquets du système)",
-      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
+      "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev (version 4.x) libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
@@ -29,12 +29,12 @@
     {
       "name": "macos",
       "displayName": "macOS (Apple Clang + Homebrew)",
-      "description": "Nécessite Homebrew avec qtbase, OpenCV, libtiff et GoogleTest.",
+      "description": "Nécessite Homebrew avec qtbase, OpenCV 4.x, libtiff et GoogleTest.",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase"
+		"CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase;/opt/homebrew/opt/opencv@4;/usr/local/opt/opencv@4"
       },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
 	},

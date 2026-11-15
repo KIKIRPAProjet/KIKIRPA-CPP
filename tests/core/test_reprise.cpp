@@ -292,6 +292,11 @@ DataNs::Seamline coutureDEssai() {
     return {0, 1, DataNs::Direction::Right, {{POSITION_X, POSITION_Y}, {POSITION_X, 1.0}}};
 }
 
+DataNs::Mosaic mosaiqueDEssai() {
+    return {fs::u8path("fusion/mosaic_image.tif"), fs::u8path("fusion/mosaic_provenance.tif"),
+            fs::u8path("fusion/mosaic_mask.tif"), cv::Size(LARGEUR_TUILE, HAUTEUR_TUILE)};
+}
+
 void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
     auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
@@ -303,6 +308,7 @@ void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     avant.replace("territories", std::vector<DataNs::TileTerritory>{territoireDEssai()});
     avant.replace("seamlines", DataNs::Seamlines{coutureDEssai()});
     avant.replace("intensityCorrection", DataNs::IntensityCorrection{{GAIN_TUILE_0, GAIN_TUILE_1}, FORCE_CHAMP, {1}});
+    avant.replace("mosaic", mosaiqueDEssai());
 }
 
 void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
@@ -340,6 +346,11 @@ void verifierCouturesEtCorrection(const StepNs::DataStoreClass& apres) {
     verifier(correction.tileGains == std::vector<double>{GAIN_TUILE_0, GAIN_TUILE_1} && correction.fieldStrength == FORCE_CHAMP &&
                  correction.isolatedTileIndices == std::vector<int>{1},
              "IntensityCorrection : gains, champ et tuiles isolées");
+    const DataNs::Mosaic mosaiqueAttendue = mosaiqueDEssai();
+    const auto& mosaique = apres.get<DataNs::Mosaic>("mosaic");
+    verifier(mosaique.imagePath == mosaiqueAttendue.imagePath && mosaique.provenancePath == mosaiqueAttendue.provenancePath &&
+                 mosaique.maskPath == mosaiqueAttendue.maskPath && mosaique.canvasSize == mosaiqueAttendue.canvasSize,
+             "Mosaic : chemins et dimensions");
 }
 
 // Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
@@ -355,7 +366,7 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     remplirDonneesDEssai(avant);
     const std::pair<const char*, const char*> cles[] = {
         {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
-        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}};
+        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"}};
     for (const auto& [type, cle] : cles) {
         verifier(CheckpointNs::CheckpointClass::hasType(type), std::string(type) + " déclaré");
         types.at(type).first(avant, cle, dossier);

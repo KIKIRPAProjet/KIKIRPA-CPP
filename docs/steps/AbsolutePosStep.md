@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
-| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` | `dynamic-programming-dijkstra`|
+| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut`, `dynamic-programming-dijkstra` |
 | Sortie | `pairResiduals` | `PairResiduals` | `std::vector<DataNs::PairResidual>` | pas encore de consommateur |
 
 - **Lit** dans `tiles` l'identifiant et le nom du fichier source, d'où il tire la ligne et la colonne. Aucune image n'est relue.
@@ -18,13 +18,9 @@
 
 `AbsolutePosOutput` regroupe `key`, `value`, `type` pour les positions, et `residualsKey`, `residuals`, `residualsType` pour les écarts. `getOutput()` donne les positions et les écarts détaillés ; `getResult()` ne contient qu'un résumé (`pairs`, `positions`, `failures`, `error`). Le type `Positions` est déjà pris en charge par les checkpoints et consommé par GraphCut.
 
-Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_r<ligne>_c<colonne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
+Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_C<colonne>_R<ligne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
 
-Le format par défaut de `import` (`img_C…_R…`) ne convient donc pas à ce step, ni à `graphcut`, qui exige les mêmes noms. Pour des fichiers `t_r00_c01.tif`, indiquer à `import` un format dont le groupe 1 est la colonne et le groupe 2 la ligne :
-
-```
-t_r(?=\d+_c(\d+)\.tif$)(\d+)_c\d+\.tif
-```
+Le format par défaut de `import` (`img_C(\d+)_R(\d+)\.tif`) produit déjà des noms compatibles avec ce step et avec `graphcut`, qui exigent les mêmes noms.
 
 ## Paramètre
 
@@ -69,6 +65,7 @@ Le type `PairResiduals` a sa sérialisation de checkpoint, enregistrée par le c
 ```json
 [ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.0, 0.0], "residualNorm": 1.0 } ]
 ```
+
 
 ## Erreurs
 
