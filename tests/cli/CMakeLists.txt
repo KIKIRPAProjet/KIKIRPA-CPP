@@ -1,27 +1,17 @@
-add_test(
-    NAME cli_pipeline_empty
-    COMMAND $<TARGET_FILE:stitching> --pipeline "${CMAKE_CURRENT_SOURCE_DIR}/empty_pipeline.json"
-)
+# Tests de l'exécutable `stitching` lancé comme un utilisateur : options, codes de sortie, reprise.
+add_executable(cli_tests test_command_line.cpp)
+kikirpa_copy_onnxruntime_dlls(cli_tests)
+# kikirpa_backend pour OpenCV et nlohmann_json (génération des tuiles et des scripts), comme les autres tests.
+target_link_libraries(cli_tests PRIVATE kikirpa_backend GTest::gtest_main)
+target_compile_definitions(cli_tests PRIVATE STITCHING_EXECUTABLE="$<TARGET_FILE:stitching>")
+add_dependencies(cli_tests stitching)
 
-add_test(
-    NAME cli_pipeline_missing_path
-    COMMAND "${CMAKE_COMMAND}"
-        "-DSTITCHING_EXECUTABLE=$<TARGET_FILE:stitching>"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/check_missing_pipeline.cmake"
-)
+include(GoogleTest)
+gtest_discover_tests(cli_tests PROPERTIES LABELS "unit")
 
+# Sans argument, `stitching` ouvre l'interface graphique ; la variable d'environnement la referme aussitôt.
 add_test(NAME cli_default_frontend COMMAND $<TARGET_FILE:stitching>)
-
-set_tests_properties(cli_pipeline_empty cli_default_frontend PROPERTIES LABELS "unit")
-set_tests_properties(cli_pipeline_missing_path PROPERTIES
-    LABELS "unit"
-)
-set_tests_properties(
-    cli_pipeline_empty
-    cli_pipeline_missing_path
-    cli_default_frontend
-    PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
 set_tests_properties(cli_default_frontend PROPERTIES
+    LABELS "unit"
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;KIKIRPA_FRONTEND_STARTUP_TEST=1"
 )
