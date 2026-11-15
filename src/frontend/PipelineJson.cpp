@@ -1,5 +1,6 @@
 // src/frontend/PipelineJson.cpp
 #include "PipelineJson.h"
+#include "core/io/unicode_path.h"
 
 #include <algorithm>
 #include <cctype>
@@ -74,7 +75,7 @@ namespace FrontendNs {
 
         std::ofstream output(file);
         output << pipelineToString(pipeline, indent) << '\n';
-        if (!output) throw std::runtime_error("impossible d'écrire " + file.string());
+        if (!output) throw std::runtime_error("impossible d'écrire " + IONs::pathToUtf8(file));
     }
 
 }
