@@ -1,6 +1,8 @@
 // tests/cli/test_command_line.cpp
 // Lance l'exécutable `stitching` comme un utilisateur (std::system) et vérifie codes de sortie, messages et reprise.
 // Les tuiles sont générées par le test : aucun fichier externe.
+#include "core/io/unicode_path.h"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -9,7 +11,6 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
-#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <chrono>
@@ -61,26 +62,36 @@ namespace {
 #endif
     }
 
-    // Lance `stitching <arguments>` depuis le dossier courant du test ; stdout et stderr passent par des fichiers.
+    // Lance la ligne de commande `command` (UTF-8). Sous Windows, _wsystem : std::system passerait par la page de code
+    // du système et perdrait les caractères qu'elle n'a pas.
+    int runShell(const std::string& command) {
+#ifdef _WIN32
+        const std::wstring wideCommand = L"\"" + IONs::pathFromUtf8(command).wstring() + L"\"";   // cmd /c retire les guillemets extrêmes
+        // NOLINTNEXTLINE(bugprone-command-processor) : le test lance l'exécutable comme un utilisateur, ligne écrite ici.
+        return _wsystem(wideCommand.c_str());
+#else
+        // NOLINTNEXTLINE(bugprone-command-processor) : le test lance l'exécutable comme un utilisateur, ligne écrite ici.
+        return std::system(command.c_str());
+#endif
+    }
+
+    // Lance `stitching <arguments>` (UTF-8) depuis le dossier courant du test ; stdout et stderr passent par des fichiers.
     CommandResult runStitching(const std::string& arguments, const fs::path& logDirectory) {
         const fs::path outputFile = logDirectory / "stdout.txt";
         const fs::path errorFile = logDirectory / "stderr.txt";
-        std::string command = "\"" STITCHING_EXECUTABLE "\" " + arguments + " > \"" + outputFile.string() + "\" 2> \"" +
-                              errorFile.string() + "\"";
-#ifdef _WIN32
-        command = "\"" + command + "\"";   // cmd /c retire la première et la dernière guillemets de la ligne
-#endif
+        const std::string command = "\"" STITCHING_EXECUTABLE "\" " + arguments + " > \"" + IONs::pathToUtf8(outputFile) +
+                                    "\" 2> \"" + IONs::pathToUtf8(errorFile) + "\"";
         CommandResult result;
-        // NOLINTNEXTLINE(bugprone-command-processor) : le test lance l'exécutable comme un utilisateur, ligne écrite ici.
-        result.exitCode = toExitCode(std::system(command.c_str()));
+        result.exitCode = toExitCode(runShell(command));
         result.output = readText(outputFile);
         result.errors = readText(errorFile);
         return result;
     }
 
-    std::string quoted(const fs::path& path) { return "\"" + path.string() + "\""; }
+    std::string quoted(const fs::path& path) { return "\"" + IONs::pathToUtf8(path) + "\""; }
 
-    void writeTiles(const fs::path& directory) {
+    // Deux tuiles <prefix>C00_R00.tif et <prefix>C01_R00.tif ; `prefix` en UTF-8.
+    void writeTiles(const fs::path& directory, const std::string& prefix = "img_") {
         fs::create_directories(directory);
         cv::Mat texture(TILE_HEIGHT, TILE_SHIFT + TILE_WIDTH, CV_32F);
         cv::RNG randomGenerator(TEXTURE_SEED);
@@ -89,8 +100,9 @@ namespace {
         cv::normalize(texture, texture, PIXEL_MINIMUM, PIXEL_MAXIMUM, cv::NORM_MINMAX);
         cv::Mat texture16;
         texture.convertTo(texture16, CV_16U);
-        cv::imwrite((directory / "img_C00_R00.tif").string(), texture16(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT)));
-        cv::imwrite((directory / "img_C01_R00.tif").string(), texture16(cv::Rect(TILE_SHIFT, 0, TILE_WIDTH, TILE_HEIGHT)));
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C00_R00.tif"), texture16(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT)));
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C01_R00.tif"),
+                         texture16(cv::Rect(TILE_SHIFT, 0, TILE_WIDTH, TILE_HEIGHT)));
     }
 
     // Script import → phase-correlation ; `imagePath` tel qu'écrit dans le script (relatif ou non).
@@ -108,6 +120,22 @@ namespace {
     }
 
     void writeJson(const fs::path& path, const Json& json) { std::ofstream(path, std::ios::binary) << json.dump(2); }
+
+    Json parameter(const std::string& name, const std::string& value) {
+        return {{"valueType", "string"}, {"name", name}, {"value", value}};
+    }
+
+    // Chaîne complète sur deux tuiles « tuiles_作品/étude_C<c>_R<r>.tif » : import, appariement, positions, coutures,
+    // assemblage et export (dans « résultat_成果/ »), avec des checkpoints. Les chemins sont relatifs au script : le
+    // dossier courant devient celui du script, donc « 作品 » doit être dans ces chemins relatifs pour être éprouvé.
+    Json makeFullScript() {
+        const Json steps = Json::array({
+            {{"name", "import"},
+             {"parameters", Json::array({parameter("path", "tuiles_作品"), parameter("format", "étude_C(\\d+)_R(\\d+)\\.tif")})}},
+            {{"name", "phase-correlation"}}, {{"name", "absolute-pos"}}, {{"name", "graphcut"}}, {{"name", "fusion"}},
+            {{"name", "export"}, {"parameters", Json::array({parameter("outputDirectory", "résultat_成果")})}}});
+        return {{"pipeline", {{"steps", steps}}}, {"run", {{"checkpointDirectory", "points_de_reprise"}}}};
+    }
 
     // Dossier propre à chaque test : <temp>/kikirpa-cli-test-<horloge>/, avec les tuiles dans tiles/.
     class CommandLineTestClass : public ::testing::Test {
@@ -223,6 +251,26 @@ TEST_F(CommandLineTestClass, ResumeNeedsACheckpointDirectory) {
 
     EXPECT_EQ(result.exitCode, EXIT_INVALID_USAGE);
     EXPECT_NE(result.errors.find("checkpointDirectory"), std::string::npos);
+}
+
+// Dossier, nom de tuiles et sorties hors de la page de code du système (« 作品 ») : de l'import à l'export, puis reprise.
+TEST_F(CommandLineTestClass, RunsTheWholeChainInANonAsciiDirectory) {
+    const fs::path artworkDirectory = directory / IONs::pathFromUtf8("œuvre_été_作品");
+    writeTiles(artworkDirectory / IONs::pathFromUtf8("tuiles_作品"), "étude_");
+    writeJson(artworkDirectory / "script.json", makeFullScript());
+    const std::string runScript = "--pipeline " + quoted(artworkDirectory / "script.json");
+
+    const CommandResult result = runStitching(runScript, directory);
+
+    ASSERT_EQ(result.exitCode, EXIT_SUCCESS) << result.output << result.errors;
+    EXPECT_NE(result.output.find("Step 6/6 OK"), std::string::npos);
+    EXPECT_TRUE(fs::exists(artworkDirectory / IONs::pathFromUtf8("résultat_成果") / "mosaic.tif"));
+    EXPECT_TRUE(fs::exists(artworkDirectory / IONs::pathFromUtf8("tuiles_作品") / ".cache" / "mosaic" / "mosaic_image.tif"));
+    EXPECT_NE(result.output.find("résultat_成果"), std::string::npos);   // chemins des messages en UTF-8
+
+    const CommandResult resumed = runStitching(runScript + " --resume", directory);
+    EXPECT_EQ(resumed.exitCode, EXIT_SUCCESS) << resumed.output << resumed.errors;
+    EXPECT_NE(resumed.output.find("resuming at step"), std::string::npos) << resumed.output;
 }
 
 TEST_F(CommandLineTestClass, EmptyPipelineSucceeds) {

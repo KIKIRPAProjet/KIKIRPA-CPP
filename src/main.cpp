@@ -1,4 +1,5 @@
 // src/main.cpp
+#include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/run_state.h"
@@ -20,6 +21,17 @@
 #include <string>
 #include <system_error>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
 
 namespace {
 
@@ -59,6 +71,50 @@ namespace {
 
     };
 
+    // Pendant le mode pipeline, la console Windows affiche l'UTF-8 (chemins des messages compris) ; sa page de code
+    // d'origine lui est rendue à la fin, parce qu'elle appartient au terminal de l'utilisateur. Sans effet ailleurs.
+    class Utf8ConsoleClass {
+
+        public:
+            Utf8ConsoleClass() {
+#ifdef _WIN32
+                previousCodePage = GetConsoleOutputCP();
+                SetConsoleOutputCP(CP_UTF8);
+#endif
+            }
+
+            ~Utf8ConsoleClass() {
+#ifdef _WIN32
+                if (previousCodePage != 0) SetConsoleOutputCP(previousCodePage);
+#endif
+            }
+
+            Utf8ConsoleClass(const Utf8ConsoleClass&) = delete;
+            Utf8ConsoleClass& operator=(const Utf8ConsoleClass&) = delete;
+
+        private:
+            unsigned int previousCodePage = 0;
+
+    };
+
+    // Arguments en UTF-8. Sous Windows, argv est dans la page de code du système, qui perd les caractères qu'elle n'a
+    // pas (« 作品 » devient « ?? ») : la ligne de commande est relue en UTF-16 puis convertie.
+    std::vector<std::string> utf8Arguments(int argumentCount, char** arguments) {
+#ifdef _WIN32
+        int wideArgumentCount = 0;
+        LPWSTR* wideArguments = CommandLineToArgvW(GetCommandLineW(), &wideArgumentCount);
+        if (wideArguments != nullptr) {
+            std::vector<std::string> converted;
+            converted.reserve(static_cast<std::size_t>(wideArgumentCount));
+            for (int argumentIndex = 0; argumentIndex < wideArgumentCount; ++argumentIndex)
+                converted.push_back(IONs::pathToUtf8(fs::path(wideArguments[argumentIndex])));
+            LocalFree(static_cast<HLOCAL>(wideArguments));
+            return converted;
+        }
+#endif
+        return {arguments, arguments + argumentCount};
+    }
+
     // Le mode pipeline commence par une option longue (--pipeline, --resume, --help) ou par -h. Les autres
     // arguments (options de Qt comme -platform, ou rien) ouvrent l'interface graphique.
     bool isCommandLineMode(int argumentCount, char** arguments) {
@@ -67,16 +123,16 @@ namespace {
         return firstArgument.rfind("--", 0) == 0 || firstArgument == "-h";
     }
 
-    CommandLine parseCommandLine(int argumentCount, char** arguments) {
+    CommandLine parseCommandLine(const std::vector<std::string>& arguments) {
         CommandLine commandLine;
-        for (int argumentIndex = 1; argumentIndex < argumentCount && commandLine.error.empty(); ++argumentIndex) {
-            const std::string argument = arguments[argumentIndex];
+        for (std::size_t argumentIndex = 1; argumentIndex < arguments.size() && commandLine.error.empty(); ++argumentIndex) {
+            const std::string& argument = arguments[argumentIndex];
             if (argument == "--help" || argument == "-h") {
                 commandLine.isHelpRequested = true;
             } else if (argument == "--resume") {
                 commandLine.isResumeRequested = true;
             } else if (argument == "--pipeline") {
-                const bool hasScript = argumentIndex + 1 < argumentCount && arguments[argumentIndex + 1][0] != '\0';
+                const bool hasScript = argumentIndex + 1 < arguments.size() && !arguments[argumentIndex + 1].empty();
                 if (hasScript) commandLine.scriptPath = arguments[++argumentIndex];
                 else commandLine.error = "--pipeline needs a script file";
             } else {
@@ -90,30 +146,30 @@ namespace {
 
     // Le script est désigné par rapport au dossier courant ; le dossier courant devient ensuite celui du script, pour
     // que les chemins relatifs du script (images, checkpoints, sorties) ne dépendent pas de l'endroit d'où on lance.
-    // Chemin construit depuis la chaîne d'argv (page de code du système sous Windows), comme le fait argv lui-même.
+    // `scriptArgument` est en UTF-8 (utf8Arguments).
     fs::path enterScriptDirectory(const std::string& scriptArgument) {
         std::error_code errorCode;
-        const fs::path scriptFile = fs::absolute(fs::path(scriptArgument), errorCode);
+        const fs::path scriptFile = fs::absolute(IONs::pathFromUtf8(scriptArgument), errorCode);
         if (errorCode || !std::ifstream(scriptFile).good()) throw FileErrorClass("cannot open " + scriptArgument);
         fs::current_path(scriptFile.parent_path(), errorCode);
         if (errorCode)
-            throw FileErrorClass("cannot enter the script directory " + scriptFile.parent_path().string() + ": " +
-                                 errorCode.message());
+            throw FileErrorClass("cannot enter the script directory " + IONs::pathToUtf8(scriptFile.parent_path()) +
+                                 ": " + errorCode.message());
         return scriptFile;
     }
 
     // Fichier où le pipeline réécrit le script complet (pipeline + run) après chaque step : <checkpoints>/run.json.
     fs::path runStatePath(const PipelineNs::RunState& runState) {
-        return fs::absolute(fs::path(runState.checkpointDirectory)) / "run.json";
+        return fs::absolute(IONs::pathFromUtf8(runState.checkpointDirectory)) / "run.json";
     }
 
     Json readJsonFile(const fs::path& path) {
         std::ifstream input(path, std::ios::binary);
-        if (!input) throw FileErrorClass("cannot open " + path.string());
+        if (!input) throw FileErrorClass("cannot open " + IONs::pathToUtf8(path));
         try {
             return Json::parse(input);
         } catch (const Json::parse_error& exception) {
-            throw FileErrorClass("invalid JSON in " + path.string() + ": " + exception.what());
+            throw FileErrorClass("invalid JSON in " + IONs::pathToUtf8(path) + ": " + exception.what());
         }
     }
 
@@ -123,7 +179,7 @@ namespace {
             throw std::invalid_argument("--resume needs run.checkpointDirectory in the script");
         const fs::path statePath = runStatePath(runState);
         if (!fs::exists(statePath)) {
-            std::cout << "no previous run in " << statePath.string() << ": starting from the first step\n";
+            std::cout << "no previous run in " << IONs::pathToUtf8(statePath) << ": starting from the first step\n";
             return {};
         }
         const Json stateJson = readJsonFile(statePath);
@@ -197,7 +253,8 @@ namespace {
     }
 
     int runCommandLine(int argumentCount, char** arguments) {
-        const CommandLine commandLine = parseCommandLine(argumentCount, arguments);
+        const Utf8ConsoleClass utf8Console;
+        const CommandLine commandLine = parseCommandLine(utf8Arguments(argumentCount, arguments));
         if (commandLine.isHelpRequested) {
             std::cout << USAGE;
             return EXIT_SUCCESS;
