@@ -205,11 +205,12 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                                          (assemblage et export : pas encore sur main)
 ```
 
-Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines`. C'est l'autre méthode de couture, à côté de `graphcut`.
+Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines` — c'est l'autre méthode de couture, à côté de `graphcut`. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
+| `overlap-estimation` | `overlap`, réglages de la corrélation | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
