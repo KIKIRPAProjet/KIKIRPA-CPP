@@ -385,33 +385,39 @@ void verifierEstimationsDeRecouvrement(const StepNs::DataStoreClass& apres) {
              "OverlapEstimates : translation, recouvrement et zones communes");
 }
 
+// Chaque type déclaré d'office, avec la clé du DataStoreClass qui lui sert d'exemple. Cette liste est la
+// source de vérité de testerTypesDuPipeline : elle dit quels types doivent exister et lesquels voient leur
+// aller-retour éprouvé. Un type ajouté à pipelineTypes() sans l'être ici fait échouer le test, en le nommant.
+constexpr std::pair<const char*, const char*> CLES_DES_TYPES[] = {
+    {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
+    {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"},
+    {"OverlapEstimates", "overlapEstimates"}};
+
+// Les deux listes ne peuvent pas diverger : l'échec nomme le type fautif.
+void verifierTypesDeclares() {
+    std::set<std::string> attendus;
+    for (const auto& entree : CLES_DES_TYPES) attendus.insert(entree.first);
+    std::set<std::string> declares;
+    for (const auto& entree : CheckpointNs::pipelineTypes()) declares.insert(entree.first);
+
+    for (const auto& type : declares)
+        verifier(attendus.count(type) == 1, "type '" + type + "' déclaré mais son aller-retour n'est pas vérifié");
+    for (const auto& type : attendus)
+        verifier(declares.count(type) == 1, "type '" + type + "' attendu mais absent de pipelineTypes()");
+}
+
 // Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
 void testerTypesDuPipeline(const fs::path& dossier) {
     std::cout << "Sérialisation des types du pipeline\n";
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     const auto types = CheckpointNs::pipelineTypes();
-    // Un type déclaré d'office est un type dont l'aller-retour est éprouvé ci-dessous : les deux listes
-    // ne peuvent pas diverger. Ajouter un type sans l'éprouver fait échouer ce test, avec son nom.
-    const std::pair<const char*, const char*> cles[] = {
-        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
-        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"},
-        {"OverlapEstimates", "overlapEstimates"}};
-
-    std::set<std::string> attendus;
-    for (const auto& entree : cles) attendus.insert(entree.first);
-    std::set<std::string> declares;
-    for (const auto& entree : types) declares.insert(entree.first);
-
-    for (const auto& type : declares)
-        verifier(attendus.count(type) == 1, "type '" + type + "' déclaré mais son aller-retour n'est pas vérifié");
-    for (const auto& type : attendus)
-        verifier(declares.count(type) == 1, "type '" + type + "' attendu mais absent de pipelineTypes()");
+    verifierTypesDeclares();
 
     StepNs::DataStoreClass avant;
     StepNs::DataStoreClass apres;
     remplirDonneesDEssai(avant);
-    for (const auto& [type, cle] : cles) {
+    for (const auto& [type, cle] : CLES_DES_TYPES) {
         verifier(CheckpointNs::CheckpointClass::hasType(type), std::string(type) + " déclaré");
         types.at(type).first(avant, cle, dossier);
         types.at(type).second(apres, cle, dossier);
