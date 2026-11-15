@@ -200,7 +200,7 @@ const std::map<std::string, StepCreator>& stepRegistry() {
 
 C'est le seul endroit où le moteur connaît la liste des steps. Le nom doit être exactement celui de `stepConfig.name`. `tests/core/test_pipeline.cpp` vérifie que chaque nom du registre crée un step de ce nom.
 
-Dans `tests/core/test_pipeline.cpp`, augmenter `REGISTERED_STEP_COUNT` (8 → 9) et le message à côté (`"8 steps enregistrés"`). Sinon, le test du registre échoue.
+Dans `tests/core/test_pipeline.cpp`, ajouter le nom du step à la liste `attendus` de `testerRegistre()`. Sinon, le test du registre échoue en nommant le step en trop. Cette liste remplace l'ancien compteur `REGISTERED_STEP_COUNT` : deux PR qui ajoutent chacune un step touchent la même ligne, donc git signale un conflit au lieu de laisser passer un total faux.
 
 ## 6. Si la sortie est d'un nouveau type
 

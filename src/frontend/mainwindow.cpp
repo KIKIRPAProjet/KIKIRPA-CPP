@@ -24,6 +24,11 @@
 #include "project_setup_model.h"
 #include "simulationrunner.h"
 #include "workspace_ui.h"
+#include "alignment_tab.h"
+#include "bottom_tabs.h"
+#include "right_panel.h"
+#include "top_toolbars.h"
+#include "workspace_status_bar.h"
 
 #include <QApplication>
 #include <QComboBox>
@@ -74,6 +79,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupHomePageConnections();
     setupMenuConnections();
     setupPageConnections();
+    setupPairAlignmentConnections();
 }
 
 void MainWindow::applyStyleSheet()
@@ -245,6 +251,168 @@ void MainWindow::setupPageConnections()
     menuBar()->setVisible(false);
 }
 
+void MainWindow::setupPairAlignmentConnections()
+{
+    //seule ligne qui sera modifiée
+    m_pairs = FrontendUtils::defaultPairAlignments(); 
+    m_currentPairIndex = 0;
+
+    /* À décommenter lors de la connexion au backend (remplace defaultPairAlignments() après le run) ---
+    // Lorsque le DataStoreClass du pipeline contient la clé "matches" :
+    // m_pairs.clear();
+    // const auto &backendPairs = dataStore.get<std::vector<DataNs::PairMatches>>("matches");
+    // for (int i = 0; i < static_cast<int>(backendPairs.size()); ++i) {
+    //     m_pairs.append(FrontendUtils::pairInfoFromBackend(
+    //         i, tileNameA, tileNameB, backendPairs[i]));
+    // }
+    */
+
+    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
+        connect(bottom, &BottomTabs::pairSelected, this, &MainWindow::selectPair);
+    }
+
+    if (RightPanel *right = workspaceUI->rightPanel()) {
+        if (AlignmentTab *alignTab = right->alignmentTab()) {
+            connect(alignTab, &AlignmentTab::pairSelectionRequested,
+                    this, &MainWindow::selectPair);
+            connect(alignTab, &AlignmentTab::nextDubiousRequested,
+                    this, &MainWindow::selectNextDubiousPair);
+            connect(alignTab, &AlignmentTab::pairValidated,
+                    this, &MainWindow::validatePair);
+            connect(alignTab, &AlignmentTab::manualOffsetApplied,
+                    this, &MainWindow::applyManualPairOffset);
+        }
+    }
+
+    if (TopToolbars *top = workspaceUI->topToolbars()) {
+        connect(top, &TopToolbars::previousPairRequested,
+                this, &MainWindow::selectPreviousPair);
+        connect(top, &TopToolbars::nextDubiousPairRequested,
+                this, &MainWindow::selectNextDubiousPair);
+    }
+
+    refreshPairViews();
+}
+
+//permet la sélection d'une nouvelles paires et la mise à jour des affichages
+void MainWindow::selectPair(int pairIndex)
+{
+    if (m_pairs.isEmpty())
+        return;
+    m_currentPairIndex = qBound(0, pairIndex, m_pairs.size() - 1);
+    refreshPairViews();
+
+    if (currentMode == 3 && workspaceUI->rightPanel()) {
+        workspaceUI->rightPanel()->showPairTab();
+    }
+
+    const auto &pair = m_pairs.at(m_currentPairIndex);
+    updateStatus(tr("Paire sélectionnée : %1 (%2)")
+                     .arg(pair.pairLabel(),
+                          pair.isDubious() ? tr("douteuse — %1").arg(pair.statusReason) : tr("fiable")));
+}
+
+void MainWindow::selectPreviousPair()
+{
+    if (m_pairs.isEmpty())
+        return;
+    setMode(3);
+    const int prevIndex = (m_currentPairIndex - 1 + m_pairs.size()) % m_pairs.size();
+    selectPair(prevIndex);
+}
+
+//
+void MainWindow::selectNextDubiousPair()
+{
+    if (m_pairs.isEmpty())
+        return;
+    setMode(3);
+    for (int offset = 1; offset <= m_pairs.size(); ++offset) {
+        const int idx = (m_currentPairIndex + offset) % m_pairs.size();
+        if (m_pairs.at(idx).isDubious()) {
+            selectPair(idx);
+            return;
+        }
+    }
+    updateStatus(tr("Aucune paire douteuse restante à inspecter."));
+}
+
+//une fois une paire validée, mise à jour du status
+void MainWindow::validatePair(int pairIndex)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    auto &pair = m_pairs[pairIndex];
+    pair.status = FrontendUtils::PairStatus::Validated;
+    pair.intervention = tr("validée par l'opérateur");
+    refreshPairViews();
+    updateStatus(tr("Paire %1 validée par l'opérateur ; les étapes suivantes sont à refaire.")
+                     .arg(pair.pairLabel()));
+}
+
+//met à jours les variables après modification manuelle
+void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    auto &pair = m_pairs[pairIndex];
+    pair.dx = dx;
+    pair.dy = dy;
+    pair.intervention = tr("manuelle (%1 ; %2 px)")
+                            .arg(QString::number(dx, 'f', 1).replace('.', ','),
+                                 QString::number(dy, 'f', 1).replace('.', ','));
+    refreshPairViews();
+}
+
+//comptage du nombre de paire douteuse et en échec, mise à jour des tables 
+void MainWindow::refreshPairViews()
+{
+    if (m_pairs.isEmpty())
+        return;
+
+    m_currentPairIndex = qBound(0, m_currentPairIndex, m_pairs.size() - 1);
+    const auto &currentPair = m_pairs.at(m_currentPairIndex);
+
+    int dubiousCount = 0;
+    int failedCount = 0;
+    for (const auto &p : m_pairs) {
+        if (p.status == FrontendUtils::PairStatus::Dubious)
+            ++dubiousCount;
+        else if (p.status == FrontendUtils::PairStatus::Failed)
+            ++failedCount;
+    }
+
+    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
+        bottom->updatePairs(m_pairs);
+        bottom->selectPairRow(m_currentPairIndex);
+    }
+
+    if (RightPanel *right = workspaceUI->rightPanel()) {
+        if (AlignmentTab *alignTab = right->alignmentTab()) {
+            alignTab->setPairs(m_pairs, m_currentPairIndex);
+        }
+    }
+
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setCurrentPair(currentPair);
+    }
+
+    if (TopToolbars *top = workspaceUI->topToolbars()) {
+        top->updateDubiousState(dubiousCount);
+    }
+
+    if (WorkspaceStatusBar *status = workspaceUI->workspaceStatusBar()) {
+        status->updatePairSummary(m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
+    }
+
+    if (currentMode == 3) {
+        if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
+            label->setText(tr("Vue Paire — %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
+                               .arg(currentPair.tileA, currentPair.tileB));
+        }
+    }
+}
+
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
@@ -339,9 +507,13 @@ void MainWindow::setMode(int mode)
     }
     workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
-    if (currentMode == 3)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
+    if (currentMode == 3) {
+        workspaceUI->bottomTabs()->setCurrentIndex(1);
+        if (workspaceUI->rightPanel())
+            workspaceUI->rightPanel()->showPairTab();
+        refreshPairViews();
+    }
     updateStatus(tr("Mode : %1").arg(FrontendUtils::MODE_NAMES.at(currentMode)));
 }
 
@@ -546,12 +718,19 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
     workspaceUI->progressBar()->setValue(qBound(0, percentage, 100));
 }
 
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
         workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        event->accept();
+        return;
+    }
+    // Raccourci clavier (touche N) : passe directement à la prochaine paire douteuse.
+    if (event->key() == Qt::Key_N) {
+        selectNextDubiousPair();
         event->accept();
         return;
     }

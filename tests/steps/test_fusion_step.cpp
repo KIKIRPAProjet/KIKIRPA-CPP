@@ -98,7 +98,8 @@ namespace {
         return image;
     }
 
-    std::string tileStem(int column) { return "tile_r00_c0" + std::to_string(column); }
+    // Nom d'import (_C<colonne>_R<ligne>) de la tuile de la ligne 0 ; son identifiant de position est "r00_c0N".
+    std::string tileStem(int column) { return "tile_C0" + std::to_string(column) + "_R00"; }
 
     // Tuile comme après l'import : TIFF pyramidal écrit, fiche sans pixel. L'image source n'a pas besoin d'exister.
     std::shared_ptr<DataNs::TileClass> makeTile(const fs::path& directory, int tileId, int column, const cv::Mat& image) {
@@ -344,7 +345,7 @@ TEST(FusionStepTest, FailsWhenATileNameHasNoGridPosition) {
     StepsNs::FusionStepClass step = makeFusionStep(temporaryDirectory.path / "fusion", dataStore);
 
     EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult().value("error", "").find("_rLL_cCC"), std::string::npos);
+    EXPECT_NE(step.getResult().value("error", "").find("_C<column>_R<row>"), std::string::npos);
 }
 
 // Les coins doivent être ceux de graphcut, au pixel près, y compris pour des positions fractionnaires et négatives.
@@ -359,15 +360,12 @@ TEST(FusionStepTest, ComputesTheSameCornersAsGraphCut) {
         cv::imwrite(tilePaths.back(), cv::Mat(SMALL_TILE_HEIGHT, SMALL_TILE_WIDTH, CV_8UC3, cv::Scalar::all(1)));
         namedPositions.push_back({"r00_c0" + std::to_string(column), positions[tileIndex], 0.0});
     }
-    std::vector<cv::Size> tileSizes;
-    std::vector<cv::UMat> smallMasks;
-    std::vector<cv::Point> graphCutCorners;
-    std::vector<cv::Point> smallCorners;
-    ASSERT_EQ(GraphCutNs::ImagePretreatmentClass().processImages(namedPositions, tilePaths, 1.0, tileSizes, smallMasks,
-                                                                 graphCutCorners, smallCorners),
-              1);
+    GraphCutNs::ImagePretreatmentClass pretreatment;
+    GraphCutNs::PreprocessedTiles graphCutTiles;
+    ASSERT_EQ(pretreatment.processImages(namedPositions, tilePaths, 1.0, graphCutTiles), 1)
+        << pretreatment.getErrorMessage();
 
-    EXPECT_EQ(StepsNs::computeMosaicCorners(positions), graphCutCorners);
+    EXPECT_EQ(StepsNs::computeMosaicCorners(positions), graphCutTiles.originalCorners);
 }
 
 TEST(FusionStepTest, MosaicIsPublishedByExport) {

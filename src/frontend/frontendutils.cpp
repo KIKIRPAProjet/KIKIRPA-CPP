@@ -48,6 +48,98 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     return label;
 }
 
+//paires d'exemple de la maquette - à supprimé lors de la connection au backend
+QVector<PairAlignmentInfo> defaultPairAlignments()
+{
+    return {
+        {0, 0, 1, QStringLiteral("r00_c00"), QStringLiteral("r00_c01"),
+         QObject::tr("horizontal"), PairStatus::Dubious,
+         QObject::tr("contrôle NCC faible (0,37)"),
+         0.91, 0.37, 4065.5, -20.7, 263, 1401, 14, 3, 3.95, QObject::tr("aucune")},
+        {1, 0, 2, QStringLiteral("r00_c00"), QStringLiteral("r01_c00"),
+         QObject::tr("vertical"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.99, 0.76, 23.5, 4086.7, 678, 1232, 16, 1, 0.04, QObject::tr("aucune")},
+        {2, 1, 3, QStringLiteral("r00_c01"), QStringLiteral("r01_c01"),
+         QObject::tr("vertical"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.99, 0.92, 23.8, 4133.7, 1105, 1429, 18, 1, 0.04, QObject::tr("aucune")},
+        {3, 2, 3, QStringLiteral("r01_c00"), QStringLiteral("r01_c01"),
+         QObject::tr("horizontal"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.98, 0.65, 4064.7, 29.9, 421, 1492, 15, 2, 0.02, QObject::tr("aucune")}
+    };
+}
+
+/* À décommenter lors de la connexion au backend (convertit DataNs::PairMatches en PairAlignmentInfo) ---
+PairAlignmentInfo pairInfoFromBackend(int pairIndex,
+                                      const QString &tileAName,
+                                      const QString &tileBName,
+                                      const DataNs::PairMatches &pairMatches,
+                                      const DataNs::Alignment *alignment,
+                                      double nccScore,
+                                      double optimizationErrorPx)
+{
+    PairAlignmentInfo info;
+    info.pairIndex = pairIndex;
+    info.tileA = tileAName;
+    info.tileB = tileBName;
+    info.direction = (pairMatches.direction == DataNs::Direction::Bottom ||
+                      pairMatches.direction == DataNs::Direction::Top)
+                         ? QObject::tr("vertical")
+                         : QObject::tr("horizontal");
+
+    const auto &matches = pairMatches.featureMatches;
+    info.dx = matches.translationX;
+    info.dy = matches.translationY;
+    info.totalMatches = static_cast<int>(matches.pointsInA.size());
+    info.nccScore = nccScore;
+    info.optimizationErrorPx = optimizationErrorPx;
+    info.intervention = QObject::tr("aucune");
+
+    double sumConfidence = 0.0;
+    int inliers = 0;
+
+    for (std::size_t i = 0; i < matches.pointsInA.size(); ++i) {
+        const bool inlier = (alignment == nullptr ||
+                             i >= alignment->inlierMask.size() ||
+                             alignment->inlierMask[i] != 0);
+        info.pointsInA.append(QPointF(matches.pointsInA[i].x, matches.pointsInA[i].y));
+        info.pointsInB.append(QPointF(matches.pointsInB[i].x, matches.pointsInB[i].y));
+        info.isInlier.append(inlier);
+
+        if (inlier) {
+            if (i < matches.confidenceScores.size())
+                sumConfidence += matches.confidenceScores[i];
+            ++inliers;
+        }
+    }
+
+    info.inlierCount = inliers;
+    info.shownInliers = inliers;
+    info.shownOutliers = info.totalMatches - inliers;
+    info.meanConfidence = inliers > 0 ? (sumConfidence / inliers) : 0.0;
+
+    // Détection automatique de paire douteuse à partir des scores de confiance et du NCC
+    if (info.totalMatches == 0 || info.inlierCount < 4) {
+        info.status = PairStatus::Failed;
+        info.statusReason = QObject::tr("nombre de points insuffisant (%1)").arg(info.inlierCount);
+    } else if (info.nccScore < 0.50) {
+        info.status = PairStatus::Dubious;
+        info.statusReason = QObject::tr("contrôle NCC faible (%1)")
+                                .arg(QString::number(info.nccScore, 'f', 2).replace('.', ','));
+    } else if (info.meanConfidence < 0.75) {
+        info.status = PairStatus::Dubious;
+        info.statusReason = QObject::tr("score de confiance faible (%1)")
+                                .arg(QString::number(info.meanConfidence, 'f', 2).replace('.', ','));
+    } else {
+        info.status = PairStatus::Reliable;
+        info.statusReason = QObject::tr("corrélation et géométrie cohérentes");
+    }
+    return info;
+}
+*/
+
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order)

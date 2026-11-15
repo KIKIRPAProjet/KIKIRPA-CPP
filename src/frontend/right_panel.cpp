@@ -22,14 +22,22 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
 
     ArtworkCanvas *canvas = m_centerArea->canvas();
 
-        m_gridTab = new GridTab(m_mainWindow, m_projectGrid, canvas, this);
+    m_gridTab = new GridTab(m_mainWindow, m_projectGrid, canvas, this);
     m_alignmentTab = new AlignmentTab(m_mainWindow, canvas, this);
     m_assemblyTab = new AssemblyTab(m_mainWindow, this);
 
     addTab(m_gridTab, tr("Grille"));
-    addTab(new MasksTab(m_mainWindow, canvas, this), tr("Calques"));
     addTab(m_assemblyTab, tr("Chaîne"));
-    addTab(m_alignmentTab, tr("Infos"));
+    addTab(m_alignmentTab, tr("Paire"));
+    addTab(new MasksTab(m_mainWindow, canvas, this), tr("Calques"));
+}
+
+//affichage de l'onglet pair 
+void RightPanel::showPairTab()
+{
+    if (m_alignmentTab) {
+        setCurrentWidget(m_alignmentTab);
+    }
 }
 
 void RightPanel::updateGridState(const ProjectGrid::State &gridState)

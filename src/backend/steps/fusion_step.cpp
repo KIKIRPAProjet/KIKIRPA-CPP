@@ -71,7 +71,8 @@ namespace StepsNs {
                     canvasSize};
         }
 
-        // Position de chaque tuile, retrouvée par le nom "rLL_cCC" lu dans son nom de fichier, comme graphcut.
+        // Position de chaque tuile, retrouvée par l'identifiant "rLL_cCC" tiré de la fin de son nom de fichier
+        // (_C<colonne>_R<ligne>.tif), comme graphcut.
         std::vector<cv::Point2d> findTilePositions(const FusionInputs& inputs) {
             std::map<std::string, cv::Point2d> positionByTileId;
             for (const DataNs::TilePositionData& tilePosition : inputs.positions)
@@ -83,7 +84,8 @@ namespace StepsNs {
                 int column = 0;
                 std::string tileId;
                 if (!GraphCutNs::ImagePretreatmentClass::parseTileName(sourcePath, row, column, tileId))
-                    throw std::runtime_error("fusion: tile file name does not end with _rLL_cCC.tif: " + sourcePath);
+                    throw std::runtime_error("fusion: tile file name must end with _C<column>_R<row>.tif or .tiff: " +
+                                             sourcePath);
                 const auto positionEntry = positionByTileId.find(tileId);
                 if (positionEntry == positionByTileId.end())
                     throw std::runtime_error("fusion: no position for tile '" + tileId + "'");

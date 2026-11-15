@@ -45,6 +45,18 @@ namespace DataNs {
         double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
+    // Estimation du recouvrement d'une paire voisine, produite par le step « recouvrement ».
+    // commonAreaInA et commonAreaInB sont en pixels de pleine résolution, dans les repères locaux de A et de B.
+    struct PairOverlapEstimate {
+        int tileIdA = 0;
+        int tileIdB = 0;
+        Direction direction = Direction::Right;
+        OverlapEstimate estimate;
+        cv::Rect commonAreaInA;
+        cv::Rect commonAreaInB;
+    };
+    using OverlapEstimates = std::vector<PairOverlapEstimate>;
+
     // Sortie d'un StitchingNs::FeatureMatcherClass : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;

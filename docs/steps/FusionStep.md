@@ -15,7 +15,7 @@ Code : [fusion_step.h](../../include/backend/steps/fusion_step.h) / [fusion_step
 | Sortie | `mosaic` | `Mosaic` | `DataNs::Mosaic` | `export` |
 
 - **Lit** dans `tiles` le TIFF pyramidal de chaque tuile (`getTiff()`), niveau 0 seulement, **région par région** : pour chaque bloc, uniquement l'intersection tuile / bloc, et seulement si le territoire de la tuile touche cette intersection. Le nom du fichier source (`getSource()`) sert à retrouver la position ; l'image source n'est pas relue.
-- **Lit** dans `positions` la position de chaque tuile, retrouvée par l'identifiant `rLL_cCC` que `GraphCutNs::ImagePretreatmentClass::parseTileName` tire du nom de fichier, comme `graphcut`. La rotation est ignorée, comme dans `graphcut`.
+- **Lit** dans `positions` la position de chaque tuile, retrouvée par l'identifiant `rLL_cCC` que `GraphCutNs::ImagePretreatmentClass::parseTileName` tire de la fin du nom de fichier (`_C<colonne>_R<ligne>.tif`), comme `graphcut`. La rotation est ignorée, comme dans `graphcut`.
 - **Lit** dans `territories` les polygones et les trous de chaque tuile (`tileIndex` = place dans `tiles`).
 - **Lit**, si la clé existe, `intensityCorrection` : `tileGains`, `fieldStrength`, `isolatedTileIndices`. Elle n'est pas déclarée dans `inputs`, parce que le moteur n'a pas d'entrée facultative : la déclarer imposerait `intensity-correction` dans tout pipeline.
 - **Écrit** dans `mosaic` les chemins de trois TIFF tuilés et `canvasSize` :
@@ -54,7 +54,7 @@ Ce travail reprend la logique de rendu par bloc et de masque de territoire (poly
 
 - une entrée manque ;
 - il n'y a aucune tuile, ou pas autant de positions (ou de gains) que de tuiles ;
-- un nom de fichier ne finit pas par `_rLL_cCC.tif`, ou sa position est absente ;
+- un nom de fichier ne finit pas par `_C<colonne>_R<ligne>.tif` (ou `.tiff`), ou sa position est absente ;
 - une tuile n'a pas de TIFF pyramidal, ou son identifiant dépasse 65535 (provenance sur 16 bits) ;
 - un territoire désigne une tuile inexistante, ou un gain n'est pas strictement positif ;
 - un TIFF de tuile ne peut pas être lu, ou un fichier de sortie ne peut pas être écrit.
@@ -94,7 +94,7 @@ Par bloc : le bloc lui-même (512² × 9 octets, environ 2,4 Mo), la région lue
 - mosaïque de 700 × 600 (2 × 2 blocs, blocs de bord) comparée pixel par pixel ;
 - contour d'un trou attribué au territoire qui l'entoure ;
 - division par le gain, tuile isolée non corrigée, tuiles 8 bits passées en 16 bits ;
-- échecs : position manquante (aucune mosaïque publiée, aucun fichier), nom de fichier sans `_rLL_cCC` ;
+- échecs : position manquante (aucune mosaïque publiée, aucun fichier), nom de fichier sans `_C<colonne>_R<ligne>` ;
 - coins identiques à ceux de `processImages` pour des positions fractionnaires et négatives ;
 - bout en bout `fusion` → `export` ; empreinte qui suit les fichiers produits ; chaînage accepté après `graphcut`, refusé sans.
 
