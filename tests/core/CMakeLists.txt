@@ -34,3 +34,8 @@ add_executable(mosaic_corners_tests test_mosaic_corners.cpp)
 kikirpa_copy_onnxruntime_dlls(mosaic_corners_tests)
 target_link_libraries(mosaic_corners_tests PRIVATE kikirpa_backend GTest::gtest_main)
 gtest_discover_tests(mosaic_corners_tests PROPERTIES LABELS "unit")
+
+add_executable(unicode_path_tests test_unicode_path.cpp)
+kikirpa_copy_onnxruntime_dlls(unicode_path_tests)
+target_link_libraries(unicode_path_tests PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(unicode_path_tests PROPERTIES LABELS "unit")

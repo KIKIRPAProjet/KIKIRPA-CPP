@@ -3,6 +3,7 @@
 
 #include "core/data/tile.h"
 #include "core/io/file_replacement.h"
+#include "core/io/unicode_path.h"
 
 #include <opencv2/core/cvdef.h>
 #include <opencv2/core/hal/interface.h>
@@ -94,7 +95,7 @@ namespace IONs {
             std::error_code directoryError;
             fs::create_directories(parentDirectory, directoryError);
             if (!directoryError) return true;
-            errorMessage = "cannot create directory '" + parentDirectory.string() + "': " + directoryError.message();
+            errorMessage = "cannot create directory '" + IONs::pathToUtf8(parentDirectory) + "': " + directoryError.message();
             return false;
         }
 
@@ -114,9 +115,9 @@ namespace IONs {
 
         bigTiff = shouldUseBigTiff(imageSize, CV_ELEM_SIZE(imageType));
         temporaryPath = makeTemporaryPath(outputPath);
-        tiffFile.reset(TIFFOpen(temporaryPath.string().c_str(), bigTiff ? "w8" : "w"));
+        tiffFile.reset(IONs::openTiff(temporaryPath, bigTiff ? "w8" : "w"));
         if (!tiffFile) {
-            errorMessage = "cannot open output TIFF '" + temporaryPath.string() + "'";
+            errorMessage = "cannot open output TIFF '" + IONs::pathToUtf8(temporaryPath) + "'";
             abandon();
             return false;
         }

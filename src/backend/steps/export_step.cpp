@@ -10,6 +10,7 @@
 #include "core/data/algorithm_types.h"
 #include "core/io/file_fingerprint.h"
 #include "core/io/file_replacement.h"
+#include "core/io/unicode_path.h"
 
 #include <opencv2/core/types.hpp>
 #include <tiff.h>
@@ -82,9 +83,9 @@ namespace StepsNs {
         }
 
         bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
-            TIFF* rawTiffFile = TIFFOpen(path.string().c_str(), "r");
+            TIFF* rawTiffFile = IONs::openTiff(path, "r");
             if (!rawTiffFile) {
-                errorMessage = "cannot open mosaic image '" + path.string() + "'";
+                errorMessage = "cannot open mosaic image '" + IONs::pathToUtf8(path) + "'";
                 return false;
             }
             const std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(rawTiffFile, &TIFFClose);
@@ -92,7 +93,7 @@ namespace StepsNs {
                 !TIFFGetField(tiffFile.get(), TIFFTAG_IMAGELENGTH, &header.height) ||
                 !TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_SAMPLESPERPIXEL, &header.samplesPerPixel) ||
                 !TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_BITSPERSAMPLE, &header.bitsPerSample)) {
-                errorMessage = "cannot read the header of mosaic image '" + path.string() + "'";
+                errorMessage = "cannot read the header of mosaic image '" + IONs::pathToUtf8(path) + "'";
                 return false;
             }
             header.isTiled = TIFFIsTiled(tiffFile.get()) != 0;
@@ -127,7 +128,7 @@ namespace StepsNs {
             fs::create_directories(directory, directoryError);
             if (!directoryError) return true;
             result["error"] =
-                "cannot create output directory '" + directory.string() + "': " + directoryError.message();
+                "cannot create output directory '" + IONs::pathToUtf8(directory) + "': " + directoryError.message();
             return false;
         }
 

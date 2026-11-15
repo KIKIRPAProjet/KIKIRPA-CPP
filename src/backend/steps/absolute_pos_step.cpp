@@ -8,6 +8,7 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/pair_residual.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -51,7 +52,7 @@ namespace StepsNs {
                     throw std::invalid_argument("absolute-pos: duplicate tile id");
                 int row = 0, column = 0;
                 std::string name;
-                if (!GraphCutNs::ImagePretreatmentClass::parseTileName(tile->getSource().string(), row, column, name))
+                if (!GraphCutNs::ImagePretreatmentClass::parseTileName(IONs::pathToUtf8(tile->getSource()), row, column, name))
                     throw std::invalid_argument("absolute-pos: tile filename must end in _C<column>_R<row>.tif[f]");
                 if (!names.insert(name).second) throw std::invalid_argument("absolute-pos: duplicate tile grid position");
                 index.names.push_back(std::move(name));

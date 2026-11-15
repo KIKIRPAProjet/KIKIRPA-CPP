@@ -6,6 +6,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 #include "steps/phase_correlation_step.h"
 
@@ -57,7 +58,7 @@ namespace StepsNs {
             for (const auto& tile : tiles) {
                 const cv::Mat pixels = PhaseCorrelationStepClass::readPixels(*tile, ANALYSIS_LEVEL);
                 if (pixels.empty()) {
-                    errorMessage = "cannot read " + tile->getSource().string();
+                    errorMessage = "cannot read " + IONs::pathToUtf8(tile->getSource());
                     return {};
                 }
                 // L'algorithme a besoin de la taille pleine résolution pour ramener les translations à l'échelle réduite.
