@@ -23,7 +23,7 @@
 #include <system_error>
 
 #ifndef _WIN32
-#include <sys/wait.h>
+#include <sys/wait.h>   // NOLINT(misc-include-cleaner) : WIFEXITED et WEXITSTATUS, macros POSIX
 #endif
 
 namespace fs = std::filesystem;
@@ -58,6 +58,7 @@ namespace {
 #ifdef _WIN32
         return systemStatus;
 #else
+        // NOLINTNEXTLINE(misc-include-cleaner) : macros POSIX de <sys/wait.h>, que l'outil ne rattache à aucun en-tête.
         return WIFEXITED(systemStatus) ? WEXITSTATUS(systemStatus) : -1;
 #endif
     }
