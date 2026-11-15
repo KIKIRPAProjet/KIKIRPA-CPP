@@ -27,6 +27,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <set>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -43,8 +44,6 @@ constexpr int VALEUR_A = 10;
 constexpr int VALEUR_B = 5;
 constexpr int VALEUR_A_MODIFIEE = 20;
 
-// Valeurs de l'aller-retour des types du pipeline : des fractions binaires exactes, pour comparer avec ==.
-constexpr std::size_t NOMBRE_TYPES_PIPELINE = 7;
 constexpr int LARGEUR_TUILE = 400;
 constexpr int HAUTEUR_TUILE = 300;
 constexpr float POINT_A_X = 1.25F;
@@ -359,14 +358,25 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     const auto types = CheckpointNs::pipelineTypes();
-    verifier(types.size() == NOMBRE_TYPES_PIPELINE, "7 types déclarés d'office");
+    // Un type déclaré d'office est un type dont l'aller-retour est éprouvé ci-dessous : les deux listes
+    // ne peuvent pas diverger. Ajouter un type sans l'éprouver fait échouer ce test, avec son nom.
+    const std::pair<const char*, const char*> cles[] = {
+        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
+        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"}};
+
+    std::set<std::string> attendus;
+    for (const auto& entree : cles) attendus.insert(entree.first);
+    std::set<std::string> declares;
+    for (const auto& entree : types) declares.insert(entree.first);
+
+    for (const auto& type : declares)
+        verifier(attendus.count(type) == 1, "type '" + type + "' déclaré mais son aller-retour n'est pas vérifié");
+    for (const auto& type : attendus)
+        verifier(declares.count(type) == 1, "type '" + type + "' attendu mais absent de pipelineTypes()");
 
     StepNs::DataStoreClass avant;
     StepNs::DataStoreClass apres;
     remplirDonneesDEssai(avant);
-    const std::pair<const char*, const char*> cles[] = {
-        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
-        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"}};
     for (const auto& [type, cle] : cles) {
         verifier(CheckpointNs::CheckpointClass::hasType(type), std::string(type) + " déclaré");
         types.at(type).first(avant, cle, dossier);
