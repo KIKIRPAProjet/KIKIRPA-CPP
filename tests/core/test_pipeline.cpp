@@ -30,6 +30,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -37,7 +38,6 @@ namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
 constexpr int PHASE_PARAMETER_COUNT = 15;
-constexpr std::size_t REGISTERED_STEP_COUNT = 11;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -88,8 +88,18 @@ public:
 
 void testerRegistre() {
     std::cout << "Registre des steps\n";
+    const std::set<std::string> attendus = {
+        "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification",
+        "graphcut", "import", "intensity-correction", "lightglue", "phase-correlation",
+        "sift", "vote-2d"};
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == REGISTERED_STEP_COUNT, "10 steps enregistrés");
+    const std::set<std::string> enregistres(noms.begin(), noms.end());
+
+    for (const auto& nom : enregistres)
+        verifier(attendus.count(nom) == 1, "step '" + nom + "' presente dans le registre mais pas attendu");
+    for (const auto& nom : attendus)
+        verifier(enregistres.count(nom) == 1, "step '" + nom + "' attendu mais absent du registre");
+
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
