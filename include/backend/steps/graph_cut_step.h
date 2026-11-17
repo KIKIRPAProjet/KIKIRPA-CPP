@@ -14,7 +14,7 @@ namespace StepsNs {
     struct GraphCutInput {
         std::vector<std::string> tilePaths;   // chemins des images des tuiles
         std::vector<DataNs::TilePositionData> positions;   // une entrée par tuile, dans le même ordre que tilePaths
-        double scale = 1;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
+        double scale = 0.25;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
     };
 
     // Sortie du step.
