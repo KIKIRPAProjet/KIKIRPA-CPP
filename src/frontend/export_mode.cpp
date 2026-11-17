@@ -22,7 +22,7 @@
 
 namespace {
 
-std::filesystem::path filesystemPath(const QString &path)
+std::filesystem::path toFilesystemPath(const QString &path)
 {
     return std::filesystem::u8path(path.toUtf8().constData());
 }
@@ -103,7 +103,7 @@ void MainWindow::showExportDialog()
             report = nlohmann::json::parse(contents.constData());
             if (!report.is_object() || !report.contains("metadata") ||
                 !report.contains("steps") || !report["steps"].is_array())
-                throw std::runtime_error("L'archive ne contient pas les étapes attendues.");
+                throw std::runtime_error("archive does not contain the expected steps");
         } catch (const std::exception &exception) {
             QMessageBox::warning(&dialog, tr("Archive invalide"),
                 tr("Le rapport ne peut pas être exporté :\n%1")
@@ -126,7 +126,7 @@ void MainWindow::showExportDialog()
             return;
 
         try {
-            PipelineNs::writeHtmlReport(filesystemPath(htmlPath), report);
+            PipelineNs::writeHtmlReport(toFilesystemPath(htmlPath), report);
         } catch (const std::exception &exception) {
             QMessageBox::warning(&dialog, tr("Export impossible"),
                 tr("Le rapport HTML n'a pas pu être enregistré :\n%1")

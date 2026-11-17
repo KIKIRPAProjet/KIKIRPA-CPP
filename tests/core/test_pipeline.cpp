@@ -5,30 +5,33 @@
 // aller-retour exportConfig → buildPipeline, step qui lève une exception, puis un pipeline réel import →
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/pipeline_report.h"
-#include "core/data/algorithm_types.h"
-#include "core/data/tile.h"
-#include "core/step/step.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/step.h"
 #include "steps/import_step.h"
+
 #include <gtest/gtest.h>
 #include <nlohmann/json_fwd.hpp>
-#include <memory>
-#include <opencv2/core/mat.hpp>
-#include <opencv2/core/hal/interface.h>
+
 #include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -89,18 +92,18 @@ public:
     bool execute() override { throw std::runtime_error("boum"); }
 };
 
-class StepReussiClass : public StepNs::StepClass {
+class SuccessfulStepClass : public StepNs::StepClass {
 public:
-    StepReussiClass() : StepNs::StepClass(Json{{"name", "reussi"}, {"parameters", Json::array()}}) {}
+    SuccessfulStepClass() : StepNs::StepClass(Json{{"name", "successful"}, {"parameters", Json::array()}}) {}
     bool execute() override {
         result = {{"status", "completed"}};
         return true;
     }
 };
 
-class StepNonAtteintClass : public StepNs::StepClass {
+class UnreachedStepClass : public StepNs::StepClass {
 public:
-    StepNonAtteintClass() : StepNs::StepClass(Json{{"name", "non-atteint"}, {"parameters", Json::array()}}) {}
+    UnreachedStepClass() : StepNs::StepClass(Json{{"name", "unreached"}, {"parameters", Json::array()}}) {}
     bool execute() override { return true; }
 };
 
@@ -175,14 +178,14 @@ std::string readTextFile(const fs::path& path) {
 }
 
 Json runFailingPipeline(const fs::path& reportPath, std::string& message) {
-    PipelineNs::PipelineClass p;
-    p.addStep(std::make_unique<StepReussiClass>());
-    p.addStep(std::make_unique<StepQuiLeveClass>());
-    p.setReportPath(reportPath);
-    p.setReportMetadata({{"projectName", "test"}, {"executionId", "failure-case"}});
-    p.addStep(std::make_unique<StepNonAtteintClass>());
-    const bool ok = p.run([&](const std::string& m) { message = m; });
-    verifier(!ok, "run() renvoie false");
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<SuccessfulStepClass>());
+    pipeline.addStep(std::make_unique<StepQuiLeveClass>());
+    pipeline.setReportPath(reportPath);
+    pipeline.setReportMetadata({{"projectName", "test"}, {"executionId", "failure-case"}});
+    pipeline.addStep(std::make_unique<UnreachedStepClass>());
+    const bool succeeded = pipeline.run([&](const std::string& logMessage) { message = logMessage; });
+    verifier(!succeeded, "run() renvoie false");
     return readJsonFile(reportPath);
 }
 
@@ -259,19 +262,21 @@ void setRealPipelineReportMetadata(PipelineNs::PipelineClass& pipeline) {
 }
 
 float verifyRealPipelineOutputs(const PipelineNs::PipelineClass& pipeline) {
-    const auto& tuiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");
-    verifier(tuiles.size() == 2, "2 tuiles importées");
-    verifier(tuiles.size() == 2 && tuiles[0]->getRight() == tuiles[1].get(), "B est la voisine de droite de A");
-    verifier(tuiles.size() == 2 && fs::exists(tuiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
+    const auto& tiles = pipeline.getDataStore().get<DataNs::TileList>("tiles");
+    verifier(tiles.size() == 2, "2 tuiles importées");
+    verifier(tiles.size() == 2 && tiles[0]->getRight() == tiles[1].get(), "B est la voisine de droite de A");
+    verifier(tiles.size() == 2 && fs::exists(tiles[0]->getTiff()), "TIFF pyramidal créé à l'import");
 
-    const auto& paires = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
-    verifier(paires.size() == 1, "1 paire mesurée");
-    if (paires.size() != 1) return 0.0F;
-    const DataNs::Matches& m = paires[0].featureMatches;
-    verifier(std::abs(m.translationX - DECALAGE_B) < TOLERANCE && std::abs(m.translationY) < TOLERANCE,
-             "translation (" + std::to_string(m.translationX) + ", " + std::to_string(m.translationY) + ") = (" +
+    const auto& pairMatches = pipeline.getDataStore().get<std::vector<DataNs::PairMatches>>("matches");
+    verifier(pairMatches.size() == 1, "1 paire mesurée");
+    if (pairMatches.size() != 1) return 0.0F;
+    const DataNs::Matches& matches = pairMatches[0].featureMatches;
+    verifier(std::abs(matches.translationX - DECALAGE_B) < TOLERANCE &&
+                 std::abs(matches.translationY) < TOLERANCE,
+             "translation (" + std::to_string(matches.translationX) + ", " +
+                 std::to_string(matches.translationY) + ") = (" +
                  std::to_string(DECALAGE_B) + ", 0)");
-    return m.translationX;
+    return matches.translationX;
 }
 
 void verifyRealReportData(const Json& report, float expectedTranslation) {

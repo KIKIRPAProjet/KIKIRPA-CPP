@@ -14,7 +14,7 @@
 
 namespace {
 
-std::filesystem::path filesystemPath(const QString &path)
+std::filesystem::path toFilesystemPath(const QString &path)
 {
 #ifdef Q_OS_WIN
     return std::filesystem::path(path.toStdWString());
@@ -80,24 +80,24 @@ void SimulationRunner::startRun(int firstStep, const QString &scriptPath,
     }
 
     try {
-        const std::filesystem::path runPath = filesystemPath(runDirectory);
+        const std::filesystem::path runPath = toFilesystemPath(runDirectory);
         std::filesystem::create_directories(runPath);
-        const std::filesystem::path sourceScript = filesystemPath(scriptPath);
+        const std::filesystem::path sourceScript = toFilesystemPath(scriptPath);
         std::ifstream source(sourceScript, std::ios::binary);
         if (!source)
-            throw std::runtime_error("Impossible de lire le script backend.");
+            throw std::runtime_error("cannot read backend script");
         const PipelineNs::Json sourceJson = PipelineNs::Json::parse(source);
         if (!sourceJson.is_object() || !sourceJson.contains("pipeline"))
-            throw std::runtime_error("Le script backend ne contient pas de pipeline.");
+            throw std::runtime_error("backend script does not contain a pipeline");
 
         const std::filesystem::path archivedConfig = runPath / "pipeline.json";
         {
             std::ofstream output(archivedConfig, std::ios::binary | std::ios::trunc);
             if (!output)
-                throw std::runtime_error("Impossible d'archiver la configuration du pipeline.");
+                throw std::runtime_error("cannot archive pipeline configuration");
             output << sourceJson.dump(2) << '\n';
             if (!output)
-                throw std::runtime_error("Impossible d'écrire la configuration archivée.");
+                throw std::runtime_error("cannot write archived pipeline configuration");
         }
         auto newPipeline = std::make_shared<PipelineNs::PipelineClass>(
             PipelineNs::buildPipeline(sourceJson));

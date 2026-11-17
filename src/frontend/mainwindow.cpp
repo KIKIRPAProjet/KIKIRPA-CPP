@@ -60,12 +60,12 @@
 
 namespace {
 
-std::filesystem::path filesystemPath(const QString &path)
+std::filesystem::path toFilesystemPath(const QString &path)
 {
     return std::filesystem::u8path(path.toUtf8().constData());
 }
 
-QString qtPath(const std::filesystem::path &path)
+QString toQtPath(const std::filesystem::path &path)
 {
     const std::string utf8Path = path.u8string();
     return QString::fromUtf8(utf8Path.data(), static_cast<int>(utf8Path.size()));
@@ -178,14 +178,6 @@ void MainWindow::setupSimulationConnections()
     });
     connect(simulationRunner, &SimulationRunner::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
-    connect(simulationRunner, &SimulationRunner::mosaicReady,
-            this, [this](const QImage &image) {
-                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
-                    canvas->setMosaicPreview(image);
-                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
-                    updateStatus(tr("Mosaïque finale générée (simulation)."));
-                }
-    });
 }
 
 void MainWindow::setupHomePageConnections()
@@ -425,8 +417,8 @@ QString MainWindow::writeBackendScript() const
     const ProjectGrid::State &gridState = projectGrid->state();
     FrontendNs::ProjectSetup setup;
     setup.projectName = projectName.toUtf8().toStdString();
-    setup.inputDirectory = filesystemPath(gridState.tileDirectory);
-    setup.outputDirectory = filesystemPath(outputDirectory);
+    setup.inputDirectory = toFilesystemPath(gridState.tileDirectory);
+    setup.outputDirectory = toFilesystemPath(outputDirectory);
     setup.gridRows = gridState.gridRows;
     setup.gridColumns = gridState.gridColumns;
     setup.filenameFormat.clear();
@@ -437,14 +429,14 @@ QString MainWindow::writeBackendScript() const
         const GridTile &tile = gridState.gridTiles.at(index);
         if (tile.empty || tile.path.isEmpty())
             continue;
-        setup.tiles.push_back({filesystemPath(tile.path),
+        setup.tiles.push_back({toFilesystemPath(tile.path),
                                index / gridState.gridColumns,
                                index % gridState.gridColumns});
     }
 
     FrontendNs::ProjectSetupModelClass model;
     model.setSetup(std::move(setup));
-    return qtPath(model.writeBackendScript());
+    return toQtPath(model.writeBackendScript());
 }
 
 void MainWindow::handleGridValidation(bool valid, int activeTileCount,

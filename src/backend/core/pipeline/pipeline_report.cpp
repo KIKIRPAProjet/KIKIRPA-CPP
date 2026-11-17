@@ -35,11 +35,11 @@ namespace PipelineNs {
 
     namespace {
 
-        Json point(const cv::Point2f& coordinates) { return {coordinates.x, coordinates.y}; }
-        Json point(const cv::Point2d& coordinates) { return {coordinates.x, coordinates.y}; }
-        Json point(const cv::Point& coordinates) { return {coordinates.x, coordinates.y}; }
+        Json serializePoint(const cv::Point2f& coordinates) { return {coordinates.x, coordinates.y}; }
+        Json serializePoint(const cv::Point2d& coordinates) { return {coordinates.x, coordinates.y}; }
+        Json serializePoint(const cv::Point& coordinates) { return {coordinates.x, coordinates.y}; }
 
-        const char* directionName(DataNs::Direction direction) {
+        const char* getDirectionName(DataNs::Direction direction) {
             switch (direction) {
             case DataNs::Direction::Top: return "top";
             case DataNs::Direction::Bottom: return "bottom";
@@ -80,13 +80,13 @@ namespace PipelineNs {
                 Json pointsInA = Json::array();
                 Json pointsInB = Json::array();
                 for (const cv::Point2f& matchPoint : pair.featureMatches.pointsInA)
-                    pointsInA.push_back(point(matchPoint));
+                    pointsInA.push_back(serializePoint(matchPoint));
                 for (const cv::Point2f& matchPoint : pair.featureMatches.pointsInB)
-                    pointsInB.push_back(point(matchPoint));
+                    pointsInB.push_back(serializePoint(matchPoint));
                 pairs.push_back({
                     {"tileIdA", pair.tileIdA},
                     {"tileIdB", pair.tileIdB},
-                    {"direction", directionName(pair.direction)},
+                    {"direction", getDirectionName(pair.direction)},
                     {"pointsInA", std::move(pointsInA)},
                     {"pointsInB", std::move(pointsInB)},
                     {"confidenceScores", pair.featureMatches.confidenceScores},
@@ -102,7 +102,7 @@ namespace PipelineNs {
             for (const DataNs::TilePositionData& position : dataStore.get<std::vector<DataNs::TilePositionData>>(key))
                 positions.push_back({
                     {"tileId", position.tileId},
-                    {"position", point(position.position)},
+                    {"position", serializePoint(position.position)},
                     {"rotationRadians", position.rotationRadians}
                 });
             return positions;
@@ -110,7 +110,7 @@ namespace PipelineNs {
 
         Json serializePolygon(const std::vector<cv::Point>& polygon) {
             Json points = Json::array();
-            for (const cv::Point& vertex : polygon) points.push_back(point(vertex));
+            for (const cv::Point& vertex : polygon) points.push_back(serializePoint(vertex));
             return points;
         }
 
@@ -145,11 +145,12 @@ namespace PipelineNs {
             Json seamlines = Json::array();
             for (const DataNs::Seamline& seamline : dataStore.get<DataNs::Seamlines>(key)) {
                 Json points = Json::array();
-                for (const cv::Point2d& seamPoint : seamline.points) points.push_back(point(seamPoint));
+                for (const cv::Point2d& seamPoint : seamline.points)
+                    points.push_back(serializePoint(seamPoint));
                 seamlines.push_back({
                     {"tileIdA", seamline.tileIdA},
                     {"tileIdB", seamline.tileIdB},
-                    {"direction", directionName(seamline.direction)},
+                    {"direction", getDirectionName(seamline.direction)},
                     {"points", std::move(points)}
                 });
             }
@@ -265,7 +266,7 @@ namespace PipelineNs {
             return escaped;
         }
 
-        const char* statusLabel(const std::string& status) {
+        const char* getStatusLabel(const std::string& status) {
             if (status == "completed") return "Réussie";
             if (status == "failed") return "Échec";
             if (status == "skipped") return "Réutilisée sans recalcul";
@@ -320,7 +321,7 @@ namespace PipelineNs {
             html += "<section><h2>Étape " + std::to_string(step.at("index").get<size_t>() + 1) +
                 " — " + escapeHtml(step.value("name", "inconnue")) + "</h2>";
             html += "<p>Statut : <strong" + std::string(status == "failed" ? " class=\"failed\"" : "") +
-                ">" + statusLabel(status) + "</strong></p>";
+                ">" + getStatusLabel(status) + "</strong></p>";
             html += "<p>" + escapeHtml(step.value("summary", "")) + "</p>";
             if (step.contains("reason") && !step.at("reason").is_null())
                 html += "<p>Motif : " + escapeHtml(step.at("reason").get<std::string>()) + "</p>";
@@ -345,7 +346,7 @@ namespace PipelineNs {
             return html;
         }
 
-        FilesystemNs::path temporaryPath(const FilesystemNs::path& destination) {
+        FilesystemNs::path makeTemporaryPath(const FilesystemNs::path& destination) {
             FilesystemNs::path temporary = destination;
             temporary += ".tmp";
             return temporary;
@@ -367,7 +368,7 @@ namespace PipelineNs {
         void writeAtomically(const FilesystemNs::path& destination, const std::string& content) {
             if (destination.empty()) throw std::invalid_argument("report path must not be empty");
             if (destination.has_parent_path()) FilesystemNs::create_directories(destination.parent_path());
-            const FilesystemNs::path temporary = temporaryPath(destination);
+            const FilesystemNs::path temporary = makeTemporaryPath(destination);
             {
                 std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
                 if (!output) throw std::runtime_error("report: cannot create " + temporary.string());
