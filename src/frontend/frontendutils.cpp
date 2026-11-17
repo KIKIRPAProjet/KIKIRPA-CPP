@@ -35,6 +35,19 @@ const QStringList MODE_NAMES = {
     QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
 };
 
+const std::vector<PipelineStepInfo>& pipelineSteps() {
+    static const std::vector<PipelineStepInfo> STEPS = {
+        {"import", QObject::tr("1  Importation des tuiles")},
+        {"phase-correlation", QObject::tr("2  Correspondance (Appariement)")},
+        {"absolute-pos", QObject::tr("3  Positionnement global")},
+        {"intensity-correction", QObject::tr("4  Égalisation de luminosité")},
+        {"graphcut", QObject::tr("5  Ligne de couture (GraphCut)")},
+        {"fusion", QObject::tr("6  Fusion des tuiles")},
+        {"export", QObject::tr("7  Export de la mosaïque")}
+    };
+    return STEPS;
+}
+
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)
 {
     auto *button = new QPushButton(text, parent);

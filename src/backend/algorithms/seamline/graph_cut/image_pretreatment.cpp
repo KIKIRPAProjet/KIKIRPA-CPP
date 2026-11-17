@@ -11,17 +11,17 @@
 #include <opencv2/core/saturate.hpp>      // Pour cv::saturate_cast
 #include <tiffio.h>
 #include <tiff.h>
-#include <algorithm>
 #include "core/data/algorithm_types.h"
-#include <cmath>
+#include "core/data/mosaic_corners.h"
+#include "core/io/unicode_path.h"
+#include <cstddef>
 #include <cstdio>
 #include <string>
-#include <map>
 #include <regex>
 #include <vector>
-#include <limits>
 #include <memory>
 #include <cstdint>
+#include <utility>
 
 
 namespace GraphCutNs {
@@ -79,7 +79,7 @@ namespace GraphCutNs {
     // La transparence est supprimée, les niveaux de gris sont dupliqués sur trois canaux.
     // Renvoie une image vide si la lecture échoue.
     cv::Mat ImagePretreatmentClass::read16Bit(const std::string& path) {
-        cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat rawImage = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (rawImage.empty()) return rawImage;
         return toUnsigned16Bit(toThreeChannels(rawImage));
     }
@@ -94,7 +94,7 @@ namespace GraphCutNs {
     // réduction, comme à l'origine. Réduire d'abord en 8 bits arrondirait les valeurs interpolées à l'entier et décalerait
     // légèrement les coûts, donc, mesuré sur des tuiles de test, des pixels de la mosaïque changeraient de tuile.
     cv::Mat ImagePretreatmentClass::readSmallFloat(const std::string& path, double scale) {
-        cv::Mat image = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat image = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (image.empty()) return image;
 
         if (image.depth() != CV_16U)
@@ -103,7 +103,7 @@ namespace GraphCutNs {
         if (scale < 1.0) {
             cv::Mat smallImage;
             cv::resize(image, smallImage, cv::Size(), scale, scale, cv::INTER_LINEAR);
-            image = smallImage;   // l'image pleine résolution n'a plus de référence : sa mémoire est libérée ici
+            image = std::move(smallImage);   // l'image pleine résolution n'a plus de référence : mémoire libérée ici
         }
 
         cv::Mat floatImage;
@@ -113,8 +113,9 @@ namespace GraphCutNs {
 
     // Extrait la colonne et la ligne d'un nom se terminant par _C<nombre>_R<nombre>.tif ou .tiff, comme les images lues par
     // le step import (format par défaut img_C(\d+)_R(\d+)\.tif : colonne d'abord, puis ligne).
-    // Construit un identifiant tel que "r03_c07" (ligne, colonne), utilisé pour rechercher la position : cet identifiant
-    // ne dépend pas du format du nom de fichier.
+    // Construit un identifiant tel que "r03_c07" (ligne, colonne). Sert seulement au positionnement autonome
+    // (PositioningNs::computeTilePositions), qui part de chemins de fichiers : le pipeline, lui, identifie les tuiles
+    // par TileClass::getId().
     // Renvoie false si le nom ne correspond pas au format attendu.
     bool ImagePretreatmentClass::parseTileName(const std::string& path, int& row, int& column, std::string& tileId) {
         static const std::regex pattern("_C(\\d+)_R(\\d+)\\.tiff?$", std::regex::icase);
@@ -138,24 +139,13 @@ namespace GraphCutNs {
 
     namespace {
 
-        // Positions des tuiles, retrouvées par l'identifiant "rLL_cCC" tiré du nom de fichier.
-        using PositionByTileId = std::map<std::string, cv::Point2d>;
-
-        // Table temporaire construite à partir de la structure d'entrée, pour une recherche rapide.
-        PositionByTileId indexPositionsByTileId(const std::vector<DataNs::TilePositionData>& inputPositions) {
-            PositionByTileId positionByTileId;
-            for (const auto& tilePosition : inputPositions)
-                positionByTileId[tilePosition.tileId] = tilePosition.position;
-            return positionByTileId;
-        }
-
         // Lit les dimensions d'une image à partir de l'en-tête du fichier, sans décoder les pixels.
         // Pour un TIFF, seuls les champs IMAGEWIDTH / IMAGELENGTH de la première image du fichier sont lus, soit la même
         // image que celle renvoyée par cv::imread. Si le fichier n'est pas un TIFF lisible, on retombe sur une lecture
         // complète (comportement d'origine). Renvoie false si l'image est illisible ou vide.
         bool readImageSize(const std::string& imagePath, cv::Size& size) {
             using TiffHandle = std::unique_ptr<TIFF, decltype(&TIFFClose)>;
-            const TiffHandle tiffFile(TIFFOpen(imagePath.c_str(), "r"), &TIFFClose);
+            const TiffHandle tiffFile(IONs::openTiff(IONs::pathFromUtf8(imagePath), "r"), &TIFFClose);
             if (tiffFile) {
                 std::uint32_t width = 0;
                 std::uint32_t height = 0;
@@ -193,51 +183,11 @@ namespace GraphCutNs {
             return true;
         }
 
-        // Associe le fichier à sa position grâce à l'identifiant extrait de son nom. Renvoie false si le nom n'est pas
-        // reconnu ou si la position manque (cause dans errorMessage).
-        bool findRawCorner(const PositionByTileId& positionByTileId, const std::string& imagePath, cv::Point2d& rawCorner,
-                           std::string& errorMessage) {
-            int row = 0;
-            int column = 0;
-            std::string tileId;
-            if (!ImagePretreatmentClass::parseTileName(imagePath, row, column, tileId)) {
-                errorMessage = "Tile file name must end with _C<column>_R<row>.tif or .tiff: " + imagePath;
-                return false;
-            }
-            const auto tilePosition = positionByTileId.find(tileId);
-            if (tilePosition == positionByTileId.end()) {
-                errorMessage = "No position provided for tile " + tileId + " (" + imagePath + ")";
-                return false;
-            }
-            rawCorner = tilePosition->second;
-            return true;
-        }
-
-        // Déplace les positions dans un repère de mosaïque à coordonnées positives ou nulles.
-        // Soustrait les minima arrondis vers le bas, puis arrondit les positions au pixel.
-        // Toutes les tuiles subissent la même translation avant cet arrondi.
-        std::vector<cv::Point> toMosaicCorners(const std::vector<cv::Point2d>& rawCorners) {
-            double minimumX = std::numeric_limits<double>::max();
-            double minimumY = std::numeric_limits<double>::max();
-
-            for (const cv::Point2d& corner : rawCorners) {
-                minimumX = std::min(minimumX, corner.x);
-                minimumY = std::min(minimumY, corner.y);
-            }
-            const double offsetX = std::floor(minimumX);
-            const double offsetY = std::floor(minimumY);
-            std::vector<cv::Point> originalCorners;
-            // Réserve la taille, sinon clang-tidy est pas content
-            originalCorners.reserve(rawCorners.size());
-            for (const cv::Point2d& corner : rawCorners)
-                originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
-            return originalCorners;
-        }
-
         // Convertit les positions pleine résolution vers la grille réduite.
         // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
         std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
             std::vector<cv::Point> smallCorners;
+            smallCorners.reserve(originalCorners.size());
             for (size_t tileIndex = 0; tileIndex < originalCorners.size(); ++tileIndex)
                 smallCorners.push_back(cv::Point(cvFloor(originalCorners[tileIndex].x * scale),
                                                  cvFloor(originalCorners[tileIndex].y * scale)));
@@ -247,8 +197,8 @@ namespace GraphCutNs {
     }
 
     // Prépare les dimensions, les masques réduits et les positions des tuiles aux deux résolutions.
-    // Les positions sont fournies par inputPositions, et non calculées à partir des images.
-    // En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
+    // Les positions sont fournies par inputPositions, une par tuile dans l'ordre de tilePaths, et non calculées à
+    // partir des images. En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
     int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
                                               const std::vector<std::string>& tilePaths, double scale,
                                               PreprocessedTiles& tiles) {
@@ -257,20 +207,22 @@ namespace GraphCutNs {
             errorMessage = "Reduction scale must be greater than 0 and at most 1, got " + std::to_string(scale);
             return -1;
         }
-        const PositionByTileId positionByTileId = indexPositionsByTileId(inputPositions);
+        if (inputPositions.size() != tilePaths.size()) {
+            errorMessage = "The number of positions (" + std::to_string(inputPositions.size()) +
+                           ") doesn't match the number of tiles (" + std::to_string(tilePaths.size()) + ")";
+            return -1;
+        }
         std::vector<cv::Point2d> rawCorners;
-        for (const std::string& imagePath : tilePaths) {
-            cv::Point2d rawCorner;
-            if (!addTileSizeAndMask(imagePath, scale, tiles, errorMessage) ||
-                !findRawCorner(positionByTileId, imagePath, rawCorner, errorMessage))
-                return -1;
-            rawCorners.push_back(rawCorner);
+        for (std::size_t tileIndex = 0; tileIndex < tilePaths.size(); ++tileIndex) {
+            if (!addTileSizeAndMask(tilePaths[tileIndex], scale, tiles, errorMessage)) return -1;
+            rawCorners.push_back(inputPositions[tileIndex].position);
         }
         if (tiles.tileSizes.empty()) {
             errorMessage = "No tile provided for image pretreatment";
             return -1;
         }
-        tiles.originalCorners = toMosaicCorners(rawCorners);
+        // Repère partagé avec fusion : les territoires et les pixels de la mosaïque tombent ainsi au même endroit.
+        tiles.originalCorners = DataNs::computeMosaicCorners(rawCorners);
         tiles.cornersSmall = toSmallCorners(tiles.originalCorners, scale);
         return 1;
     }

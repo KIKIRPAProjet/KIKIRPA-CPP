@@ -1,7 +1,6 @@
 // src/backend/steps/absolute_pos_step.cpp
 #include "steps/absolute_pos_step.h"
 
-#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "algorithms/stitching/positioning/position_solver.h"
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
@@ -25,7 +24,6 @@
 #include <fstream>
 #include <ios>
 #include <map>
-#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -37,25 +35,17 @@ namespace StepsNs {
 
         struct TileIndex {
             std::map<int, std::size_t> indexById;
-            std::vector<std::string> names;
             std::vector<int> ids;   // ids[indice] = TileClass::getId()
         };
 
         TileIndex indexTiles(const DataNs::TileList& tiles) {
             if (tiles.empty()) throw std::invalid_argument("absolute-pos: no tiles");
             TileIndex index;
-            std::set<std::string> names;
-            for (auto& tile : tiles) {
+            for (const auto& tile : tiles) {
                 if (!tile) throw std::invalid_argument("absolute-pos: null tile");
-                if (!index.indexById.emplace(tile->getId(), index.names.size()).second)
+                if (!index.indexById.emplace(tile->getId(), index.ids.size()).second)
                     throw std::invalid_argument("absolute-pos: duplicate tile id");
-                int row = 0, column = 0;
-                std::string name;
-                if (!GraphCutNs::ImagePretreatmentClass::parseTileName(tile->getSource().string(), row, column, name))
-                    throw std::invalid_argument("absolute-pos: tile filename must end in _C<column>_R<row>.tif[f]");
-                if (!names.insert(name).second) throw std::invalid_argument("absolute-pos: duplicate tile grid position");
-                index.names.push_back(std::move(name));
-                index.ids.push_back(tile->getId());   // pour retrouver l'id d'une tuile à partir de son indice (résidus)
+                index.ids.push_back(tile->getId());   // pour retrouver l'id d'une tuile à partir de son indice
             }
             return index;
         }
@@ -99,8 +89,8 @@ namespace StepsNs {
             if (std::find(solution.connected.begin(), solution.connected.end(), false) != solution.connected.end())
                 throw std::invalid_argument("absolute-pos: some tiles are disconnected from the reference");
             std::vector<DataNs::TilePositionData> positions;
-            for (std::size_t tileIndex = 0; tileIndex < index.names.size(); ++tileIndex)
-                positions.push_back({index.names[tileIndex], solution.positions[tileIndex], solution.rotations[tileIndex]});
+            for (std::size_t tileIndex = 0; tileIndex < index.ids.size(); ++tileIndex)
+                positions.push_back({index.ids[tileIndex], solution.positions[tileIndex], solution.rotations[tileIndex]});
             return positions;
         }
 
@@ -170,7 +160,7 @@ namespace StepsNs {
             auto referenceIndex = selectReference(index, readReferenceId(getParameter("referenceTileId")));
             auto offsets = collectOffsets(dataStore->get<std::vector<DataNs::PairMatches>>("matches"), index, result["failures"]);
             result["pairs"] = offsets.size();
-            auto solution = PositioningNs::solveRelativePositions(index.names.size(), offsets, referenceIndex);
+            auto solution = PositioningNs::solveRelativePositions(index.ids.size(), offsets, referenceIndex);
             output.value = makePositions(index, solution);
             output.residuals = computeResiduals(index, offsets, solution);   // écart de chaque paire après ajustement
             dataStore->replace(output.key, output.value);

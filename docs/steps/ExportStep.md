@@ -8,7 +8,7 @@ Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite 
 
 | Sens | Clé | Type JSON | Type C++ | Vient de / va vers |
 |---|---|---|---|---|
-| Entrée | `mosaic` | `Mosaic` | `DataNs::Mosaic` | l'assemblage (`fusion`, pas encore sur main) |
+| Entrée | `mosaic` | `Mosaic` | `DataNs::Mosaic` | `fusion` |
 | Sortie | — | — | — | aucune : ce step termine le pipeline ; il écrit `mosaic.tif` |
 
 `DataNs::Mosaic` est défini dans `core/data/algorithm_types.h`. C'est une description légère : les chemins de trois TIFF tuilés (image, provenance, masque) et `canvasSize`, les dimensions de la mosaïque. L'export lit seulement :
@@ -66,7 +66,7 @@ Aucune image n'est chargée : l'en-tête est lu par libtiff et la copie passe pa
 
 ## État de l'enchaînement
 
-Le registre expose `export`, mais aucun step de `main` ne produit encore `mosaic`. `buildPipeline` refuse donc un script qui utilise `export` tant que l'assemblage (`fusion`) n'est pas enregistré.
+`export` se place après `fusion`, qui produit `mosaic` ([FusionStep.md](FusionStep.md)) ; sans lui, `buildPipeline` refuse le script. Le test de bout en bout `fusion` → `export` est dans `tests/steps/test_fusion_step.cpp`.
 
 ## Tests
 

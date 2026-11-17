@@ -63,11 +63,19 @@ TEST_F(ProjectSetupTestClass, CreatesBackendAcceptedJsonForThreeByTwoGrid) {
   EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
   EXPECT_EQ(script.at("project").at("grid").at("rows"), 3);
   EXPECT_EQ(script.at("project").at("grid").at("columns"), 2);
-  EXPECT_EQ(script.at("project").at("grid").at("tiles").size(), 6);
   EXPECT_EQ(importStep.at("name"), "import");
   EXPECT_EQ(parameterValue(importStep, "path"),
             fs::absolute(root / "input").string());
-  EXPECT_EQ(parameterValue(importStep, "format"), R"(img_C(\d+)_R(\d+)\.tif)");
+  // La liste des tuiles du step import : fichier et case de chaque tuile ; l'id est calculé par import.
+  const FrontendNs::Json &tiles = parameterValue(importStep, "tiles");
+  ASSERT_EQ(tiles.size(), 6);
+  EXPECT_FALSE(tiles.at(0).contains("id"));
+  EXPECT_EQ(tiles.at(0).at("row"), 0);
+  EXPECT_EQ(tiles.at(0).at("column"), 0);
+  EXPECT_EQ(tiles.at(0).at("file"),
+            fs::absolute(root / "input" / "img_C0_R0.tif").string());
+  EXPECT_EQ(tiles.at(5).at("row"), 2);
+  EXPECT_EQ(tiles.at(5).at("column"), 1);
   EXPECT_EQ(phaseStep.at("name"), "phase-correlation");
   EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "overlap"), 0.2);
   EXPECT_EQ(parameterValue(phaseStep, "niveau"), 0);
@@ -116,30 +124,46 @@ TEST_F(ProjectSetupTestClass, ReportsIncompleteGrid) {
       }));
 }
 
-TEST_F(ProjectSetupTestClass, ReportsGridAndFilenameMismatchAfterMove) {
+// La case retenue est celle de la grille, même si elle diffère des coordonnées écrites dans le nom.
+TEST_F(ProjectSetupTestClass, AcceptsTilesMovedInTheGrid) {
   model.swapTiles(0, 1);
-  const auto errors = model.validate();
-  EXPECT_TRUE(
-      std::any_of(errors.begin(), errors.end(), [](const std::string &error) {
-        return error.find("ne correspond pas") != std::string::npos;
-      }));
+  EXPECT_TRUE(model.validate().empty());
 }
 
 TEST_F(ProjectSetupTestClass, AcceptsPositionsChosenInExistingGrid) {
   FrontendNs::ProjectSetup setup = model.getSetup();
-  setup.filenameFormat.clear();
   std::swap(setup.tiles.front().path, setup.tiles.back().path);
   model.setSetup(setup);
 
   const FrontendNs::Json script = model.createBackendScript();
   EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
-  const auto &tiles = script.at("project").at("grid").at("tiles");
+  const FrontendNs::Json &importStep = script.at("pipeline").at("steps").at(0);
+  const auto &tiles = parameterValue(importStep, "tiles");
   EXPECT_EQ(tiles.at(0).at("row"), 0);
   EXPECT_EQ(tiles.at(0).at("column"), 0);
-  EXPECT_EQ(tiles.at(0).at("path"),
+  EXPECT_EQ(tiles.at(0).at("file"),
             fs::absolute(setup.tiles[0].path).string());
   EXPECT_EQ(tiles.back().at("row"), 2);
   EXPECT_EQ(tiles.back().at("column"), 1);
+}
+
+// Des noms de fichiers libres (sans ligne ni colonne) sont acceptés : la case vient de la grille.
+TEST_F(ProjectSetupTestClass, AcceptsFreeFileNames) {
+  const fs::path freeDirectory = root / "free";
+  fs::create_directories(freeDirectory);
+  for (int index = 1; index <= 4; ++index)
+    std::ofstream(freeDirectory / (std::to_string(index) + "_no filter f8 v30 20cm.tif")) << "test";
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.inputDirectory = freeDirectory;
+  setup.gridRows = 2;
+  setup.gridColumns = 2;
+  model.setSetup(setup);
+  model.importTiles();
+
+  EXPECT_TRUE(model.validate().empty());
+  const FrontendNs::Json script = model.createBackendScript();
+  const FrontendNs::Json &importStep = script.at("pipeline").at("steps").at(0);
+  EXPECT_EQ(parameterValue(importStep, "tiles").size(), 4);
 }
 
 constexpr double ZOOM_FULL = 100.0;

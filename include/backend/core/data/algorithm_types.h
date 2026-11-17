@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace DataNs {
@@ -45,6 +44,18 @@ namespace DataNs {
         double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
+    // Estimation du recouvrement d'une paire voisine, produite par le step « recouvrement ».
+    // commonAreaInA et commonAreaInB sont en pixels de pleine résolution, dans les repères locaux de A et de B.
+    struct PairOverlapEstimate {
+        int tileIdA = 0;
+        int tileIdB = 0;
+        Direction direction = Direction::Right;
+        OverlapEstimate estimate;
+        cv::Rect commonAreaInA;
+        cv::Rect commonAreaInB;
+    };
+    using OverlapEstimates = std::vector<PairOverlapEstimate>;
+
     // Sortie d'un StitchingNs::FeatureMatcherClass : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;
@@ -71,7 +82,7 @@ namespace DataNs {
 
     // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
-        std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
+        int tileId = 0;         // TileClass::getId() de la tuile, comme PairMatches
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };

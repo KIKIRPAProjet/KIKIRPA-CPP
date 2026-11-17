@@ -1,5 +1,6 @@
 // src/backend/core/io/pyramidal_tiff_reader.cpp
 #include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
@@ -468,9 +469,9 @@ namespace IONs {
                 return false;
             }
 
-            TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+            TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
             if (tiffFile == nullptr) {
-                errorMessage = "cannot open TIFF: " + tiffPath.string();
+                errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
                 return false;
             }
 
@@ -528,9 +529,9 @@ namespace IONs {
     ) const {
         errorMessage.clear();
         dimensions.clear();
-        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
         if (tiffFile == nullptr) {
-            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
             return false;
         }
 
@@ -596,9 +597,9 @@ namespace IONs {
         scaleX = 1.0;
         scaleY = 1.0;
 
-        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
         if (tiffFile == nullptr) {
-            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
             return false;
         }
 

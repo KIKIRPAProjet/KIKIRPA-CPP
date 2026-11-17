@@ -6,6 +6,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/step.h"
 
 #include <opencv2/core/mat.hpp>
@@ -13,6 +14,8 @@
 
 #include <cstddef>
 #include <exception>
+#include <map>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -48,6 +51,22 @@ namespace StepsNs {
             return true;
         }
 
+        // Positions remises dans l'ordre des tuiles, chacune associée à sa tuile par TileClass::getId(). Lève
+        // std::invalid_argument si une tuile n'a pas de position.
+        std::vector<DataNs::TilePositionData> orderPositionsByTile(const DataNs::TileList& tiles,
+                                                                   const std::vector<DataNs::TilePositionData>& positions) {
+            std::map<int, const DataNs::TilePositionData*> positionByTileId;
+            for (const DataNs::TilePositionData& tilePosition : positions) positionByTileId[tilePosition.tileId] = &tilePosition;
+            std::vector<DataNs::TilePositionData> orderedPositions;
+            for (const auto& tile : tiles) {
+                const auto entry = positionByTileId.find(tile->getId());
+                if (entry == positionByTileId.end())
+                    throw std::invalid_argument("no position provided for tile " + std::to_string(tile->getId()));
+                orderedPositions.push_back(*entry->second);
+            }
+            return orderedPositions;
+        }
+
         // Prétraitement : tailles des tuiles, coins dans la mosaïque et masques réduits.
         // Renvoie false en cas d'échec, avec la cause dans result["error"].
         bool preprocessTiles(const GraphCutInput& resolvedInput, GraphCutNs::PreprocessedTiles& tiles, StepNs::Json& result) {
@@ -77,14 +96,21 @@ namespace StepsNs {
     bool GraphCutStepClass::readInputs(GraphCutInput& resolvedInput) {
         resolvedInput = input;
         try {
-            if (dataStore && dataStore->has("tiles")) {
+            const bool hasStoredTiles = dataStore && dataStore->has("tiles");
+            if (hasStoredTiles) {
                 resolvedInput.tilePaths.clear();
                 // L'algorithme relit les images depuis les fichiers d'origine.
                 for (const auto& tile : dataStore->get<DataNs::TileList>("tiles"))
-                    resolvedInput.tilePaths.push_back(tile->getSource().string());
+                    resolvedInput.tilePaths.push_back(IONs::pathToUtf8(tile->getSource()));
             }
-            if (dataStore && dataStore->has("positions"))
-                resolvedInput.positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
+            if (dataStore && dataStore->has("positions")) {
+                const auto& positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
+                // Une position par tuile, dans l'ordre des tuiles : c'est ce qu'attend le prétraitement. Si les nombres
+                // diffèrent, les positions sont gardées telles quelles et checkInputs signale l'écart.
+                const bool canOrder = hasStoredTiles && positions.size() == resolvedInput.tilePaths.size();
+                resolvedInput.positions = canOrder ? orderPositionsByTile(dataStore->get<DataNs::TileList>("tiles"), positions)
+                                                   : positions;
+            }
             resolvedInput.scale = getParameter("scale").get<double>();
         } catch (const std::exception& exception) {
             result["error"] = std::string("Impossible to read inputs: ") + exception.what();

@@ -9,6 +9,9 @@
 
 #include <cstdint>
 
+#include <string>
+#include <vector>
+
 class QLabel;
 class QPushButton;
 class QWidget;
@@ -16,6 +19,13 @@ class QWidget;
 namespace FrontendUtils {
 
 extern const QStringList MODE_NAMES;
+
+struct PipelineStepInfo {
+    std::string technicalName;
+    QString displayName;
+};
+
+const std::vector<PipelineStepInfo>& pipelineSteps();
 
 //définition des 4 états possibles d'une paire de tuiles 
 enum class PairStatus : std::uint8_t {
