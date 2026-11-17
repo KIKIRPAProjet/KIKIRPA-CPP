@@ -8,24 +8,33 @@
 #include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 #include <opencv2/core.hpp>
+#include <opencv2/core/base.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include <QApplication>
-#include <QEventLoop>
-#include <QImage>
-#include <QThread>
-#include <QTimer>
+#include <QtCore/QEventLoop>
+#include <QtCore/QObject>
+#include <QtCore/QString>
+#include <QtCore/QTimer>
+#include <QtCore/qglobal.h>
+#include <QtGui/QImage>
+#include <QtWidgets/QApplication>
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace fs = std::filesystem;
-using Json = nlohmann::json;
+using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
 namespace {
 
@@ -37,6 +46,12 @@ namespace {
     constexpr double TEXTURE_SIGMA = 3.0;
     constexpr double PIXEL_MINIMUM = 2000.0;
     constexpr double PIXEL_MAXIMUM = 60000.0;
+
+    constexpr std::size_t TOTAL_PIPELINE_STEPS = 6;
+    constexpr std::size_t RESUMED_COMPLETED_STEPS_COUNT = 5;
+    constexpr int FULL_PROGRESS_PERCENT = 100;
+    constexpr int ASYNC_WAIT_TIMEOUT_MS = 15000;
+    constexpr int LAST_STEP_INDEX = 6;
 
     // Deux tuiles <prefix>C00_R00.tif et <prefix>C01_R00.tif avec gradient/texture identique à tests/cli/test_command_line.cpp.
     void writeTiles(const fs::path& directory, const std::string& prefix = "img_") {
@@ -153,14 +168,14 @@ TEST_F(PipelineWorkerTestClass, FullRunCompletesSuccessfullyAndGeneratesPreview)
     EXPECT_TRUE(finishedEmitted);
     EXPECT_TRUE(finishedSuccess) << finishedError.toStdString();
     EXPECT_TRUE(finishedError.isEmpty());
-    EXPECT_EQ(lastProgress, 100);
+    EXPECT_EQ(lastProgress, FULL_PROGRESS_PERCENT);
 
     // 6 étapes exécutées
-    EXPECT_EQ(startedSteps.size(), 6u);
-    EXPECT_EQ(completedSteps.size(), 6u);
-    if (completedSteps.size() >= 6) {
+    EXPECT_EQ(startedSteps.size(), TOTAL_PIPELINE_STEPS);
+    EXPECT_EQ(completedSteps.size(), TOTAL_PIPELINE_STEPS);
+    if (completedSteps.size() >= TOTAL_PIPELINE_STEPS) {
         EXPECT_EQ(completedSteps.front(), 1);
-        EXPECT_EQ(completedSteps.back(), 6);
+        EXPECT_EQ(completedSteps.back(), LAST_STEP_INDEX);
     }
 
     // Prévisualisation finale générée (non nulle, dimensions positives)
@@ -247,10 +262,10 @@ TEST_F(PipelineWorkerTestClass, PauseAfterStepAndResumeToCompletion) {
     EXPECT_TRUE(resumeError.isEmpty());
 
     // L'étape 1 ayant été sautée, les étapes terminées lors de la reprise vont de 2 à 6 (5 étapes restantes)
-    EXPECT_EQ(resumedCompletedSteps.size(), 5u);
+    EXPECT_EQ(resumedCompletedSteps.size(), RESUMED_COMPLETED_STEPS_COUNT);
     if (!resumedCompletedSteps.empty()) {
         EXPECT_EQ(resumedCompletedSteps.front(), 2);
-        EXPECT_EQ(resumedCompletedSteps.back(), 6);
+        EXPECT_EQ(resumedCompletedSteps.back(), LAST_STEP_INDEX);
     }
 
     // Le résultat final est maintenant bien produit
@@ -312,7 +327,7 @@ TEST_F(PipelineWorkerTestClass, ReportsErrorWhenScriptIsInvalid) {
     });
 
     // Script JSON non conforme (pas d'étapes)
-    const QString invalidJson = QStringLiteral("{ \"invalid\": true }");
+    const QString invalidJson = QString::fromLatin1(R"({ "invalid": true })");
     worker.runPipeline(invalidJson, QString(), true, false);
 
     EXPECT_TRUE(finishedEmitted);
@@ -358,7 +373,7 @@ TEST_F(PipelineWorkerTestClass, AsyncRunnerExecutesInDedicatedThread) {
     QTimer timer;
     timer.setSingleShot(true);
     QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
-    timer.start(15000);
+    timer.start(ASYNC_WAIT_TIMEOUT_MS);
 
     runner.startRun();
     EXPECT_TRUE(runner.isRunning());
@@ -368,14 +383,14 @@ TEST_F(PipelineWorkerTestClass, AsyncRunnerExecutesInDedicatedThread) {
     EXPECT_TRUE(runStartedEmitted);
     EXPECT_TRUE(runFinishedEmitted);
     EXPECT_TRUE(mosaicReadyEmitted);
-    EXPECT_EQ(finalProgress, 100);
+    EXPECT_EQ(finalProgress, FULL_PROGRESS_PERCENT);
     EXPECT_FALSE(runner.isRunning());
     EXPECT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
 }
 
 int main(int argc, char** argv) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    QApplication app(argc, argv);
+    qputenv("QT_QPA_PLATFORM", "offscreen"); // NOLINT(misc-include-cleaner)
+    QApplication app(argc, argv); // NOLINT(misc-include-cleaner)
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
