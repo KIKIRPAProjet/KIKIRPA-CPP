@@ -71,30 +71,20 @@ namespace StepsNs {
         }
 
         fs::path configuredOutputDirectory(const Json& configJson) {
-            std::string directory;
-            if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
-                for (const Json& parameter : configJson.at("parameters")) {
-                    if (parameter.value("name", "") == "outputDirectory" && parameter.contains("value") &&
-                        parameter["value"].is_string()) {
-                        directory = parameter["value"].get<std::string>();
-                        break;
-                    }
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return downloadsDirectory();
+            }
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "outputDirectory" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    const std::string directory = parameter["value"].get<std::string>();
+                    return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
                 }
             }
-            return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
+            return downloadsDirectory();
         }
 
-        std::string configuredFilename(const Json& configJson) {
-            std::string filename;
-            if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
-                for (const Json& parameter : configJson.at("parameters")) {
-                    if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
-                        parameter["value"].is_string()) {
-                        filename = parameter["value"].get<std::string>();
-                        break;
-                    }
-                }
-            }
+        std::string sanitizeFilename(const std::string& filename) {
             if (filename.empty()) {
                 return "mosaic.tif";
             }
@@ -106,8 +96,31 @@ namespace StepsNs {
             return cleanName.empty() ? "mosaic.tif" : cleanName;
         }
 
+        std::string configuredFilename(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return "mosaic.tif";
+            }
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    return sanitizeFilename(parameter["value"].get<std::string>());
+                }
+            }
+            return "mosaic.tif";
+        }
+
+        fs::path candidatePath(const fs::path& directory, const std::string& stem,
+                               std::uint64_t counter, const std::string& extension) {
+            std::string candidateName = stem;
+            candidateName += " (";
+            candidateName += std::to_string(counter);
+            candidateName += ")";
+            candidateName += extension;
+            return directory / IONs::pathFromUtf8(candidateName);
+        }
+
         fs::path generateUniquePath(const fs::path& directory, const std::string& filename) {
-            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            fs::path target = directory / IONs::pathFromUtf8(filename);
             if (!fs::exists(target)) {
                 return target;
             }
@@ -115,8 +128,7 @@ namespace StepsNs {
             const std::string extension = IONs::pathToUtf8(target.extension());
             std::uint64_t counter = 1;
             while (true) {
-                const fs::path candidate =
-                    directory / IONs::pathFromUtf8(stem + " (" + std::to_string(counter) + ")" + extension);
+                const fs::path candidate = candidatePath(directory, stem, counter, extension);
                 if (!fs::exists(candidate)) {
                     return candidate;
                 }
@@ -125,7 +137,7 @@ namespace StepsNs {
         }
 
         fs::path findLatestExistingPath(const fs::path& directory, const std::string& filename) {
-            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            fs::path target = directory / IONs::pathFromUtf8(filename);
             if (!fs::exists(target)) {
                 return target;
             }
@@ -134,8 +146,7 @@ namespace StepsNs {
             fs::path latest = target;
             std::uint64_t counter = 1;
             while (true) {
-                const fs::path candidate =
-                    directory / IONs::pathFromUtf8(stem + " (" + std::to_string(counter) + ")" + extension);
+                const fs::path candidate = candidatePath(directory, stem, counter, extension);
                 if (!fs::exists(candidate)) {
                     break;
                 }
