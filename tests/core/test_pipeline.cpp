@@ -107,6 +107,35 @@ public:
     bool execute() override { return true; }
 };
 
+class MosaicOutputStepClass : public StepNs::StepClass {
+public:
+    MosaicOutputStepClass()
+        : StepNs::StepClass(Json{
+              {"name", "fusion"},
+              {"parameters", Json::array()},
+              {"outputs", Json::array({{{"dataType", "Mosaic"}, {"key", "mosaic"}}})}
+          }) {}
+    bool execute() override { return true; }
+};
+
+void testerRapportMosaic() {
+    StepNs::DataStoreClass dataStore;
+    dataStore.add("mosaic", DataNs::Mosaic{
+        fs::path("mosaic_image.tif"),
+        fs::path("mosaic_provenance.tif"),
+        fs::path("mosaic_mask.tif"),
+        cv::Size(640, 480)
+    });
+
+    const MosaicOutputStepClass step;
+    const Json report = PipelineNs::createStepReport(0, step, dataStore, Json::array());
+    const Json& output = report.at("outputs").at(0).at("value");
+    EXPECT_EQ(output.at("width"), 640);
+    EXPECT_EQ(output.at("height"), 480);
+    EXPECT_EQ(output.at("imagePath"), "mosaic_image.tif");
+    EXPECT_NE(report.at("summary").get<std::string>().find("640 × 480"), std::string::npos);
+}
+
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const std::set<std::string> attendus = {
@@ -389,5 +418,6 @@ TEST(PipelineBuilder, Validation) { testerValidation(); }
 TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
 TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
+TEST(PipelineReport, SerialiseMosaic) { testerRapportMosaic(); }
 
 }

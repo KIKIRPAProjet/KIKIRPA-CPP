@@ -11,7 +11,6 @@
 #include <nlohmann/json.hpp>
 #include <opencv2/core/types.hpp>
 
-#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -166,24 +165,14 @@ namespace PipelineNs {
             };
         }
 
-        Json serializeCompositeBlocks(const StepNs::DataStoreClass& dataStore, const std::string& key) {
-            const DataNs::CompositeBlockList& blocks = dataStore.get<DataNs::CompositeBlockList>(key);
-            int width = 0;
-            int height = 0;
-            Json blockRectangles = Json::array();
-            for (const DataNs::CompositeBlock& block : blocks) {
-                width = std::max(width, block.blockRect.x + block.blockRect.width);
-                height = std::max(height, block.blockRect.y + block.blockRect.height);
-                blockRectangles.push_back({
-                    block.blockRect.x, block.blockRect.y,
-                    block.blockRect.width, block.blockRect.height
-                });
-            }
+        Json serializeMosaic(const StepNs::DataStoreClass& dataStore, const std::string& key) {
+            const DataNs::Mosaic& mosaic = dataStore.get<DataNs::Mosaic>(key);
             return {
-                {"blockCount", blocks.size()},
-                {"width", width},
-                {"height", height},
-                {"blockRectangles", std::move(blockRectangles)}
+                {"imagePath", mosaic.imagePath.u8string()},
+                {"provenancePath", mosaic.provenancePath.u8string()},
+                {"maskPath", mosaic.maskPath.u8string()},
+                {"width", mosaic.canvasSize.width},
+                {"height", mosaic.canvasSize.height}
             };
         }
 
@@ -196,7 +185,7 @@ namespace PipelineNs {
             if (slot.dataType == "Territories") return serializeTerritories(dataStore, slot.key);
             if (slot.dataType == "Seamlines") return serializeSeamlines(dataStore, slot.key);
             if (slot.dataType == "IntensityCorrection") return serializeIntensityCorrection(dataStore, slot.key);
-            if (slot.dataType == "CompositeBlocks") return serializeCompositeBlocks(dataStore, slot.key);
+            if (slot.dataType == "Mosaic") return serializeMosaic(dataStore, slot.key);
             throw std::runtime_error("report: unsupported data type '" + slot.dataType + "'");
         }
 
@@ -221,12 +210,6 @@ namespace PipelineNs {
                 " ; correspondances retenues : " + std::to_string(correspondenceCount);
         }
 
-        std::string summarizeCompositeBlocks(const Json& value) {
-            return "Blocs assemblés : " + std::to_string(value.at("blockCount").get<size_t>()) +
-                " ; dimensions : " + std::to_string(value.at("width").get<int>()) + " × " +
-                std::to_string(value.at("height").get<int>()) + " pixels.";
-        }
-
         std::string summarizeOutput(const Json& output) {
             const Json& value = output.at("value");
             const std::string& type = output.at("dataType").get_ref<const std::string&>();
@@ -238,7 +221,9 @@ namespace PipelineNs {
                     std::to_string(value.at("tileGains").size()) + " tuile(s).";
             if (type == "Territories") return "Territoires calculés : " + std::to_string(value.size());
             if (type == "Seamlines") return "Coutures calculées : " + std::to_string(value.size());
-            if (type == "CompositeBlocks") return summarizeCompositeBlocks(value);
+            if (type == "Mosaic")
+                return "Mosaïque assemblée : " + std::to_string(value.at("width").get<int>()) + " × " +
+                    std::to_string(value.at("height").get<int>()) + " pixels.";
             return {};
         }
 
