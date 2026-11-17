@@ -45,6 +45,7 @@ namespace DataNs {
             TileClass* getTop() const { return top; }
             TileClass* getBottom() const { return bottom; }
             // Un pointeur nul signifie « pas de voisine de ce côté ».
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) : ordre gauche, droite, haut, bas, comme les accesseurs
             void setNeighbours(TileClass* leftTile, TileClass* rightTile, TileClass* topTile, TileClass* bottomTile) {
                 left = leftTile;
                 right = rightTile;
@@ -53,6 +54,14 @@ namespace DataNs {
             }
 
             int getId() const { return id; }
+            // Case de la tuile dans la grille de l'œuvre (ligne puis colonne, à partir de 0), fixée par le step import.
+            int getGridRow() const { return gridRow; }
+            int getGridColumn() const { return gridColumn; }
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters) : toujours la ligne puis la colonne, règle du projet
+            void setGridPosition(int row, int column) {
+                gridRow = row;
+                gridColumn = column;
+            }
             const std::filesystem::path& getSource() const { return source; }
             const std::filesystem::path& getTiff() const { return tiff; }
             int getType() const { return type; }
@@ -64,7 +73,9 @@ namespace DataNs {
             BlockId getBlockAt(int level, int pixelX, int pixelY) const { return {id, level, pixelX / BLOCK_SIZE, pixelY / BLOCK_SIZE}; }
 
         private:
-            int id = 0;                     // identifiant unique, utilisé par PairMatches et les checkpoints
+            int id = 0;                     // identifiant unique de la tuile, utilisé par tous les steps et les checkpoints
+            int gridRow = 0;                // ligne de la tuile dans la grille
+            int gridColumn = 0;             // colonne de la tuile dans la grille
             std::filesystem::path source;   // image d'origine, jamais modifiée
             std::filesystem::path tiff;     // TIFF tuilé pyramidal créé à l'import
             int type = 0;                   // type OpenCV de la pleine résolution (ex. CV_16UC3)

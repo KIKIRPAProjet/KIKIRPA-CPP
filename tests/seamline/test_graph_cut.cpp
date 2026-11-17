@@ -84,7 +84,7 @@ namespace {
         return imagePretreatment.processImages(input.positions, input.tilePaths, input.scale, tiles) >= 0;
     }
 
-    // Nom de fichier attendu par parseTileName pour l'identifiant "rLL_cCC" : "tile_C<colonne>_R<ligne>.tif".
+    // Nom de fichier lisible pour l'étiquette "rLL_cCC" : "tile_C<colonne>_R<ligne>.tif". GraphCut ne lit pas ce nom.
     // Les deux nombres sont lus autour des séparateurs, pour ne pas dépendre de leur position exacte dans la chaîne.
     std::string makeTileFileName(const std::string& tileId) {
         const std::size_t separator = tileId.find("_c");
@@ -149,8 +149,9 @@ namespace {
                     const bool isWritten = cv::imwrite(path, makeTileImage(spec));
                     EXPECT_TRUE(isWritten) << "Unable to write " << path;
 
+                    // L'identifiant d'une position est celui de sa tuile : son rang dans la liste.
+                    input.positions.push_back({static_cast<int>(input.tilePaths.size()), cv::Point2d(spec.position.x, spec.position.y)});
                     input.tilePaths.push_back(path);
-                    input.positions.push_back({spec.id, cv::Point2d(spec.position.x, spec.position.y)});
                 }
                 return input;
             }
@@ -184,7 +185,7 @@ TEST(GraphCutStepChecksTest, ExecuteFailsWhenNoTileIsProvided) {
 TEST(GraphCutStepChecksTest, ExecuteFailsWhenPositionCountDiffersFromTileCount) {
     StepsNs::GraphCutInput input;
     input.tilePaths = {"a_C00_R00.tif", "a_C01_R00.tif"};
-    input.positions = {{"r00_c00", cv::Point2d(0, 0)}};
+    input.positions = {{0, cv::Point2d(0, 0)}};
     StepsNs::GraphCutStepClass step(input);
 
     const bool isSuccessful = step.execute();
@@ -199,7 +200,7 @@ TEST(GraphCutStepChecksTest, ExecuteFailsWhenTooManyTilesAreProvided) {
     constexpr std::size_t TILE_COUNT = 255;   // GraphCutNs::NO_TILE vaut généralement 255
     StepsNs::GraphCutInput input;
     input.tilePaths.assign(TILE_COUNT, "a_C00_R00.tif");
-    input.positions.assign(TILE_COUNT, {"r00_c00", cv::Point2d(0, 0)});
+    input.positions.assign(TILE_COUNT, {0, cv::Point2d(0, 0)});
     StepsNs::GraphCutStepClass step(input);
 
     const bool isSuccessful = step.execute();
@@ -214,7 +215,7 @@ using GraphCutInvalidScaleTest = GraphCutInvalidScaleTestClass;
 TEST_P(GraphCutInvalidScaleTest, ExecuteFailsWhenScaleIsOutOfRange) {
     StepsNs::GraphCutInput input;
     input.tilePaths = {"a_C00_R00.tif"};
-    input.positions = {{"r00_c00", cv::Point2d(0, 0)}};
+    input.positions = {{0, cv::Point2d(0, 0)}};
     input.scale = GetParam();
     StepsNs::GraphCutStepClass step(input);
 
@@ -241,32 +242,40 @@ TEST_F(GraphCutStepTest, ExecuteFailsWhenATileFileCannotBeRead) {
     EXPECT_TRUE(contains(step.getResult()["error"], "Image pretreatment error")) << step.getResult()["error"];
 }
 
+// Dans le pipeline, chaque position est associée à sa tuile par TileClass::getId() : une tuile sans position fait échouer le step.
 TEST_F(GraphCutStepTest, ExecuteFailsWhenATilePositionIsMissing) {
-    StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    input.positions[1].tileId = "r09_c09";   
-    StepsNs::GraphCutStepClass step(input);
+    const StepsNs::GraphCutInput written = writeTiles(makePairSpecs(), DEFAULT_SCALE);
+    DataNs::TileList tiles;
+    for (std::size_t tileIndex = 0; tileIndex < written.tilePaths.size(); ++tileIndex)
+        tiles.push_back(std::make_shared<DataNs::TileClass>(static_cast<int>(tileIndex), written.tilePaths[tileIndex], "",
+                                                            TILE_SIZE.width, TILE_SIZE.height, CV_16UC3));
+    constexpr int UNKNOWN_TILE_ID = 9;   // aucune tuile n'a cet identifiant
+    std::vector<DataNs::TilePositionData> positions = written.positions;
+    positions[1].tileId = UNKNOWN_TILE_ID;
+    StepNs::DataStoreClass dataStore;
+    dataStore.add("tiles", tiles);
+    dataStore.add("positions", positions);
+    StepsNs::GraphCutStepClass step{StepsNs::GraphCutInput{}};
+    step.setDataStore(dataStore);
 
     const bool isSuccessful = step.execute();
 
     EXPECT_FALSE(isSuccessful);
-    EXPECT_TRUE(contains(step.getResult()["error"], "Image pretreatment error")) << step.getResult()["error"];
+    EXPECT_TRUE(contains(step.getResult()["error"], "no position provided for tile 1")) << step.getResult()["error"];
 }
 
-TEST_F(GraphCutStepTest, ExecuteFailsWhenTileNameIsInvalid) {
+// Le nom des fichiers n'est plus lu : une tuile peut porter n'importe quel nom.
+TEST_F(GraphCutStepTest, ExecuteAcceptsAnyTileFileName) {
     StepsNs::GraphCutInput input = writeTiles(makePairSpecs(), DEFAULT_SCALE);
-    
-    // On renomme le premier fichier sur le disque pour qu'il soit lisible (imread fonctionne) 
-    // mais que son nom échoue à l'analyse de l'expression régulière de parseTileName.
-    const std::string badPath = (tileDirectory / "invalid_name.tif").string();
-    std::filesystem::rename(input.tilePaths[0], badPath);
-    input.tilePaths[0] = badPath;
-    
+    const std::string freeNamePath = (tileDirectory / "1_no filter f8.tif").string();
+    std::filesystem::rename(input.tilePaths[0], freeNamePath);
+    input.tilePaths[0] = freeNamePath;
     StepsNs::GraphCutStepClass step(input);
+
     const bool isSuccessful = step.execute();
 
-    EXPECT_FALSE(isSuccessful);
-    EXPECT_TRUE(contains(step.getResult()["error"], "Tile file name must end with")) 
-        << step.getResult()["error"];
+    ASSERT_TRUE(isSuccessful) << step.getResult().dump();
+    EXPECT_EQ(step.getOutput().territories.size(), 2u);
 }
 
 TEST_F(GraphCutStepTest, ExecuteReturnsOneTerritoryPerTileInTileOrder) {
