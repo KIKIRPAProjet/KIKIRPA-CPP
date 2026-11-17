@@ -1,107 +1,140 @@
-# Vote 2D — Rejet des aberrants par Vote de Hough 2D et Médiane Itérative
-
-Documentation technique et mathématique de l'algorithme de rejet des aberrants (*outlier rejector*) par **Vote 2D** (`VoteRejector`), conçu pour l'assemblage rigide de tuiles gigapixels au KIK-IRPA.
+# Vote 2D (`VoteRejectorClass`)
 
 ```
 include/backend/algorithms/rejection/
-├── outlier_rejector.h              Interface abstraite commune de rejet
+├── outlier_rejector.h              Interface de base OutlierRejectorClass
 └── vote_2d/
     └── vote_rejector.h             Déclaration de VoteRejectorClass
 src/backend/algorithms/rejection/
 └── vote_2d/
-    └── vote_rejector.cpp           Implémentation complète (C++17)
-```
-
-- **Dépendances** : OpenCV (`opencv2/core.hpp`), STL C++17 (`<vector>`, `<map>`, `<cmath>`, `<algorithm>`), `nlohmann/json.hpp`.
-- **Statut** : implémenté et testé, mais **non branché dans le pipeline**. Seul l'ancien positionneur `PositioningNs::computeTilePositions` (`tile_positioner.cpp`) l'appelle (`settings.rejectorName = "vote"`), et aucun step ni aucun test n'appelle ce positionneur. Les steps d'appariement (`phase-correlation`, `sift`, `lightglue`) publient leurs `matches` sans rejet ; leur translation est une médiane, ce qui limite l'effet des faux appariements sans les éliminer. Brancher ce rejet dans le pipeline est une tâche à faire.
-
----
-
-## 1. À quoi ça sert ?
-
-Lors de l'appariement de deux tuiles voisines $A$ et $B$ (par SIFT, LightGlue ou détection de caractéristiques), les algorithmes produisent une liste de correspondances de points :
-
-$$\mathbf{p}_{A,i} \longleftrightarrow \mathbf{p}_{B,i}$$
-
-Dans cette liste, de nombreuses paires sont erronées (*outliers*) à cause :
-- de motifs répétitifs sur l'œuvre d'art (craquelures de vernis, trame de toile, hachures) ;
-- de reflets spéculaires ou de bruits capteurs ;
-- de zones sombres ou uniformes.
-
-Le rôle de `VoteRejector` est d'extraire la **translation géométrique réelle** $(t_x, t_y)$ entre les deux tuiles et d'identifier avec certitude les correspondances correctes (*inliers*), tout en éliminant impitoyablement les mauvaises.
-
-```
-Tuile A                                          Tuile B
-┌──────────────────┐                            ┌──────────────────┐
-│         • p_A,1  │ ── correspond à ────────── │ • p_B,1          │  --> Inlier (déplacement cohérent)
-│                  │                            │                  │
-│         • p_A,2  │ ── correspond à ────────── │ • p_B,2          │  --> Inlier (déplacement cohérent)
-│                  │                            │                  │
-│         • p_A,3  │ ── faux appariement ────── │         • p_B,3  │  --> OUTLIER (rejeté par le vote)
-└──────────────────┘                            └──────────────────┘
+    └── vote_rejector.cpp           Implémentation de l'algorithme
 ```
 
 ---
 
-## 2. Pourquoi Vote 2D plutôt que RANSAC classique ?
+## 1. Principe général
 
-### Le contexte physique : un banc photographique rigide
-Au KIK-IRPA, les prises de vue sont réalisées avec un statif motorisé cartésien de haute précision. La caméra se déplace selon deux axes orthogonaux stricts $X$ et $Y$.
-- **Aucune rotation physique** entre deux tuiles voisines ($\theta = 0$).
-- **Aucun changement d'échelle** ($s = 1$).
-- Le déplacement relatif est une **pure translation 2D** à 2 degrés de liberté (2-DDL).
+Soit un ensemble de $N$ paires de points homologues $(\mathbf{p}_{A,i}, \mathbf{p}_{B,i})$ détectées entre deux images $A$ et $B$, contenant à la fois des correspondances exactes (*inliers*) et de fausses correspondances (*outliers*).
 
-### Le piège de RANSAC / Affine 4-DDL (`cv::estimateAffinePartial2D`)
-Les approches classiques de vision par ordinateur utilisent RANSAC couplé à une transformation affine partielle à 4 degrés de liberté ($t_x, t_y, s, \theta$) :
+L'algorithme **Vote 2D** estime la **translation 2D** $(t_x, t_y)$ entre $B$ et $A$ et identifie les *inliers* en deux phases déterministes en temps linéaire $\mathcal{O}(N)$ :
 
-$$\begin{pmatrix} x_A \\ y_A \end{pmatrix} = s \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix} \begin{pmatrix} x_B \\ y_B \end{pmatrix} + \begin{pmatrix} t_x \\ t_y \end{pmatrix}$$
-
-Cette formulation présente **deux défauts majeurs** en macrophotographie d'œuvres d'art :
-
-1. **L'effet de bras de levier fatal sur les très grandes tuiles (100 Mpx)** :
-   Sur des images de $11\,600 \times 8\,700\text{ px}$, un infime bruit sous-pixel de localisation SIFT ($\pm 0,2$ à $\pm 0,3\text{ px}$) amène le modèle 4-DDL à "sur-apprendre" une micro-rotation parasite ($\theta \approx 0,04^\circ$ à $0,08^\circ$). Multipliée par le bras de levier de la largeur de l'image ($11\,600\text{ px}$), cette micro-rotation artificielle déporte les bords opposés de la tuile de **8 à 16 pixels**, provoquant des décalages d'assemblage visibles et des flous de raccord.
-2. **Non-déterminisme et instabilité** :
-   RANSAC repose sur des tirages aléatoires de sous-ensembles minimaux. Si la graine aléatoire n'est pas fixée, deux exécutions successives sur la même paire d'images peuvent renvoyer des inliers et des translations légèrement différents.
-3. **Temps de calcul sous fort bruit** :
-   Lorsque le taux d'inliers chute (peintures lisses, zones sombres), le nombre d'itérations nécessaires pour garantir la confiance statistique explose, atteignant parfois plusieurs centaines de millisecondes par paire, voire des dizaines de secondes en cas de recherche exhaustive.
-
-### Les atouts de Vote 2D
-| Critère | RANSAC 4-DDL classique | Vote 2D (`VoteRejector`) |
-|---|---|---|
-| **Modèle géométrique** | Affine 4-DDL ($t_x, t_y, s, \theta$) | **Translation pure 2-DDL ($t_x, t_y$)** |
-| **Rotation parasite** | Oui ($\theta \ne 0$ dû au bruit sous-pixel) | **Strictement impossible ($\theta \equiv 0$)** |
-| **Effet de bras de levier** | 8 à 16 px de dérive sur tuile 100 Mpx | **0 px de dérive géométrique** |
-| **Déterminisme** | Stochastique (dépend du tirage aléatoire) | **100 % Déterministe (reproductibilité bit-à-bit)** |
-| **Complexité temporelle** | $\mathcal{O}(k \cdot N)$ avec $k$ itérations élevées | **$\mathcal{O}(N)$ linéaire (quasi-instantané)** |
-| **Temps d'exécution moyen** | 2 à 250 ms par paire | **0,1 à 0,3 ms par paire** |
+1. **Vote de Hough 2D sur grille** : chaque paire vote pour son déplacement $\Delta_i = \mathbf{p}_{A,i} - \mathbf{p}_{B,i}$ dans une grille 2D discrète (avec un voisinage $3 \times 3$ autour de sa cellule). La cellule cumulant le plus de votes fournit une estimation initiale $(t_x^{(0)}, t_y^{(0)})$ insensible aux *outliers* dispersés.
+2. **Raffinement par médiane itérative** : 3 passes de médiane sur les déplacements situés à une distance euclidienne $\le \text{seuil}$ affinent la translation en continu au sous-pixel et déterminent le masque final des *inliers*.
 
 ---
 
-## 3. Interface C++
+## 2. Déroulement de l'algorithme
 
-### En-tête (`vote_rejector.h`)
+### Étape 1 — Filtrage des coordonnées finies et calcul des déplacements (`extractFiniteDeltas`)
+
+L'algorithme vérifie d'abord que `matches.pointsInA` et `matches.pointsInB` ont la même taille $N$.
+Pour chaque indice $i \in \{0, \dots, N-1\}$ :
+- si l'une des coordonnées $(x_{A,i}, y_{A,i}, x_{B,i}, y_{B,i})$ est `NaN` ou infinie (`!std::isfinite`), la paire est ignorée ;
+- sinon, le déplacement 2D est calculé en double précision et l'indice d'origine $i$ est conservé dans `validIndices` :
+
+$$\Delta x_i = x_{A,i} - x_{B,i}, \quad \Delta y_i = y_{A,i} - y_{B,i}$$
+
+Si le nombre de déplacements valides est strictement inférieur à `minMatches`, l'algorithme s'arrête et renvoie `false`.
+
+---
+
+### Étape 2 — Vote 2D avec voisinage $3 \times 3$ (`accumulateNeighborhoodVotes`)
+
+L'espace des déplacements $(\Delta x, \Delta y)$ est découpé en cellules carrées de côté $c = \text{case}$ (en pixels). Pour chaque déplacement valide $(\Delta x_i, \Delta y_i)$, les indices entiers de sa cellule centrale sont :
+
+$$c_{x,i} = \left\lfloor \frac{\Delta x_i}{c} \right\rfloor, \quad c_{y,i} = \left\lfloor \frac{\Delta y_i}{c} \right\rfloor$$
+
+Afin d'éviter qu'un groupe de vrais déplacements situé sur la frontière entre deux cases ne voie ses votes partagés, chaque correspondance incrémente sa cellule centrale ainsi que ses **8 cellules voisines directes** (fenêtre $3 \times 3$, rayon `NEIGHBORHOOD_WINDOW_RADIUS = 1`) :
+
+$$\forall (\delta_y, \delta_x) \in \{-1, 0, 1\}^2, \quad \text{votes}[(c_{y,i} + \delta_y, c_{x,i} + \delta_x)] \mathrel{+}= 1$$
+
+Les votes sont stockés dans une table associative creuse `std::map<std::pair<int, int>, int>` indexée par `(cellY, cellX)`. Seules les cellules effectivement votées sont allouées en mémoire.
+
+---
+
+### Étape 3 — Extraction du mode (`computeVoteMode`)
+
+La table `votes` est parcourue dans l'ordre lexicographique de ses clés `(cellY, cellX)` pour retenir la première cellule atteignant le maximum de votes :
+
+$$(c_{y,\text{mode}}, c_{x,\text{mode}}) = \arg\max_{(c_y, c_x)} \text{votes}[(c_y, c_x)]$$
+
+L'estimation initiale de la translation est le centre géométrique de cette cellule (`GRID_CELL_CENTER_OFFSET = 0.5`) :
+
+$$t_x^{(0)} = (c_{x,\text{mode}} + 0{,}5) \cdot c, \quad t_y^{(0)} = (c_{y,\text{mode}} + 0{,}5) \cdot c$$
+
+---
+
+### Étape 4 — Raffinement par médiane itérative (`refineTranslation`, `computeMedian`)
+
+Le centre de cellule $(t_x^{(0)}, t_y^{(0)})$ a une résolution limitée au pas de grille $c$. Pour obtenir une estimation sous-pixel continue, l'algorithme effectue **3 passes** (`MEDIAN_REFINEMENT_ITERATIONS = 3`).
+
+À chaque itération $k \in \{0, 1, 2\}$ :
+
+1. **Collecte des inliers courants (`collectInliersForCenter`)** — on sélectionne les déplacements valides situés dans le disque euclidien de rayon $R = \text{seuil}$ centré en $(t_x^{(k)}, t_y^{(k)})$ :
+   $$\mathcal{I}^{(k)} = \left\{ i \in \text{validIndices} \;\middle|\; \sqrt{(\Delta x_i - t_x^{(k)})^2 + (\Delta y_i - t_y^{(k)})^2} \le R \right\}$$
+2. Si $\mathcal{I}^{(k)}$ est vide, la boucle s'interrompt.
+3. **Mise à jour par la médiane (`computeMedian`)** — les coordonnées sont mises à jour par la médiane sur chaque axe :
+   $$t_x^{(k+1)} = \operatorname{médiane}_{i \in \mathcal{I}^{(k)}}(\Delta x_i), \quad t_y^{(k+1)} = \operatorname{médiane}_{i \in \mathcal{I}^{(k)}}(\Delta y_i)$$
+
+La médiane d'un vecteur de taille $M$ est calculée en $\mathcal{O}(M)$ via `std::nth_element` :
+- si $M$ est impair, on prend l'élément d'indice $\lfloor M/2 \rfloor$ ;
+- si $M$ est pair, on prend la demi-somme de l'élément d'indice $M/2$ et du maximum de la moitié inférieure $[0, M/2[$.
+
+---
+
+### Étape 5 — Marquage final des inliers (`markInliers`)
+
+Le masque binaire `out.inlierMask` (taille $N$, initialisé à `0`) est calculé autour de la translation raffinée $(t_x, t_y) = (t_x^{(3)}, t_y^{(3)})$ :
+
+$$\text{inlierMask}[i] = \begin{cases} 1 & \text{si } i \in \text{validIndices} \text{ et } \sqrt{(\Delta x_i - t_x)^2 + (\Delta y_i - t_y)^2} \le R \\ 0 & \text{sinon} \end{cases}$$
+
+Si le nombre d'inliers retenus est strictement inférieur à `minInliers`, `out.inlierMask` est intégralement remis à `0` et `estimate()` renvoie `false`.
+
+---
+
+### Étape 6 — Écriture du résultat (`estimate`, `filterMatches`)
+
+Lorsque `inlierCount >= minInliers` :
+- **`estimate(matches, out)`** remplit `out.transformBToA` avec la matrice homogène $3 \times 3$ (`CV_64F`) de translation pure :
+  $$\mathbf{T}_{B \to A} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}$$
+- **`filterMatches(matches, out)`** (ainsi que **`filterPairMatches(pairMatches, out)`**) appelle `estimate(matches, out)`, filtre sur place `matches.pointsInA`, `matches.pointsInB` et `matches.confidenceScores` pour ne conserver que les éléments où `inlierMask[i] != 0` (`retainInlierPoints`), et copie $(t_x, t_y)$ dans `(matches.translationX, matches.translationY)`.
+
+---
+
+## 3. Paramètres
+
+Les paramètres sont passés sous forme d'objet JSON (`nlohmann::json`) au constructeur `VoteRejectorClass(const Json& parameters)`. Toute clé absente prend sa valeur par défaut :
+
+| Clé JSON | Type | Défaut | Plancher de sécurité | Description |
+|---|---|---|---|---|
+| `"seuil"` (ou `"ransacReprojThreshold"`) | `double` | `1.5` | `1e-6` | Rayon maximal $R$ (en px) autour de $(t_x, t_y)$ pour accepter un déplacement comme *inlier*. |
+| `"case"` | `double` | `1.0` | `1e-6` | Côté $c$ (en px) d'une cellule de la grille de vote 2D. |
+| `"minMatches"` | `int` | `3` | `2` | Nombre minimal de paires de points à coordonnées finies requis avant le vote. |
+| `"minInliers"` | `int` | `3` | `2` | Nombre minimal d'*inliers* requis après raffinement pour valider la translation. |
+
+---
+
+## 4. Interface C++
+
 ```cpp
-#pragma once
-#include "algorithms/rejection/outlier_rejector.h"
-#include "core/data/algorithm_types.h"
-#include <nlohmann/json.hpp>
-
 namespace RejectionNs {
 
-using Json = nlohmann::json;
-
-// Rejet des aberrants par Vote de Hough 2D et médiane itérative (pure translation 2D).
 class VoteRejectorClass : public OutlierRejectorClass {
 public:
     VoteRejectorClass() = default;
     explicit VoteRejectorClass(const Json& parameters);
-    bool estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment) override;
-    bool filterMatches(DataNs::Matches& matches, DataNs::Alignment& out);
-    bool filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out);
-    static Json toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment);
 
-private:
-    Json parameters = Json::object();
+    // Calcule out.transformBToA (3x3 CV_64F) et out.inlierMask sans modifier matches.
+    bool estimate(const DataNs::Matches& matches, DataNs::Alignment& out) override;
+
+    // Appelle estimate(), conserve uniquement les inliers dans matches et met à jour (translationX, translationY).
+    bool filterMatches(DataNs::Matches& matches, DataNs::Alignment& out);
+
+    // Appelle filterMatches() sur pairMatches.featureMatches.
+    bool filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out);
+
+    // Formate la translation de alignment.transformBToA en objet JSON.
+    static Json toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment);
 };
 
 using VoteRejector = VoteRejectorClass;
@@ -109,232 +142,44 @@ using VoteRejector = VoteRejectorClass;
 } // namespace RejectionNs
 ```
 
-### Méthodes d'adaptation pour le pipeline et l'égalisation
-
-1. **`estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment)`** :
-   Estime la translation et remplit le masque d'inliers sans altérer l'objet `matches` d'entrée.
-
-2. **`filterMatches(DataNs::Matches& matches, DataNs::Alignment& out)`** :
-   Exécute `estimate()`, filtre sur place les points aberrants dans `matches.pointsInA`, `matches.pointsInB` et `matches.confidenceScores`, puis renseigne `matches.translationX` et `matches.translationY` à partir de `out.transformBToA`.
-
-3. **`filterPairMatches(DataNs::PairMatches& pairMatches, DataNs::Alignment& out)`** :
-   Spécialisation pour l'objet composite `PairMatches`, opérant directement sur `pairMatches.featureMatches`.
-
-4. **`toEqualizationJson(int tileIdA, int tileIdB, const DataNs::Alignment& alignment)`** :
-   Sérialise les identifiants de tuiles et la translation sous un format JSON doublement compatible :
-   - Clés directes pour l'égalisation : `{"a": idA, "b": idB, "translation": [tx, ty]}`
-   - Clés canoniques du pipeline : `{"tileIdA": idA, "tileIdB": idB, "translationX": tx, "translationY": ty}`
-
-### Contrat de la méthode `estimate()`
-
-```cpp
-bool estimate(const DataNs::Matches& matches, DataNs::Alignment& alignment) override;
-```
-
-- **Entrée** : `matches` (`DataNs::Matches` défini dans `algorithm_types.h`)
-  - `matches.pointsInA` (`std::vector<cv::Point2f>`) : points clés détectés dans la tuile A.
-  - `matches.pointsInB` (`std::vector<cv::Point2f>`) : points clés correspondants dans la tuile B.
-  - Les deux vecteurs doivent avoir la même taille $N$.
-- **Sortie** : `alignment` (`DataNs::Alignment` défini dans `algorithm_types.h`)
-  - `alignment.transformBToA` (`cv::Mat`) : matrice de transformation homogène $3 \times 3$ en `CV_64F` de B vers A :
-    $$\mathbf{T}_{B \to A} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}$$
-  - `alignment.inlierMask` (`std::vector<uchar>`) : masque binaire de taille $N$ (`1` pour inlier conservé, `0` pour outlier rejeté).
-- **Valeur de retour** :
-  - `true` si le nombre d'inliers finaux est supérieur ou égal à `minInliers` ;
-  - `false` en cas d'échec (points non finis, tailles incohérentes, nombre de correspondances insuffisant ou manque d'inliers). En cas d'échec, `alignment.transformBToA` est libéré et `alignment.inlierMask` est vidé ou mis à zéro.
 
 ---
 
-## 4. Paramètres Configurables
+## 5. Emplacements du code implémenté (Algorithme et Step)
 
-Les paramètres sont transmis au constructeur sous la forme d'un objet JSON `nlohmann::json`. Si un paramètre est omis, sa valeur par défaut s'applique automatiquement :
+### 5.1 Algorithme Vote 2D (`algorithms/rejection/vote_2d/`)
 
-| Clé JSON | Alias accepté | Type | Défaut | Rôle physique |
-|---|---|---|---|---|
-| `"seuil"` | `"ransacReprojThreshold"` | `double` | `1.5` px | Rayon de tolérance euclidienne autour de la translation estimée pour qualifier un point d'inlier. |
-| `"case"` | — | `double` | `1.0` px | Taille des cellules de discrétisation de la grille de vote dans l'espace des déplacements $(\Delta x, \Delta y)$. |
-| `"minMatches"` | — | `int` | `3` | Nombre minimal de correspondances valides (coordonnées finies) requises pour tenter l'estimation. |
-| `"minInliers"` | — | `int` | `3` | Nombre minimal d'inliers requis pour valider l'alignement de la paire. |
+| Fichier | Rôle général |
+|---|---|
+| [`include/backend/algorithms/rejection/outlier_rejector.h`](../../../../include/backend/algorithms/rejection/outlier_rejector.h) | Définit l'interface abstraite `RejectionNs::OutlierRejectorClass` (`estimate(matches, out)`) commune aux méthodes de rejet des aberrants. |
+| [`include/backend/algorithms/rejection/vote_2d/vote_rejector.h`](../../../../include/backend/algorithms/rejection/vote_2d/vote_rejector.h) | Déclare la classe `VoteRejectorClass` (dans `stitching::rejection` et exposée sous `RejectionNs::VoteRejectorClass`), ses constructeurs et ses méthodes publiques (`estimate`, `filterMatches`, `filterPairMatches`, `toEqualizationJson`). |
+| [`src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp`](../../../../src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp) | Contient toute l'implémentation du calcul de Vote 2D et du filtrage des correspondances. |
 
-> [!NOTE]
-> La compatibilité avec la clé `"ransacReprojThreshold"` permet d'utiliser le même dictionnaire de configuration que pour les anciens algorithmes RANSAC sans modifier les scripts existants.
-
----
-
-## 5. Fonctionnement Interne et Formulation Mathématique
-
-L'algorithme se déroule en **6 étapes séquentielles** :
-
-```mermaid
-flowchart TD
-    A["Matches bruts (pointsInA, pointsInB)"] --> B["1. Filtrage NaN/Inf et calcul des déplacements Δ = A - B"]
-    B --> C["2. Discrétisation et accumulation avec lissage 3x3"]
-    C --> D["3. Extraction déterministe du mode (cellule max votes)"]
-    D --> E["4. Raffinement par Médiane Itérative (3 passes)"]
-    E --> F["5. Filtrage final et génération du inlierMask"]
-    F --> G["6. Construction de la matrice homogène 3x3"]
-```
+#### Détail des fonctions dans `src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp` :
+- **`extractFiniteDeltas(matches)`** *(lignes 51–68)* : Parcourt les paires de points `(pointsInA[i], pointsInB[i])`, écarte toute coordonnée `NaN` ou `Inf`, calcule les déplacements `deltaX = xA - xB` et `deltaY = yA - yB`, et conserve les indices valides dans `validIndices`.
+- **`accumulateNeighborhoodVotes(centerCell, votes)`** *(lignes 71–78)* : Ajoute un vote dans les 9 cellules du voisinage $3 \times 3$ autour de la cellule `(cellY, cellX)` dans la `std::map` des votes.
+- **`computeVoteMode(deltas, cellSizePx)`** *(lignes 81–100)* : Discrétise chaque déplacement valide au pas `cellSizePx`, appelle `accumulateNeighborhoodVotes`, recherche la cellule cumulant le maximum de votes et retourne les coordonnées $(t_x^{(0)}, t_y^{(0)})$ de son centre.
+- **`computeMedian(values)`** *(lignes 103–115)* : Calcule en $\mathcal{O}(M)$ la médiane d'un tableau de `double` à l'aide de `std::nth_element` (avec moyenne des deux valeurs centrales lorsque la taille est paire).
+- **`collectInliersForCenter(deltas, center, thresholdPx)`** *(lignes 118–129)* : Sélectionne tous les déplacements `(deltaX[i], deltaY[i])` situés à une distance euclidienne (`std::hypot`) inférieure ou égale à `thresholdPx` du centre courant.
+- **`refineTranslation(deltas, initialMode, thresholdPx)`** *(lignes 132–146)* : Enchaîne 3 passes d'affinement en alternant `collectInliersForCenter` et `computeMedian` sur $X$ et sur $Y$.
+- **`markInliers(deltas, translation, thresholdPx, inlierMask)`** *(lignes 149–161)* : Met à `1` les entrées de `inlierMask` correspondant aux points situés à distance $\le \text{thresholdPx}$ de la translation finale et renvoie le nombre total d'*inliers*.
+- **`retainInlierPoints(matches, inlierMask)`** *(lignes 164–189)* : Supprime sur place dans `matches.pointsInA`, `matches.pointsInB` et `matches.confidenceScores` tous les points où `inlierMask[i] == 0`.
+- **`VoteRejectorClass::estimate(matches, out)`** *(lignes 196–223)* : Point d'entrée principal de l'estimation ; lit les paramètres JSON (`minMatches`, `minInliers`, `seuil`, `case`), exécute les étapes 1 à 5, vérifie `inlierCount >= minInliers` et construit la matrice homogène $3 \times 3$ dans `out.transformBToA`.
+- **`VoteRejectorClass::filterMatches(matches, out)`** et **`filterPairMatches(pairMatches, out)`** *(lignes 225–237)* : Exécutent `estimate()`, filtrent les vecteurs de points via `retainInlierPoints` et mettent à jour `(translationX, translationY)` avec la translation estimée.
 
 ---
 
-### Étape 1 : Filtrage des coordonnées finies et calcul des déplacements
-Pour chaque paire d'indices $i \in \{0, \dots, N-1\}$, on vérifie que les coordonnées ne contiennent ni `NaN` ni valeur infinie (`std::isfinite`). Pour chaque correspondance valide :
+### 5.2 Step du pipeline (`steps/vote_2d_step.*`)
 
-$$\Delta x_i = x_{A,i} - x_{B,i}, \quad \Delta y_i = y_{A,i} - y_{B,i}$$
+| Fichier | Rôle général |
+|---|---|
+| [`include/backend/steps/vote_2d_step.h`](../../../../include/backend/steps/vote_2d_step.h) | Déclare la structure de paramètres `StepsNs::Vote2DInput` (`seuil = 1.5f`, `cellSize = 1.0f`, `minMatches = 3`, `minInliers = 3`), la structure de sortie `StepsNs::Vote2DOutput` (clé `"matches"`, type `"PairMatches"`) et la classe `StepsNs::Vote2DStepClass`. |
+| [`src/backend/steps/vote_2d_step.cpp`](../../../../src/backend/steps/vote_2d_step.cpp) | Implémente l'adaptateur de step `"vote-2d"` qui lit `"matches"` dans le `DataStoreClass`, applique `VoteRejectorClass` à chaque paire de tuiles et réécrit les paires filtrées dans `"matches"`. |
+| [`src/backend/core/pipeline/pipeline_builder.cpp`](../../../../src/backend/core/pipeline/pipeline_builder.cpp) | Enregistre la clé `"vote-2d"` dans `stepRegistry()` *(ligne 58)* pour permettre son instanciation depuis un script JSON de pipeline. |
+| [`tests/steps/test_vote_2d_step.cpp`](../../../../tests/steps/test_vote_2d_step.cpp) | Suite de 7 tests unitaires GoogleTest vérifiant le filtrage des *outliers*, la mise à jour de la translation, le rejet des paramètres invalides ou des `NaN`/`Inf`, et la sauvegarde/reprise par checkpoint. |
 
-Les indices d'origine sont mémorisés dans `validIndices` pour reconstruire le masque complet à la fin. Si le nombre de points valides est inférieur à `minMatches`, l'algorithme s'arrête immédiatement en retournant `false`.
-
----
-
-### Étape 2 : Accumulation 2D avec lissage par noyau $3 \times 3$
-L'espace continu des translations $(\Delta x, \Delta y)$ est discrétisé en cellules carrées de taille $c = \text{cellSizePx}$ :
-
-$$c_{x,i} = \left\lfloor \frac{\Delta x_i}{c} \right\rfloor, \quad c_{y,i} = \left\lfloor \frac{\Delta y_i}{c} \right\rfloor$$
-
-#### Pourquoi un lissage $3 \times 3$ ?
-Dans un vote de Hough discret classique, si la vraie translation se situe exactement sur la frontière entre deux cellules (ex. $\Delta x = 1,999$ et $\Delta x = 2,001$), les votes se séparent en deux cases disjointes, risquant de diluer le pic ou de faire gagner un groupe parasite.
-
-Pour éliminer cet effet de bord, **chaque point vote pour sa cellule centrale $(c_{y}, c_{x})$ ainsi que pour ses 8 cellules voisines directes** :
-
-$$\forall (\delta_y, \delta_x) \in \{-1, 0, 1\}^2, \quad \text{votes}[(c_y + \delta_y, c_x + \delta_x)] \leftarrow \text{votes}[(c_y + \delta_y, c_x + \delta_x)] + 1$$
-
-L'accumulateur est stocké dans une table associative creuse `std::map<std::pair<int, int>, int>`, évitant d'allouer une grille 2D dense inutilement coûteuse en mémoire.
-
----
-
-### Étape 3 : Extraction déterministe du mode
-L'accumulateur est parcouru séquentiellement pour identifier la cellule ayant obtenu le maximum absolu de votes :
-
-$$(c_{y,\text{mode}}, c_{x,\text{mode}}) = \arg\max_{(c_y, c_x)} \text{votes}[(c_y, c_x)]$$
-
-La position initiale de la translation correspond au centre géométrique de cette cellule :
-
-$$t_x^{(0)} = (c_{x,\text{mode}} + 0,5) \times c, \quad t_y^{(0)} = (c_{y,\text{mode}} + 0,5) \times c$$
-
-L'ordre de parcours déterministe de `std::map` garantit qu'en cas d'égalité stricte de votes entre deux cellules, le résultat reste 100 % reproductible.
-
----
-
-### Étape 4 : Raffinement par Médiane Itérative (3 passes)
-La grille de vote fournit une estimation grossière avec une précision de l'ordre de la taille de cellule ($\sim 1\text{ px}$). Pour atteindre une précision sous-pixel continue sans être biaisé par les outliers, l'algorithme applique **3 passes de médiane itérative** :
-
-À chaque itération $k \in \{0, 1, 2\}$ :
-1. On sélectionne l'ensemble $\mathcal{I}^{(k)}$ des correspondances se situant dans le disque de rayon $R = \text{thresholdPx}$ centré sur $(t_x^{(k)}, t_y^{(k)})$ :
-   $$\mathcal{I}^{(k)} = \left\{ i \in \text{validIndices} \;\middle|\; \sqrt{(\Delta x_i - t_x^{(k)})^2 + (\Delta y_i - t_y^{(k)})^2} \le R \right\}$$
-2. Si $\mathcal{I}^{(k)}$ est vide, la boucle s'interrompt.
-3. On calcule la médiane exacte des coordonnées $X$ et $Y$ :
-   $$t_x^{(k+1)} = \operatorname{médiane}\left( \{\Delta x_i\}_{i \in \mathcal{I}^{(k)}} \right), \quad t_y^{(k+1)} = \operatorname{médiane}\left( \{\Delta y_i\}_{i \in \mathcal{I}^{(k)}} \right)$$
-
-> [!TIP]
-> **Pourquoi la médiane plutôt que la moyenne ?**  
-> La moyenne est très sensible aux valeurs extrêmes (effet de levier des outliers résiduels). La médiane a un point de rupture (*breakdown point*) de 50 % : tant que plus de la moitié des points retenus sont légitimes, la médiane n'est pas perturbée par les valeurs résiduelles aberrantes.
-> Le calcul de la médiane est optimisé en $\mathcal{O}(M)$ grâce à l'algorithme de sélection rapide `std::nth_element`.
-
----
-
-### Étape 5 : Marquage final des inliers
-Une dernière passe de sélection identifie l'ensemble des inliers par rapport à la translation finale $(t_x^{(3)}, t_y^{(3)})$ :
-
-$$\text{inlierMask}[i] = \begin{cases} 1 & \text{si } i \in \text{validIndices} \text{ et } \sqrt{(\Delta x_i - t_x)^2 + (\Delta y_i - t_y)^2} \le R \\ 0 & \text{sinon} \end{cases}$$
-
-Si le nombre total d'inliers $\sum \text{inlierMask}[i] < \text{minInliers}$, l'estimation échoue : le masque est réinitialisé à zéro et la méthode renvoie `false`.
-
----
-
-### Étape 6 : Construction de la matrice homogène $3 \times 3$
-La transformation géométrique finale est stockée dans `alignment.transformBToA` sous forme d'une matrice OpenCV `cv::Mat::eye(3, 3, CV_64F)` enrichie de la translation :
-
-$$\mathbf{T}_{B \to A} = \begin{pmatrix} 1 & 0 & t_x \\ 0 & 1 & t_y \\ 0 & 0 & 1 \end{pmatrix}$$
-
-Cette matrice est directement exploitable par les étapes ultérieures du pipeline (placement global, déformation ou reprojection).
-
----
-
-## 6. Utilisation dans le Code
-
-### Exemple 1 : Appel direct unitaire
-```cpp
-#include "algorithms/rejection/vote_2d/vote_rejector.h"
-#include <iostream>
-
-void testerAlignement(const DataNs::Matches& matches) {
-    // Configuration avec seuil strict de 1.0 px
-    nlohmann::json params = {
-        {"seuil", 1.0},
-        {"case", 1.0},
-        {"minInliers", 5}
-    };
-
-    RejectionNs::VoteRejectorClass rejector(params);
-    DataNs::Alignment alignment;
-
-    if (rejector.estimate(matches, alignment)) {
-        double tx = alignment.transformBToA.at<double>(0, 2);
-        double ty = alignment.transformBToA.at<double>(1, 2);
-        std::cout << "Succès ! Translation : (" << tx << ", " << ty << ") px\n";
-    } else {
-        std::cerr << "Échec de l'alignement : pas assez d'inliers cohérents.\n";
-    }
-}
-```
-
-### Exemple 2 : Sélection dans l'ancien placement global (`tile_positioner.cpp`)
-Dans [`tile_positioner.cpp`](../../../../src/backend/algorithms/stitching/positioning/tile_positioner.cpp), le choix du rejector est configuré via `settings.rejectorName`. Ce positionneur n'est plus appelé par le pipeline (voir **Statut** en tête de page) :
-
-```cpp
-std::unique_ptr<RejectionNs::OutlierRejectorClass> rejector;
-if (settings.rejectorName == "vote" || settings.rejectorName == "vote_2d") {
-    rejector = std::make_unique<RejectionNs::VoteRejectorClass>(settings.rejectorParameters);
-}
-```
-
-L'extraction de l'angle résiduel pour le solveur global est naturelle et sans surprise :
-```cpp
-const double rot = alignment.transformBToA.empty() ? 0.0
-    : std::atan2(alignment.transformBToA.at<double>(1, 0), alignment.transformBToA.at<double>(0, 0));
-// Pour VoteRejector, rot vaut toujours exactement 0.0000 rad !
-```
-
-### Exemple 3 : Enchaînement direct avec l'Égalisation
-Grâce aux méthodes `filterPairMatches` et `toEqualizationJson`, la sortie du rejet d'aberrants alimente directement le module d'égalisation radiométrique :
-
-```cpp
-#include "algorithms/rejection/vote_2d/vote_rejector.h"
-#include "algorithms/brightness_equalization/brightness_equalizer.h"
-
-void traiterPaire(DataNs::PairMatches& pair, const cv::Mat& tuileA, const cv::Mat& tuileB) {
-    RejectionNs::VoteRejectorClass rejector;
-    DataNs::Alignment alignment;
-
-    if (!rejector.filterPairMatches(pair, alignment)) {
-        return; // Échec ou inliers insuffisants
-    }
-
-    // 1. Passage direct par l'objet PairMatches enrichi
-    BrightnessEqualizationNs::NeighbourPair neighborPair{
-        pair.tileIdA,
-        pair.tileIdB,
-        cv::Point2d(pair.featureMatches.translationX, pair.featureMatches.translationY)
-    };
-
-    // 2. Ou sérialisation JSON compatible
-    nlohmann::json j = RejectionNs::VoteRejectorClass::toEqualizationJson(
-        pair.tileIdA, pair.tileIdB, alignment);
-
-    // 3. Résolution radiométrique
-    BrightnessEqualizationNs::BrightnessEqualizerClass equalizer;
-    auto res = equalizer.estimate({equalizer.reduceTile(tuileA), equalizer.reduceTile(tuileB)}, {neighborPair});
-}
-```
-
----
-
-## 7. Résultats Expérimentaux et Validation
-
-Les performances de `VoteRejector` ont été validées sur deux jeux de données de référence :
-1. **Grille synthétique $3 \times 3$ nominale 16 bits (`NOM_0001`)** :
-   - Concordance parfaite avec les translations de vérité terrain : résidus d'alignement globaux $\le 0,08\text{ px}$.
-   - Écart inférieur à $0,003\text{ px}$ par rapport à RANSAC, mais avec un temps d'exécution 20 fois inférieur.
-2. **Tuiles réelles Hasselblad 100 Mpx ($11\,600 \times 8\,700\text{ px}$, KIK-IRPA)** :
-   - Élimination totale des dérives aux bords (les fausses rotations de $0,07^\circ$ de RANSAC qui créaient $15\text{ px}$ de dérive disparaissent totalement).
-   - Temps d'alignement stable à $0,15\text{ ms}$ contre $261\text{ ms}$ pour RANSAC à seuil fin ($0,5\text{ px}$).
+#### Détail des fonctions dans `src/backend/steps/vote_2d_step.cpp` :
+- **`Vote2DStepClass::Vote2DStepClass(input)`** *(lignes 52–62)* : Initialise la configuration `StepConfig` du step avec le nom `"vote-2d"`, les 4 paramètres (`"seuil"`, `"case"`, `"minMatches"`, `"minInliers"`), l'entrée `"matches"` (`PairMatches`) et la sortie `"matches"` (`PairMatches`).
+- **`Vote2DStepClass::readInput()`** *(lignes 64–81)* : Extrait les paramètres du script JSON et vérifie leur validité (`seuil > 0` fini, `case > 0` fini, `minMatches >= 2`, `minInliers >= 2`), levant `std::invalid_argument` en cas de valeur hors bornes.
+- **`filterPairs(pairs, rejector, keptPairs, failures)`** *(lignes 28–47)* : Parcourt toutes les paires de tuiles de `"matches"`, vérifie la cohérence de taille de `confidenceScores` et appelle `rejector.filterPairMatches(filteredPair, alignment)`. Les paires validées sont ajoutées à `keptPairs` ; les paires rejetées sont journalisées dans le tableau JSON `failures` avec leur motif.
+- **`Vote2DStepClass::execute()`** *(lignes 83–108)* : Récupère `"matches"` depuis le `DataStoreClass`, instancie `RejectionNs::VoteRejectorClass` avec les paramètres lus, appelle `filterPairs`, renseigne le compte rendu `result` (`pairs`, `kept`, `removed`, `failures`, `error`), et remplace `"matches"` dans le `DataStoreClass` uniquement si au moins une paire a été validée (`!output.value.empty()`).
