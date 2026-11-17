@@ -91,6 +91,19 @@ namespace {
         step.importConfig(config);
     }
 
+    void configureOutput(StepsNs::ExportStepClass& step, const fs::path& directory, const std::string& filename) {
+        Json parameters = Json::array({Json{{"valueType", "string"},
+                                            {"name", "outputDirectory"},
+                                            {"value", directory.u8string()}}});
+        if (!filename.empty()) {
+            parameters.push_back(Json{{"valueType", "string"},
+                                      {"name", "filename"},
+                                      {"value", filename}});
+        }
+        const Json config = {{"name", "export"}, {"parameters", parameters}};
+        step.importConfig(config);
+    }
+
     std::vector<std::string> fileNames(const fs::path& directory) {
         std::vector<std::string> names;
         for (const fs::directory_entry& entry : fs::directory_iterator(directory))
@@ -116,8 +129,6 @@ namespace {
 
 TEST(ExportStepTest, PublishesOnlyTheMosaicImage) {
     ExportFixture fixture(CV_16UC3);
-    fs::create_directories(fixture.outputDirectory);
-    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old output";
 
     ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
     const StepsNs::ExportOutput& output = fixture.step.getOutput();
@@ -133,6 +144,48 @@ TEST(ExportStepTest, PublishesOnlyTheMosaicImage) {
     EXPECT_EQ(fileNames(fixture.outputDirectory), std::vector<std::string>{"mosaic.tif"});
     // La sortie de l'assemblage reste en place : l'export peut être refait sans refaire l'assemblage.
     EXPECT_TRUE(fs::exists(fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath));
+}
+
+TEST(ExportStepTest, IncrementsFilenameWhenFileAlreadyExists) {
+    ExportFixture fixture(CV_16UC3);
+    fs::create_directories(fixture.outputDirectory);
+    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old output";
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const StepsNs::ExportOutput& output = fixture.step.getOutput();
+    EXPECT_EQ(output.imagePath, fixture.outputDirectory / "mosaic (1).tif");
+    EXPECT_EQ(output.canvasSize, testCanvasSize());
+
+    // Vérifie que l'ancien fichier est conservé et n'a pas été écrasé
+    std::string oldContent;
+    std::ifstream(fixture.outputDirectory / "mosaic.tif") >> oldContent;
+    EXPECT_EQ(oldContent, "old output");
+
+    std::vector<std::string> names = fileNames(fixture.outputDirectory);
+    std::sort(names.begin(), names.end());
+    EXPECT_EQ(names, (std::vector<std::string>{"mosaic (1).tif", "mosaic.tif"}));
+
+    // Une exécution suivante incrémente vers (2)
+    StepsNs::ExportStepClass secondStep;
+    configureOutputDirectory(secondStep, fixture.outputDirectory);
+    secondStep.setDataStore(fixture.dataStore);
+    ASSERT_TRUE(secondStep.execute()) << secondStep.getResult().dump();
+    EXPECT_EQ(secondStep.getOutput().imagePath, fixture.outputDirectory / "mosaic (2).tif");
+}
+
+TEST(ExportStepTest, SupportsCustomFilename) {
+    ExportFixture fixture(CV_16UC3);
+    configureOutput(fixture.step, fixture.outputDirectory, "custom_artwork.tif");
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    EXPECT_EQ(fixture.step.getOutput().imagePath, fixture.outputDirectory / "custom_artwork.tif");
+
+    // En cas de ré-exécution avec le même nom personnalisé, il incrémente proprement
+    StepsNs::ExportStepClass secondStep;
+    configureOutput(secondStep, fixture.outputDirectory, "custom_artwork.tif");
+    secondStep.setDataStore(fixture.dataStore);
+    ASSERT_TRUE(secondStep.execute()) << secondStep.getResult().dump();
+    EXPECT_EQ(secondStep.getOutput().imagePath, fixture.outputDirectory / "custom_artwork (1).tif");
 }
 
 TEST(ExportStepTest, RejectsAnImageThatDoesNotMatchTheCanvasSize) {

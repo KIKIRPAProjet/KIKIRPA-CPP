@@ -169,6 +169,7 @@ void MainWindow::setupSimulationConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée (simulation)."));
+                    showExportDialog();
                 }
     });
 }
@@ -580,12 +581,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     if (outputDirectory.isEmpty()) {
-        outputDirectory = QFileDialog::getExistingDirectory(
-            this, tr("Choisir le dossier de sortie"));
-        if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
-            return;
-        }
+        outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
 
     FrontendNs::ProjectSetup setup;

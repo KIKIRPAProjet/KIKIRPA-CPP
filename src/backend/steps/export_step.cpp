@@ -69,17 +69,81 @@ namespace StepsNs {
             throw std::runtime_error("cannot resolve the current user's Downloads directory");
         }
 
-        fs::path makeImagePath(const fs::path& directory) { return directory / "mosaic.tif"; }
-
         fs::path configuredOutputDirectory(const Json& configJson) {
             std::string directory;
-            for (const Json& parameter : configJson.at("parameters")) {
-                if (parameter.at("name") == "outputDirectory") {
-                    directory = parameter.at("value").get<std::string>();
-                    break;
+            if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
+                for (const Json& parameter : configJson.at("parameters")) {
+                    if (parameter.value("name", "") == "outputDirectory") {
+                        if (parameter.contains("value") && parameter["value"].is_string()) {
+                            directory = parameter["value"].get<std::string>();
+                        }
+                        break;
+                    }
                 }
             }
-            return directory.empty() ? downloadsDirectory() : fs::u8path(directory);
+            return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
+        }
+
+        std::string configuredFilename(const Json& configJson) {
+            std::string filename;
+            if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
+                for (const Json& parameter : configJson.at("parameters")) {
+                    if (parameter.value("name", "") == "filename") {
+                        if (parameter.contains("value") && parameter["value"].is_string()) {
+                            filename = parameter["value"].get<std::string>();
+                        }
+                        break;
+                    }
+                }
+            }
+            if (filename.empty()) {
+                return "mosaic.tif";
+            }
+            const fs::path filenamePath = IONs::pathFromUtf8(filename).filename();
+            std::string cleanName = IONs::pathToUtf8(filenamePath);
+            if (filenamePath.extension().empty()) {
+                cleanName += ".tif";
+            }
+            return cleanName.empty() ? "mosaic.tif" : cleanName;
+        }
+
+        fs::path generateUniquePath(const fs::path& directory, const std::string& filename) {
+            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            if (!fs::exists(target)) {
+                return target;
+            }
+            const std::string stem = IONs::pathToUtf8(target.stem());
+            const std::string extension = IONs::pathToUtf8(target.extension());
+            std::uint64_t counter = 1;
+            while (true) {
+                const fs::path candidate =
+                    directory / IONs::pathFromUtf8(stem + " (" + std::to_string(counter) + ")" + extension);
+                if (!fs::exists(candidate)) {
+                    return candidate;
+                }
+                ++counter;
+            }
+        }
+
+        fs::path findLatestExistingPath(const fs::path& directory, const std::string& filename) {
+            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            if (!fs::exists(target)) {
+                return target;
+            }
+            const std::string stem = IONs::pathToUtf8(target.stem());
+            const std::string extension = IONs::pathToUtf8(target.extension());
+            fs::path latest = target;
+            std::uint64_t counter = 1;
+            while (true) {
+                const fs::path candidate =
+                    directory / IONs::pathFromUtf8(stem + " (" + std::to_string(counter) + ")" + extension);
+                if (!fs::exists(candidate)) {
+                    break;
+                }
+                latest = candidate;
+                ++counter;
+            }
+            return latest;
         }
 
         bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
@@ -141,13 +205,14 @@ namespace StepsNs {
             }
             fs::path directory;
             if (!prepareOutputDirectory(config, directory, result)) return false;
-            const fs::path imagePath = makeImagePath(directory);
+            const std::string filename = configuredFilename(config);
+            const fs::path imagePath = generateUniquePath(directory, filename);
             if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
             output = {imagePath, mosaic.canvasSize, header.isBigTiff};
-            result["image"] = {{"path", imagePath.u8string()}, {"bigTiff", output.isBigTiff}};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
@@ -157,13 +222,17 @@ namespace StepsNs {
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "export";
-        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory}};
+        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory},
+                                 {"string", "filename", initialInput.filename}};
         stepConfig.inputs = {{"Mosaic", "mosaic"}};
         configJson = stepConfig;
     }
 
     Json ExportStepClass::externalInputsFingerprint() const {
-        return IONs::computeFileFingerprint(makeImagePath(configuredOutputDirectory(configJson)));
+        const fs::path targetPath = output.imagePath.empty()
+            ? findLatestExistingPath(configuredOutputDirectory(configJson), configuredFilename(configJson))
+            : output.imagePath;
+        return IONs::computeFileFingerprint(targetPath);
     }
 
     bool ExportStepClass::execute() {
