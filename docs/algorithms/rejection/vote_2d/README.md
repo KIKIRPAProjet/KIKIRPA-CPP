@@ -4,6 +4,8 @@ Documentation de l'algorithme de rejet des aberrants par Vote de Hough 2D et Mé
 
 📄 **[Accéder à la documentation complète : Vote2D.md](Vote2D.md)**
 
+📄 **[Pourquoi RANSAC a été envisagé puis remplacé par Vote 2D : Ransac.md](Ransac.md)**
+
 ### Résumé rapide
 - **Fichiers source** :
   - Header : [`include/backend/algorithms/rejection/vote_2d/vote_rejector.h`](../../../../include/backend/algorithms/rejection/vote_2d/vote_rejector.h)

@@ -18,7 +18,7 @@
 #include "homepage.h"
 #include "mainwindow.h"
 #include "projectgrid.h"
-#include "simulationrunner.h"
+#include "pipeline_runner.h"
 #include "grid_tab.h"
 #include "bottom_tabs.h"
 #include "workspace_status_bar.h"
@@ -77,11 +77,11 @@ constexpr int kMaskMode = 2;
 }
 
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
-                         ProjectGrid *projectGrid, SimulationRunner *simulationRunner)
+                         ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner)
     : QObject(mainWindow),
       m_mainWindow(mainWindow),
       m_projectGrid(projectGrid),
-      m_simulationRunner(simulationRunner),
+      m_pipelineRunner(pipelineRunner),
       m_homePage(homePage),
       m_pages(new QStackedWidget(mainWindow))
 {
@@ -196,7 +196,7 @@ void WorkspaceUI::createWorkspace()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    m_topToolbars = new TopToolbars(m_mainWindow, m_projectGrid, m_simulationRunner, m_workspace);
+    m_topToolbars = new TopToolbars(m_mainWindow, m_projectGrid, m_pipelineRunner, m_workspace);
     root->addWidget(m_topToolbars);
 
     auto *body = new QSplitter(Qt::Horizontal);
