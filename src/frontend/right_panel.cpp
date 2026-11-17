@@ -24,11 +24,20 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
 
     m_gridTab = new GridTab(m_mainWindow, m_projectGrid, canvas, this);
     m_alignmentTab = new AlignmentTab(m_mainWindow, canvas, this);
+    m_assemblyTab = new AssemblyTab(m_mainWindow, this);
 
     addTab(m_gridTab, tr("Grille"));
+    addTab(m_assemblyTab, tr("Chaîne"));
+    addTab(m_alignmentTab, tr("Paire"));
     addTab(new MasksTab(m_mainWindow, canvas, this), tr("Calques"));
-    addTab(new AssemblyTab(m_mainWindow, this), tr("Chaîne"));
-    addTab(m_alignmentTab, tr("Infos"));
+}
+
+//affichage de l'onglet pair 
+void RightPanel::showPairTab()
+{
+    if (m_alignmentTab) {
+        setCurrentWidget(m_alignmentTab);
+    }
 }
 
 void RightPanel::updateGridState(const ProjectGrid::State &gridState)
@@ -42,5 +51,12 @@ void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid
 {
     if (m_alignmentTab) {
         m_alignmentTab->updateInfo(projectName, gridState);
+    }
+}
+
+void RightPanel::setActiveStep(int stepNumber)
+{
+    if (m_assemblyTab) {
+        m_assemblyTab->setActiveStep(stepNumber);
     }
 }

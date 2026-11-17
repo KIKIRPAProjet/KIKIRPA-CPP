@@ -1,5 +1,6 @@
 // src/backend/core/io/pyramidal_tiff_reader.cpp
 #include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
@@ -89,18 +90,18 @@ namespace IONs {
         }
 
         bool isSupportedMetadata(const TiffMetadata& metadata) {
-            const bool DIMENSIONS_VALID =
+            const bool dimensionsValid =
                 metadata.width > 0 && metadata.height > 0 &&
                 metadata.width <= static_cast<uint32_t>(std::numeric_limits<int>::max()) &&
                 metadata.height <= static_cast<uint32_t>(std::numeric_limits<int>::max());
-            const bool BITS_VALID =
+            const bool bitsValid =
                 metadata.bitsPerSample == BITS_PER_SAMPLE_8 ||
                 metadata.bitsPerSample == BITS_PER_SAMPLE_16;
-            const bool CHANNELS_VALID =
+            const bool channelsValid =
                 metadata.samplesPerPixel == CHANNEL_COUNT_GRAY ||
                 metadata.samplesPerPixel == CHANNEL_COUNT_RGB ||
                 metadata.samplesPerPixel == CHANNEL_COUNT_RGBA;
-            return DIMENSIONS_VALID && BITS_VALID && CHANNELS_VALID &&
+            return dimensionsValid && bitsValid && channelsValid &&
                    metadata.planarConfig == PLANARCONFIG_CONTIG &&
                    metadata.sampleFormat == SAMPLEFORMAT_UINT;
         }
@@ -122,11 +123,11 @@ namespace IONs {
                 return false;
             }
 
-            const int DEPTH =
+            const int depth =
                 tiffMetadata.bitsPerSample == BITS_PER_SAMPLE_8 ? CV_8U : CV_16U;
             metadata.width = static_cast<int>(tiffMetadata.width);
             metadata.height = static_cast<int>(tiffMetadata.height);
-            metadata.type = CV_MAKETYPE(DEPTH, tiffMetadata.samplesPerPixel);
+            metadata.type = CV_MAKETYPE(depth, tiffMetadata.samplesPerPixel);
             return true;
         }
 
@@ -160,25 +161,25 @@ namespace IONs {
             int tileX,
             int tileY
         ) {
-            const uint32_t TILE_ORIGIN_X = static_cast<uint32_t>(tileX) * context.tile.width;
-            const uint32_t TILE_ORIGIN_Y = static_cast<uint32_t>(tileY) * context.tile.height;
-            const ttile_t TILE_INDEX = TIFFComputeTile(
-                context.tiffFile, TILE_ORIGIN_X, TILE_ORIGIN_Y, 0, 0);
-            const tmsize_t DECODED_BYTES = TIFFReadEncodedTile(
-                context.tiffFile, TILE_INDEX, context.tileBuffer.data(), context.tile.size);
-            if (DECODED_BYTES < static_cast<tmsize_t>(context.tile.requiredBytes)) {
+            const uint32_t tileOriginX = static_cast<uint32_t>(tileX) * context.tile.width;
+            const uint32_t tileOriginY = static_cast<uint32_t>(tileY) * context.tile.height;
+            const ttile_t tileIndex = TIFFComputeTile(
+                context.tiffFile, tileOriginX, tileOriginY, 0, 0);
+            const tmsize_t decodedBytes = TIFFReadEncodedTile(
+                context.tiffFile, tileIndex, context.tileBuffer.data(), context.tile.size);
+            if (decodedBytes < static_cast<tmsize_t>(context.tile.requiredBytes)) {
                 context.errorMessage = "cannot read TIFF tile";
                 return false;
             }
 
-            const cv::Rect TILE_RECT{
-                static_cast<int>(TILE_ORIGIN_X),
-                static_cast<int>(TILE_ORIGIN_Y),
+            const cv::Rect tileRect{
+                static_cast<int>(tileOriginX),
+                static_cast<int>(tileOriginY),
                 static_cast<int>(context.tile.width),
                 static_cast<int>(context.tile.height)
             };
-            const cv::Rect COPIED_RECT = TILE_RECT & context.region;
-            copyTilePixels(context, COPIED_RECT, TILE_ORIGIN_X, TILE_ORIGIN_Y);
+            const cv::Rect copiedRect = tileRect & context.region;
+            copyTilePixels(context, copiedRect, tileOriginX, tileOriginY);
             return true;
         }
 
@@ -189,32 +190,32 @@ namespace IONs {
             uint32_t tileOriginY
         ) {
             for (int y = copiedRect.y; y < copiedRect.y + copiedRect.height; ++y) {
-                const size_t SOURCE_OFFSET =
+                const size_t sourceOffset =
                     (static_cast<size_t>(y) - tileOriginY) * context.tile.width * context.tile.pixelSize +
                     (static_cast<size_t>(copiedRect.x) - tileOriginX) * context.tile.pixelSize;
-                const size_t DESTINATION_OFFSET =
+                const size_t destinationOffset =
                     static_cast<size_t>(y - context.region.y) * context.output.step +
                     static_cast<size_t>(copiedRect.x - context.region.x) * context.tile.pixelSize;
                 std::memcpy(
-                    context.output.data + DESTINATION_OFFSET,
-                    context.tileBuffer.data() + SOURCE_OFFSET,
+                    context.output.data + destinationOffset,
+                    context.tileBuffer.data() + sourceOffset,
                     static_cast<size_t>(copiedRect.width) * context.tile.pixelSize
                 );
             }
         }
 
         bool readTiles(RegionReadContext& context) {
-            const int FIRST_TILE_X =
+            const int firstTileX =
                 context.region.x / static_cast<int>(context.tile.width);
-            const int LAST_TILE_X =
+            const int lastTileX =
                 (context.region.x + context.region.width - 1) / static_cast<int>(context.tile.width);
-            const int FIRST_TILE_Y =
+            const int firstTileY =
                 context.region.y / static_cast<int>(context.tile.height);
-            const int LAST_TILE_Y =
+            const int lastTileY =
                 (context.region.y + context.region.height - 1) / static_cast<int>(context.tile.height);
 
-            for (int tileY = FIRST_TILE_Y; tileY <= LAST_TILE_Y; ++tileY) {
-                for (int tileX = FIRST_TILE_X; tileX <= LAST_TILE_X; ++tileX) {
+            for (int tileY = firstTileY; tileY <= lastTileY; ++tileY) {
+                for (int tileX = firstTileX; tileX <= lastTileX; ++tileX) {
                     if (!readTile(context, tileX, tileY)) return false;
                 }
             }
@@ -268,17 +269,17 @@ namespace IONs {
             return false;
         }
 
-        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
         if (tiffFile == nullptr) {
-            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
             return false;
         }
 
-        const ReadRequest REQUEST{level, region};
-        const bool SUCCESS = readOpenedRegion(tiffFile, REQUEST, output, errorMessage);
+        const ReadRequest request{level, region};
+        const bool success = readOpenedRegion(tiffFile, request, output, errorMessage);
         TIFFClose(tiffFile);
-        if (!SUCCESS) output.release();
-        return SUCCESS;
+        if (!success) output.release();
+        return success;
     }
 
     bool PyramidalTiffReaderClass::readMetadata(
@@ -292,9 +293,9 @@ namespace IONs {
         scaleX = 1.0;
         scaleY = 1.0;
 
-        TIFF* tiffFile = TIFFOpen(tiffPath.string().c_str(), "r");
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
         if (tiffFile == nullptr) {
-            errorMessage = "cannot open TIFF: " + tiffPath.string();
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
             return false;
         }
 

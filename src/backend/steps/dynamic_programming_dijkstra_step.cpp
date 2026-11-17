@@ -9,6 +9,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -98,10 +99,10 @@ namespace StepsNs {
 
         // Lit les images de la paire (A seulement si elle n'est pas déjà lue) et contrôle leur type.
         std::string readPairImages(const NeighbourPair& pair, PairImages& images) {
-            if (images.imageA.empty()) images.imageA = cv::imread(pair.tileA.getSource().string(), cv::IMREAD_UNCHANGED);
-            images.imageB = cv::imread(pair.tileB.getSource().string(), cv::IMREAD_UNCHANGED);
+            if (images.imageA.empty()) images.imageA = IONs::readImage(pair.tileA.getSource(), cv::IMREAD_UNCHANGED);
+            images.imageB = IONs::readImage(pair.tileB.getSource(), cv::IMREAD_UNCHANGED);
             if (images.imageA.empty() || images.imageB.empty())
-                return "cannot read " + (images.imageA.empty() ? pair.tileA.getSource() : pair.tileB.getSource()).string();
+                return "cannot read " + IONs::pathToUtf8(images.imageA.empty() ? pair.tileA.getSource() : pair.tileB.getSource());
             const int depth = images.imageA.depth();
             if (images.imageA.type() != images.imageB.type() || (images.imageA.channels() != 1 && images.imageA.channels() != 3) ||
                 (depth != CV_8U && depth != CV_16U && depth != CV_32F))

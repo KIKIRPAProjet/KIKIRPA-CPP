@@ -17,8 +17,7 @@
 #include <QObject>
 #include <QString>
 
-#include <memory>
-
+class QImage;
 class QTimer;
 
 namespace PipelineNs {
@@ -76,7 +75,7 @@ public slots:
 signals:
     void runStarted();
     void progressAdvanced(int percentage);
-    void stepChanged(const QString &stepName);
+    void stepChanged(int stepNumber, const QString &stepName);
     void runFinished();
     void runPaused();
     void runCancelled();
@@ -88,6 +87,8 @@ signals:
     void statusChanged(const QString &message);
     void comparisonRequested();
     void comparisonVisibilityChanged(bool visible);
+    void logMessage(const QString &message);
+    void mosaicReady(const QImage &image);
 
 private slots:
     void onBackendRunFinished();

@@ -2,6 +2,7 @@
 #include "steps/matching_step_utils.h"
 #include "core/data/tile.h"
 #include "core/data/algorithm_types.h"
+#include "core/io/unicode_path.h"
 
 #include <cstddef>
 #include <nlohmann/json.hpp>
@@ -53,8 +54,8 @@ namespace StepsNs {
     }
 
     cv::Mat readImage(const DataNs::TileClass& tile) {
-        auto image = cv::imread(tile.getSource().string(), cv::IMREAD_UNCHANGED);
-        if (image.empty()) throw std::runtime_error("cannot read " + tile.getSource().string());
+        auto image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);
+        if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(tile.getSource()));
         if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
             (image.channels() != 1 && image.channels() != 3 && image.channels() != 4))
             throw std::invalid_argument("expected a 2D 8/16-bit image with 1, 3 or 4 channels");

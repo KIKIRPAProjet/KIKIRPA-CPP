@@ -16,11 +16,13 @@ public:
     explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, SimulationRunner *simulationRunner, QWidget *parent = nullptr);
 
     void updateTitle(const QString &projectName, const QString &modality);
-    // Met à jour l'accessibilité des boutons Lancer / Reprendre selon l'état du pipeline.
-    void setResumeAvailable(bool available);
-    void setRunInProgress(bool running);
+    void updateDubiousState(int dubiousCount);
 
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
+
+signals:
+    void previousPairRequested();
+    void nextDubiousPairRequested();
 
 private:
     void createToolbar();
