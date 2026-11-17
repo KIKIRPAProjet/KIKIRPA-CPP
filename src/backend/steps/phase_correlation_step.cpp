@@ -6,6 +6,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -232,9 +233,9 @@ namespace StepsNs {
             for (const auto& [neighbour, direction] : neighbours) {
                 if (neighbour == nullptr) continue;
                 if (tileImage.empty()) tileImage = PhaseCorrelationStepClass::readPixels(tile, context.input.level);
-                if (tileImage.empty()) return "cannot read " + tile.getSource().string();
+                if (tileImage.empty()) return "cannot read " + IONs::pathToUtf8(tile.getSource());
                 const cv::Mat neighbourImage = PhaseCorrelationStepClass::readPixels(*neighbour, context.input.level);
-                if (neighbourImage.empty()) return "cannot read " + neighbour->getSource().string();
+                if (neighbourImage.empty()) return "cannot read " + IONs::pathToUtf8(neighbour->getSource());
 
                 DataNs::PairMatches pair{tile.getId(), neighbour->getId(), direction, {}};
                 PairConfidence confidence = measurePair(context, tileImage, neighbourImage, pair);
@@ -272,7 +273,7 @@ namespace StepsNs {
     }
 
     cv::Mat PhaseCorrelationStepClass::readPixels(const DataNs::TileClass& tile, int level) {
-        cv::Mat image = cv::imread(tile.getSource().string(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+        cv::Mat image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
         // Mêmes réductions successives que createPyramidalTiledTiff : le résultat sera celui du niveau du TIFF.
         for (int levelIndex = 0; levelIndex < level && !image.empty(); ++levelIndex) {
             cv::resize(image, image, cv::Size(), PYRAMID_REDUCTION, PYRAMID_REDUCTION, cv::INTER_AREA);

@@ -5,7 +5,8 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | Pour… | Lire |
 |---|---|
 | comprendre le projet dans son ensemble | **ce guide** |
-| compiler | [BUILD.md](BUILD.md) |
+| installer le projet sur son poste et lancer l'application | [DEMARRER.md](DEMARRER.md) |
+| compiler : dépendances et options | [BUILD.md](BUILD.md) |
 | trouver un fichier dans le code | [CARTE_ARCHITECTURE.md](CARTE_ARCHITECTURE.md) |
 | écrire du code et ouvrir une PR | [CONVENTIONS.md](CONVENTIONS.md) |
 | le format du script et les checkpoints en détail | [core/Pipeline.md](core/Pipeline.md) |
@@ -109,7 +110,7 @@ stitching --pipeline pipeline.json --resume
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_r<ligne>_c<colonne>.tif`, alors que le format par défaut d'`import` attend `img_C<colonne>_R<ligne>.tif`. D'où le `format` ci-dessus. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_C<colonne>_R<ligne>.tif` (le format par défaut d'`import`). Un `format` personnalisé doit donc produire des fichiers qui respectent ce nommage. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -124,14 +125,15 @@ Step 3/5 OK {"failures":[],"pairs":7,"positions":6}
 ...
 ```
 
-La chaîne d'exemple comporte cinq steps (`Step 1/5` à `Step 5/5`). En cas
-d'échec, le message indique le step concerné et le run s'arrête.
+En cas d'échec : `Step 3/5 failed: <raison>`, et le run s'arrête. La sortie d'erreur rappelle le step fautif et la commande `--resume` à lancer.
 
 ### Ce que l'on trouve sur le disque
 
 ```
 D:/oeuvre/tuiles/.cache/pyramids/      un TIFF pyramidal par image, écrit par import
-output/checkpoints/
+D:/oeuvre/tuiles/.cache/mosaic/        la mosaïque assemblée par fusion (image, provenance, masque)
+D:/oeuvre/resultat/mosaic.tif          l'image publiée par export
+D:/oeuvre/checkpoints/
 ├── run.json                           le script complet + l'état du run, réécrit après chaque step
 ├── 00_import/
 │   ├── tiles.json                     la sortie du step
@@ -139,10 +141,12 @@ output/checkpoints/
 ├── 01_phase-correlation/  matches.json, manifest.json
 ├── 02_absolute-pos/       positions.json, manifest.json
 ├── 03_intensity-correction/  intensityCorrection.json, manifest.json
-└── 04_graphcut/           territories.json, manifest.json
+├── 04_graphcut/           territories.json, manifest.json
+├── 05_fusion/             mosaic.json, manifest.json
+└── 06_export/             manifest.json
 ```
 
-Relancer le même script reprend où le run s'était arrêté, et saute les steps dont le checkpoint est encore valide. Détails : [core/Pipeline.md](core/Pipeline.md#reprise-pause-checkpoints).
+Relancer le même script avec `--resume` reprend où le run s'était arrêté, et saute les steps dont le checkpoint est encore valide. Détails : [core/Pipeline.md](core/Pipeline.md#reprise-pause-checkpoints).
 
 ---
 
@@ -159,6 +163,11 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                     │ phase-correlation  OU  sift  OU  lightglue │    │                   │
                     └───────────────────────────────────────┘         │                   │
                                                    │ matches          │                   │
+                                                   ▼                  │                   │
+                                             ┌───────────┐            │                   │
+                                             │  vote-2d  │            │                   │
+                                             └───────────┘            │                   │
+                                                   │ matches          │                   │
                               ┌────────────────────┼──────────────────┘                   │
                               ▼                    ▼                                      │
                      ┌──────────────┐    ┌──────────────────────┐                         │
@@ -168,32 +177,37 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                               ▼                                                           │
                          ┌──────────┐◄───────────────────────────────────────────────────┘
                          │ graphcut │──► territories
-                         └──────────┘
+                         └──────────┘        │
+                                             ▼     (+ tiles, positions, intensityCorrection)
+                                        ┌────────┐             ┌────────┐
+                                        │ fusion │──► mosaic ──►│ export │──► mosaic.tif
+                                        └────────┘             └────────┘
 ```
 
-La chaîne testée s'arrête à `graphcut`. Le step `export` attend une donnée
-`compositeBlocks`, mais aucun step actuellement enregistré ne la produit.
-Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et
-`intensityCorrection`, et produit `seamlines`. C'est l'autre méthode de couture,
-à côté de `graphcut`.
+Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines` — c'est l'autre méthode de couture, à côté de `graphcut`. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
+| `overlap-estimation` | `overlap`, réglages de la corrélation | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
+| `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` (entrée non produite par un step enregistré) | [ExportStep.md](steps/ExportStep.md) |
+| `fusion` | `outputDirectory` | `tiles`, `positions`, `territories` (+ `intensityCorrection` si présente) | `mosaic` : `Mosaic` | [FusionStep.md](steps/FusionStep.md) |
+| `export` | `outputDirectory` | `mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
+`final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
 
 ### Les types de données, et leur JSON
 
-Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. `CompositeBlocks` est échangé en mémoire et n'est pas encore sérialisé. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
+Dans le DataStore, une donnée est une structure C++. Les types pris en charge par les checkpoints deviennent un fichier `<clé>.json`. Les exemples ci-dessous ont la forme exacte écrite par `core/checkpoint/checkpoint_types.cpp` ; les valeurs sont inventées.
 
 **Conventions communes à tous les types :**
 - les coordonnées sont en **pixels de pleine résolution** ;
@@ -205,7 +219,7 @@ Dans le DataStore, une donnée est une structure C++. Les types pris en charge p
 Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
 
 ```json
-[ { "id": 0, "source": "D:/oeuvre/tuiles/t_r00_c00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_r00_c00_pyramid.tif",
+[ { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 
@@ -238,10 +252,23 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 
 - `position` = coin haut-gauche de la tuile dans le repère de la mosaïque.
 - La tuile de référence est en (0, 0). Les autres peuvent avoir des coordonnées négatives.
-- `tileId` est lu dans le nom du fichier (`_r00_c01`), **ce n'est pas l'`id` numérique**.
+- `tileId` est lu dans le nom du fichier (`_C01_R00`), **ce n'est pas l'`id` numérique**.
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
+
+#### `PairResiduals` (clé `pairResiduals`) : l'écart de chaque paire après ajustement
+
+```json
+[ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.16, 3.78], "residualNorm": 3.95 } ]
+```
+
+- `residual` = translation mesurée − (position B − position A) ajustées, en pixels.
+- Un grand résidu indique une mesure en contradiction avec les autres. Sans boucle dans la grille, il vaut 0.
+- `tileIdA` et `tileIdB` sont les `id` numériques, comme dans `PairMatches`.
+
+C++ : `std::vector<DataNs::PairResidual>`.
+
 
 #### `IntensityCorrection` (clé `intensityCorrection`) : la luminosité de chaque tuile
 
@@ -266,6 +293,11 @@ C++ : `DataNs::IntensityCorrection` (`core/data/algorithm_types.h`).
 
 C++ : `std::vector<DataNs::TileTerritory>`.
 
+#### `VerificationReport` (clé `verificationReport`) : rapport de vérification finale
+
+Un objet JSON contenant les dimensions, écarts, rapports largeur/hauteur et métadonnées comparées de l'image de référence et du TIFF reconstruit. Les pixels et les DPI/PPI ne sont pas comparés.
+
+C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 #### `Seamlines` (clé `seamlines`) : le tracé de chaque couture
 
 ```json
@@ -278,9 +310,18 @@ C++ : `std::vector<DataNs::TileTerritory>`.
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
-#### `CompositeBlocks` (clé `compositeBlocks`) : les blocs d'image assemblés
+#### `Mosaic` (clé `mosaic`) : la mosaïque assemblée, sur disque
 
-Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
+```json
+{ "imagePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_mask.tif",
+  "canvasSize": [17400, 6810] }
+```
+
+- Les pixels ne sont **jamais** dans le DataStore : seulement les chemins de trois TIFF tuilés pleine résolution, de `canvasSize` pixels, écrits bloc par bloc ([core/TiledTiffWriter.md](core/TiledTiffWriter.md)).
+- `imagePath` : RGB 16 bits. `provenancePath` : 16 bits, l'`id` de la tuile d'où vient chaque pixel. `maskPath` : 8 bits, 255 = pixel valide (la provenance n'a pas de sens là où le masque vaut 0).
+- Le repère est celui des territoires : coin le plus petit en (0, 0).
 
 C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints. `export` l'attend, mais aucun step du registre ne le produit actuellement.
 
@@ -291,7 +332,7 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 ```json
 { "step": "import",
   "parameters": [ { "valueType": "string", "name": "path", "value": "D:/oeuvre/tuiles" }, … ],
-  "inputs": [ ["t_r00_c00.tif", 145000000, 133456789012345678], … ],
+  "inputs": [ ["t_C00_R00.tif", 145000000, 133456789012345678], … ],
   "outputs": [ { "key": "tiles", "dataType": "Tiles" } ],
   "complete": true }
 ```
@@ -358,9 +399,9 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 ### Ce qui ne respecte pas encore ces règles
 
-- **Aucun step ne lit le TIFF pyramidal.** Tous relisent l'image source entière (`cv::imread`), puis la réduisent si besoin. `readRegion` existe mais n'est pas utilisé.
+- **Seul `fusion` lit le TIFF pyramidal** (`readRegion`, une région par bloc). Les autres steps relisent l'image source entière (`cv::imread`), puis la réduisent si besoin.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
-- `graphcut` alloue deux images de la taille de la mosaïque entière (1 + 3 octets par pixel).
+- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
 - `MemoryScopeClass` n'est utilisé par aucun step.
 
 ---
@@ -385,7 +426,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 ## 8. Compilation et CI
 
 - **Compiler** : [BUILD.md](BUILD.md). Toutes les dépendances sont obligatoires : OpenCV avec `dnn`, libtiff, Qt 6, GoogleTest, nlohmann_json, ONNX Runtime. Les deux dernières sont téléchargées automatiquement par CMake.
-- **Cibles** : `kikirpa_backend` (bibliothèque : moteur, steps, algorithmes), `kikirpa_frontend` (bibliothèque Qt), `stitching` (l'exécutable, vide pour l'instant) et les exécutables de tests.
+- **Cibles** : `kikirpa_backend` (bibliothèque : moteur, steps, algorithmes), `kikirpa_frontend` (bibliothèque Qt), `stitching` (l'exécutable : interface graphique sans argument, pipeline avec `--pipeline`) et les exécutables de tests.
 - **Tests** : `ctest --preset <preset>`. Ce sont uniquement des tests GoogleTest, rangés par dossier dans `tests/`.
 
 La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
@@ -439,7 +480,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Implémenter l'assemblage**, producteur de `compositeBlocks`, puis valider l'enchaînement avec `export` sur des images synthétiques et réelles (§5).
+- **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle (§5) ; fondu le long des coutures, si besoin.
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **Le branchement du front** (§9) et le choix d'une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).

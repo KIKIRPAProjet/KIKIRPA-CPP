@@ -31,49 +31,7 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QTimer>
-#include <QtConcurrent/QtConcurrentRun>
-#include <QtGlobal>
-
-#include <exception>
-#include <filesystem>
-#include <string>
-
-namespace {
-
-namespace fs = std::filesystem;
-
-// Convertit un chemin Qt en std::filesystem::path en préservant les caractères Unicode sous Windows.
-fs::path toFsPath(const QString &qtPath)
-{
-#ifdef Q_OS_WIN
-    return fs::path(qtPath.toStdWString());
-#else
-    return fs::path(qtPath.toStdString());
-#endif
-}
-
-QString classifyBackendLogLevel(const QString &message)
-{
-    if (message.contains(QStringLiteral("failed"), Qt::CaseInsensitive)
-        || message.contains(QStringLiteral("cannot "), Qt::CaseInsensitive)) {
-        return QStringLiteral("Erreur");
-    }
-    if (message.contains(QStringLiteral("warning"), Qt::CaseInsensitive)
-        || message.contains(QStringLiteral("paused"), Qt::CaseInsensitive)
-        || message.contains(QStringLiteral("missing or outdated"), Qt::CaseInsensitive)) {
-        return QStringLiteral("Avertissement");
-    }
-    return QStringLiteral("Info");
-}
-
-int computePercentage(int completedSteps, int totalSteps)
-{
-    if (totalSteps <= 0)
-        return 0;
-    return qBound(0, qRound(100.0 * static_cast<double>(completedSteps) / totalSteps), 100);
-}
-
-} // namespace
+#include <QImage>
 
 SimulationRunner::SimulationRunner(QObject *parent)
     : QObject(parent),
@@ -171,20 +129,45 @@ void SimulationRunner::startRun(int firstStep)
         return;
     }
 
+    const QStringList STEPS = {
+        tr("1. Import"),
+        tr("2. Masques"),
+        tr("3. Correspondance"),
+        tr("4. Optimisation"),
+        tr("5. Calage local"),
+        tr("6. Égalisation"),
+        tr("7. Ligne de couture"),
+        tr("8. Fusion et export")
+    };
+
     firstStepNumber = firstStep;
     progress = 0;
-    paused = false;
-    cancellationPending = false;
-    setResumeAvailable(false);
-    startDemoTimer(false);
-}
+    running = true;
 
-void SimulationRunner::startBackendRun(const QString &targetScriptPath, int firstStep)
-{
-    if (isRunning()) {
-        emit statusChanged(tr("Un assemblage est déjà en cours."));
-        return;
-    }
+    // L'interface envoie un firstStep qui commence à 1, on le convertit en index 0
+    int startIndex = qBound(0, firstStep - 1, STEPS.size() - 1);
+
+    emit runStarted();
+    emit stepChanged(startIndex + 1, STEPS.at(startIndex) + " (demo)");
+    emit statusChanged(
+        tr("Démonstration de progression — le backend de calcul n'est pas connecté."));
+
+    timer = new QTimer(this);
+    connect(timer, &QTimer::timeout, this, [this, STEPS, startIndex]() {
+        progress = qMin(100, progress + 4);
+        emit progressAdvanced(progress);
+
+        int stepsToRun = STEPS.size() - startIndex;
+        int currentIndex = startIndex + ((progress * stepsToRun) / 100);
+        currentIndex = qMin(STEPS.size() - 1, currentIndex);
+
+        emit logMessage(tr("Calcul de l'étape %1 à %2%...").arg(STEPS.at(currentIndex)).arg(progress));
+        emit stepChanged(currentIndex + 1, STEPS.at(currentIndex) + " (demo)");
+
+        if (progress >= 100)
+            finishRun();
+    });
+    timer->start(100);
 
     scriptPath = targetScriptPath;
     const StartMode mode = firstStep > 1 ? StartMode::FromStep : StartMode::FromBeginning;
@@ -249,15 +232,8 @@ void SimulationRunner::cancelRun()
         timer->deleteLater();
         timer = nullptr;
     }
-    paused = true;
-    const bool resumable = progress > 0 && progress < 100;
-    setResumeAvailable(resumable);
-    emit stepChanged(tr("En pause (%1 %)").arg(progress));
-    emit statusChanged(resumable
-                           ? tr("Démonstration mise en pause à %1 %. Vous pouvez la reprendre.").arg(progress)
-                           : tr("Démonstration annulée."));
-    if (resumable)
-        emit runPaused();
+    emit stepChanged(0, tr("Annulée"));
+    emit statusChanged(tr("Démonstration annulée."));
     emit runCancelled();
 }
 
@@ -544,12 +520,16 @@ void SimulationRunner::finishDemoRun()
         timer = nullptr;
     }
     running = false;
-    paused = false;
-    setResumeAvailable(false);
-    emit stepChanged(tr("Terminé"));
+    emit stepChanged(0, tr("Terminé"));
     emit statusChanged(
         tr("Démonstration terminée (aucun calcul d'image effectué). Étape de départ : %1.")
             .arg(firstStepNumber));
+
+    // Création d'une fausse image de mosaïque
+    QImage dummyImage(800, 600, QImage::Format_RGB32);
+    dummyImage.fill(Qt::green);
+    emit mosaicReady(dummyImage);
+
     emit runFinished();
 }
 

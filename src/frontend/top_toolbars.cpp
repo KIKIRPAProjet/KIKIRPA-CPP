@@ -43,6 +43,7 @@ void TopToolbars::createToolbar()
     static_cast<QVBoxLayout *>(layout())->addWidget(toolbar);
 }
 
+//permet de naviguer entre les paires précédentes et suivantes
 void TopToolbars::createModesBar()
 {
     QWidget *stages = new QWidget(this);
@@ -54,7 +55,10 @@ void TopToolbars::createModesBar()
     modeGroup->setExclusive(true);
     
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
-        auto *button = FrontendUtils::makeButton(QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i)), stages);
+        const QString label = (i == 3)
+            ? QStringLiteral("!   %1").arg(FrontendUtils::MODE_NAMES.at(i))
+            : QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
+        auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
         modeGroup->addButton(button, i);
@@ -62,18 +66,21 @@ void TopToolbars::createModesBar()
         connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
     }
 
-    m_runButton = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
-    m_runButton->setObjectName(QStringLiteral("runAllButton"));
-    stageLayout->addWidget(m_runButton);
-    connect(m_runButton, &QPushButton::clicked, this, [this]() { m_mainWindow->requestRun(1); });
+    auto *prevPairBtn = FrontendUtils::makeButton(tr("‹ Préc."), stages);
+    prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
+    stageLayout->addWidget(prevPairBtn);
+    connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
 
-    // Bouton dédié à la reprise après annulation/pause (activé uniquement lorsqu'un état repris existe).
-    m_resumeButton = FrontendUtils::makeButton(tr("▶ Reprendre"), stages, true);
-    m_resumeButton->setObjectName(QStringLiteral("resumeRunButton"));
-    m_resumeButton->setEnabled(false);
-    m_resumeButton->setToolTip(tr("Reprendre l'assemblage interrompu à partir de la dernière étape sauvegardée."));
-    stageLayout->addWidget(m_resumeButton);
-    connect(m_resumeButton, &QPushButton::clicked, m_mainWindow, &MainWindow::requestResume);
+    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante N ›"), stages);
+    nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
+    stageLayout->addWidget(nextDubiousBtn);
+    connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
+
+    stageLayout->addStretch();
+
+    auto *run = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
+    stageLayout->addWidget(run);
+    connect(run, &QPushButton::clicked, this, [this]() { m_mainWindow->requestRun(1); });
     
     auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
@@ -117,18 +124,20 @@ void TopToolbars::updateTitle(const QString &projectName, const QString &modalit
     }
 }
 
-void TopToolbars::setResumeAvailable(bool available)
+//affichage du nombre de paire douteuse da coté du mode "alignement" dans la bar d'outils
+void TopToolbars::updateDubiousState(int dubiousCount)
 {
-    m_resumeAvailable = available;
-    if (m_resumeButton)
-        m_resumeButton->setEnabled(m_resumeAvailable && !m_runInProgress);
-}
-
-void TopToolbars::setRunInProgress(bool running)
-{
-    m_runInProgress = running;
-    if (m_runButton)
-        m_runButton->setEnabled(!m_runInProgress);
-    if (m_resumeButton)
-        m_resumeButton->setEnabled(m_resumeAvailable && !m_runInProgress);
+    if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
+        if (dubiousCount > 0) {
+            alignBtn->setText(QStringLiteral("!   %1 (%2)")
+                                  .arg(FrontendUtils::MODE_NAMES.at(3))
+                                  .arg(dubiousCount));
+        } else {
+            alignBtn->setText(QStringLiteral("✓   %1")
+                                  .arg(FrontendUtils::MODE_NAMES.at(3)));
+        }
+    }
+    if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
+        nextDubiousBtn->setEnabled(dubiousCount > 0);
+    }
 }
