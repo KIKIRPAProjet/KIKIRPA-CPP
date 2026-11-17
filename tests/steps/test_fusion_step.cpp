@@ -136,8 +136,8 @@ namespace {
                                        makeTile(tileDirectory, LEFT_TILE_ID, 0, makePatternImage(LEFT_TILE_ID, scene.tileSize)),
                                        makeTile(tileDirectory, RIGHT_TILE_ID, 1, makePatternImage(RIGHT_TILE_ID, scene.tileSize))});
         dataStore.replace("positions", std::vector<DataNs::TilePositionData>{
-                                           {"r00_c00", scene.origin, 0.0},
-                                           {"r00_c01", scene.origin + cv::Point2d(scene.shift, 0), 0.0}});
+                                           {LEFT_TILE_ID, scene.origin, 0.0},
+                                           {RIGHT_TILE_ID, scene.origin + cv::Point2d(scene.shift, 0), 0.0}});
         const int mosaicWidth = scene.shift + scene.tileSize.width;
         dataStore.replace("territories", std::vector<DataNs::TileTerritory>{
                                              makeRectangleTerritory(0, {0, 0, scene.seamX, scene.tileSize.height}),
@@ -341,16 +341,18 @@ TEST(FusionStepTest, FailsWithoutAPositionForEveryTileAndPublishesNoMosaic) {
     const TemporaryDirectoryClass temporaryDirectory;
     StepNs::DataStoreClass dataStore;
     fillTwoTileStore(dataStore, temporaryDirectory.path / "tiles", smallScene());
-    dataStore.replace("positions", std::vector<DataNs::TilePositionData>{{"r00_c00", {0, 0}, 0.0}, {"r04_c04", {0, 0}, 0.0}});
+    constexpr int UNKNOWN_TILE_ID = 44;
+    dataStore.replace("positions", std::vector<DataNs::TilePositionData>{{LEFT_TILE_ID, {0, 0}, 0.0}, {UNKNOWN_TILE_ID, {0, 0}, 0.0}});
     StepsNs::FusionStepClass step = makeFusionStep(temporaryDirectory.path / "fusion", dataStore);
 
     EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult().value("error", "").find("no position for tile 'r00_c01'"), std::string::npos);
+    EXPECT_NE(step.getResult().value("error", "").find("no position for tile " + std::to_string(RIGHT_TILE_ID)), std::string::npos);
     EXPECT_TRUE(dataStore.get<DataNs::Mosaic>("mosaic").imagePath.empty());
     EXPECT_FALSE(fs::exists(temporaryDirectory.path / "fusion" / "mosaic_image.tif"));
 }
 
-TEST(FusionStepTest, FailsWhenATileNameHasNoGridPosition) {
+// Les positions sont associées aux tuiles par identifiant : le nom du fichier source n'est pas lu.
+TEST(FusionStepTest, AcceptsAnyTileFileName) {
     const TemporaryDirectoryClass temporaryDirectory;
     StepNs::DataStoreClass dataStore;
     fillTwoTileStore(dataStore, temporaryDirectory.path / "tiles", smallScene());
@@ -361,8 +363,7 @@ TEST(FusionStepTest, FailsWhenATileNameHasNoGridPosition) {
     dataStore.replace("tiles", DataNs::TileList{renamed, tiles[1]});
     StepsNs::FusionStepClass step = makeFusionStep(temporaryDirectory.path / "fusion", dataStore);
 
-    EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult().value("error", "").find("_C<column>_R<row>"), std::string::npos);
+    EXPECT_TRUE(step.execute()) << step.getResult().dump();
 }
 
 // graphcut place ses territoires dans le repère de DataNs::computeMosaicCorners, celui où fusion place les pixels.
@@ -375,7 +376,7 @@ TEST(FusionStepTest, GraphCutUsesTheSharedMosaicCorners) {
         const int column = static_cast<int>(tileIndex);
         tilePaths.push_back((temporaryDirectory.path / (tileStem(column) + ".tif")).string());
         cv::imwrite(tilePaths.back(), cv::Mat(SMALL_TILE_HEIGHT, SMALL_TILE_WIDTH, CV_8UC3, cv::Scalar::all(1)));
-        namedPositions.push_back({"r00_c0" + std::to_string(column), positions[tileIndex], 0.0});
+        namedPositions.push_back({column, positions[tileIndex], 0.0});
     }
     GraphCutNs::ImagePretreatmentClass pretreatment;
     GraphCutNs::PreprocessedTiles graphCutTiles;

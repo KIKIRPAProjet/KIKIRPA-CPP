@@ -4,6 +4,7 @@
 #include "core/config/pipeline_config.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -12,12 +13,14 @@ namespace StepNs {
 
     namespace {
 
-        // La valeur JSON correspond-elle au type déclaré ? "int" refuse 2.5, "float" accepte 2.
+        // La valeur JSON correspond-elle au type déclaré ? "int" refuse 2.5, "float" accepte 2. "json" accepte toute valeur :
+        // c'est le step qui en vérifie le contenu (ex. la liste des tuiles de import).
         bool valueMatchesType(const Json& value, const std::string& valueType) {
             if (valueType == "string") return value.is_string();
             if (valueType == "int") return value.is_number_integer();
             if (valueType == "float") return value.is_number();
             if (valueType == "bool") return value.is_boolean();
+            if (valueType == "json") return !value.is_null();
             return false;
         }
 
