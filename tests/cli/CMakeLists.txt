@@ -1,3 +1,4 @@
+# tests/cli/CMakeLists.txt
 add_executable(cli_pipeline_tests test_pipeline_2x2.cpp)
 kikirpa_copy_onnxruntime_dlls(cli_pipeline_tests)
 target_link_libraries(cli_pipeline_tests PRIVATE kikirpa_backend GTest::gtest_main)

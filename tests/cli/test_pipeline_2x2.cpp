@@ -1,3 +1,4 @@
+// tests/cli/test_pipeline_2x2.cpp
 // NOLINTBEGIN
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -35,25 +36,33 @@ constexpr int SHIFT_Y = TILE_HEIGHT - OVERLAP_Y;
 constexpr int CANVAS_WIDTH = SHIFT_X + TILE_WIDTH;
 constexpr int CANVAS_HEIGHT = SHIFT_Y + TILE_HEIGHT;
 
-struct Workspace {
-    Workspace() {
-        const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-        root = fs::temp_directory_path() / ("kikirpa_cli_2x2_" + std::to_string(now));
-        fs::create_directories(root / "images");
-    }
+class WorkspaceClass {
 
-    ~Workspace() {
-        std::error_code errorCode;
-        fs::remove_all(root, errorCode);
-    }
+    public:
+        WorkspaceClass() {
+            const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+            root = fs::temp_directory_path() / ("kikirpa_cli_2x2_" + std::to_string(now));
+            fs::create_directories(root / "images");
+        }
 
-    fs::path root;
+        ~WorkspaceClass() {
+            std::error_code errorCode;
+            fs::remove_all(root, errorCode);
+        }
+
+        const fs::path& getRoot() const { return root; }
+
+    private:
+        fs::path root;
+
 };
 
 struct CommandResult {
+
     int exitCode = -1;
     std::string output;
     std::string errors;
+
 };
 
 std::string quote(const fs::path& path) {
@@ -77,15 +86,16 @@ CommandResult runStitching(const std::string& arguments, const fs::path& logDire
     const fs::path executable = fs::u8path(STITCHING_EXECUTABLE);
     const fs::path outputPath = logDirectory / "stdout.txt";
     const fs::path errorPath = logDirectory / "stderr.txt";
-    const std::string command = quote(executable) + " " + arguments + " > " + quote(outputPath) + " 2> " + quote(errorPath);
+    const std::string command =
+        quote(executable) + " " + arguments + " > " + quote(outputPath) + " 2> " + quote(errorPath);
 
     int systemStatus = -1;
 #ifdef _WIN32
     const std::wstring wideCommand = fs::u8path(command).wstring();
-    // NOLINTNEXTLINE(bugprone-command-processor) : launch the built executable as a CLI integration test.
+    // NOLINTNEXTLINE(bugprone-command-processor) : lance l'exécutable construit pour le test d'intégration CLI.
     systemStatus = _wsystem(wideCommand.c_str());
 #else
-    // NOLINTNEXTLINE(bugprone-command-processor) : launch the built executable as a CLI integration test.
+    // NOLINTNEXTLINE(bugprone-command-processor) : lance l'exécutable construit pour le test d'intégration CLI.
     systemStatus = std::system(command.c_str());
 #endif
 
@@ -148,43 +158,43 @@ void writeScript(const fs::path& path) {
 }
 
 TEST(CommandLineTest, HelpDoesNotOpenTheFrontend) {
-    Workspace workspace;
-    const CommandResult result = runStitching("--help", workspace.root);
+    WorkspaceClass workspace;
+    const CommandResult result = runStitching("--help", workspace.getRoot());
 
     EXPECT_EQ(result.exitCode, EXIT_SUCCESS);
     EXPECT_NE(result.output.find("Usage:"), std::string::npos);
 }
 
 TEST(CommandLineTest, UnknownOptionIsRejected) {
-    Workspace workspace;
-    const CommandResult result = runStitching("--pipline script.json", workspace.root);
+    WorkspaceClass workspace;
+    const CommandResult result = runStitching("--pipline script.json", workspace.getRoot());
 
     EXPECT_EQ(result.exitCode, EXIT_INVALID_USAGE);
     EXPECT_NE(result.errors.find("unknown option '--pipline'"), std::string::npos);
 }
 
 TEST(Pipeline2x2CliTest, RunsAndResumesPipelineFromScriptDirectory) {
-    Workspace workspace;
-    createSyntheticTiles(workspace.root / "images");
-    const fs::path scriptPath = workspace.root / "pipeline.json";
+    WorkspaceClass workspace;
+    createSyntheticTiles(workspace.getRoot() / "images");
+    const fs::path scriptPath = workspace.getRoot() / "pipeline.json";
     writeScript(scriptPath);
     const std::string command = "--pipeline " + quote(scriptPath);
 
-    const CommandResult firstRun = runStitching(command, workspace.root);
+    const CommandResult firstRun = runStitching(command, workspace.getRoot());
     ASSERT_EQ(firstRun.exitCode, EXIT_SUCCESS) << firstRun.output << firstRun.errors;
     EXPECT_NE(firstRun.output.find("Step 5/5 OK"), std::string::npos) << firstRun.output;
     const fs::path territoriesPath =
-        workspace.root / "checkpoints" / "04_graphcut" / "territories.json";
+        workspace.getRoot() / "checkpoints" / "04_graphcut" / "territories.json";
     ASSERT_TRUE(fs::exists(territoriesPath));
     EXPECT_GT(fs::file_size(territoriesPath), 0U);
 
-    std::ifstream runStateInput(workspace.root / "checkpoints" / "run.json", std::ios::binary);
+    std::ifstream runStateInput(workspace.getRoot() / "checkpoints" / "run.json", std::ios::binary);
     ASSERT_TRUE(runStateInput.good());
     const Json runState = Json::parse(runStateInput);
     EXPECT_EQ(runState.at("run").at("status"), "completed");
     EXPECT_EQ(runState.at("run").at("completedSteps").size(), 5U);
 
-    const CommandResult resumedRun = runStitching(command + " --resume", workspace.root);
+    const CommandResult resumedRun = runStitching(command + " --resume", workspace.getRoot());
     EXPECT_EQ(resumedRun.exitCode, EXIT_SUCCESS) << resumedRun.output << resumedRun.errors;
     EXPECT_NE(resumedRun.output.find("nothing to do: all steps are already done"), std::string::npos)
         << resumedRun.output;

@@ -1,8 +1,10 @@
+// src/main.cpp
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/run_state.h"
 #include "mainwindow.h"
 
+#include <QtCore/QString>
 #include <QtCore/QTimer>
 #include <QtWidgets/QApplication>
 #include <nlohmann/json.hpp>
@@ -39,15 +41,19 @@ constexpr const char* USAGE =
     "Exit codes: 0 success, 1 a step failed, 2 invalid command line or script, 3 file error.\n";
 
 struct CommandLine {
+
     bool helpRequested = false;
     bool resumeRequested = false;
     std::string scriptPath;
     std::string error;
+
 };
 
 class FileErrorClass : public std::runtime_error {
-public:
-    using std::runtime_error::runtime_error;
+
+    public:
+        using std::runtime_error::runtime_error;
+
 };
 
 bool isCommandLineMode(int argumentCount, char** arguments) {
