@@ -65,15 +65,14 @@ TEST_F(ProjectSetupTestClass, CreatesBackendAcceptedJsonForThreeByTwoGrid) {
   EXPECT_EQ(importStep.at("name"), "import");
   EXPECT_EQ(parameterValue(importStep, "path"),
             fs::absolute(root / "input").string());
-  // La liste des tuiles du step import : id, fichier et case de chaque tuile.
+  // La liste des tuiles du step import : fichier et case de chaque tuile ; l'id est calculé par import.
   const FrontendNs::Json &tiles = parameterValue(importStep, "tiles");
   ASSERT_EQ(tiles.size(), 6);
-  EXPECT_EQ(tiles.at(0).at("id"), 0);
+  EXPECT_FALSE(tiles.at(0).contains("id"));
   EXPECT_EQ(tiles.at(0).at("row"), 0);
   EXPECT_EQ(tiles.at(0).at("column"), 0);
   EXPECT_EQ(tiles.at(0).at("file"),
             fs::absolute(root / "input" / "img_C0_R0.tif").string());
-  EXPECT_EQ(tiles.at(5).at("id"), 5);
   EXPECT_EQ(tiles.at(5).at("row"), 2);
   EXPECT_EQ(tiles.at(5).at("column"), 1);
   EXPECT_EQ(phaseStep.at("name"), "phase-correlation");

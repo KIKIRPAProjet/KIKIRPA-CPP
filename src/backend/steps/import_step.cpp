@@ -16,7 +16,6 @@
 #include <filesystem>
 #include <map>
 #include <memory>
-#include <optional>
 #include <regex>
 #include <set>
 #include <stdexcept>
@@ -36,7 +35,7 @@ namespace StepsNs {
             fs::path filePath;
             int row = 0;
             int column = 0;
-            std::optional<int> listedId;   // id écrit dans la liste `tiles` ; absent en mode format
+            bool listed = false;   // vient de la liste `tiles` (sinon : mode format)
         };
 
         // Mode format : fichiers du dossier dont le nom correspond à `format` ; groupe 1 = colonne, groupe 2 = ligne.
@@ -54,7 +53,7 @@ namespace StepsNs {
                 const std::string fileName = IONs::pathToUtf8(entry.path().filename());
                 std::smatch nameMatch;
                 if (!entry.is_regular_file() || !std::regex_match(fileName, nameMatch, filenamePattern)) continue;
-                imageFiles.push_back({entry.path(), std::stoi(nameMatch[2].str()), std::stoi(nameMatch[1].str()), std::nullopt});
+                imageFiles.push_back({entry.path(), std::stoi(nameMatch[2].str()), std::stoi(nameMatch[1].str()), false});
             }
             if (imageFiles.empty())
                 throw std::invalid_argument("no file matching '" + format + "' in " + IONs::pathToUtf8(directory));
@@ -65,19 +64,20 @@ namespace StepsNs {
             return entry.contains(name) && entry.at(name).is_number_integer();
         }
 
-        // Mode liste : une entrée { "id", "file", "row", "column" }. Un fichier relatif est cherché dans `directory`.
+        // Mode liste : une entrée { "file", "row", "column" }. Un fichier relatif est cherché dans `directory`.
+        // L'identifiant n'est pas dans la liste : import le calcule à partir de la case (voir sortAndCheckGrid).
         ImageFile readListedTile(const fs::path& directory, const Json& entry, std::size_t entryIndex) {
             const std::string where = "tiles[" + std::to_string(entryIndex) + "]";
-            if (!entry.is_object() || !entry.contains("file") || !entry.at("file").is_string() || !hasIntegerField(entry, "id") ||
-                !hasIntegerField(entry, "row") || !hasIntegerField(entry, "column"))
-                throw std::invalid_argument(where + " must be an object { id, file, row, column } (file: string, others: integers)");
+            if (!entry.is_object() || !entry.contains("file") || !entry.at("file").is_string() || !hasIntegerField(entry, "row") ||
+                !hasIntegerField(entry, "column"))
+                throw std::invalid_argument(where + " must be an object { file, row, column } (file: string, row and column: integers)");
             const int row = entry.at("row").get<int>();
             const int column = entry.at("column").get<int>();
             if (row < 0 || column < 0) throw std::invalid_argument(where + ": row and column must be non-negative");
             const fs::path listedPath = IONs::pathFromUtf8(entry.at("file").get<std::string>());
             const fs::path filePath = listedPath.is_absolute() ? listedPath : directory / listedPath;
             if (!fs::is_regular_file(filePath)) throw std::invalid_argument(where + ": missing file " + IONs::pathToUtf8(filePath));
-            return {filePath, row, column, entry.at("id").get<int>()};
+            return {filePath, row, column, true};
         }
 
         std::vector<ImageFile> listFilesFromList(const fs::path& directory, const Json& tilesJson) {
@@ -98,21 +98,19 @@ namespace StepsNs {
         }
 
         // Ordre fixe, indépendant de celui du disque ou de la liste : ligne par ligne, puis colonne par colonne.
-        // L'identifiant d'une tuile est sa position dans cet ordre. Deux tuiles ne peuvent pas occuper la même case, et
-        // un id donné par la liste doit être ce rang.
+        // L'identifiant d'une tuile est sa position dans cet ordre (voir execute). Deux tuiles ne peuvent pas occuper
+        // la même case.
         void sortAndCheckGrid(std::vector<ImageFile>& imageFiles) {
             std::sort(imageFiles.begin(), imageFiles.end(), [](const ImageFile& first, const ImageFile& second) {
                 return first.row != second.row ? first.row < second.row : first.column < second.column;
             });
-            for (std::size_t tileIndex = 0; tileIndex < imageFiles.size(); ++tileIndex) {
+            for (std::size_t tileIndex = 1; tileIndex < imageFiles.size(); ++tileIndex) {
+                const ImageFile& previous = imageFiles[tileIndex - 1];
                 const ImageFile& imageFile = imageFiles[tileIndex];
-                const std::string cell = "(row " + std::to_string(imageFile.row) + ", column " + std::to_string(imageFile.column) + ")";
-                if (tileIndex > 0 && imageFiles[tileIndex - 1].row == imageFile.row && imageFiles[tileIndex - 1].column == imageFile.column)
-                    throw std::invalid_argument("two tiles share the grid cell " + cell + ": " +
-                                                IONs::pathToUtf8(imageFiles[tileIndex - 1].filePath) + " and " + IONs::pathToUtf8(imageFile.filePath));
-                if (imageFile.listedId && *imageFile.listedId != static_cast<int>(tileIndex))
-                    throw std::invalid_argument("tiles: the tile in cell " + cell + " must have id " + std::to_string(tileIndex) +
-                                                " (ids follow the order row by row, then column by column)");
+                if (previous.row == imageFile.row && previous.column == imageFile.column)
+                    throw std::invalid_argument("two tiles share the grid cell (row " + std::to_string(imageFile.row) + ", column " +
+                                                std::to_string(imageFile.column) + "): " + IONs::pathToUtf8(previous.filePath) +
+                                                " and " + IONs::pathToUtf8(imageFile.filePath));
             }
         }
 
@@ -132,8 +130,10 @@ namespace StepsNs {
             const cv::Mat image = IONs::readImage(imageFile.filePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
             if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(imageFile.filePath));
 
-            // Un TIFF par image, nommé d'après l'image d'origine : <nom>_pyramid.tif.
-            fs::path pyramidFileName = imageFile.filePath.stem();
+            // Un TIFF par image : <id>_<nom de l'image>_pyramid.tif. L'id rend le nom unique, même pour deux images de
+            // même nom (a.tif et a.tiff, ou deux dossiers de la liste `tiles`) ; le nom de l'image le garde lisible.
+            fs::path pyramidFileName = IONs::pathFromUtf8(std::to_string(tileId) + "_");
+            pyramidFileName += imageFile.filePath.stem();
             pyramidFileName += "_pyramid.tif";
             const fs::path pyramidPath = outputDirectory / pyramidFileName;
             std::string errorMessage;
@@ -183,7 +183,7 @@ namespace StepsNs {
             const fs::path directory = IONs::pathFromUtf8(getParameter("path").get<std::string>());
             std::map<std::string, Json> filesByName;
             for (const ImageFile& imageFile : listImageFiles(directory, getParameter("format").get<std::string>(), getParameter("tiles"))) {
-                const std::string fileName = IONs::pathToUtf8(imageFile.listedId ? imageFile.filePath : imageFile.filePath.filename());
+                const std::string fileName = IONs::pathToUtf8(imageFile.listed ? imageFile.filePath : imageFile.filePath.filename());
                 filesByName[fileName] = {static_cast<long long>(fs::file_size(imageFile.filePath)),
                                          static_cast<long long>(fs::last_write_time(imageFile.filePath).time_since_epoch().count())};
             }

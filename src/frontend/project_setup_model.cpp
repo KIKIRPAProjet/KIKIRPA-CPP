@@ -184,8 +184,8 @@ Json createGridJson(const ProjectSetup &setup) {
   return {{"rows", setup.gridRows}, {"columns", setup.gridColumns}};
 }
 
-// Liste des tuiles pour le step import : une entrée { id, file, row, column } par tuile, dans l'ordre ligne par ligne
-// puis colonne par colonne ; l'id est le rang dans cet ordre (règle du step import).
+// Liste des tuiles pour le step import : une entrée { file, row, column } par tuile. L'identifiant n'y est pas : import
+// le calcule à partir de la case. L'ordre ligne par ligne, puis colonne par colonne, rend seulement le script lisible.
 Json createImportTilesJson(const ProjectSetup &setup) {
   std::vector<ProjectTile> orderedTiles = setup.tiles;
   std::sort(orderedTiles.begin(), orderedTiles.end(),
@@ -194,12 +194,11 @@ Json createImportTilesJson(const ProjectSetup &setup) {
                                              : first.column < second.column;
             });
   Json tiles = Json::array();
-  for (std::size_t index = 0; index < orderedTiles.size(); ++index)
+  for (const ProjectTile &tile : orderedTiles)
     tiles.push_back(
-        {{"id", static_cast<int>(index)},
-         {"file", IONs::pathToUtf8(fs::absolute(orderedTiles[index].path).lexically_normal())},
-         {"row", orderedTiles[index].row},
-         {"column", orderedTiles[index].column}});
+        {{"file", IONs::pathToUtf8(fs::absolute(tile.path).lexically_normal())},
+         {"row", tile.row},
+         {"column", tile.column}});
   return tiles;
 }
 

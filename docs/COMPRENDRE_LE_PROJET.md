@@ -122,7 +122,7 @@ Les chemins relatifs se lisent depuis le dossier du script : ici, les images son
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Les tuiles et leur case.** Ici, `import` lit la case de chaque tuile dans le nom des fichiers (`format`). Pour des noms libres, comme les vraies données (`1_no filter f8 v30 20cm.tif`), on donne plutôt la **liste `tiles`** : pour chaque tuile, son `id`, son fichier, sa ligne et sa colonne. C'est ce qu'écrit l'interface. Ensuite, tous les steps n'utilisent que l'`id`. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Les tuiles et leur case.** Ici, `import` lit la case de chaque tuile dans le nom des fichiers (`format`). Pour des noms libres, comme les vraies données (`1_no filter f8 v30 20cm.tif`), on donne plutôt la **liste `tiles`** : pour chaque tuile, son fichier, sa ligne et sa colonne. C'est ce qu'écrit l'interface. `import` en déduit l'`id` de chaque tuile ; ensuite, tous les steps n'utilisent que lui. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -232,7 +232,7 @@ Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. C'es
 
 ```json
 [ { "id": 0, "source": "D:/oeuvre/tuiles/2_no filter.tif", "row": 0, "column": 0,
-    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/2_no filter_pyramid.tif",
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/0_2_no filter_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 

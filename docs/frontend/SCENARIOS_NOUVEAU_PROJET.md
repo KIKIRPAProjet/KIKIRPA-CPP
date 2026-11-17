@@ -24,7 +24,7 @@ Créer également un dossier de sortie vide.
 5. Vérifier que les six noms sont affichés à la bonne ligne et à la bonne colonne.
 6. Cliquer sur **Valider la grille**.
 7. Vérifier qu'un fichier `<nom-du-projet>.json` apparaît dans le dossier de sortie.
-8. Vérifier dans le JSON : les deux chemins absolus, `grid.rows = 3`, `grid.columns = 2`, le recouvrement `0.2`, le step `phase-correlation` et `run.checkpointDirectory`. Dans le step `import`, le paramètre `tiles` liste les six tuiles : pour chacune, son `id` (0 à 5, ligne par ligne), son fichier et sa case (`row`, `column`), telles qu'elles sont placées dans la grille.
+8. Vérifier dans le JSON : les deux chemins absolus, `grid.rows = 3`, `grid.columns = 2`, le recouvrement `0.2`, le step `phase-correlation` et `run.checkpointDirectory`. Dans le step `import`, le paramètre `tiles` liste les six tuiles : pour chacune, son fichier et sa case (`row`, `column`), telles qu'elles sont placées dans la grille. Il n'y a pas d'`id` : `import` le calcule (0 à 5, ligne par ligne).
 
 Résultat attendu : un message confirme que le JSON a été validé par le backend
 et affiche son chemin. L'utilisateur reste dans l'interface complète.

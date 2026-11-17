@@ -19,8 +19,8 @@ namespace StepsNs {
         // Expression régulière sur le nom du fichier : groupe 1 = colonne, groupe 2 = ligne (insensible à la casse).
         // Utilisée seulement si `tiles` est vide.
         std::string format = R"(img_C(\d+)_R(\d+)\.tif)";
-        // Liste des tuiles : [ { "id": 0, "file": "a.tif", "row": 0, "column": 0 }, ... ]. Vide : les tuiles et leur case
-        // sont lues dans les noms de fichiers avec `format`.
+        // Liste des tuiles : [ { "file": "a.tif", "row": 0, "column": 0 }, ... ]. Vide : les tuiles et leur case sont lues
+        // dans les noms de fichiers avec `format`.
         Json tiles = Json::array();
     };
 
@@ -32,11 +32,12 @@ namespace StepsNs {
     // Premier step d'un pipeline : repère les images et crée la fiche de chaque tuile (TileClass) : son identifiant,
     // son fichier et sa case (ligne, colonne) dans la grille. Les steps suivants n'utilisent plus que l'identifiant.
     // Deux façons de donner les tuiles :
-    //   - `tiles` non vide : la liste donne, pour chaque tuile, son id, son fichier (relatif à `path`, ou absolu) et sa
-    //     case. Les noms de fichiers sont libres. L'id d'une tuile doit être son rang dans l'ordre ligne par ligne puis
-    //     colonne par colonne (0, 1, 2...) ;
+    //   - `tiles` non vide : la liste donne, pour chaque tuile, son fichier (relatif à `path`, ou absolu) et sa case.
+    //     Les noms de fichiers sont libres ;
     //   - `tiles` vide : les fichiers de `path` dont le nom correspond à `format`, qui donne la colonne et la ligne.
-    // Pour chaque image, il écrit un TIFF tuilé pyramidal dans <path>/.cache/pyramids/ (voir
+    // Dans les deux cas, l'identifiant d'une tuile est son rang dans l'ordre ligne par ligne, puis colonne par colonne
+    // (0, 1, 2...), calculé par le step.
+    // Pour chaque image, il écrit un TIFF tuilé pyramidal <path>/.cache/pyramids/<id>_<nom>_pyramid.tif (voir
     // createPyramidalTiledTiff) ; les steps suivants lisent la tuile à partir de lui, pas de l'image d'origine. Les
     // voisines (gauche, droite, haut, bas) sont déduites des cases. Une seule image est en mémoire à la fois.
     //

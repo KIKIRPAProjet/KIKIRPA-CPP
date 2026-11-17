@@ -43,8 +43,9 @@ namespace {
         cv::imwrite(path.string(), cv::Mat(TILE_SIZE, TILE_SIZE, CV_8UC1, cv::Scalar(GREY_LEVEL)));
     }
 
-    Json listedTile(int tileId, const std::string& file, int row, int column) {
-        return {{"id", tileId}, {"file", file}, {"row", row}, {"column", column}};
+    // Entrée de la liste `tiles` : le fichier et sa case. L'identifiant n'y est pas, import le calcule.
+    Json listedTile(const std::string& file, int row, int column) {
+        return {{"file", file}, {"row", row}, {"column", column}};
     }
 
     // Step import configuré avec un dossier et une liste de tuiles (vide : mode format).
@@ -59,8 +60,8 @@ namespace {
     Json writeFreeNamedGrid(const fs::path& directory) {
         for (const char* name : {"1_no filter.tif", "2_no filter.tif", "3_no filter.tif", "4_no filter.tif"})
             writeImage(directory / name);
-        return Json::array({listedTile(0, "2_no filter.tif", 0, 0), listedTile(1, "3_no filter.tif", 0, 1),
-                            listedTile(2, "1_no filter.tif", 1, 0), listedTile(3, "4_no filter.tif", 1, 1)});
+        return Json::array({listedTile("2_no filter.tif", 0, 0), listedTile("3_no filter.tif", 0, 1),
+                            listedTile("1_no filter.tif", 1, 0), listedTile("4_no filter.tif", 1, 1)});
     }
 
 }
@@ -107,15 +108,21 @@ TEST(ImportStepTest, FormatGivesGridCellFromFileName) {
     EXPECT_EQ(tiles[0]->getRight(), tiles[1].get());
 }
 
-TEST(ImportStepTest, RejectsAnIdThatIsNotTheRankInRowOrder) {
+// Deux images de même nom (a.tif et a.tiff) ont chacune leur TIFF pyramidal : son nom commence par l'id de la tuile.
+TEST(ImportStepTest, GivesEachTileItsOwnPyramidEvenWithTheSameFileName) {
     const TestDirectory directory;
-    Json tiles = writeFreeNamedGrid(directory.path);
-    tiles[1]["id"] = 3;
-    tiles[3]["id"] = 1;
-    StepsNs::ImportStepClass step = makeImportStep(directory.path, tiles);
+    writeImage(directory.path / "a.tif");
+    writeImage(directory.path / "a.tiff");
+    StepsNs::ImportStepClass step =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0), listedTile("a.tiff", 0, 1)}));
 
-    EXPECT_FALSE(step.execute());
-    EXPECT_NE(step.getResult()["error"].get<std::string>().find("must have id 1"), std::string::npos);
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const DataNs::TileList& tiles = step.getOutput().tiles;
+    ASSERT_EQ(tiles.size(), 2U);
+    EXPECT_EQ(tiles[0]->getTiff().filename(), "0_a_pyramid.tif");
+    EXPECT_EQ(tiles[1]->getTiff().filename(), "1_a_pyramid.tif");
+    EXPECT_TRUE(fs::is_regular_file(tiles[0]->getTiff()));
+    EXPECT_TRUE(fs::is_regular_file(tiles[1]->getTiff()));
 }
 
 TEST(ImportStepTest, RejectsTwoTilesInTheSameCell) {
