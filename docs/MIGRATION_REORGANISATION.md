@@ -468,9 +468,9 @@ Règle : [CONVENTIONS.md §8](CONVENTIONS.md#8-structure-du-code), « Chemins »
 
 `src/main.cpp` n'ouvre plus seulement la fenêtre : `stitching --pipeline <script.json> [--resume]` exécute un script (codes de sortie 0 à 3, voir `docs/core/Pipeline.md`). Le format du script n'a pas changé.
 
-### Frontend (#91, #104, #109, #114, #131)
+### Frontend (#91, #104, #109, #114, #131, puis #132 le 17/11)
 
-Les maquettes des branches `fr-rahim`, `Valerie`, `frontendMathias` ont été reprises dans `src/frontend/` et `include/frontend/` (25 `.cpp`), compilées dans `kikirpa_frontend`. Une branche frontend partie de l'une de ces anciennes branches doit repartir de `main` : `mainwindow.*`, `assembly_tab.*` et `artworkcanvas.*` ont beaucoup changé.
+Les maquettes des branches `fr-rahim`, `Valerie`, `frontendMathias` ont été reprises dans `src/frontend/` et `include/frontend/`, compilées dans `kikirpa_frontend`. #132 remplace `SimulationRunner` (`simulationrunner.{h,cpp}`, **supprimés**) par `PipelineRunnerClass` (`pipeline_runner.h`) et `PipelineWorkerClass` (`pipeline_worker.h`), qui exécutent le vrai pipeline dans un `QThread`. Une branche frontend partie de l'une de ces anciennes branches doit repartir de `main` : `mainwindow.*`, `assembly_tab.*` et `artworkcanvas.*` ont beaucoup changé.
 
 ### Build (#106, #113, #130, et le 15/11)
 

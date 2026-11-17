@@ -1,14 +1,15 @@
 # Carte de l'architecture : KIKIRPA-CPP
 
-Guide pour se repérer dans le code de **`main`**, à jour du 17/11/2026 (`d02ca58`, après #103).
+Guide pour se repérer dans le code de **`main`**, à jour du 17/11/2026 (`c939612`, après #132).
 
 Depuis la version précédente de cette carte (07/11, après #80), `main` a reçu :
 - **le 09/11** : le step `dynamic-programming-dijkstra` et une nouvelle version de `intensity-correction` (#72), le premier export (#98, #99, #102) et les premières fenêtres Qt (#91, #104) ;
 - **le 10/11** : les fenêtres Qt suivantes (#109, #114), les résidus d'`absolute-pos` (#100), le step `vote-2d` (#111), `final-verification` (#116), le writer TIFF par blocs et le contrat `Mosaic` (#118), l'installation d'un poste (#113, #130) ;
 - **le 11/11** : OpenCV 4 forcé (#106), un nouvel apport au frontend (#131) et les corrections de GraphCut, qui imposent le nommage `_C<colonne>_R<ligne>` (#86) ;
-- **le 15/11** : la liste de noms qui remplace `REGISTERED_STEP_COUNT`, le step `overlap-estimation` (#127), l'assemblage `fusion` (#119) et la ligne de commande avec les chemins UTF-8 (#103).
+- **le 15/11** : la liste de noms qui remplace `REGISTERED_STEP_COUNT`, le step `overlap-estimation` (#127), l'assemblage `fusion` (#119) et la ligne de commande avec les chemins UTF-8 (#103) ;
+- **le 17/11** : le vrai calcul lancé depuis l'interface (#132), les docs du vote 2D et de RANSAC (#135, #136), l'installation sous Ubuntu 24.04 (#138).
 
-**La chaîne va maintenant de l'import à `mosaic.tif`, en ligne de commande.**
+**La chaîne va maintenant de l'import à `mosaic.tif`, en ligne de commande comme depuis l'interface.**
 
 Les éléments marqués **🆕** ont changé avec la réorganisation de `core/` et `steps/` (PR #50) ou la migration des algorithmes (#76) : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. La correspondance entre anciens et nouveaux noms est dans [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) : §12 pour les algorithmes, §14 pour ce qui a changé du 09 au 15/11. Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
 
@@ -43,13 +44,13 @@ Les liens ouvrent les fichiers.
 
 ## 1. Vue d'ensemble
 
-Le projet a trois couches. Les **algorithmes** sont les plus fournis. L'**orchestration** est en place : un script JSON se construit, se valide, s'exécute et se reprend. La chaîne va de l'import à l'export et se lance en ligne de commande (`stitching --pipeline`). L'interface Qt est sur `main`, mais elle n'appelle pas encore le calcul : elle le simule (`SimulationRunner`), et son branchement est la PR #132.
+Le projet a trois couches. Les **algorithmes** sont les plus fournis. L'**orchestration** est en place : un script JSON se construit, se valide, s'exécute et se reprend. La chaîne va de l'import à l'export et se lance en ligne de commande (`stitching --pipeline`) ou depuis l'interface Qt, qui exécute le pipeline dans un thread de travail (`PipelineWorkerClass`, #132).
 
 ```txt
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ ENTRÉES              src/main.cpp : stitching --pipeline <script.json>     │
 │                      (ligne de commande, reprise --resume) ; sans          │
-│                      argument, fenêtre Qt (src/frontend/, calcul simulé)   │
+│                      argument, fenêtre Qt (src/frontend/, calcul réel)     │
 ├────────────────────────────────────────────────────────────────────────────┤
 │ ORCHESTRATION        core/  : script JSON → buildPipeline → PipelineClass  │
 │                               → StepClass → DataStoreClass ; reprise :     │
@@ -169,7 +170,7 @@ include/backend/  ⟷  src/backend/   🆕 en minuscules
         brightness_equalization/   égalisation de luminosité 🆕
         seamline/       calcul des coutures
         verification/   comparaison des métadonnées de deux images
-include/frontend/ ⟷  src/frontend/   interface Qt : fenêtre principale, onglets, grille, assistant, journal (25 .cpp)
+include/frontend/ ⟷  src/frontend/   interface Qt : fenêtre principale, onglets, grille, assistant, journal, exécution (26 .cpp)
 tests/               un dossier par module, en GoogleTest : brightness_equalization/, cli/, core/, frontend/,
                      intensity_correction/, phase_correlation/, seamline/, steps/
 docs/                COMPRENDRE_LE_PROJET.md (à lire en premier), algorithms/ (une page par algorithme), core/ (le pipeline),
@@ -356,7 +357,7 @@ Le step `dynamic-programming-dijkstra` (Nde-Code, arrivé avec la PR #72) appell
 
 ### `frontend/` : interface graphique
 
-L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est compilée dans `kikirpa_frontend` et s'ouvre quand `stitching` est lancé sans argument. **Elle n'appelle pas encore le calcul** : l'avancement est simulé par `SimulationRunner`. Le branchement est la PR #132.
+L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est compilée dans `kikirpa_frontend` et s'ouvre quand `stitching` est lancé sans argument. Depuis #132 (17/11), **elle exécute le vrai pipeline** dans un `QThread`, avec pause, arrêt et reprise ; `SimulationRunner` est supprimé.
 
 | Fichier(s) | Rôle |
 |---|---|
@@ -366,7 +367,8 @@ L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est c
 | [grid_tab](../include/frontend/grid_tab.h), [alignment_tab](../include/frontend/alignment_tab.h), [masks_tab](../include/frontend/masks_tab.h), [assembly_tab](../include/frontend/assembly_tab.h) | Onglets par étape : grille, alignement, masques, assemblage. |
 | [artworkcanvas](../include/frontend/artworkcanvas.h) (+ `artworkcanvas_draw.cpp`) | Dessin de l'œuvre : tuiles, placement, affichage ou non de la seamline (#109). |
 | [logpanel](../include/frontend/logpanel.h), [dialog_helpers](../include/frontend/dialog_helpers.h), [frontendutils](../include/frontend/frontendutils.h), `export_mode.cpp` | Journal, boîtes de dialogue, utilitaires, export d'un rapport HTML. |
-| [simulationrunner](../include/frontend/simulationrunner.h) | `SimulationRunner` : avancement simulé par un `QTimer`, **à remplacer** par l'exécution réelle (#132). |
+| [pipeline_runner.h](../include/frontend/pipeline_runner.h) / [.cpp](../src/frontend/pipeline_runner.cpp) | `PipelineRunnerClass` (#132) : façade côté interface. Crée le `QThread` et le worker, relaie l'avancement, le journal et l'aperçu par des signaux Qt, gère pause, reprise et arrêt. |
+| [pipeline_worker.h](../include/frontend/pipeline_worker.h) / [.cpp](../src/frontend/pipeline_worker.cpp) | `PipelineWorkerClass` (#132) : vit dans le `QThread`, construit le pipeline depuis le script, écrit l'état dans `<checkpoints>/run.json` et le relit pour reprendre (comme la ligne de commande), produit un aperçu à partir des positions et des images sources lues par `QImage`. |
 | [PipelineJson.h](../include/frontend/PipelineJson.h) / [.cpp](../src/frontend/PipelineJson.cpp) | `FrontendNs` : fabrique le JSON du pipeline à partir de champs de formulaire (`makeStep`, `parameterFromText`, `writePipelineJson`). |
 
 ### `tests/`
@@ -404,7 +406,8 @@ Pour ajouter des tests : un dossier `tests/<module>/` avec son `CMakeLists.txt` 
 | [EtudeConfiance.md](algorithms/stitching/phase_correlation/EtudeConfiance.md) | Indicateur de confiance de la corrélation de phase : étude et seuils retenus. |
 | [OverlapEstimation.md](algorithms/stitching/overlap_estimation/OverlapEstimation.md) 🆕 | La 1re passe commune. |
 | [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) 🆕 | Modèle, méthodes A et B, paramètres, vérification. |
-| [Vote2D.md](algorithms/rejection/vote_2d/Vote2D.md) (+ [README](algorithms/rejection/vote_2d/README.md)) | Rejet des aberrants par vote de Hough 2D et médiane itérative. |
+| [Vote2D.md](algorithms/rejection/vote_2d/Vote2D.md) (+ [README](algorithms/rejection/vote_2d/README.md)) | Rejet des aberrants par vote de Hough 2D et médiane itérative (complété par #135). |
+| [Ransac.md](algorithms/rejection/vote_2d/Ransac.md) | Historique : pourquoi RANSAC a été envisagé, puis remplacé par le vote 2D (#63, #136). |
 | [verification.md](algorithms/verification/verification.md), [verification_working.md](algorithms/verification/verification_working.md) | Vérification finale : ce qui est comparé, fonctionnement. |
 | [Pipeline.md](core/Pipeline.md) | Le pipeline : format du script, ligne de commande, contrôles, exécution, reprise et checkpoints, steps enregistrés (la table oublie `overlap-estimation` et `vote-2d`). |
 | [PyramidalTiff.md](core/PyramidalTiff.md) | Format du cache TIFF pyramidal, écriture et lecture par région. |
@@ -505,8 +508,8 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 
 | Ce qu'on pourrait croire | La réalité |
 |---|---|
-| `main.cpp` lance le pipeline | Seulement avec `--pipeline <script.json>` : sans argument, il ouvre l'interface graphique, qui simule le calcul. (`stitching_run`, l'ancienne ligne de commande, a été retiré par #43.) |
-| L'interface Qt affiche le calcul | Pas encore : les fenêtres sont sur `main`, mais l'avancement vient de `SimulationRunner` (un minuteur). Le branchement réel est la PR #132. |
+| `main.cpp` lance le pipeline | Seulement avec `--pipeline <script.json>` : sans argument, il ouvre l'interface graphique, d'où l'on lance le calcul. (`stitching_run`, l'ancienne ligne de commande, a été retiré par #43.) |
+| L'aperçu de l'interface montre la mosaïque produite | Non : `PipelineWorkerClass` le dessine à partir des positions et des images sources lues par `QImage`, pas à partir de `mosaic_image.tif`. Sans lecteur TIFF dans Qt, il peut rester vide. |
 | Les `inputs` et `outputs` du JSON définissent les entrées et sorties | Ils sont ignorés à la lecture : c'est le constructeur du step qui les fixe. Seules les **valeurs** des paramètres sont reprises du JSON. |
 | Un ancien script JSON (`options`, `type`, `key`) se relit | Non 🆕 : le format a changé avec #50 (`parameters`, `valueType`, `name`). Les anciens checkpoints sont jugés périmés et refaits. |
 | Les checkpoints sont actifs par défaut | Non : `checkpointDirectory` est vide par défaut. Il faut le remplir dans `RunState` (champ `run.checkpointDirectory` du script). |
@@ -544,13 +547,12 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 | Recadrer la mosaïque (bords noirs en escalier) | #122 | En conflit. Ajoute un step. |
 | Exporter un aperçu JPEG, choisir le nom de sortie, ne pas écraser | #133 | À refaire depuis `main` par son auteur : l'ancien export (`CompositeBlocks`) n'existe plus. |
 | Rapport d'exécution d'un run archivé | #115 | En conflit. |
-| Annotations CI, script d'exemple complet, tableau des contrats `DataStore` | (nouvelle PR, après #112 fermée le 17/11) | À venir. |
+| Annotations CI, script d'exemple complet, tableau des contrats `DataStore` | #139 (« Pipeline3 », qui reprend #112, fermée le 17/11) | Ouverte le 17/11. |
 
 **Frontend.** Les fenêtres sont sur `main` ; ces PR les complètent.
 
 | Je cherche… | PR | État au 17/11 |
 |---|---|---|
-| L'exécution réelle du pipeline depuis la fenêtre | #132 | En cours de modification après review (reprise, `fusion` + `export` dans le script, aperçu, chemins UTF-8, accès concurrent, tests). |
 | Afficher l'état sauvegardé | #124 | En conflit. |
 | Zoom et déplacement dans la vue | #125 | En conflit. |
 | Contours des tuiles, checkpoint d'intensité affiché | #107 | En conflit. |
@@ -563,8 +565,6 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 |---|---|---|
 | Choix techniques du projet | #117 | Mergeable, *changes requested*. |
 | Calage local | #134 | Brouillon. |
-| Vote 2D plus complet | #135 | Mergeable. |
-| Rejet par RANSAC | #136 | Mergeable. Attention : RANSAC a été supprimé par #63. |
 
 Branches anciennes encore sur le dépôt, sans PR, obsolètes : `feature/full-2x2-pipeline`, `RansacStep`, `fe/export` (remplacée par #102 puis #119), `feature/fusion-step` (#69, remplacée par #119), ainsi que les branches de maquettes `Valerie`, `frontendJonas`, `frontendMathias`, `frontend` (reprises dans `main` par #104, #109, #114 et #131).
 

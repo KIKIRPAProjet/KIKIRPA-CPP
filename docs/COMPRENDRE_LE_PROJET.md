@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **17/11/2026** (`d02ca58`). Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **17/11/2026** (`c939612`, après #132). Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -46,7 +46,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 ### Trois couches
 
 ```
- frontend/ (Qt)            interface : fenêtres sur main, calcul encore simulé (§9)
+ frontend/ (Qt)            interface : écrit le script, lance le calcul dans un thread (§9)
       │ écrit un script JSON, lance le pipeline
       ▼
  core/                     le moteur : lit le script, enchaîne les steps, sauve les checkpoints
@@ -91,7 +91,7 @@ Compiler la cible `stitching`, écrire le script ci-dessous (par exemple dans `D
 build/<preset>/stitching --pipeline D:/oeuvre/pipeline.json
 ```
 
-Après un échec, corriger la cause (un paramètre, un fichier) puis relancer avec `--resume` : les steps déjà faits ne sont pas refaits. Sans argument, `stitching` ouvre l'interface graphique, qui n'appelle pas encore le calcul. Options et codes de sortie : [core/Pipeline.md](core/Pipeline.md#lancer-un-pipeline).
+Après un échec, corriger la cause (un paramètre, un fichier) puis relancer avec `--resume` : les steps déjà faits ne sont pas refaits. Sans argument, `stitching` ouvre l'interface graphique, d'où l'on peut aussi lancer le calcul. Options et codes de sortie : [core/Pipeline.md](core/Pipeline.md#lancer-un-pipeline).
 
 ### Un script de l'import à l'export
 
@@ -465,20 +465,21 @@ Les tests sont lancés avec `-L "unit|integration"` : les 7 tests de `tests/fron
 
 ### Ce qu'il y a sur main
 
-Depuis les PR #91, #104, #109, #114 et #131 (09 au 11/11), l'interface est sur `main` : 25 fichiers dans `src/frontend/`, compilés dans `kikirpa_frontend`, et ouverts par `stitching` lancé sans argument. On y trouve :
+Depuis les PR #91, #104, #109, #114 et #131 (09 au 11/11), l'interface est sur `main` : 26 fichiers dans `src/frontend/`, compilés dans `kikirpa_frontend`, et ouverts par `stitching` lancé sans argument. On y trouve :
 - la page d'accueil et l'assistant « nouveau projet » (`ProjectSetupModelClass`, qui produit déjà le script du pipeline avec `createBackendScript`) ;
 - la grille du projet, les onglets (grille, alignement, masques, assemblage), le panneau de journal, le dessin de l'œuvre avec ou sans seamline.
 
 Fichier par fichier : [CARTE_ARCHITECTURE.md §4](CARTE_ARCHITECTURE.md#frontend--interface-graphique).
 
-**Mais le calcul n'est pas encore appelé.**
-- L'avancement affiché est simulé par un minuteur (`SimulationRunner`, un `QTimer`).
-- Certains boutons ne font encore rien (par exemple la comparaison A/B de l'onglet d'assemblage).
+**Depuis #132 (17/11), l'interface lance le vrai calcul** : `PipelineRunnerClass` crée un thread de travail, où `PipelineWorkerClass` construit le pipeline depuis le script de l'assistant (jusqu'à `fusion` et `export`) et l'exécute, avec pause, arrêt et reprise depuis `<checkpoints>/run.json`, comme la ligne de commande.
+
+Limites connues :
+- l'aperçu est dessiné à partir des positions et des images sources lues par `QImage`, pas à partir de la mosaïque produite ; sans lecteur TIFF dans Qt, il peut rester vide ;
+- certains boutons ne font encore rien (par exemple la comparaison A/B de l'onglet d'assemblage).
 
 ### Ce qui est en cours
 
-- **#132** remplace `SimulationRunner` par l'exécution réelle du pipeline dans un `QThread`, avec pause, arrêt et reprise. Elle est en cours de modification après review.
-- D'autres PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
+- Plusieurs PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
 
 ### Comment le brancher au backend
 
@@ -497,7 +498,7 @@ Tout ce qu'il faut existe déjà côté backend :
 | dessiner la vraie seamline | les polygones de `territories` : leurs bords sont les coutures |
 | dessiner le placement des tuiles | `positions` et les dimensions de chaque tuile (`tiles`) |
 
-C'est ce que fait #132. La reprise y suit la ligne de commande : `setScriptPath(<checkpoints>/run.json)` avant `run()`, puis relire `completedSteps` dans ce fichier pour reprendre (voir `prepareRunState` dans `src/main.cpp`).
+C'est ce que fait #132 (`src/frontend/pipeline_worker.cpp`). La reprise y suit la ligne de commande : `setScriptPath(<checkpoints>/run.json)` avant `run()`, puis relire `completedSteps` dans ce fichier pour reprendre (voir `prepareRunState` dans `src/main.cpp`).
 
 ---
 
@@ -506,7 +507,7 @@ C'est ce que fait #132. La reprise y suit la ligne de commande : `setScriptPath(
 À faire, sur une base connue :
 
 - **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle du KIKIRPA (§5) ; fondu le long des coutures, si besoin.
-- **Le branchement du front** (§9) : PR #132.
+- **L'aperçu de l'interface** (§9) : le lire dans `mosaic_image.tif` (ou dans le TIFF pyramidal, à un niveau réduit) plutôt que dans les images sources.
 - **L'export** : choisir le nom du fichier, refuser d'écraser une mosaïque existante, produire un aperçu JPEG réduit.
 - **La reprise** : refaire un step dont un fichier de sortie a disparu, au lieu d'échouer à chaque relance ; ne laisser sortir de `run()` aucune exception levée par un checkpoint.
 - **Faire lire `seamlines` par l'assemblage** (ou les convertir en territoires), pour que `dynamic-programming-dijkstra` puisse produire une mosaïque.
