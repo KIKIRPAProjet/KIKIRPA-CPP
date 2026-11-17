@@ -154,47 +154,9 @@ void validateSettings(const ProjectSetup &setup,
         "Le niveau de pyramide doit être compris entre 0 et 5.");
 }
 
-std::optional<std::regex> validatedPattern(const ProjectSetup &setup,
-                                           std::vector<std::string> &errors) {
-  if (setup.filenameFormat.empty())
-    return std::nullopt;
-  try {
-    std::regex pattern(setup.filenameFormat, std::regex::icase);
-    if (pattern.mark_count() < 2) {
-      errors.emplace_back("Le format des noms doit contenir deux groupes : "
-                          "colonne puis ligne.");
-      return std::nullopt;
-    }
-    return pattern;
-  } catch (const std::regex_error &) {
-    errors.emplace_back("Le format des noms de fichiers n'est pas une "
-                        "expression régulière valide.");
-    return std::nullopt;
-  }
-}
-
-void validateTileCoordinates(const ProjectTile &tile, const std::regex &pattern,
-                             std::vector<std::string> &errors) {
-  std::smatch match;
-  const std::string fileName = IONs::pathToUtf8(tile.path.filename());
-  if (!std::regex_match(fileName, match, pattern)) {
-    errors.emplace_back("Nom incompatible avec le format : " + fileName);
-    return;
-  }
-  try {
-    const int parsedColumn = std::stoi(match[1].str());
-    const int parsedRow = std::stoi(match[2].str());
-    if (parsedColumn != tile.column || parsedRow != tile.row)
-      errors.emplace_back("La position de " + fileName +
-                          " ne correspond pas à ses coordonnées dans le nom.");
-  } catch (const std::exception &) {
-    errors.emplace_back("Coordonnées invalides dans le nom : " + fileName);
-  }
-}
-
+// La case de chaque tuile vient de la grille, et non de son nom de fichier : les noms sont libres.
 struct TileValidationContext {
   const ProjectSetup &setup;
-  const std::optional<std::regex> &pattern;
   std::set<fs::path> uniquePaths;
   std::set<std::pair<int, int>> uniqueCells;
   std::vector<std::string> &errors;
@@ -215,20 +177,30 @@ void validateTile(const ProjectTile &tile, TileValidationContext &context) {
       tile.column >= context.setup.gridColumns)
     context.errors.emplace_back("Tuile hors de la grille : " +
                                 IONs::pathToUtf8(absolutePath.filename()));
-  if (context.pattern)
-    validateTileCoordinates(tile, *context.pattern, context.errors);
 }
 
+// Dimensions de la grille. Les tuiles elles-mêmes sont dans le paramètre `tiles` du step import.
 Json createGridJson(const ProjectSetup &setup) {
+  return {{"rows", setup.gridRows}, {"columns", setup.gridColumns}};
+}
+
+// Liste des tuiles pour le step import : une entrée { id, file, row, column } par tuile, dans l'ordre ligne par ligne
+// puis colonne par colonne ; l'id est le rang dans cet ordre (règle du step import).
+Json createImportTilesJson(const ProjectSetup &setup) {
+  std::vector<ProjectTile> orderedTiles = setup.tiles;
+  std::sort(orderedTiles.begin(), orderedTiles.end(),
+            [](const ProjectTile &first, const ProjectTile &second) {
+              return first.row != second.row ? first.row < second.row
+                                             : first.column < second.column;
+            });
   Json tiles = Json::array();
-  for (const ProjectTile &tile : setup.tiles)
+  for (std::size_t index = 0; index < orderedTiles.size(); ++index)
     tiles.push_back(
-        {{"row", tile.row},
-         {"column", tile.column},
-         {"path", IONs::pathToUtf8(fs::absolute(tile.path).lexically_normal())}});
-  return {{"rows", setup.gridRows},
-          {"columns", setup.gridColumns},
-          {"tiles", std::move(tiles)}};
+        {{"id", static_cast<int>(index)},
+         {"file", IONs::pathToUtf8(fs::absolute(orderedTiles[index].path).lexically_normal())},
+         {"row", orderedTiles[index].row},
+         {"column", orderedTiles[index].column}});
+  return tiles;
 }
 
 Json createProjectJson(const ProjectSetup &setup) {
@@ -301,8 +273,7 @@ std::vector<std::string> ProjectSetupModelClass::validate() const {
         std::to_string(cellCount) + " attendues, " +
         std::to_string(setup.tiles.size()) + " trouvées).");
 
-  const std::optional<std::regex> pattern = validatedPattern(setup, errors);
-  TileValidationContext context{setup, pattern, {}, {}, errors};
+  TileValidationContext context{setup, {}, {}, errors};
   for (const ProjectTile &tile : setup.tiles)
     validateTile(tile, context);
   return errors;
@@ -317,8 +288,8 @@ Json ProjectSetupModelClass::createBackendScript() const {
   replaceParameter(
       importStep, "path",
       IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal()));
-  if (!setup.filenameFormat.empty())
-    replaceParameter(importStep, "format", setup.filenameFormat);
+  // Les tuiles et leur case viennent de la grille : le format des noms n'est pas utilisé par le backend.
+  replaceParameter(importStep, "tiles", createImportTilesJson(setup));
 
     Json phaseCorrelationStep =
       PipelineNs::createStep("phase-correlation")->getConfigJson();

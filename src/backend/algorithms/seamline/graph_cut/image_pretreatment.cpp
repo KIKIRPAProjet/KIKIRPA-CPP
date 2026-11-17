@@ -14,9 +14,9 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/mosaic_corners.h"
 #include "core/io/unicode_path.h"
+#include <cstddef>
 #include <cstdio>
 #include <string>
-#include <map>
 #include <regex>
 #include <vector>
 #include <memory>
@@ -113,8 +113,9 @@ namespace GraphCutNs {
 
     // Extrait la colonne et la ligne d'un nom se terminant par _C<nombre>_R<nombre>.tif ou .tiff, comme les images lues par
     // le step import (format par défaut img_C(\d+)_R(\d+)\.tif : colonne d'abord, puis ligne).
-    // Construit un identifiant tel que "r03_c07" (ligne, colonne), utilisé pour rechercher la position : cet identifiant
-    // ne dépend pas du format du nom de fichier.
+    // Construit un identifiant tel que "r03_c07" (ligne, colonne). Sert seulement au positionnement autonome
+    // (PositioningNs::computeTilePositions), qui part de chemins de fichiers : le pipeline, lui, identifie les tuiles
+    // par TileClass::getId().
     // Renvoie false si le nom ne correspond pas au format attendu.
     bool ImagePretreatmentClass::parseTileName(const std::string& path, int& row, int& column, std::string& tileId) {
         static const std::regex pattern("_C(\\d+)_R(\\d+)\\.tiff?$", std::regex::icase);
@@ -137,17 +138,6 @@ namespace GraphCutNs {
     }
 
     namespace {
-
-        // Positions des tuiles, retrouvées par l'identifiant "rLL_cCC" tiré du nom de fichier.
-        using PositionByTileId = std::map<std::string, cv::Point2d>;
-
-        // Table temporaire construite à partir de la structure d'entrée, pour une recherche rapide.
-        PositionByTileId indexPositionsByTileId(const std::vector<DataNs::TilePositionData>& inputPositions) {
-            PositionByTileId positionByTileId;
-            for (const auto& tilePosition : inputPositions)
-                positionByTileId[tilePosition.tileId] = tilePosition.position;
-            return positionByTileId;
-        }
 
         // Lit les dimensions d'une image à partir de l'en-tête du fichier, sans décoder les pixels.
         // Pour un TIFF, seuls les champs IMAGEWIDTH / IMAGELENGTH de la première image du fichier sont lus, soit la même
@@ -193,26 +183,6 @@ namespace GraphCutNs {
             return true;
         }
 
-        // Associe le fichier à sa position grâce à l'identifiant extrait de son nom. Renvoie false si le nom n'est pas
-        // reconnu ou si la position manque (cause dans errorMessage).
-        bool findRawCorner(const PositionByTileId& positionByTileId, const std::string& imagePath, cv::Point2d& rawCorner,
-                           std::string& errorMessage) {
-            int row = 0;
-            int column = 0;
-            std::string tileId;
-            if (!ImagePretreatmentClass::parseTileName(imagePath, row, column, tileId)) {
-                errorMessage = "Tile file name must end with _C<column>_R<row>.tif or .tiff: " + imagePath;
-                return false;
-            }
-            const auto tilePosition = positionByTileId.find(tileId);
-            if (tilePosition == positionByTileId.end()) {
-                errorMessage = "No position provided for tile " + tileId + " (" + imagePath + ")";
-                return false;
-            }
-            rawCorner = tilePosition->second;
-            return true;
-        }
-
         // Convertit les positions pleine résolution vers la grille réduite.
         // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
         std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
@@ -227,8 +197,8 @@ namespace GraphCutNs {
     }
 
     // Prépare les dimensions, les masques réduits et les positions des tuiles aux deux résolutions.
-    // Les positions sont fournies par inputPositions, et non calculées à partir des images.
-    // En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
+    // Les positions sont fournies par inputPositions, une par tuile dans l'ordre de tilePaths, et non calculées à
+    // partir des images. En cas d'échec, la cause est dans errorMessage (voir getErrorMessage).
     int ImagePretreatmentClass::processImages(const std::vector<DataNs::TilePositionData>& inputPositions,
                                               const std::vector<std::string>& tilePaths, double scale,
                                               PreprocessedTiles& tiles) {
@@ -237,14 +207,15 @@ namespace GraphCutNs {
             errorMessage = "Reduction scale must be greater than 0 and at most 1, got " + std::to_string(scale);
             return -1;
         }
-        const PositionByTileId positionByTileId = indexPositionsByTileId(inputPositions);
+        if (inputPositions.size() != tilePaths.size()) {
+            errorMessage = "The number of positions (" + std::to_string(inputPositions.size()) +
+                           ") doesn't match the number of tiles (" + std::to_string(tilePaths.size()) + ")";
+            return -1;
+        }
         std::vector<cv::Point2d> rawCorners;
-        for (const std::string& imagePath : tilePaths) {
-            cv::Point2d rawCorner;
-            if (!addTileSizeAndMask(imagePath, scale, tiles, errorMessage) ||
-                !findRawCorner(positionByTileId, imagePath, rawCorner, errorMessage))
-                return -1;
-            rawCorners.push_back(rawCorner);
+        for (std::size_t tileIndex = 0; tileIndex < tilePaths.size(); ++tileIndex) {
+            if (!addTileSizeAndMask(tilePaths[tileIndex], scale, tiles, errorMessage)) return -1;
+            rawCorners.push_back(inputPositions[tileIndex].position);
         }
         if (tiles.tileSizes.empty()) {
             errorMessage = "No tile provided for image pretreatment";
