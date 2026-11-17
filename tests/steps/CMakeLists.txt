@@ -27,6 +27,11 @@ kikirpa_copy_onnxruntime_dlls(test_lightglue_model)
 add_test(NAME lightglue_model COMMAND test_lightglue_model "${lightglue_test_model}")
 set_tests_properties(lightglue_model PROPERTIES LABELS "integration")
 
+add_executable(test_import_step test_import_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_import_step)
+target_link_libraries(test_import_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_import_step PROPERTIES LABELS "unit")
+
 add_executable(test_absolute_pos_step test_absolute_pos_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_absolute_pos_step)
 target_link_libraries(test_absolute_pos_step PRIVATE kikirpa_backend GTest::gtest_main)

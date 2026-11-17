@@ -122,7 +122,7 @@ Les chemins relatifs se lisent depuis le dossier du script : ici, les images son
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Piège n° 1 : le nom des fichiers.** `absolute-pos` et `graphcut` exigent des noms qui finissent par `_C<colonne>_R<ligne>.tif` (le format par défaut d'`import`). Un `format` personnalisé doit donc produire des fichiers qui respectent ce nommage. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Les tuiles et leur case.** Ici, `import` lit la case de chaque tuile dans le nom des fichiers (`format`). Pour des noms libres, comme les vraies données (`1_no filter f8 v30 20cm.tif`), on donne plutôt la **liste `tiles`** : pour chaque tuile, son fichier, sa ligne et sa colonne. C'est ce qu'écrit l'interface. Sans liste, si aucun nom ne donne sa case, il suffit de donner le nombre de colonnes (`columns`) : les images remplissent la grille dans l'ordre de leurs noms. Le nom des fichiers n'est donc jamais exigé. `import` en déduit l'`id` de chaque tuile ; ensuite, tous les steps n'utilisent que lui. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 
@@ -200,7 +200,7 @@ Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inte
 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
-| `import` | `path`, `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
+| `import` | `path`, `tiles` (liste des tuiles) ou `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
 | `overlap-estimation` | `overlap`, réglages de la corrélation | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
@@ -228,12 +228,16 @@ Dans le DataStore, une donnée est une structure C++. Les types pris en charge p
 
 #### `Tiles` (clé `tiles`) : la liste des tuiles
 
-Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
+Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. C'est ici qu'est faite la correspondance **identifiant ↔ fichier ↔ case** : `id`, `source`, `row` et `column`. Les voisines sont données par identifiant, `-1` s'il n'y en a pas.
 
 ```json
-[ { "id": 0, "source": "D:/oeuvre/tuiles/t_C00_R00.tif", "tiff": "D:/oeuvre/tuiles/.cache/pyramids/t_C00_R00_pyramid.tif",
+[ { "id": 0, "source": "D:/oeuvre/tuiles/2_no filter.tif", "row": 0, "column": 0,
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/0_2_no filter_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
+
+- `id` = rang de la tuile dans l'ordre ligne par ligne, puis colonne par colonne. **C'est le seul identifiant de tuile du pipeline** : `tileIdA` / `tileIdB` des paires, `tileId` des positions, etc.
+- `row`, `column` : la case, à partir de 0, fixée par `import` (liste `tiles` ou nom du fichier).
 
 C++ : `DataNs::TileList` = `std::vector<std::shared_ptr<DataNs::TileClass>>` (`core/data/tile.h`).
 
@@ -258,13 +262,13 @@ C++ : `std::vector<DataNs::PairMatches>` (`core/data/algorithm_types.h`).
 #### `Positions` (clé `positions`) : où placer chaque tuile
 
 ```json
-[ { "tileId": "r00_c00", "position": [0.0, 0.0],     "rotationRadians": 0.0 },
-  { "tileId": "r00_c01", "position": [7998.9, -18.1], "rotationRadians": 0.0 } ]
+[ { "tileId": 0, "position": [0.0, 0.0],     "rotationRadians": 0.0 },
+  { "tileId": 1, "position": [7998.9, -18.1], "rotationRadians": 0.0 } ]
 ```
 
 - `position` = coin haut-gauche de la tuile dans le repère de la mosaïque.
 - La tuile de référence est en (0, 0). Les autres peuvent avoir des coordonnées négatives.
-- `tileId` est lu dans le nom du fichier (`_C01_R00`), **ce n'est pas l'`id` numérique**.
+- `tileId` est l'`id` de la tuile (`TileClass::getId()`), comme dans `PairMatches`.
 - La rotation vaut toujours 0 : `absolute-pos` ne calcule que des translations.
 
 C++ : `std::vector<DataNs::TilePositionData>`.
@@ -501,7 +505,6 @@ Le rapport est exporté à partir de l'archive JSON existante ; il ne déclenche
 - **L'exécutable en ligne de commande** (`src/main.cpp`).
 - **Étendre le branchement du front** (§9) au-delà de `import` et `phase-correlation`, proposer les autres steps pris en charge et choisir une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
-- **Unifier le nommage des fichiers** entre `import` et `absolute-pos` / `graphcut`.
 
 À chercher ou à décider :
 

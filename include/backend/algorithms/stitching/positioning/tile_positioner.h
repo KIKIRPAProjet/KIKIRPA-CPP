@@ -33,12 +33,12 @@ namespace PositioningNs {
     //     SIFT (lecture 16 bits sans perte) -> Vote 2D -> translation = médiane de (pointInA - pointInB) sur les INLIERS
     //   puis ajustement global par moindres carrés de toutes les translations.
     //
-    // tilePaths : tuiles nommées "..._rLL_cCC.tif(f)". La première tuile (plus petite ligne, puis colonne) sert de
-    //             référence en (0, 0). Une paire dont SIFT ou le Vote 2D échoue est ignorée (la grille reste connectée par
-    //             les autres paires si possible).
-    // positions : une entrée par tuile reliée à la référence ; identifiant "rLL_cCC" (le même que
-    //             ImagePretreatmentClass). Si positions.size() != tilePaths.size(), certaines tuiles ne sont pas reliées :
-    //             voir le journal.
+    // tilePaths : tuiles nommées "..._C<colonne>_R<ligne>.tif(f)". La première tuile (plus petite ligne, puis colonne)
+    //             sert de référence en (0, 0). Une paire dont SIFT ou le Vote 2D échoue est ignorée (la grille reste
+    //             connectée par les autres paires si possible).
+    // positions : une entrée par tuile reliée à la référence ; tileId = rang de la tuile dans l'ordre ligne par ligne,
+    //             puis colonne par colonne (la règle des identifiants du step import). Si positions.size() !=
+    //             tilePaths.size(), certaines tuiles ne sont pas reliées : voir le journal.
     // log       : messages de progression et diagnostics (résidus par paire).
     // Retourne false en cas d'erreur (nom invalide, doublon, lecture impossible, aucune paire exploitable).
     bool computeTilePositions(const std::vector<std::string>& tilePaths, const PositioningSettings& settings,

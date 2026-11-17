@@ -5,12 +5,15 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
-#include "frontendutils.h"
 
+#include "frontendutils.h"
+#include "project_setup_model.h"
+
+class QCloseEvent;
 class QKeyEvent;
 class QWidget;
 class ProjectGrid;
-class SimulationRunner;
+class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
@@ -44,12 +47,15 @@ private:
 
     void keyPressEvent(QKeyEvent *event) override;
 
-    // Applique le style visuel de l'application.
+    // Intercepte la fermeture de la fenêtre pour interrompre proprement un éventuel calcul en cours.
+    void closeEvent(QCloseEvent *event) override;
+
+    // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
 
     // Relie chaque composant aux événements de la grille, des menus et du pipeline.
     void setupProjectGridConnections();
-    void setupSimulationConnections();
+    void setupPipelineConnections();
     void setupHomePageConnections();
     void setupMenuConnections();
     void setupPageConnections();
@@ -82,11 +88,8 @@ private:
     // Actualise les informations du projet et l'enregistre.
     void refreshProjectInfo();
     void saveProject();
-
-    // Écrit le script backend du projet et renvoie son chemin.
-    QString writeBackendScript() const;
-
-    // Lance le pipeline ou ouvre le dialogue d'export du rapport.
+    // Construit et valide le script JSON décrivant la suite des étapes backend.
+    QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
     void showExportDialog();
 
@@ -123,7 +126,7 @@ private slots:
 private:
     // Composants d'interface coordonnés par cette fenêtre.
     ProjectGrid *projectGrid = nullptr;
-    SimulationRunner *simulationRunner = nullptr;
+    PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
 
@@ -131,7 +134,6 @@ private:
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;
-    QString backendScriptPath;
 
     // État de la présentation courante.
     bool projectCreated = false;
@@ -141,4 +143,6 @@ private:
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
+    bool isClosing = false;
+    FrontendNs::ProjectSetup buildCurrentProjectSetup() const;
 };

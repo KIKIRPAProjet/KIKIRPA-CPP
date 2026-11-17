@@ -85,14 +85,16 @@ namespace CheckpointNs {
         // Identifiant d'une voisine pour le JSON, ou -1 si elle n'existe pas.
         int neighbourId(const DataNs::TileClass* neighbour) { return neighbour ? neighbour->getId() : -1; }
 
-        // Sauvegarde du type "Tiles" (TileList), une entrée par tuile : { id, source, tiff, width, height, type, left, right, top, bottom }.
+        // Sauvegarde du type "Tiles" (TileList), une entrée par tuile :
+        // { id, source, row, column, tiff, width, height, type, left, right, top, bottom }.
         // Seules les fiches sont écrites, jamais les pixels. width/height sont ceux de la pleine résolution (les autres
-        // niveaux se recalculent au chargement) ; les voisines sont écrites par identifiant.
+        // niveaux se recalculent au chargement) ; row/column = case dans la grille ; les voisines sont écrites par identifiant.
         void saveTiles(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json tilesJson = Json::array();
             for (const auto& tile : dataStore.get<DataNs::TileList>(key)) {
                 const DataNs::Level& fullResolutionLevel = tile->getLevel(0);
-                tilesJson.push_back({{"id", tile->getId()}, {"source", tile->getSource().u8string()}, {"tiff", tile->getTiff().u8string()},
+                tilesJson.push_back({{"id", tile->getId()}, {"source", tile->getSource().u8string()},
+                                    {"row", tile->getGridRow()}, {"column", tile->getGridColumn()}, {"tiff", tile->getTiff().u8string()},
                                     {"width", fullResolutionLevel.width}, {"height", fullResolutionLevel.height}, {"type", tile->getType()},
                                     {"left", neighbourId(tile->getLeft())}, {"right", neighbourId(tile->getRight())},
                                     {"top", neighbourId(tile->getTop())}, {"bottom", neighbourId(tile->getBottom())}});
@@ -113,6 +115,7 @@ namespace CheckpointNs {
                 tiles.push_back(std::make_shared<DataNs::TileClass>(tileJson.at("id").get<int>(), fs::u8path(tileJson.at("source").get<std::string>()),
                                                                     tiffPath, tileJson.at("width").get<int>(), tileJson.at("height").get<int>(),
                                                                     tileJson.at("type").get<int>()));
+                tiles.back()->setGridPosition(tileJson.at("row").get<int>(), tileJson.at("column").get<int>());
                 tileById[tiles.back()->getId()] = tiles.back().get();
             }
             // Deuxième passe : identifiant JSON -> pointeur vers la tuile (-1 ou inconnu -> pas de voisine).
@@ -160,7 +163,8 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(pairs));
         }
 
-        // Sauvegarde du type "Positions" (std::vector<TilePositionData>), une entrée par tuile placée : { tileId, position: [x, y], rotationRadians }.
+        // Sauvegarde du type "Positions" (std::vector<TilePositionData>), une entrée par tuile placée : { tileId, position: [x, y], rotationRadians },
+        // tileId étant TileClass::getId().
         void savePositions(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json positionsJson = Json::array();
             for (const DataNs::TilePositionData& tilePosition : dataStore.get<std::vector<DataNs::TilePositionData>>(key))
@@ -172,7 +176,7 @@ namespace CheckpointNs {
         void loadPositions(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             std::vector<DataNs::TilePositionData> positions;
             for (const Json& positionJson : readJson(directory, key))
-                positions.push_back({positionJson.at("tileId").get<std::string>(),
+                positions.push_back({positionJson.at("tileId").get<int>(),
                                     cv::Point2d(positionJson.at("position").at(0).get<double>(), positionJson.at("position").at(1).get<double>()),
                                     positionJson.at("rotationRadians").get<double>()});
             dataStore.replace(key, std::move(positions));
