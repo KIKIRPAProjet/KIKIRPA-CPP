@@ -122,7 +122,7 @@ Les chemins relatifs se lisent depuis le dossier du script : ici, les images son
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
-- **Les tuiles et leur case.** Ici, `import` lit la case de chaque tuile dans le nom des fichiers (`format`). Pour des noms libres, comme les vraies données (`1_no filter f8 v30 20cm.tif`), on donne plutôt la **liste `tiles`** : pour chaque tuile, son fichier, sa ligne et sa colonne. C'est ce qu'écrit l'interface. `import` en déduit l'`id` de chaque tuile ; ensuite, tous les steps n'utilisent que lui. Explication : [steps/ImportStep.md](steps/ImportStep.md).
+- **Les tuiles et leur case.** Ici, `import` lit la case de chaque tuile dans le nom des fichiers (`format`). Pour des noms libres, comme les vraies données (`1_no filter f8 v30 20cm.tif`), on donne plutôt la **liste `tiles`** : pour chaque tuile, son fichier, sa ligne et sa colonne. C'est ce qu'écrit l'interface. Sans liste, si aucun nom ne donne sa case, il suffit de donner le nombre de colonnes (`columns`) : les images remplissent la grille dans l'ordre de leurs noms. Le nom des fichiers n'est donc jamais exigé. `import` en déduit l'`id` de chaque tuile ; ensuite, tous les steps n'utilisent que lui. Explication : [steps/ImportStep.md](steps/ImportStep.md).
 - **Piège n° 2 : un seul step d'appariement.** `phase-correlation`, `sift` et `lightglue` écrivent tous dans `matches`. Si un script en contient deux, `buildPipeline` l'accepte, mais le second écrase le résultat du premier.
 - `lightglue` demande un modèle ONNX (`modelPath`) : [steps/LightGlueStep.md](steps/LightGlueStep.md).
 

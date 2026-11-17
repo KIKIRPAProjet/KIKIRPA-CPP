@@ -48,10 +48,12 @@ namespace {
         return {{"file", file}, {"row", row}, {"column", column}};
     }
 
-    // Step import configuré avec un dossier et une liste de tuiles (vide : mode format).
-    StepsNs::ImportStepClass makeImportStep(const fs::path& directory, const Json& tiles) {
+    // Step import configuré avec un dossier, une liste de tuiles (vide : cases lues dans les noms) et un nombre de
+    // colonnes (0 : non donné).
+    StepsNs::ImportStepClass makeImportStep(const fs::path& directory, const Json& tiles, int columns = 0) {
         StepsNs::ImportStepClass step;
         step.importConfig({{"parameters", {{{"valueType", "string"}, {"name", "path"}, {"value", directory.string()}},
+                                           {{"valueType", "int"}, {"name", "columns"}, {"value", columns}},
                                            {{"valueType", "json"}, {"name", "tiles"}, {"value", tiles}}}}});
         return step;
     }
@@ -71,6 +73,7 @@ TEST(ImportStepTest, ListGivesIdFileAndGridCellOfEachTile) {
     StepsNs::ImportStepClass step = makeImportStep(directory.path, writeFreeNamedGrid(directory.path));
 
     ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    EXPECT_EQ(step.getResult()["placement"], "list");
     const DataNs::TileList& tiles = step.getOutput().tiles;
     ASSERT_EQ(tiles.size(), 4U);
     EXPECT_EQ(tiles[2]->getId(), 2);
@@ -106,6 +109,50 @@ TEST(ImportStepTest, FormatGivesGridCellFromFileName) {
     EXPECT_EQ(tiles[1]->getGridRow(), 0);
     EXPECT_EQ(tiles[1]->getGridColumn(), 1);
     EXPECT_EQ(tiles[0]->getRight(), tiles[1].get());
+    EXPECT_EQ(step.getResult()["placement"], "fileName");
+}
+
+// Sans liste, des noms qui ne donnent pas la case ne sont pas une erreur : les images, triées par nom, remplissent la
+// grille ligne par ligne sur `columns` colonnes.
+TEST(ImportStepTest, WithoutListOrMatchingNamesPlacesImagesInNameOrder) {
+    const TestDirectory directory;
+    for (const char* name : {"3_no filter.tif", "1_no filter.tif", "4_no filter.tiff", "2_no filter.TIF"})
+        writeImage(directory.path / name);
+    StepsNs::ImportStepClass step = makeImportStep(directory.path, Json::array(), 2);
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    EXPECT_EQ(step.getResult()["placement"], "nameOrder");
+    const DataNs::TileList& tiles = step.getOutput().tiles;
+    ASSERT_EQ(tiles.size(), 4U);
+    EXPECT_EQ(tiles[0]->getSource().filename(), "1_no filter.tif");
+    EXPECT_EQ(tiles[1]->getSource().filename(), "2_no filter.TIF");
+    EXPECT_EQ(tiles[2]->getSource().filename(), "3_no filter.tif");
+    EXPECT_EQ(tiles[2]->getGridRow(), 1);
+    EXPECT_EQ(tiles[2]->getGridColumn(), 0);
+    EXPECT_EQ(tiles[0]->getBottom(), tiles[2].get());
+}
+
+// Des noms qui donnent la case gardent la priorité sur l'ordre des noms, même si `columns` est donné.
+TEST(ImportStepTest, MatchingNamesWinOverNameOrder) {
+    const TestDirectory directory;
+    writeImage(directory.path / "img_C0_R1.tif");
+    writeImage(directory.path / "img_C0_R0.tif");
+    StepsNs::ImportStepClass step = makeImportStep(directory.path, Json::array(), 2);
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    EXPECT_EQ(step.getResult()["placement"], "fileName");
+    EXPECT_EQ(step.getOutput().tiles[1]->getGridRow(), 1);
+    EXPECT_EQ(step.getOutput().tiles[1]->getGridColumn(), 0);
+}
+
+// Sans liste ni nom qui donne la case, il faut le nombre de colonnes : le message dit quoi donner.
+TEST(ImportStepTest, AsksForColumnsWhenNamesGiveNoCell) {
+    const TestDirectory directory;
+    writeImage(directory.path / "a.tif");
+    StepsNs::ImportStepClass step = makeImportStep(directory.path, Json::array());
+
+    EXPECT_FALSE(step.execute());
+    EXPECT_NE(step.getResult()["error"].get<std::string>().find("'columns'"), std::string::npos);
 }
 
 // Deux images de même nom (a.tif et a.tiff) ont chacune leur TIFF pyramidal : son nom commence par l'id de la tuile.
