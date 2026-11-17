@@ -232,16 +232,26 @@ void testerPause(const fs::path& dossier) {
     PipelineNs::PipelineClass* cible = nullptr;
     Banc b(dossier, [&] { cible->requestPause(); });
     cible = &b.p;
+    const fs::path scriptPath = dossier / "run.json";
+    b.p.setScriptPath(scriptPath);
     verifier(!b.lancer(), "run interrompu");
     verifier(b.p.getRunState().status == PipelineNs::RunStatus::Paused, "statut paused");
     verifier(b.execA == 1 && b.execB == 0, "pause entre a et b");
 
-    Banc suite(dossier);   // nouveau processus : même dossier de checkpoints
-    PipelineNs::RunState r = suite.p.getRunState();
-    r.completedSteps = b.p.getRunState().completedSteps;
-    suite.p.setRunState(r);
+    std::ifstream scriptInput(scriptPath, std::ios::binary);
+    const Json pausedScript = Json::parse(scriptInput, nullptr, false);
+    verifier(!pausedScript.is_discarded() && pausedScript.at("run").at("status") == "paused",
+             "script de pause sauvegardé");
+    Banc suite(dossier);   // nouveau processus : même script et dossier de checkpoints
+    suite.p.configure(pausedScript);
+    suite.p.setScriptPath(scriptPath);
     verifier(suite.lancer() && suite.execA == 0 && suite.execB == 1, "reprise : seul b exécuté");
     verifier(suite.y() == VALEUR_A + VALEUR_B, "sortie finale correcte");
+    std::ifstream completedInput(scriptPath, std::ios::binary);
+    const Json completedScript = Json::parse(completedInput, nullptr, false);
+    verifier(!completedScript.is_discarded() && completedScript.at("run").at("status") == "completed" &&
+                 completedScript.at("run").at("completedSteps").size() == 2,
+             "script terminé sauvegardé après la reprise");
 }
 
 void testerScript(const fs::path& dossier) {
