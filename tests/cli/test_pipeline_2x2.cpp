@@ -91,7 +91,7 @@ CommandResult runStitching(const std::string& arguments, const fs::path& logDire
 
     int systemStatus = -1;
 #ifdef _WIN32
-    const std::wstring wideCommand = fs::u8path(command).wstring();
+    const std::wstring wideCommand = L"\"" + fs::u8path(command).wstring() + L"\"";
     // NOLINTNEXTLINE(bugprone-command-processor) : lance l'exécutable construit pour le test d'intégration CLI.
     systemStatus = _wsystem(wideCommand.c_str());
 #else
@@ -118,10 +118,10 @@ void createSyntheticTiles(const fs::path& imageDirectory) {
         {SHIFT_X, SHIFT_Y, TILE_WIDTH, TILE_HEIGHT}
     };
     const char* tileNames[] = {
-        "img_c00_r00_c00.tif",
-        "img_c01_r00_c01.tif",
-        "img_c00_r01_c00.tif",
-        "img_c01_r01_c01.tif"
+        "img_C00_R00.tif",
+        "img_C01_R00.tif",
+        "img_C00_R01.tif",
+        "img_C01_R01.tif"
     };
     for (std::size_t tileIndex = 0; tileIndex < 4; ++tileIndex)
         if (!cv::imwrite((imageDirectory / tileNames[tileIndex]).string(), canvas16(tileRegions[tileIndex])))
@@ -133,7 +133,7 @@ Json makeScript() {
         {{"name", "import"},
          {"parameters", Json::array({
              {{"valueType", "string"}, {"name", "path"}, {"value", "images"}},
-             {{"valueType", "string"}, {"name", "format"}, {"value", ".*_c(\\d+)_r(\\d+)_c\\d+\\.tiff?"}}
+             {{"valueType", "string"}, {"name", "format"}, {"value", ".*_C(\\d+)_R(\\d+)\\.tiff?"}}
          })}},
         {{"name", "phase-correlation"},
          {"parameters", Json::array({
