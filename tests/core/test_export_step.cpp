@@ -197,10 +197,13 @@ TEST(ExportStepTest, PublishesJpegMosaicAsEightBitImage) {
     ASSERT_FALSE(published.empty());
     EXPECT_EQ(published.type(), CV_8UC3);
     EXPECT_EQ(published.size(), testCanvasSize());
+    
+    // Le pixel (0,0) subit une division par 257.0 pour passer de 16-bit à 8-bit.
+    // L'export JPEG convertit également de RGB (ordre initial) vers BGR (OpenCV)
     const cv::Vec3b pixel = published.at<cv::Vec3b>(0, 0);
-    EXPECT_NEAR(pixel[0], 1, 5);
-    EXPECT_NEAR(pixel[1], 200, 5);
-    EXPECT_NEAR(pixel[2], 100, 5);
+    EXPECT_NEAR(pixel[0], (3 * LEFT_VALUE) / 257.0, 5); // Canal Bleu (ancien Rouge)
+    EXPECT_NEAR(pixel[1], (2 * LEFT_VALUE) / 257.0, 5); // Canal Vert (inchangé)
+    EXPECT_NEAR(pixel[2], LEFT_VALUE / 257.0, 5);       // Canal Rouge (ancien Bleu)
 }
 
 // L'empreinte suit mosaic.tif : le checkpoint de l'export se périme si le fichier publié disparaît.
