@@ -1,4 +1,4 @@
-// include/frontend/simulationrunner.h
+// include/frontend/pipeline_runner.h
 #pragma once
 
 #include <QImage>
@@ -9,13 +9,13 @@ class QThread;
 class PipelineWorkerClass;
 
 // Façade de contrôle asynchrone du pipeline, gérant le cycle de vie du QThread et du Worker.
-class SimulationRunner : public QObject {
+class PipelineRunnerClass : public QObject {
     Q_OBJECT
 
     public:
-        explicit SimulationRunner(QObject* parent = nullptr);
+        explicit PipelineRunnerClass(QObject* parent = nullptr);
         // Interrompt le calcul et attend l'arrêt complet du QThread pour éviter un crash à la destruction.
-        ~SimulationRunner() override;
+        ~PipelineRunnerClass() override;
 
         bool isRunning() const { return running; }
         bool isPaused() const { return paused; }
@@ -31,7 +31,7 @@ class SimulationRunner : public QObject {
 
     public slots:
         // Démarre l'exécution asynchrone du pipeline backend dans un QThread dédié.
-        void startRun(int firstStep = 1);
+        void startRun(int firstStep = 1, bool isResume = false);
         // Ordonne une mise en pause propre entre deux étapes du pipeline.
         void pauseRun();
         // Reprend l'exécution là où elle a été interrompue en réutilisant les checkpoints.

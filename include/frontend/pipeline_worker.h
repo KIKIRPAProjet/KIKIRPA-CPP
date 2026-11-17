@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QObject>
 #include <QString>
+#include <QMutex>
 
 #include <atomic>
 #include <memory>
@@ -26,8 +27,7 @@ class PipelineWorkerClass : public QObject {
 
     public slots:
         // Construit et lance le pipeline à partir du script JSON fourni.
-        void runPipeline(const QString& scriptJsonText, const QString& startFromStep = QString(), bool skipCompletedSteps = true);
-        // Demande une pause propre entre deux étapes via PipelineClass::requestPause().
+        void runPipeline(const QString& scriptJsonText, const QString& startFromStep = QString(), bool skipCompletedSteps = true, bool isResume = false);
         void requestPause();
         // Demande l'arrêt d'urgence du pipeline en cours.
         void requestCancel();
@@ -44,8 +44,7 @@ class PipelineWorkerClass : public QObject {
 
     private:
         // Parse et valide la configuration avant exécution.
-        bool initializePipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps);
-        // Traite chaque ligne émise par le Logger backend et émet les signaux de progression.
+        bool initializePipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps, bool isResume);        // Traite chaque ligne émise par le Logger backend et émet les signaux de progression.
         void handleLogMessage(const QString& message, int totalSteps);
         // Analyse l'état de sortie de run() et émet le signal approprié.
         void processExecutionResult(bool success, const std::string& executionError);
@@ -53,7 +52,7 @@ class PipelineWorkerClass : public QObject {
         QImage generatePreviewImage();
 
         std::unique_ptr<PipelineNs::PipelineClass> pipeline;
+        mutable QMutex pipelineMutex;
         std::atomic<bool> pauseRequested{false};
         std::atomic<bool> cancelRequested{false};
-
 };

@@ -7,7 +7,9 @@
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/run_state.h"
 #include "core/step/data_store.h"
+#include "core/io/unicode_path.h"
 
+#include <fstream>
 #include <nlohmann/json.hpp>
 
 #include <QPainter>
@@ -33,7 +35,8 @@ namespace {
             return QStringLiteral("warning");
         }
         if (message.contains(QStringLiteral("failed"), Qt::CaseInsensitive) ||
-            message.contains(QStringLiteral("error"), Qt::CaseInsensitive)) {
+            message.startsWith(QStringLiteral("error"), Qt::CaseInsensitive) ||
+            message.startsWith(QStringLiteral("Pipeline error"), Qt::CaseInsensitive)) {
             return QStringLiteral("error");
         }
         return QStringLiteral("info");
@@ -69,7 +72,7 @@ namespace {
     // Dessine une tuile redimensionnée à sa position absolue relative sur le canvas de prévisualisation.
     void drawTileOnCanvas(QPainter& painter, const DataNs::TileClass& tile,
                           const cv::Point2d& position, const BoundingBox& box, double scale) {
-        const QString sourcePath = QString::fromStdString(tile.getSource().string());
+        const QString sourcePath = QString::fromStdString(IONs::pathToUtf8(tile.getSource()));
         const QImage tileImage(sourcePath);
         if (tileImage.isNull()) return;
 
@@ -106,7 +109,7 @@ namespace {
     // Solution de repli si le pipeline s'arrête avant le calcul des positions (affiche la première tuile).
     QImage renderFallbackPreview(const DataNs::TileList& tiles) {
         if (tiles.empty()) return QImage();
-        const QString firstPath = QString::fromStdString(tiles.front()->getSource().string());
+        const QString firstPath = QString::fromStdString(IONs::pathToUtf8(tiles.front()->getSource()));
         return QImage(firstPath);
     }
 
@@ -122,20 +125,25 @@ PipelineWorkerClass::~PipelineWorkerClass() {
 
 void PipelineWorkerClass::requestPause() {
     pauseRequested.store(true);
-    // requestPause() est thread-safe et ordonne l'arrêt à la frontière entre deux steps.
+    QMutexLocker locker(&pipelineMutex);
     if (pipeline) pipeline->requestPause();
 }
 
 void PipelineWorkerClass::requestCancel() {
     cancelRequested.store(true);
+    QMutexLocker locker(&pipelineMutex);
     if (pipeline) pipeline->requestPause();
 }
 
-bool PipelineWorkerClass::initializePipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps) {
+bool PipelineWorkerClass::initializePipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps, bool isResume) {
     nlohmann::json scriptJson;
     try {
         scriptJson = nlohmann::json::parse(scriptJsonText.toStdString());
-        pipeline = std::make_unique<PipelineNs::PipelineClass>(PipelineNs::buildPipeline(scriptJson));
+        auto builtPipeline = std::make_unique<PipelineNs::PipelineClass>(PipelineNs::buildPipeline(scriptJson));
+        {
+            QMutexLocker locker(&pipelineMutex);
+            pipeline = std::move(builtPipeline);
+        }
     } catch (const std::exception& exception) {
         emit pipelineFinished(false, tr("Erreur pipeline : %1").arg(exception.what()), QImage());
         return false;
@@ -145,6 +153,33 @@ bool PipelineWorkerClass::initializePipeline(const QString& scriptJsonText, cons
     PipelineNs::RunState runState = pipeline->getRunState();
     runState.skipCompletedSteps = skipCompletedSteps;
     if (!startFromStep.isEmpty()) runState.startFromStep = startFromStep.toStdString();
+
+    if (!runState.checkpointDirectory.empty()) {
+        namespace fs = std::filesystem;
+        const fs::path checkpointDir = fs::absolute(IONs::pathFromUtf8(runState.checkpointDirectory));
+        const fs::path statePath = checkpointDir / "run.json";
+
+        // Définit le fichier où le pipeline réécrira le script et l'état après chaque étape
+        pipeline->setScriptPath(statePath);
+
+        // En cas de reprise, relit les étapes déjà achevées depuis run.json
+        if (isResume && fs::exists(statePath)) {
+            std::ifstream input(statePath, std::ios::binary);
+            if (input) {
+                try {
+                    const nlohmann::json stateJson = nlohmann::json::parse(input);
+                    if (stateJson.contains("run")) {
+                        runState.completedSteps = PipelineNs::RunState::fromJson(stateJson.at("run")).completedSteps;
+                    }
+                } catch (const std::exception& exception) {
+                    emit logMessageReceived(
+                        tr("Avertissement lecture run.json : %1").arg(exception.what()),
+                        QStringLiteral("warning"));
+                }
+            }
+        }
+    }
+
     pipeline->setRunState(runState);
     return true;
 }
@@ -195,11 +230,11 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
     emit pipelineFinished(false, errorText, QImage());
 }
 
-void PipelineWorkerClass::runPipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps) {
+void PipelineWorkerClass::runPipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps, bool isResume) {
     pauseRequested.store(false);
     cancelRequested.store(false);
 
-    if (!initializePipeline(scriptJsonText, startFromStep, skipCompletedSteps)) return;
+    if (!initializePipeline(scriptJsonText, startFromStep, skipCompletedSteps, isResume)) return;
 
     const int totalSteps = static_cast<int>(pipeline->getSteps().size());
     emit started();

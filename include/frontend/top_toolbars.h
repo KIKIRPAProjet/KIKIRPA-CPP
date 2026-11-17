@@ -5,7 +5,7 @@
 
 class MainWindow;
 class ProjectGrid;
-class SimulationRunner;
+class PipelineRunnerClass;
 class QComboBox;
 class QHBoxLayout;
 class QPushButton;
@@ -16,7 +16,7 @@ class TopToolbars : public QWidget
 {
     Q_OBJECT
 public:
-    explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, SimulationRunner *simulationRunner, QWidget *parent = nullptr);
+    explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent = nullptr);
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
@@ -43,7 +43,7 @@ private:
 
     MainWindow *m_mainWindow;
     ProjectGrid *m_projectGrid;
-    SimulationRunner *m_simulationRunner;
+    PipelineRunnerClass *m_pipelineRunner;
 
     QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;

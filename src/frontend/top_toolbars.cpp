@@ -3,7 +3,7 @@
 #include "frontendutils.h"
 #include "mainwindow.h"
 #include "projectgrid.h"
-#include "simulationrunner.h"
+#include "pipeline_runner.h"
 
 #include <QButtonGroup>
 #include <QComboBox>
@@ -12,8 +12,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, SimulationRunner *simulationRunner, QWidget *parent)
-    : QWidget(parent), m_mainWindow(mainWindow), m_projectGrid(projectGrid), m_simulationRunner(simulationRunner)
+TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent)
+    : QWidget(parent), m_mainWindow(mainWindow), m_projectGrid(projectGrid), m_pipelineRunner(pipelineRunner)
 {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -24,11 +24,11 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Simul
     createOptionsBar();
 
     // Synchronise dynamiquement le texte du bouton principal avec le cycle de vie du calcul.
-    if (m_simulationRunner) {
-        connect(m_simulationRunner, &SimulationRunner::runStarted, this, &TopToolbars::updateRunButtonState);
-        connect(m_simulationRunner, &SimulationRunner::runFinished, this, &TopToolbars::updateRunButtonState);
-        connect(m_simulationRunner, &SimulationRunner::runCancelled, this, &TopToolbars::updateRunButtonState);
-        connect(m_simulationRunner, &SimulationRunner::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
+    if (m_pipelineRunner) {
+        connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, &TopToolbars::updateRunButtonState);
+        connect(m_pipelineRunner, &PipelineRunnerClass::runFinished, this, &TopToolbars::updateRunButtonState);
+        connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
+        connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
     }
 }
 
@@ -81,12 +81,12 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     m_stopButton->setVisible(false);
     stageLayout->addWidget(m_stopButton);
     connect(m_stopButton, &QPushButton::clicked, this, [this]() {
-        if (m_simulationRunner) m_simulationRunner->cancelRun();
+        if (m_pipelineRunner) m_pipelineRunner->cancelRun();
     });
 
     auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
-    connect(compare, &QPushButton::clicked, m_simulationRunner, &SimulationRunner::showComparison);
+    connect(compare, &QPushButton::clicked, m_pipelineRunner, &PipelineRunnerClass::showComparison);
 }
 
 void TopToolbars::createModesBar()
@@ -116,18 +116,18 @@ void TopToolbars::createModesBar()
 
 void TopToolbars::handleRunButtonClicked()
 {
-    if (!m_simulationRunner) return;
+    if (!m_pipelineRunner) return;
 
     // Logique à 3 états :
     // 1. En cours d'exécution -> demande une mise en pause propre après l'étape active.
     // 2. En pause -> reprend l'exécution là où elle s'était arrêtée.
     // 3. Inactif -> démarre une exécution complète depuis l'étape 1.
 
-    if (m_simulationRunner->isRunning()) {
-        m_simulationRunner->pauseRun();
-    } else if (m_simulationRunner->isPaused()) {
-        const int nextStep = m_simulationRunner->pausedStep() + 1;
-        m_simulationRunner->resetPausedState();
+    if (m_pipelineRunner->isRunning()) {
+        m_pipelineRunner->pauseRun();
+    } else if (m_pipelineRunner->isPaused()) {
+        const int nextStep = m_pipelineRunner->pausedStep() + 1;
+        m_pipelineRunner->resetPausedState();
         m_mainWindow->requestRun(nextStep);   
     } else {
         m_mainWindow->requestRun(1);
@@ -136,13 +136,13 @@ void TopToolbars::handleRunButtonClicked()
 
 void TopToolbars::updateRunButtonState()
 {
-    if (!m_runButton || !m_simulationRunner) return;
+    if (!m_runButton || !m_pipelineRunner) return;
 
     // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend (+ afficher / masquer le bouton Stop).
-    if (m_simulationRunner->isRunning()) {
+    if (m_pipelineRunner->isRunning()) {
         m_runButton->setText(tr("⏸ Pause"));
         if (m_stopButton) m_stopButton->setVisible(false); // Masqué pendant le calcul : seul Pause est affiché
-    } else if (m_simulationRunner->isPaused()) {
+    } else if (m_pipelineRunner->isPaused()) {
         m_runButton->setText(tr("▶ Reprendre"));
         if (m_stopButton) m_stopButton->setVisible(true);  // Affiché lorsque le calcul est en pause
     } else {

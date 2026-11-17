@@ -10,21 +10,6 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-namespace {
-
-    // Liste ordonnée des 5 étapes réelles exécutées par le pipeline backend.
-    // Correspond aux identifiants backend : import, phase-correlation, absolute-pos,
-    // intensity-correction et graphcut définis dans MainWindow.
-    const QStringList BACKEND_DISPLAY_STEPS = {
-        QStringLiteral("1  Importation des tuiles"),
-        QStringLiteral("2  Correspondance (Appariement)"),
-        QStringLiteral("3  Positionnement global"),
-        QStringLiteral("4  Égalisation de luminosité"),
-        QStringLiteral("5  Ligne de couture (GraphCut)")
-    };
-
-} // namespace
-
 AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
     : QWidget(parent), m_mainWindow(mainWindow)
 {
@@ -39,10 +24,10 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, QWidget *parent)
 void AssemblyTab::setupStepList(QVBoxLayout *layout)
 {
     m_stepList = new QListWidget(this);
-    for (int i = 0; i < BACKEND_DISPLAY_STEPS.size(); ++i) {
-        auto *item = new QListWidgetItem(QStringLiteral("•  ") + BACKEND_DISPLAY_STEPS.at(i), m_stepList);
-        // Associe le numéro d'étape 1-indexé (1 à 5) à l'élément pour faciliter les requêtes de relance.
-        item->setData(Qt::UserRole, i + 1);
+    const auto& steps = FrontendUtils::pipelineSteps();
+    for (std::size_t i = 0; i < steps.size(); ++i) {
+        auto *item = new QListWidgetItem(QStringLiteral("•  ") + steps[i].displayName, m_stepList);
+        item->setData(Qt::UserRole, static_cast<int>(i + 1));
     }
     layout->addWidget(m_stepList);
 

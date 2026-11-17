@@ -5,13 +5,15 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+
 #include "frontendutils.h"
+#include "project_setup_model.h"
 
 class QCloseEvent;
 class QKeyEvent;
 class QWidget;
 class ProjectGrid;
-class SimulationRunner;
+class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
@@ -48,7 +50,7 @@ private:
     // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
     void setupProjectGridConnections();
-    void setupSimulationConnections();
+    void setupPipelineConnections();
     void setupHomePageConnections();
     void setupMenuConnections();
     void setupPageConnections();
@@ -92,7 +94,7 @@ private slots:
 
 private:
     ProjectGrid *projectGrid = nullptr;
-    SimulationRunner *simulationRunner = nullptr;
+    PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
@@ -105,4 +107,6 @@ private:
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
+    bool isClosing = false;
+    FrontendNs::ProjectSetup buildCurrentProjectSetup() const;
 };

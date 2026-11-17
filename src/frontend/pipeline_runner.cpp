@@ -17,25 +17,25 @@
  *   et transmises sous forme de signaux et de messages d'état vers l'interface.
  */
 
-// src/frontend/simulationrunner.cpp
-#include "simulationrunner.h"
+// src/frontend/pipeline_runner.cpp
+#include "pipeline_runner.h"
 
 #include "pipeline_worker.h"
 
 #include <QImage>
 #include <QThread>
 
-SimulationRunner::SimulationRunner(QObject* parent)
+PipelineRunnerClass::PipelineRunnerClass(QObject* parent)
     : QObject(parent) {
 }
 
-SimulationRunner::~SimulationRunner() {
+PipelineRunnerClass::~PipelineRunnerClass() {
     // Interruption et attente de terminaison du thread avant destruction complète (principe RAII).
     cancelRun();
     cleanUpThread();
 }
 
-void SimulationRunner::cleanUpThread() {
+void PipelineRunnerClass::cleanUpThread() {
     // Quitte la boucle d'événements du QThread et attend son arrêt effectif.
     if (workerThread) {
         workerThread->quit();
@@ -50,7 +50,7 @@ void SimulationRunner::cleanUpThread() {
 }
 
 // Branche les signaux de calcul continu émis par le worker (avancement en %, étape courante, logs horodatés) pour les relayer en direct à la barre de progression et au journal de bord de l'interface.
-void SimulationRunner::setupProgressConnections() {
+void PipelineRunnerClass::setupProgressConnections() {
     // Relais des notifications de début de calcul et d'avancement vers l'interface.
     connect(worker, &PipelineWorkerClass::started, this, [this]() {
         emit runStarted();
@@ -83,7 +83,7 @@ void SimulationRunner::setupProgressConnections() {
 }
 
 // Branche les signaux de fin ou d'interruption du worker (mise en pause, annulation, succès final avec la mosaïque ou erreur) pour actualiser l'état global et libérer le thread.
-void SimulationRunner::setupStateConnections() {
+void PipelineRunnerClass::setupStateConnections() {
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
         connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
         running = false;
@@ -107,10 +107,10 @@ void SimulationRunner::setupStateConnections() {
 
     // Réception du résultat final ou de l'erreur à la fin du pipeline.
     connect(worker, &PipelineWorkerClass::pipelineFinished, this,
-            &SimulationRunner::handleWorkerFinished);
+            &PipelineRunnerClass::handleWorkerFinished);
 }
 
-void SimulationRunner::handleWorkerFinished(bool success, const QString& errorText, const QImage& previewImage) {
+void PipelineRunnerClass::handleWorkerFinished(bool success, const QString& errorText, const QImage& previewImage) {
     running = false;
     paused = false;
     emit pausedStateChanged(false);
@@ -129,7 +129,7 @@ void SimulationRunner::handleWorkerFinished(bool success, const QString& errorTe
     cleanUpThread();
 }
 
-void SimulationRunner::startRun(int firstStep) {
+void PipelineRunnerClass::startRun(int firstStep, bool isResume) {
     if (running) {
         emit statusChanged(tr("Une exécution du pipeline est déjà en cours."));
         return;
@@ -153,14 +153,14 @@ void SimulationRunner::startRun(int firstStep) {
     // Déclenchement de runPipeline dès que la boucle d'événements du QThread démarre.
     const QString script = scriptJson;
     const QString startStep = startFromStepName;
-    connect(workerThread, &QThread::started, worker, [this, script, startStep]() {
-        worker->runPipeline(script, startStep, true);
+        connect(workerThread, &QThread::started, worker, [this, script, startStep, isResume]() {
+        worker->runPipeline(script, startStep, true, isResume);
     });
 
     workerThread->start();
 }
 
-void SimulationRunner::pauseRun() {
+void PipelineRunnerClass::pauseRun() {
     // Demande au moteur backend d'interrompre le calcul dès la fin de l'étape courante.
     if (worker && running) {
         emit statusChanged(tr("Demande de mise en pause en cours..."));
@@ -168,14 +168,14 @@ void SimulationRunner::pauseRun() {
     }
 }
 
-void SimulationRunner::resumeRun() {
+void PipelineRunnerClass::resumeRun() {
     // Relance le pipeline : les checkpoints existants permettent d'éviter le recalcul des étapes déjà faites.
     if (!paused) return;
     startFromStepName.clear();
-    startRun(firstStepNumber);
+    startRun(firstStepNumber, true);
 }
 
-void SimulationRunner::cancelRun() {
+void PipelineRunnerClass::cancelRun() {
     // Interrompt d'urgence le calcul en cours.
     if (!running && !paused) return;
     if (worker && running) {
@@ -191,11 +191,11 @@ void SimulationRunner::cancelRun() {
     }
 }
 
-void SimulationRunner::showComparison() {
+void PipelineRunnerClass::showComparison() {
     emit comparisonRequested();
 }
 
-void SimulationRunner::toggleComparison() {
+void PipelineRunnerClass::toggleComparison() {
     comparisonVisible = !comparisonVisible;
     emit comparisonVisibilityChanged(comparisonVisible);
     emit statusChanged(comparisonVisible
@@ -203,10 +203,10 @@ void SimulationRunner::toggleComparison() {
         : tr("Comparaison côte à côte affichée."));
 }
 
-void SimulationRunner::keepComparisonA() {
+void PipelineRunnerClass::keepComparisonA() {
     emit statusChanged(tr("Résultat A conservé ; les étapes suivantes sont à refaire."));
 }
 
-void SimulationRunner::keepComparisonB() {
+void PipelineRunnerClass::keepComparisonB() {
     emit statusChanged(tr("Résultat B conservé ; les étapes suivantes sont à refaire."));
 }
