@@ -1,97 +1,55 @@
-# MosaicCropStepClass
+# Step `mosaic-crop`
 
-Fichiers :
-- `include/backend/steps/mosaic_crop_step.h`
-- `src/backend/steps/mosaic_crop_step.cpp`
+Rogne la mosaïque après `fusion` et avant `export` :
 
-Le step conserve un rectangle d'une mosaïque stockée en blocs PNG.
-Il appelle `CroppingNs::cropMosaic`.
+    fusion → mosaic-crop → export
 
-## Entrées et sorties
+## Contrat
 
-| Sens | Clé | Type JSON | Type C++ |
+| Sens | Type C++ | Type pipeline | Clé |
 |---|---|---|---|
-| Entrée | `mosaic` | `MosaicFiles` | `DataNs::MosaicFiles` |
-| Sortie | `mosaic` | `MosaicFiles` | `DataNs::MosaicFiles` |
+| Entrée | `DataNs::Mosaic` | `Mosaic` | `mosaic` |
+| Sortie | `DataNs::Mosaic` | `Mosaic` | `mosaic` |
 
-L'entrée contient le dossier des blocs PNG et leur nombre.
-Le résultat remplace la même clé uniquement en cas de succès.
-En cas d'échec, l'entrée du DataStore reste inchangée.
-
-Le résultat contient les fichiers couleur, provenance et masque.
-Le coin supérieur gauche du rectangle devient l'origine `(0, 0)`.
-
-`getResult()` contient `error`, `totalBlocks` et, en cas de succès,
-`mosaicPath`.
+La même clé est remplacée uniquement après réussite du rognage.
+Un échec conserve la mosaïque d'entrée et renseigne `getResult()["error"]`.
+Les checkpoints utilisent le type `Mosaic` déjà enregistré par le pipeline.
 
 ## Paramètres
 
 | Nom | Type | Défaut | Rôle |
 |---|---|---|---|
-| `x` | int | 0 | Abscisse dans le repère des blocs sources |
-| `y` | int | 0 | Ordonnée dans le repère des blocs sources |
-| `width` | int | 0 | Largeur strictement positive |
-| `height` | int | 0 | Hauteur strictement positive |
-| `outputDirectory` | string | vide | Nouveau dossier de sortie |
+| `x` | `int` | 0 | Abscisse du coin supérieur gauche |
+| `y` | `int` | 0 | Ordonnée du coin supérieur gauche |
+| `width` | `int` | 0 | Largeur strictement positive |
+| `height` | `int` | 0 | Hauteur strictement positive |
+| `outputDirectory` | `string` | vide | Nouveau dossier obligatoire |
 
-Les coordonnées sont en pixels pleine résolution.
-Les bords droit et inférieur sont exclus.
-Le parent du dossier de sortie doit exister.
+Le rectangle est exprimé en pixels pleine résolution dans le repère de la
+mosaïque assemblée. Il doit être non vide, avec x et y positifs ou nuls,
+et entièrement inclus dans `canvasSize`.
 
-Le frontend doit convertir le rectangle sélectionné sur l'aperçu en
-coordonnées pleine résolution, dans le repère des blocs sources, en tenant
-compte du zoom, du déplacement de l'affichage et de l'origine de la mosaïque.
+L'origine du résultat devient `(0, 0)` et sa taille devient `(width, height)`.
 
-Le step ne réalise pas cette conversion. Il reçoit directement les paramètres
-`x`, `y`, `width` et `height`. Le coin supérieur gauche du résultat rogné
-devient `(0, 0)`.
+## Fichiers et reprise
 
-## Fonctionnement
+La sortie comporte trois TIFF tuilés : `mosaic_image.tif`,
+`mosaic_provenance.tif` et `mosaic_mask.tif`.
 
-Le step lit ses paramètres et la mosaïque, appelle l'algorithme,
-puis publie le résultat.
+Le dossier de sortie doit être inexistant et son parent doit déjà exister.
+Aucun dossier existant n'est écrasé. Pour recalculer le rognage, choisir un
+nouveau dossier ou déplacer l'ancien résultat avant de reprendre.
 
-Voir [MosaicCrop.md](../algorithms/cropping/MosaicCrop.md).
+Le compte rendu contient `image` et `canvasSize`.
+L'empreinte du step suit les trois fichiers produits : une suppression ou une
+modification invalide le checkpoint.
 
-Le rognage est facultatif : omettre le step conserve la mosaïque entière.
-
-## Erreurs
-
-`execute()` renvoie `false` et renseigne `result["error"]` :
-DataStore absent, entrée absente ou de mauvais type, paramètres invalides,
-mosaïque invalide ou échec de lecture ou d'écriture.
-
-Aucun dossier existant n'est écrasé.
-Une nouvelle exécution avec le même dossier de sortie échoue si ce
-dossier existe déjà. Utiliser un nouveau dossier pour un nouveau résultat.
-
-## Checkpoint
-
-La sortie est enregistrée dans `mosaic.json` :
-
-    {
-      "mosaicPath": "cropped_output",
-      "totalBlocks": 4
-    }
-
-Le checkpoint conserve le descripteur, sans recopier les PNG.
-Le dossier et ses fichiers doivent rester disponibles et inchangés.
-Le chargement vérifie l'existence du dossier et un nombre de blocs positif ;
-il ne contrôle pas intégralement le contenu des PNG.
-
-## Mémoire
-
-Le step manipule des descriptions de fichiers.
-L'algorithme décode les blocs partiels un fichier à la fois.
+Ce step ne raccorde pas à lui seul le bouton de rognage de l'interface.
 
 ## Tests
 
-`tests/steps/test_mosaic_crop_step.cpp` couvre la publication du résultat,
-les entrées absentes ou incorrectes, les erreurs, les paramètres JSON,
-les exécutions successives et la sérialisation du descripteur.
+Les tests vérifient le contrat `Mosaic`, la publication, l'empreinte des fichiers,
+la conservation de l'entrée en cas d'échec et le refus des entiers hors plage.
 
-## Intégration
-
-L'assemblage doit publier `DataNs::MosaicFiles` sous la clé `mosaic`.
-L'export doit être adapté pour consommer ce contrat.
-L'export actuel utilisant `CompositeBlocks` n'est pas directement compatible.
+Voir [l'algorithme](../algorithms/cropping/MosaicCrop.md) pour le traitement
+par blocs et les limites.

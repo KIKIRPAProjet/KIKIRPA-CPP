@@ -1,677 +1,208 @@
 // src/backend/algorithms/cropping/mosaic_crop.cpp
 #include "algorithms/cropping/mosaic_crop.h"
 
-#include <opencv2/core/base.hpp>
+#include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
+
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
-#include <opencv2/imgcodecs.hpp>
+#include <tiff.h>
+#include <tiffio.h>
 
 #include <algorithm>
 #include <array>
-#include <charconv>
-#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <filesystem>
-#include <fstream>
-#include <ios>
-#include <iterator>
-#include <limits>
-#include <map>
-#include <optional>
-#include <regex>
+#include <memory>
 #include <string>
 #include <system_error>
-#include <utility>
-#include <vector>
 
 namespace CroppingNs {
 
     namespace {
 
-        constexpr std::size_t FILE_COUNT = 3;
-        constexpr std::size_t PNG_HEADER_SIZE = 33;
-        constexpr std::size_t PNG_WIDTH_OFFSET = 16;
-        constexpr std::size_t PNG_HEIGHT_OFFSET = 20;
-        constexpr std::size_t PNG_DEPTH_OFFSET = 24;
-        constexpr std::size_t PNG_COLOR_TYPE_OFFSET = 25;
-        constexpr std::size_t BYTE_BIT_COUNT = 8;
-        constexpr unsigned char COLOR_DEPTH = 16;
-        constexpr unsigned char MASK_DEPTH = 8;
-        constexpr unsigned char RGB_COLOR_TYPE = 2;
-        constexpr unsigned char GRAYSCALE_COLOR_TYPE = 0;
+        namespace fs = std::filesystem;
+        constexpr int BITS_PER_BYTE = 8;
 
-        constexpr std::array<unsigned char, 8> PNG_SIGNATURE{
-            137, 80, 78, 71, 13, 10, 26, 10
-        };
-
-        constexpr std::array<unsigned char, 8> PNG_HEADER_MARKER{
-            0, 0, 0, 13, 'I', 'H', 'D', 'R'
-        };
-
-        const std::array<std::string, FILE_COUNT> FILE_PREFIXES{
-            "rgb", "provenance", "mask"
-        };
-
-        constexpr std::array<int, FILE_COUNT> IMAGE_TYPES{
-            CV_16UC3, CV_16UC1, CV_8UC1
-        };
-
-        struct BlockFiles {
-
+        struct FileCropInput {
+            fs::path source;
+            fs::path destination;
             cv::Rect rectangle;
-            std::array<std::filesystem::path, FILE_COUNT> paths;
-
+            int imageType = 0;
         };
 
-        struct CropBlock {
-
-            BlockFiles source;
-            cv::Rect intersection;
-
+        struct TiffHeader {
+            std::uint32_t width = 0;
+            std::uint32_t height = 0;
+            std::uint16_t channels = 0;
+            std::uint16_t bits = 0;
+            std::uint16_t planar = 0;
+            std::uint16_t sampleFormat = SAMPLEFORMAT_UINT;
         };
 
-        struct CoverageEvent {
-
-            int positionX = 0;
-            bool isStart = false;
-            cv::Rect rectangle;
-
-        };
-
-        bool fail(
-            std::string& errorMessage,
-            const std::string& message
-        ) {
+        bool fail(std::string& errorMessage, const std::string& message) {
             errorMessage = message;
             return false;
         }
 
-        bool hasSupportedCoordinates(const cv::Rect& rectangle) {
-            if (rectangle.width <= 0 || rectangle.height <= 0) {
-                return false;
-            }
-
-            const std::int64_t right =
-                static_cast<std::int64_t>(rectangle.x) + rectangle.width;
-            const std::int64_t bottom =
-                static_cast<std::int64_t>(rectangle.y) + rectangle.height;
-            const int maximum = std::numeric_limits<int>::max();
-
-            return right <= maximum && bottom <= maximum;
-        }
-
-        bool validateInput(
-            const CropInput& input,
-            std::string& errorMessage
-        ) {
-            if (input.mosaic.mosaicPath.empty()) {
-                return fail(errorMessage, "Input mosaic directory is empty");
-            }
-            if (input.mosaic.totalBlocks <= 0) {
-                return fail(errorMessage,
-                    "Input mosaic block count must be positive");
-            }
-            if (!hasSupportedCoordinates(input.rectangle)) {
-                return fail(errorMessage,
-                    "Crop rectangle is empty or its coordinates exceed "
-                    "the supported integer range");
-            }
-            if (input.outputDirectory.empty()) {
-                return fail(errorMessage, "Output directory is empty");
-            }
-
+        bool validateRectangle(const CropInput& input, std::string& errorMessage) {
+            const cv::Size size = input.mosaic.canvasSize;
+            const cv::Rect& rectangle = input.rectangle;
+            // Soustraire après contrôle du signe évite x + width et son débordement.
+            if (size.width <= 0 || size.height <= 0 || rectangle.x < 0 || rectangle.y < 0 ||
+                rectangle.width <= 0 || rectangle.height <= 0 ||
+                rectangle.x > size.width || rectangle.y > size.height ||
+                rectangle.width > size.width - rectangle.x ||
+                rectangle.height > size.height - rectangle.y)
+                return fail(errorMessage, "crop rectangle must be non-empty and inside the mosaic");
             return true;
         }
 
-        bool parseCoordinate(
-            const std::string& coordinateText,
-            int& coordinate
-        ) {
-            const auto result = std::from_chars(
-                coordinateText.data(),
-                coordinateText.data() + coordinateText.size(),
-                coordinate
-            );
-
-            return result.ec == std::errc{};
+        bool readHeader(TIFF* file, TiffHeader& header) {
+            TIFFGetFieldDefaulted(file, TIFFTAG_SAMPLEFORMAT, &header.sampleFormat);
+            return TIFFIsTiled(file) &&
+                TIFFGetField(file, TIFFTAG_IMAGEWIDTH, &header.width) &&
+                TIFFGetField(file, TIFFTAG_IMAGELENGTH, &header.height) &&
+                TIFFGetField(file, TIFFTAG_SAMPLESPERPIXEL, &header.channels) &&
+                TIFFGetField(file, TIFFTAG_BITSPERSAMPLE, &header.bits) &&
+                TIFFGetField(file, TIFFTAG_PLANARCONFIG, &header.planar);
         }
 
-        std::optional<cv::Point> getBlockPosition(
-            const std::filesystem::path& filePath
-        ) {
-            static const std::regex blockFilenamePattern(
-                R"(^rgb_x(-?[0-9]+)_y(-?[0-9]+)\.png$)"
-            );
-
-            const std::string filename = filePath.filename().string();
-            std::smatch matchedParts;
-            if (!std::regex_match(
-                filename, matchedParts, blockFilenamePattern)) {
-                return std::nullopt;
-            }
-
-            cv::Point position;
-            if (!parseCoordinate(matchedParts[1].str(), position.x) ||
-                !parseCoordinate(matchedParts[2].str(), position.y)) {
-                return std::nullopt;
-            }
-
-            return position;
-        }
-
-        std::uint32_t getUnsignedInteger(
-            const std::array<unsigned char, PNG_HEADER_SIZE>& header,
-            std::size_t offset
-        ) {
-            std::uint32_t value = 0;
-            constexpr std::size_t INTEGER_BYTE_COUNT = 4;
-
-            for (std::size_t byteIndex = 0;
-                byteIndex < INTEGER_BYTE_COUNT; ++byteIndex) {
-                value = (value << BYTE_BIT_COUNT) | header[offset + byteIndex];
-            }
-
-            return value;
-        }
-
-        bool readPngHeader(
-            const std::filesystem::path& path,
-            std::array<unsigned char, PNG_HEADER_SIZE>& header,
-            std::string& errorMessage
-        ) {
-            std::ifstream stream(path, std::ios::binary);
-            if (!stream.read(
-                reinterpret_cast<char*>(header.data()),
-                static_cast<std::streamsize>(header.size()))) {
-                return fail(errorMessage,
-                    "Cannot read PNG header: " + path.string());
-            }
-
-            const bool hasSignature = std::equal(
-                PNG_SIGNATURE.begin(), PNG_SIGNATURE.end(), header.begin());
-            const bool hasHeaderMarker = std::equal(
-                PNG_HEADER_MARKER.begin(), PNG_HEADER_MARKER.end(),
-                header.begin() +
-                static_cast<std::ptrdiff_t>(PNG_SIGNATURE.size()));
-
-            if (!hasSignature || !hasHeaderMarker) {
-                return fail(errorMessage,
-                    "Invalid PNG header: " + path.string());
-            }
-
+        bool validateSource(const FileCropInput& input, cv::Size canvasSize,
+            std::string& errorMessage) {
+            using TiffHandle = std::unique_ptr<TIFF, decltype(&TIFFClose)>;
+            const TiffHandle file(IONs::openTiff(input.source, "r"), &TIFFClose);
+            if (!file) return fail(errorMessage, "cannot open " + IONs::pathToUtf8(input.source));
+            TiffHeader header;
+            const int expectedBits = input.imageType == CV_8UC1 ? BITS_PER_BYTE : 2 * BITS_PER_BYTE;
+            const int expectedChannels = input.imageType == CV_16UC3 ? 3 : 1;
+            if (!readHeader(file.get(), header) ||
+                header.width != static_cast<std::uint32_t>(canvasSize.width) ||
+                header.height != static_cast<std::uint32_t>(canvasSize.height) ||
+                header.bits != expectedBits || header.channels != expectedChannels ||
+                header.planar != PLANARCONFIG_CONTIG || header.sampleFormat != SAMPLEFORMAT_UINT)
+                return fail(errorMessage, "invalid mosaic TIFF dimensions or type: " +
+                    IONs::pathToUtf8(input.source));
             return true;
         }
 
-        bool readPngSize(
-            const std::filesystem::path& path,
-            std::size_t fileIndex,
-            cv::Size& size,
-            std::string& errorMessage
-        ) {
-            std::array<unsigned char, PNG_HEADER_SIZE> header{};
-            if (!readPngHeader(path, header, errorMessage)) {
-                return false;
-            }
+        // Un dossier réservé à cet appel rend les trois fichiers solidaires : si
+        // le dernier échoue, les premiers sont retirés aussi. Aucun dossier existant
+        // n'est possédé ou supprimé par cette garde.
+        class OutputDirectoryClass {
 
-            const auto width = getUnsignedInteger(header, PNG_WIDTH_OFFSET);
-            const auto height = getUnsignedInteger(header, PNG_HEIGHT_OFFSET);
-            const auto maximum =
-                static_cast<std::uint32_t>(std::numeric_limits<int>::max());
-
-            if (width == 0 || height == 0 ||
-                width > maximum || height > maximum) {
-                return fail(errorMessage,
-                    "Unsupported PNG dimensions: " + path.string());
-            }
-
-            const unsigned char expectedDepth =
-                fileIndex == FILE_COUNT - 1 ? MASK_DEPTH : COLOR_DEPTH;
-            const unsigned char expectedColorType =
-                fileIndex == 0 ? RGB_COLOR_TYPE : GRAYSCALE_COLOR_TYPE;
-
-            if (header[PNG_DEPTH_OFFSET] != expectedDepth ||
-                header[PNG_COLOR_TYPE_OFFSET] != expectedColorType) {
-                return fail(errorMessage,
-                    "Unexpected PNG depth or channel layout: " + path.string());
-            }
-
-            size = cv::Size(static_cast<int>(width), static_cast<int>(height));
-            return true;
-        }
-
-        bool readBlockSizes(
-            const BlockFiles& block,
-            const std::filesystem::path& colorPath,
-            cv::Size& colorSize,
-            std::string& errorMessage
-        ) {
-            for (std::size_t fileIndex = 0;
-                fileIndex < FILE_COUNT; ++fileIndex) {
-                cv::Size size;
-                if (!readPngSize(
-                    block.paths[fileIndex], fileIndex, size, errorMessage)) {
-                    return false;
-                }
-                if (fileIndex == 0) {
-                    colorSize = size;
-                }
-                if (size != colorSize) {
-                    return fail(errorMessage,
-                        "Block files have different dimensions: " +
-                        colorPath.string());
+        public:
+            ~OutputDirectoryClass() {
+                if (owned && !committed) {
+                    std::error_code ignored;
+                    fs::remove_all(directory, ignored);
                 }
             }
 
-            return true;
-        }
+            OutputDirectoryClass() = default;
+            OutputDirectoryClass(const OutputDirectoryClass&) = delete;
+            OutputDirectoryClass& operator=(const OutputDirectoryClass&) = delete;
 
-        bool getBlockFiles(
-            const std::filesystem::path& colorPath,
-            BlockFiles& block,
-            std::string& errorMessage
-        ) {
-            const auto position = getBlockPosition(colorPath);
-            if (!position.has_value()) {
-                return fail(errorMessage,
-                    "Invalid color block filename: " + colorPath.string());
-            }
-
-            // Le suffixe original est gardé pour retrouver exactement
-            // les fichiers associés, y compris si les nombres ont des zéros initiaux.
-            const std::string suffix = colorPath.filename().string().substr(
-                FILE_PREFIXES.front().size());
-            const auto directory = colorPath.parent_path();
-
-            for (std::size_t fileIndex = 0;
-                fileIndex < FILE_COUNT; ++fileIndex) {
-                block.paths[fileIndex] =
-                    directory / (FILE_PREFIXES[fileIndex] + suffix);
-            }
-
-            block.rectangle = cv::Rect(*position, cv::Size());
-            return true;
-        }
-
-        bool readBlock(
-            const std::filesystem::path& colorPath,
-            BlockFiles& block,
-            std::string& errorMessage
-        ) {
-            if (!getBlockFiles(colorPath, block, errorMessage)) {
-                return false;
-            }
-
-            cv::Size colorSize;
-            if (!readBlockSizes(
-                block, colorPath, colorSize, errorMessage)) {
-                return false;
-            }
-
-            block.rectangle.width = colorSize.width;
-            block.rectangle.height = colorSize.height;
-            if (!hasSupportedCoordinates(block.rectangle)) {
-                return fail(errorMessage,
-                    "Block coordinates exceed the supported range: " +
-                    colorPath.string());
-            }
-
-            return true;
-        }
-
-        bool collectBlocks(
-            const DataNs::MosaicFiles& mosaic,
-            std::vector<BlockFiles>& blocks,
-            std::string& errorMessage
-        ) {
-            const std::filesystem::path directory(mosaic.mosaicPath);
-
-            for (const auto& entry :
-                std::filesystem::directory_iterator(directory)) {
-                const std::string filename = entry.path().filename().string();
-                if (filename.rfind("rgb_", 0) != 0) {
-                    continue;
-                }
-
-                BlockFiles block;
-                if (!readBlock(entry.path(), block, errorMessage)) {
-                    return false;
-                }
-                blocks.push_back(std::move(block));
-            }
-
-            if (blocks.size() !=
-                static_cast<std::size_t>(mosaic.totalBlocks)) {
-                return fail(errorMessage,
-                    "Mosaic block count mismatch: expected " +
-                    std::to_string(mosaic.totalBlocks) + ", found " +
-                    std::to_string(blocks.size()));
-            }
-
-            return true;
-        }
-
-        bool selectBlocks(
-            const std::vector<BlockFiles>& blocks,
-            const cv::Rect& rectangle,
-            std::vector<CropBlock>& selectedBlocks,
-            std::string& errorMessage
-        ) {
-            const std::int64_t expectedArea =
-                static_cast<std::int64_t>(rectangle.width) * rectangle.height;
-            std::int64_t coveredArea = 0;
-
-            for (const auto& block : blocks) {
-                const cv::Rect intersection = block.rectangle & rectangle;
-                if (intersection.empty()) {
-                    continue;
-                }
-
-                const std::int64_t area =
-                    static_cast<std::int64_t>(intersection.width) *
-                    intersection.height;
-                if (area > expectedArea - coveredArea) {
-                    return fail(errorMessage,
-                        "Overlapping blocks cover the crop rectangle");
-                }
-                coveredArea += area;
-                selectedBlocks.push_back({ block, intersection });
-            }
-
-            if (coveredArea != expectedArea) {
-                return fail(errorMessage,
-                    "Crop rectangle is outside the mosaic or contains gaps");
-            }
-
-            return true;
-        }
-
-        bool addCoverageInterval(
-            const cv::Rect& rectangle,
-            std::map<int, int>& bottomByTop,
-            std::string& errorMessage
-        ) {
-            const int bottom = rectangle.y + rectangle.height;
-            const auto nextInterval = bottomByTop.lower_bound(rectangle.y);
-
-            if (nextInterval != bottomByTop.end() &&
-                nextInterval->first < bottom) {
-                return fail(errorMessage,
-                    "Source blocks overlap inside the crop rectangle");
-            }
-            if (nextInterval != bottomByTop.begin() &&
-                std::prev(nextInterval)->second > rectangle.y) {
-                return fail(errorMessage,
-                    "Source blocks overlap inside the crop rectangle");
-            }
-
-            bottomByTop.emplace(rectangle.y, bottom);
-            return true;
-        }
-
-        std::vector<CoverageEvent> collectCoverageEvents(
-            const std::vector<CropBlock>& blocks
-        ) {
-            std::vector<CoverageEvent> events;
-            for (const auto& block : blocks) {
-                const auto& rectangle = block.intersection;
-                events.push_back({ rectangle.x, true, rectangle });
-                events.push_back({
-                    rectangle.x + rectangle.width, false, rectangle
-                    });
-            }
-
-            return events;
-        }
-
-        void sortCoverageEvents(std::vector<CoverageEvent>& events) {
-            // Les fins précèdent les débuts à la même abscisse :
-            // deux blocs peuvent se toucher sans se chevaucher.
-            std::sort(events.begin(), events.end(),
-                [](const CoverageEvent& left, const CoverageEvent& right) {
-                    if (left.positionX != right.positionX) {
-                        return left.positionX < right.positionX;
-                    }
-                    return left.isStart < right.isStart;
-                });
-        }
-
-        bool validateCoverage(
-            const std::vector<CropBlock>& blocks,
-            std::string& errorMessage
-        ) {
-            auto events = collectCoverageEvents(blocks);
-            sortCoverageEvents(events);
-
-            std::map<int, int> bottomByTop;
-            for (const auto& event : events) {
-                if (!event.isStart) {
-                    bottomByTop.erase(event.rectangle.y);
-                    continue;
-                }
-                if (!addCoverageInterval(
-                    event.rectangle, bottomByTop, errorMessage)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        std::string getOutputSuffix(const cv::Point& position) {
-            return "_x" + std::to_string(position.x) +
-                "_y" + std::to_string(position.y) + ".png";
-        }
-
-        bool writeCroppedFile(
-            const CropBlock& block,
-            std::size_t fileIndex,
-            const std::filesystem::path& destination,
-            std::string& errorMessage
-        ) {
-            const auto& sourcePath = block.source.paths[fileIndex];
-            const cv::Mat image =
-                cv::imread(sourcePath.string(), cv::IMREAD_UNCHANGED);
-
-            if (image.empty() ||
-                image.size() != block.source.rectangle.size() ||
-                image.type() != IMAGE_TYPES[fileIndex]) {
-                return fail(errorMessage,
-                    "Cannot decode block with expected size and type: " +
-                    sourcePath.string());
-            }
-
-            const cv::Rect localRectangle(
-                block.intersection.x - block.source.rectangle.x,
-                block.intersection.y - block.source.rectangle.y,
-                block.intersection.width,
-                block.intersection.height
-            );
-
-            // La vue reste valide jusqu'à la fin d'imwrite ; une copie
-            // supplémentaire des pixels n'est donc pas nécessaire.
-            if (!cv::imwrite(destination.string(), image(localRectangle))) {
-                return fail(errorMessage,
-                    "Cannot write cropped block: " + destination.string());
-            }
-
-            return true;
-        }
-
-        bool writeBlock(
-            const CropBlock& block,
-            const CropInput& input,
-            std::string& errorMessage
-        ) {
-            const cv::Point position(
-                block.intersection.x - input.rectangle.x,
-                block.intersection.y - input.rectangle.y);
-            const std::string suffix = getOutputSuffix(position);
-            const bool isWholeBlock =
-                block.intersection == block.source.rectangle;
-
-            for (std::size_t fileIndex = 0;
-                fileIndex < FILE_COUNT; ++fileIndex) {
-                const auto destination = input.outputDirectory /
-                    (FILE_PREFIXES[fileIndex] + suffix);
-
-                if (isWholeBlock) {
-                    std::filesystem::copy_file(
-                        block.source.paths[fileIndex], destination);
-                    continue;
-                }
-                if (!writeCroppedFile(
-                    block, fileIndex, destination, errorMessage)) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        bool createOutputDirectory(
-            const std::filesystem::path& directory,
-            std::string& errorMessage
-        ) {
-            std::error_code directoryError;
-            const bool wasCreated =
-                std::filesystem::create_directory(directory, directoryError);
-
-            if (!wasCreated || directoryError) {
-                return fail(errorMessage,
-                    "Cannot create new output directory '" +
-                    directory.string() + "': " +
-                    (directoryError ? directoryError.message() :
-                        "directory already exists"));
-            }
-
-            return true;
-        }
-
-        void removeIncompleteOutput(
-            const std::filesystem::path& directory,
-            std::string& errorMessage
-        ) {
-            std::error_code cleanupError;
-            std::filesystem::remove_all(directory, cleanupError);
-
-            if (cleanupError) {
-                errorMessage +=
-                    "; cannot remove incomplete output directory '" +
-                    directory.string() + "': " + cleanupError.message();
-            }
-        }
-
-        namespace PreparationModuleNs {
-
-            struct PreparedCrop {
-
-                std::vector<BlockFiles> blocks;
-                std::vector<CropBlock> selectedBlocks;
-
-            };
-
-            bool prepare(
-                const CropInput& input,
-                PreparedCrop& prepared,
-                std::string& errorMessage
-            ) {
-                return validateInput(input, errorMessage) &&
-                    collectBlocks(input.mosaic, prepared.blocks, errorMessage) &&
-                    selectBlocks(
-                        prepared.blocks,
-                        input.rectangle,
-                        prepared.selectedBlocks,
-                        errorMessage);
-            }
-
-        }
-
-        namespace CoverageModuleNs {
-
-            bool verify(
-                const std::vector<CropBlock>& selectedBlocks,
-                std::string& errorMessage
-            ) {
-                return validateCoverage(selectedBlocks, errorMessage);
-            }
-
-        }
-
-        namespace WritingModuleNs {
-
-            // NOLINTNEXTLINE(readability-function-size)
-            bool write(
-                const CropInput& input,
-                const std::vector<CropBlock>& selectedBlocks,
-                DataNs::MosaicFiles& output,
-                std::string& errorMessage,
-                bool& hasCreatedDirectory
-            ) {
-                if (!createOutputDirectory(
-                    input.outputDirectory, errorMessage)) {
-                    return false;
-                }
-                hasCreatedDirectory = true;
-
-                for (const auto& block : selectedBlocks) {
-                    if (!writeBlock(block, input, errorMessage)) {
-                        removeIncompleteOutput(
-                            input.outputDirectory, errorMessage);
-                        return false;
-                    }
-                }
-
-                output.mosaicPath = input.outputDirectory.string();
-                output.totalBlocks = static_cast<int>(selectedBlocks.size());
+            bool create(const fs::path& path, std::string& errorMessage) {
+                if (path.empty()) return fail(errorMessage, "output directory is required");
+                directory = fs::absolute(path);
+                if (!fs::is_directory(directory.parent_path()))
+                    return fail(errorMessage, "output parent directory does not exist");
+                std::error_code errorCode;
+                owned = fs::create_directory(directory, errorCode);
+                if (!owned) return fail(errorMessage, "cannot create a new output directory: " +
+                    IONs::pathToUtf8(directory));
                 return true;
             }
 
+            void commit() { committed = true; }
+
+        private:
+            fs::path directory;
+            bool owned = false;
+            bool committed = false;
+
+        };
+
+        DataNs::Mosaic makeOutput(const CropInput& input) {
+            const fs::path directory = fs::absolute(input.outputDirectory);
+            return { directory / "mosaic_image.tif", directory / "mosaic_provenance.tif",
+                    directory / "mosaic_mask.tif", input.rectangle.size() };
+        }
+
+        std::array<FileCropInput, 3> makeRequests(const CropInput& input,
+            const DataNs::Mosaic& output) {
+            return { {{input.mosaic.imagePath, output.imagePath, input.rectangle, CV_16UC3},
+                     {input.mosaic.provenancePath, output.provenancePath, input.rectangle, CV_16UC1},
+                     {input.mosaic.maskPath, output.maskPath, input.rectangle, CV_8UC1}} };
+        }
+
+        bool writeBlockRow(const FileCropInput& input, int blockTop,
+            IONs::TiledTiffWriterClass& writer, std::string& errorMessage) {
+            const IONs::PyramidalTiffReaderClass reader(input.source);
+            const int height = std::min(DataNs::BLOCK_SIZE, input.rectangle.height - blockTop);
+            int blockLeft = 0;
+            while (blockLeft < input.rectangle.width) {
+                const int width = std::min(DataNs::BLOCK_SIZE, input.rectangle.width - blockLeft);
+                const cv::Rect sourceArea(input.rectangle.x + blockLeft,
+                    input.rectangle.y + blockTop, width, height);
+                cv::Mat pixels;
+                if (!reader.readRegion(0, sourceArea, pixels, errorMessage)) return false;
+                if (pixels.type() != input.imageType)
+                    return fail(errorMessage, "unexpected mosaic region type");
+                // Le lecteur TIFF conserve l'ordre des échantillons : pas de conversion BGR/RGB.
+                if (!writer.writeBlock({ blockLeft, blockTop }, pixels, errorMessage)) return false;
+                blockLeft += width;
+            }
+            return true;
+        }
+
+        bool cropFile(const FileCropInput& input, std::string& errorMessage) {
+            IONs::TiledTiffWriterClass writer;
+            if (!writer.open(input.destination, input.rectangle.size(), input.imageType, errorMessage))
+                return false;
+            int blockTop = 0;
+            while (blockTop < input.rectangle.height) {
+                if (!writeBlockRow(input, blockTop, writer, errorMessage)) return false;
+                blockTop += std::min(DataNs::BLOCK_SIZE, input.rectangle.height - blockTop);
+            }
+            return writer.close(errorMessage);
+        }
+
+        bool cropValidated(const CropInput& input, DataNs::Mosaic& output,
+            std::string& errorMessage) {
+            if (!validateRectangle(input, errorMessage)) return false;
+            if (input.outputDirectory.empty()) return fail(errorMessage, "output directory is required");
+            const DataNs::Mosaic candidate = makeOutput(input);
+            const auto requests = makeRequests(input, candidate);
+            for (const auto& request : requests)
+                if (!validateSource(request, input.mosaic.canvasSize, errorMessage)) return false;
+            OutputDirectoryClass directory;
+            if (!directory.create(input.outputDirectory, errorMessage)) return false;
+            for (const auto& request : requests)
+                if (!cropFile(request, errorMessage)) return false;
+            output = candidate;
+            directory.commit();
+            return true;
         }
 
     }
 
-    // NOLINTNEXTLINE(readability-function-size)
-    bool cropMosaic(
-        const CropInput& input,
-        DataNs::MosaicFiles& output,
-        std::string& errorMessage
-    ) {
-        // Copie des descriptions uniquement : protège aussi le cas où
-        // output désigne input.mosaic.
-        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
-        const CropInput request = input;
+    bool cropMosaic(const CropInput& input, DataNs::Mosaic& output,
+        std::string& errorMessage) {
         output = {};
         errorMessage.clear();
-        bool hasCreatedDirectory = false;
-
         try {
-            PreparationModuleNs::PreparedCrop prepared;
-            if (!PreparationModuleNs::prepare(
-                request, prepared, errorMessage)) {
-                return false;
-            }
-
-            if (!CoverageModuleNs::verify(
-                prepared.selectedBlocks, errorMessage)) {
-                return false;
-            }
-
-            return WritingModuleNs::write(
-                request,
-                prepared.selectedBlocks,
-                output,
-                errorMessage,
-                hasCreatedDirectory);
+            return cropValidated(input, output, errorMessage);
         }
         catch (const std::exception& exception) {
             output = {};
-            errorMessage = "Cannot crop mosaic: " +
-                std::string(exception.what());
-            if (hasCreatedDirectory) {
-                removeIncompleteOutput(request.outputDirectory, errorMessage);
-            }
+            errorMessage = exception.what();
             return false;
         }
     }

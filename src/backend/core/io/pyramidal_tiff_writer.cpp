@@ -2,11 +2,17 @@
 #include "core/io/pyramidal_tiff_writer.h"
 
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
+#include <tiff.h>
 #include <tiffio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -133,7 +139,7 @@ namespace IONs {
             }
         }
 
-        TIFF* tiffFile = TIFFOpen(outputPath.string().c_str(), "w");
+        TIFF* tiffFile = IONs::openTiff(outputPath, "w");
         if (tiffFile == nullptr) {
             errorMessage = "cannot open output TIFF";
             return false;

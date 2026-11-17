@@ -8,23 +8,17 @@
 |---|---|---|---|---|
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Entrée | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `phase-correlation`, `sift` ou `lightglue` |
-| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut` | `dynamic-programming-dijkstra`|
+| Sortie | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | `graphcut`, `dynamic-programming-dijkstra` |
 | Sortie | `pairResiduals` | `PairResiduals` | `std::vector<DataNs::PairResidual>` | pas encore de consommateur |
 
-- **Lit** dans `tiles` l'identifiant et le nom du fichier source, d'où il tire la ligne et la colonne. Aucune image n'est relue.
+- **Lit** dans `tiles` seulement l'identifiant de chaque tuile (`TileClass::getId()`). Ni le nom du fichier ni l'image ne sont lus.
 - **Lit** dans `matches` seulement `tileIdA`, `tileIdB`, `translationX` et `translationY`. Les points et les scores ne servent pas.
-- **Écrit** dans `positions` une entrée par tuile : `tileId` (`rLL_cCC`, ligne et colonne) ; `position`, le coin haut-gauche de la tuile en pixels de pleine résolution, dans le repère de la tuile de référence placée en (0, 0) (les valeurs négatives sont possibles) ; et `rotationRadians`, toujours 0.
+- **Écrit** dans `positions` une entrée par tuile, dans l'ordre de `tiles` : `tileId` (l'identifiant de la tuile, `TileClass::getId()`) ; `position`, le coin haut-gauche de la tuile en pixels de pleine résolution, dans le repère de la tuile de référence placée en (0, 0) (les valeurs négatives sont possibles) ; et `rotationRadians`, toujours 0.
 - **Écrit** dans `pairResiduals` une entrée par paire utilisée : l'écart entre la translation mesurée et les positions ajustées (voir [Écart de chaque paire après ajustement](#écart-de-chaque-paire-après-ajustement)).
 
 `AbsolutePosOutput` regroupe `key`, `value`, `type` pour les positions, et `residualsKey`, `residuals`, `residualsType` pour les écarts. `getOutput()` donne les positions et les écarts détaillés ; `getResult()` ne contient qu'un résumé (`pairs`, `positions`, `failures`, `error`). Le type `Positions` est déjà pris en charge par les checkpoints et consommé par GraphCut.
 
-Les identifiants numériques de `TileClass` relient les paires aux tuiles. Les noms des fichiers doivent finir par `_r<ligne>_c<colonne>.tif` ou `.tiff`. Le même parseur que GraphCut produit les identifiants de sortie normalisés, par exemple `r01_c02`. Les identifiants numériques et les coordonnées de grille doivent être uniques. Aucune lecture du fichier image n'est nécessaire.
-
-Le format par défaut de `import` (`img_C…_R…`) ne convient donc pas à ce step, ni à `graphcut`, qui exige les mêmes noms. Pour des fichiers `t_r00_c01.tif`, indiquer à `import` un format dont le groupe 1 est la colonne et le groupe 2 la ligne :
-
-```
-t_r(?=\d+_c(\d+)\.tif$)(\d+)_c\d+\.tif
-```
+Les identifiants numériques de `TileClass` relient les paires aux tuiles, et identifient aussi les positions produites. Ils doivent être uniques. Le nom des fichiers n'a aucune importance : la case de chaque tuile est fixée par `import` (voir [ImportStep.md](ImportStep.md)).
 
 ## Paramètre
 
@@ -70,6 +64,7 @@ Le type `PairResiduals` a sa sérialisation de checkpoint, enregistrée par le c
 [ { "tileIdA": 0, "tileIdB": 1, "residual": [-1.0, 0.0], "residualNorm": 1.0 } ]
 ```
 
+
 ## Erreurs
 
 Une paire faisant référence à une tuile inconnue, à elle-même ou à une translation non finie est ignorée et enregistrée dans `failures` : `{idA, idB, reason}`.
@@ -95,7 +90,7 @@ Les sorties de l'exécution précédente sont vidées au début de chaque appel,
 
 ## Vérification
 
-Les tests synthétiques couvrent les translations horizontales et verticales signées, une boucle incohérente, une référence explicite, les paires invalides ignorées, les graphes déconnectés, le nettoyage des résultats, la tuile unique, les entrées invalides et l'enregistrement JSON. Les tests vérifient aussi la restauration des positions par checkpoint, les bornes du paramètre entier, les coordonnées de grille dupliquées, la stabilité de la référence après permutation des tuiles, le chaînage JSON avec un matcher existant et l'écart de chaque paire après ajustement sur une boucle incohérente, ainsi que sa restauration par checkpoint.
+Les tests synthétiques couvrent les translations horizontales et verticales signées, une boucle incohérente, une référence explicite, les paires invalides ignorées, les graphes déconnectés, le nettoyage des résultats, la tuile unique, les entrées invalides et l'enregistrement JSON. Les tests vérifient aussi la restauration des positions par checkpoint, les bornes du paramètre entier, des noms de fichiers libres, la stabilité de la référence après permutation des tuiles, le chaînage JSON avec un matcher existant et l'écart de chaque paire après ajustement sur une boucle incohérente, ainsi que sa restauration par checkpoint.
 
 Le solveur est également testé avec une rotation relative pour vérifier le contrat utilisé par l'ancien positionneur.
 

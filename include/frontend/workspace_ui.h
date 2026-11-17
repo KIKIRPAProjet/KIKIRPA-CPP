@@ -14,7 +14,7 @@ class QTabWidget;
 class QWidget;
 class HomePage;
 class MainWindow;
-class SimulationRunner;
+class PipelineRunnerClass;
 class ArtworkCanvas;
 class BottomTabs;
 class GridTab;
@@ -30,7 +30,7 @@ class WorkspaceUI : public QObject
 
 public:
     WorkspaceUI(MainWindow *mainWindow, HomePage *homePage, ProjectGrid *projectGrid,
-                SimulationRunner *simulationRunner);
+                PipelineRunnerClass *pipelineRunner);
 
     void updateFromGridState(const QString &projectName,
                              const ProjectGrid::State &gridState);
@@ -45,6 +45,10 @@ public:
     QLabel *zoomLabel() const;
     QTabWidget *rightTabs() const;
     QTabWidget *bottomTabs() const;
+    RightPanel *rightPanel() const { return m_rightPanel; }
+    BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
+    TopToolbars *topToolbars() const { return m_topToolbars; }
+    WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;
     QComboBox *captureOrderCombo() const;
@@ -65,7 +69,7 @@ private:
 
     MainWindow *m_mainWindow = nullptr;
     ProjectGrid *m_projectGrid = nullptr;
-    SimulationRunner *m_simulationRunner = nullptr;
+    PipelineRunnerClass *m_pipelineRunner = nullptr;
     HomePage *m_homePage = nullptr;
     QStackedWidget *m_pages = nullptr;
     QWidget *m_workspace = nullptr;

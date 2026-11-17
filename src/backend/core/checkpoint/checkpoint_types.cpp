@@ -4,8 +4,8 @@
 #include "core/checkpoint/checkpoint.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
-#include "core/data/mosaic_files.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -33,46 +33,14 @@ namespace CheckpointNs {
         void writeJson(const fs::path& directory, const std::string& key, const Json& value) {
             std::ofstream output(directory / (key + ".json"), std::ios::binary);
             output << value.dump();
-            if (!output) throw std::runtime_error("cannot write " + (directory / (key + ".json")).string());
+            if (!output) throw std::runtime_error("cannot write " + IONs::pathToUtf8(directory / (key + ".json")));
         }
 
         // Lit <directory>/<key>.json. Lève std::runtime_error s'il est absent.
         Json readJson(const fs::path& directory, const std::string& key) {
             std::ifstream input(directory / (key + ".json"), std::ios::binary);
-            if (!input) throw std::runtime_error("missing " + (directory / (key + ".json")).string());
+            if (!input) throw std::runtime_error("missing " + IONs::pathToUtf8(directory / (key + ".json")));
             return Json::parse(input);
-        }
-
-        // Les pixels restent dans le dossier de la mosaïque, comme pour les tuiles.
-        void saveMosaicFiles(
-            const StepNs::DataStoreClass& store,
-            const std::string& key,
-            const fs::path& directory
-        ) {
-            const auto& mosaic = store.get<DataNs::MosaicFiles>(key);
-            writeJson(directory, key, {
-                {"mosaicPath", mosaic.mosaicPath},
-                {"totalBlocks", mosaic.totalBlocks}
-                });
-        }
-
-        void loadMosaicFiles(
-            StepNs::DataStoreClass& store,
-            const std::string& key,
-            const fs::path& directory
-        ) {
-            const Json data = readJson(directory, key);
-            const DataNs::MosaicFiles mosaic{
-                data.at("mosaicPath").get<std::string>(),
-                data.at("totalBlocks").get<int>()
-            };
-
-            if (mosaic.totalBlocks <= 0 || !fs::is_directory(mosaic.mosaicPath)) {
-                throw std::runtime_error(
-                    "mosaic checkpoint: missing or invalid mosaic directory");
-            }
-
-            store.replace(key, mosaic);
         }
 
         // Un point devient le tableau JSON [x, y].
@@ -117,14 +85,16 @@ namespace CheckpointNs {
         // Identifiant d'une voisine pour le JSON, ou -1 si elle n'existe pas.
         int neighbourId(const DataNs::TileClass* neighbour) { return neighbour ? neighbour->getId() : -1; }
 
-        // Sauvegarde du type "Tiles" (TileList), une entrée par tuile : { id, source, tiff, width, height, type, left, right, top, bottom }.
+        // Sauvegarde du type "Tiles" (TileList), une entrée par tuile :
+        // { id, source, row, column, tiff, width, height, type, left, right, top, bottom }.
         // Seules les fiches sont écrites, jamais les pixels. width/height sont ceux de la pleine résolution (les autres
-        // niveaux se recalculent au chargement) ; les voisines sont écrites par identifiant.
+        // niveaux se recalculent au chargement) ; row/column = case dans la grille ; les voisines sont écrites par identifiant.
         void saveTiles(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json tilesJson = Json::array();
             for (const auto& tile : dataStore.get<DataNs::TileList>(key)) {
                 const DataNs::Level& fullResolutionLevel = tile->getLevel(0);
-                tilesJson.push_back({{"id", tile->getId()}, {"source", tile->getSource().u8string()}, {"tiff", tile->getTiff().u8string()},
+                tilesJson.push_back({{"id", tile->getId()}, {"source", tile->getSource().u8string()},
+                                    {"row", tile->getGridRow()}, {"column", tile->getGridColumn()}, {"tiff", tile->getTiff().u8string()},
                                     {"width", fullResolutionLevel.width}, {"height", fullResolutionLevel.height}, {"type", tile->getType()},
                                     {"left", neighbourId(tile->getLeft())}, {"right", neighbourId(tile->getRight())},
                                     {"top", neighbourId(tile->getTop())}, {"bottom", neighbourId(tile->getBottom())}});
@@ -141,10 +111,11 @@ namespace CheckpointNs {
             for (const Json& tileJson : tilesJson) {
                 const fs::path tiffPath = fs::u8path(tileJson.at("tiff").get<std::string>());
                 // Les pixels ne sont pas recopiés dans le checkpoint : le TIFF pyramidal doit toujours exister.
-                if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + tiffPath.string());
+                if (!tiffPath.empty() && !fs::exists(tiffPath)) throw std::runtime_error("missing pyramidal TIFF " + IONs::pathToUtf8(tiffPath));
                 tiles.push_back(std::make_shared<DataNs::TileClass>(tileJson.at("id").get<int>(), fs::u8path(tileJson.at("source").get<std::string>()),
                                                                     tiffPath, tileJson.at("width").get<int>(), tileJson.at("height").get<int>(),
                                                                     tileJson.at("type").get<int>()));
+                tiles.back()->setGridPosition(tileJson.at("row").get<int>(), tileJson.at("column").get<int>());
                 tileById[tiles.back()->getId()] = tiles.back().get();
             }
             // Deuxième passe : identifiant JSON -> pointeur vers la tuile (-1 ou inconnu -> pas de voisine).
@@ -192,7 +163,8 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(pairs));
         }
 
-        // Sauvegarde du type "Positions" (std::vector<TilePositionData>), une entrée par tuile placée : { tileId, position: [x, y], rotationRadians }.
+        // Sauvegarde du type "Positions" (std::vector<TilePositionData>), une entrée par tuile placée : { tileId, position: [x, y], rotationRadians },
+        // tileId étant TileClass::getId().
         void savePositions(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             Json positionsJson = Json::array();
             for (const DataNs::TilePositionData& tilePosition : dataStore.get<std::vector<DataNs::TilePositionData>>(key))
@@ -204,7 +176,7 @@ namespace CheckpointNs {
         void loadPositions(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             std::vector<DataNs::TilePositionData> positions;
             for (const Json& positionJson : readJson(directory, key))
-                positions.push_back({positionJson.at("tileId").get<std::string>(),
+                positions.push_back({positionJson.at("tileId").get<int>(),
                                     cv::Point2d(positionJson.at("position").at(0).get<double>(), positionJson.at("position").at(1).get<double>()),
                                     positionJson.at("rotationRadians").get<double>()});
             dataStore.replace(key, std::move(positions));
@@ -270,6 +242,44 @@ namespace CheckpointNs {
             dataStore.replace(key, std::move(territories));
         }
 
+        void saveOverlapEstimates(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            Json estimatesJson = Json::array();
+            for (const DataNs::PairOverlapEstimate& entry : dataStore.get<DataNs::OverlapEstimates>(key)) {
+                estimatesJson.push_back({
+                    {"tileIdA", entry.tileIdA}, {"tileIdB", entry.tileIdB}, {"direction", directionName(entry.direction)},
+                    {"translationX", entry.estimate.translationBInA.x}, {"translationY", entry.estimate.translationBInA.y},
+                    {"overlapFraction", entry.estimate.overlapFraction}, {"peakRatio", entry.estimate.peakRatio},
+                    {"commonAreaInA", {entry.commonAreaInA.x, entry.commonAreaInA.y,
+                                        entry.commonAreaInA.width, entry.commonAreaInA.height}},
+                    {"commonAreaInB", {entry.commonAreaInB.x, entry.commonAreaInB.y,
+                                        entry.commonAreaInB.width, entry.commonAreaInB.height}}
+                });
+            }
+            writeJson(directory, key, estimatesJson);
+        }
+
+        void loadOverlapEstimates(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            DataNs::OverlapEstimates estimates;
+            for (const Json& entryJson : readJson(directory, key)) {
+                DataNs::PairOverlapEstimate entry;
+                entry.tileIdA = entryJson.at("tileIdA").get<int>();
+                entry.tileIdB = entryJson.at("tileIdB").get<int>();
+                entry.direction = readDirection(entryJson.at("direction").get<std::string>());
+                entry.estimate.translationBInA = {entryJson.at("translationX").get<double>(),
+                                                  entryJson.at("translationY").get<double>()};
+                entry.estimate.overlapFraction = entryJson.at("overlapFraction").get<float>();
+                entry.estimate.peakRatio = entryJson.at("peakRatio").get<double>();
+                const auto& areaA = entryJson.at("commonAreaInA");
+                entry.commonAreaInA = {areaA.at(0).get<int>(), areaA.at(1).get<int>(),
+                                       areaA.at(2).get<int>(), areaA.at(3).get<int>()};
+                const auto& areaB = entryJson.at("commonAreaInB");
+                entry.commonAreaInB = {areaB.at(0).get<int>(), areaB.at(1).get<int>(),
+                                       areaB.at(2).get<int>(), areaB.at(3).get<int>()};
+                estimates.push_back(entry);
+            }
+            dataStore.replace(key, std::move(estimates));
+        }
+
         // Sauvegarde du type "IntensityCorrection" : { tileGains, fieldStrength, isolatedTileIndices }.
         void saveIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
             const auto& correction = dataStore.get<DataNs::IntensityCorrection>(key);
@@ -286,6 +296,28 @@ namespace CheckpointNs {
             correction.isolatedTileIndices = correctionJson.at("isolatedTileIndices").get<std::vector<int>>();
             dataStore.replace(key, std::move(correction));
         }
+
+        // Sauvegarde du type "Mosaic" : { imagePath, provenancePath, maskPath, canvasSize: [largeur, hauteur] }.
+        // Seuls les chemins sont écrits ; les TIFF restent où l'assemblage les a écrits.
+        void saveMosaic(const StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const auto& mosaic = dataStore.get<DataNs::Mosaic>(key);
+            writeJson(directory, key, {{"imagePath", mosaic.imagePath.u8string()},
+                                       {"provenancePath", mosaic.provenancePath.u8string()},
+                                       {"maskPath", mosaic.maskPath.u8string()},
+                                       {"canvasSize", {mosaic.canvasSize.width, mosaic.canvasSize.height}}});
+        }
+
+        // Chargement du type "Mosaic" : relit les champs écrits par saveMosaic. L'existence des fichiers n'est pas
+        // vérifiée ici : l'empreinte du step producteur (externalInputsFingerprint) périme déjà son checkpoint.
+        void loadMosaic(StepNs::DataStoreClass& dataStore, const std::string& key, const fs::path& directory) {
+            const Json mosaicJson = readJson(directory, key);
+            DataNs::Mosaic mosaic;
+            mosaic.imagePath = fs::u8path(mosaicJson.at("imagePath").get<std::string>());
+            mosaic.provenancePath = fs::u8path(mosaicJson.at("provenancePath").get<std::string>());
+            mosaic.maskPath = fs::u8path(mosaicJson.at("maskPath").get<std::string>());
+            mosaic.canvasSize = {mosaicJson.at("canvasSize").at(0).get<int>(), mosaicJson.at("canvasSize").at(1).get<int>()};
+            dataStore.replace(key, std::move(mosaic));
+        }
     }
 
     // Un type de donnée du pipeline -> sa paire (sauvegarde, chargement).
@@ -296,8 +328,9 @@ namespace CheckpointNs {
             {"Positions", {savePositions, loadPositions}},
             {"Seamlines", {saveSeamlines, loadSeamlines}},
             {"Territories", {saveTerritories, loadTerritories}},
+            {"OverlapEstimates", {saveOverlapEstimates, loadOverlapEstimates}},
             {"IntensityCorrection", {saveIntensityCorrection, loadIntensityCorrection}},
-            {"MosaicFiles", {saveMosaicFiles, loadMosaicFiles}},
+            {"Mosaic", {saveMosaic, loadMosaic}},
         };
     }
 

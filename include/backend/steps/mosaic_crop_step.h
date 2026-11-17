@@ -1,40 +1,41 @@
 // include/backend/steps/mosaic_crop_step.h
 #pragma once
 
-#include "core/data/mosaic_files.h"
+#include "core/data/algorithm_types.h"
 #include "core/step/step.h"
 
 #include <string>
 
 namespace StepsNs {
 
-    // Rectangle en pixels pleine résolution, dans le repère des blocs sources.
     struct MosaicCropInput {
         int x = 0;
         int y = 0;
         int width = 0;
         int height = 0;
-
         // Dossier inexistant dont le parent existe déjà.
         std::string outputDirectory;
     };
 
     struct MosaicCropOutput {
         std::string key = "mosaic";
-        DataNs::MosaicFiles value;
-        std::string type = "MosaicFiles";
+        DataNs::Mosaic value;
+        std::string type = "Mosaic";
     };
 
-    // Remplace mosaic par sa version rognée uniquement en cas de succès.
+    // Rogne les trois TIFF après fusion, avant export. La clé mosaic est remplacée
+    // uniquement en cas de succès ; un échec conserve la mosaïque d'entrée.
     class MosaicCropStepClass : public StepNs::StepClass {
 
     public:
         explicit MosaicCropStepClass(const MosaicCropInput& input = {});
         bool execute() override;
+        // Suit les trois fichiers produits pour invalider un checkpoint périmé.
+        StepNs::Json externalInputsFingerprint() const override;
         const MosaicCropOutput& getOutput() const { return output; }
 
     private:
-        void cropAndPublish();
+        bool cropAndPublish();
         MosaicCropOutput output;
 
     };
