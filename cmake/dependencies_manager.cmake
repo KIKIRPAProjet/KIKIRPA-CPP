@@ -34,12 +34,13 @@ find_package(TIFF REQUIRED)
 
 # Recherche Qt 6 et ses modules nécessaires à l'interface graphique.
 #
+# - Gui : lecture et manipulation des images avec Qt.
 # - Widgets : composants graphiques de l'application.
 # - Concurrent : gestion des traitements concurrents et des tâches asynchrones.
 #
 # REQUIRED indique que ces modules sont indispensables à la configuration
 # du projet.
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Gui Widgets Concurrent)
 
 # nlohmann_json
 

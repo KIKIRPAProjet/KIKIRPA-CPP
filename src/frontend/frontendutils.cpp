@@ -15,16 +15,12 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include <QDebug>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
 #include <QPushButton>
 #include <QtMath>
-
-#ifdef Q_OS_WIN
-#include <wincodec.h>
-#include <windows.h>
-#endif
 
 namespace FrontendUtils {
 
@@ -207,91 +203,6 @@ QVector<int> captureOrderCells(int rows, int columns, int order)
     return cells;
 }
 
-#ifdef Q_OS_WIN
-QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
-{
-    HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    const bool uninitialize = SUCCEEDED(result);
-    if (FAILED(result) && result != RPC_E_CHANGED_MODE)
-        return {};
-
-    IWICImagingFactory *factory = nullptr;
-    IWICBitmapDecoder *decoder = nullptr;
-    IWICBitmapFrameDecode *frame = nullptr;
-    IWICBitmapScaler *scaler = nullptr;
-    IWICFormatConverter *converter = nullptr;
-    QImage image;
-
-    do {
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                     IID_PPV_ARGS(&factory)))) {
-            break;
-        }
-        if (FAILED(factory->CreateDecoderFromFilename(
-                reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, GENERIC_READ,
-                WICDecodeMetadataCacheOnLoad, &decoder))) {
-            break;
-        }
-        if (FAILED(decoder->GetFrame(0, &frame)))
-            break;
-
-        UINT sourceWidth = 0;
-        UINT sourceHeight = 0;
-        if (FAILED(frame->GetSize(&sourceWidth, &sourceHeight)) ||
-            sourceWidth == 0 || sourceHeight == 0)
-            break;
-
-        const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceWidth,
-                                  static_cast<double>(maximumSize.height()) / sourceHeight);
-        const UINT previewWidth = qMax<UINT>(1, qRound(sourceWidth * qMin(1.0, scale)));
-        const UINT previewHeight = qMax<UINT>(1, qRound(sourceHeight * qMin(1.0, scale)));
-        IWICBitmapSource *source = frame;
-        if (previewWidth != sourceWidth || previewHeight != sourceHeight) {
-            if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
-                FAILED(scaler->Initialize(frame, previewWidth, previewHeight,
-                                          WICBitmapInterpolationModeFant))) {
-                break;
-            }
-            source = scaler;
-        }
-
-        if (FAILED(factory->CreateFormatConverter(&converter)) ||
-            FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA,
-                                         WICBitmapDitherTypeNone, nullptr, 0.0,
-                                         WICBitmapPaletteTypeCustom))) {
-            break;
-        }
-
-        UINT width = 0;
-        UINT height = 0;
-        if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0)
-            break;
-
-        image = QImage(static_cast<int>(width), static_cast<int>(height), QImage::Format_ARGB32);
-        if (image.isNull() ||
-            FAILED(converter->CopyPixels(nullptr, static_cast<UINT>(image.bytesPerLine()),
-                                         static_cast<UINT>(image.sizeInBytes()),
-                                         image.bits()))) {
-            image = {};
-        }
-    } while (false);
-
-    if (converter)
-        converter->Release();
-    if (scaler)
-        scaler->Release();
-    if (frame)
-        frame->Release();
-    if (decoder)
-        decoder->Release();
-    if (factory)
-        factory->Release();
-    if (uninitialize)
-        CoUninitialize();
-    return image;
-}
-#endif
-
 QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
     QImageReader reader(path);
@@ -305,10 +216,8 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
                                        qMax(1, qRound(sourceSize.height() * scale))));
     }
     QImage image = reader.read();
-#ifdef Q_OS_WIN
     if (image.isNull())
-        image = readWindowsTiff(path, maximumSize);
-#endif
+        qWarning().noquote() << "Unable to read image" << path << ":" << reader.errorString();
     if (!image.isNull())
         image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     return image;
