@@ -3,13 +3,19 @@
 
 #include "core/checkpoint/checkpoint_types.h"
 #include "core/config/pipeline_config.h"
+#include "core/io/unicode_path.h"
+#include "core/step/data_store.h"
+#include "core/step/step.h"
 
 #include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 #include <cctype>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -40,11 +46,12 @@ namespace CheckpointNs {
 
         // Écrit via un fichier temporaire puis renommage : un crash ne laisse jamais un fichier tronqué.
         void writeAtomic(const fs::path& filePath, const std::string& content) {
-            const fs::path temporaryPath = filePath.string() + ".tmp";
+            fs::path temporaryPath = filePath;
+            temporaryPath += ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
                 output << content;
-                if (!output) throw std::runtime_error("cannot write " + temporaryPath.string());
+                if (!output) throw std::runtime_error("cannot write " + IONs::pathToUtf8(temporaryPath));
             }
             fs::rename(temporaryPath, filePath);
         }
@@ -127,7 +134,7 @@ namespace CheckpointNs {
                         StepNs::DataStoreClass& dataStore) const {
         const fs::path directory = stepDir(stepIndex, step.getConfigJson().value("name", ""));
         const Json manifest = readManifest(directory);
-        if (!manifest.is_object() || !manifest.contains("outputs")) throw std::runtime_error("missing or corrupted " + (directory / "manifest.json").string());
+        if (!manifest.is_object() || !manifest.contains("outputs")) throw std::runtime_error("missing or corrupted " + IONs::pathToUtf8(directory / "manifest.json"));
         // Une clé absente du manifest n'a pas été produite par le step : rien à restaurer.
         for (const Json& outputEntry : manifest.at("outputs")) {
             if (outputEntry.value("key", "") != key) continue;
@@ -142,7 +149,7 @@ namespace CheckpointNs {
         if (!enabled() || !fs::is_directory(rootDirectory)) return;
         // Les dossiers de steps se nomment "NN_nom" : on supprime ceux dont NN >= firstStepIndex.
         for (const auto& entry : fs::directory_iterator(rootDirectory)) {
-            const std::string entryName = entry.path().filename().string();
+            const std::string entryName = IONs::pathToUtf8(entry.path().filename());
             if (entry.is_directory() && entryName.size() > 3 && entryName[2] == '_' && std::isdigit(static_cast<unsigned char>(entryName[0])) &&
                 std::isdigit(static_cast<unsigned char>(entryName[1])) && static_cast<size_t>(std::stoi(entryName.substr(0, 2))) >= firstStepIndex)
                 fs::remove_all(entry.path());

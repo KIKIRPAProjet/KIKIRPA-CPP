@@ -93,12 +93,16 @@ void WorkspaceCenter::createCanvasAndControls()
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
     auto *oneToOne = FrontendUtils::makeButton(QStringLiteral("100 %"), canvasControls);
-    
+    auto *overlayDiff = FrontendUtils::makeButton(tr("Superposer (différence)"), canvasControls);
+    overlayDiff->setCheckable(true);
+    overlayDiff->setObjectName(QStringLiteral("pairOverlayButton"));
+
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
     canvasControlsLayout->addWidget(m_zoomLabel);
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
+    canvasControlsLayout->addWidget(overlayDiff);
     canvasControlsLayout->addStretch();
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
@@ -121,7 +125,12 @@ void WorkspaceCenter::createCanvasAndControls()
         m_zoomLabel->setText(QStringLiteral("100 %"));
         m_canvas->setZoom(m_mainWindow->zoomPercent);
     });
-
+    connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
+        m_canvas->setPairOverlayMode(checked);
+        m_mainWindow->updateStatus(checked
+            ? tr("Vue Paire : superposition (différence) activée.")
+            : tr("Vue Paire : examen des 2 tuiles côte à côte."));
+    });
 }
 
 void WorkspaceCenter::updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState)
