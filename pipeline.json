@@ -1,0 +1,61 @@
+{
+  "pipeline": {
+    "steps": [
+      {
+        "name": "import",
+        "parameters": [
+          {
+            "valueType": "string",
+            "name": "path",
+            "value": "images/"
+          },
+          {
+            "valueType": "string",
+            "name": "format",
+            "value": "img_C(\\d+)_R(\\d+)\\.tif"
+          }
+        ]
+      },
+      {
+        "name": "phase-correlation",
+        "parameters": [
+          {
+            "valueType": "int",
+            "name": "niveau",
+            "value": 0
+          },
+          {
+            "valueType": "float",
+            "name": "overlap",
+            "value": 0.2
+          }
+        ]
+      },
+      {
+        "name": "absolute-pos"
+      },
+      {
+        "name": "intensity-correction"
+      },
+      {
+        "name": "graphcut"
+      },
+      {
+        "name": "fusion"
+      },
+      {
+        "name": "export",
+        "parameters": [
+          {
+            "valueType": "string",
+            "name": "outputDirectory",
+            "value": "output/"
+          }
+        ]
+      }
+    ]
+  },
+  "run": {
+    "checkpointDirectory": "checkpoints/"
+  }
+}

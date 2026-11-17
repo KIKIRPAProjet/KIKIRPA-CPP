@@ -54,6 +54,15 @@ jobs:
       - name: Run CTest
         run: ctest --test-dir build --output-on-failure -L "${{ inputs.test-labels }}"
 
+      - name: Report CTest failure
+        if: failure()
+        run: |
+          if [ -f build/Testing/Temporary/LastTest.log ]; then
+            while IFS= read -r line; do
+              echo "::error title=CTestLinux::$line"
+            done < <(grep -E 'FAILED|Failure|error|Assertion|Expected|Value of' build/Testing/Temporary/LastTest.log | head -n 50)
+          fi
+
       - name: Package release binaries
         if: inputs.package-release
         run: |

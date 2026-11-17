@@ -8,7 +8,7 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (08/11/2026)** : les étapes jusqu'à la seamline existent. L'assemblage, l'export, l'exécutable en ligne de commande et le lien entre l'interface Qt et le calcul sont en cours.
+**État (17/11/2026, branche `pipeline3`)** : le pipeline backend inclut Fusion, l'export TIFF et l'exécution CLI (`stitching --pipeline`). Un test d'intégration exécute la chaîne complète sur des tuiles 2×2 synthétiques. Le branchement de l'interface Qt au calcul reste distinct.
 
 ## Par où commencer
 
