@@ -14,7 +14,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> État de la branche `pipeline3` au **17/11/2026** : le pipeline inclut Fusion, l'export TIFF et une CLI. La chaîne complète est couverte par un test d'intégration sur des tuiles 2×2 synthétiques ; le branchement de l'interface Qt au calcul reste distinct.
+> État de la branche `pipeline3` au **17/11/2026** : le backend dispose d'une CLI. Le test d'intégration exécute un pipeline 2×2 synthétique jusqu'à `graphcut`. L'assemblage/export n'est pas encore intégré à cette chaîne ; le branchement de l'interface Qt au calcul reste distinct.
 
 ---
 
@@ -33,10 +33,10 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
-| 8 | Assemblage | Fabriquer l'image finale | ✅ `fusion` (blocs composites) |
-| 9 | Export | Écrire le fichier final | ✅ `export` (TIFF) |
+| 8 | Assemblage | Fabriquer l'image finale | ❌ step non enregistré |
+| 9 | Export | Écrire le fichier final | ⚠️ `export` existe, mais aucun step ne produit son entrée |
 
-**Sur `pipeline3`, la chaîne peut aller de l'import à la mosaïque TIFF via la CLI.** Le test 2×2 est synthétique et ne valide pas encore les performances ni la mémoire sur une œuvre réelle.
+**Sur `pipeline3`, la chaîne CLI s'arrête actuellement aux territoires calculés par `graphcut`.** Le test 2×2 est synthétique.
 
 ---
 
@@ -91,17 +91,17 @@ build/<preset>/stitching --pipeline pipeline.json
 build/<preset>/stitching --pipeline pipeline.json --resume
 ```
 
-Le script d'exemple attend des images compatibles dans `images/`, écrit la
-mosaïque dans `output/` et garde les checkpoints dans `checkpoints/`. Ces
-chemins sont relatifs au dossier du script. Voir [Pipeline.md](core/Pipeline.md)
-pour les options, la reprise et les codes de sortie détaillés.
+Le script d'exemple attend des images compatibles dans `images/` et garde les
+checkpoints dans `checkpoints/`. Ces chemins sont relatifs au dossier du script.
+Voir [Pipeline.md](core/Pipeline.md) pour les options, la reprise et les codes
+de sortie détaillés.
 
-### Exemple de pipeline complet
+### Exemple de pipeline
 
 Le fichier [pipeline.json](../pipeline.json) enchaîne `import`,
 `phase-correlation`, `absolute-pos`, `intensity-correction`, `graphcut`,
-`fusion` et `export`. Le test CLI de la chaîne 2×2 utilise ses propres images
-synthétiques et ne dépend pas de fichiers d'images versionnés dans le dépôt.
+jusqu'à `graphcut`. Le test CLI 2×2 utilise ses propres images synthétiques et
+ne dépend pas de fichiers d'images versionnés dans le dépôt.
 
 ```sh
 stitching --pipeline pipeline.json
@@ -118,13 +118,13 @@ stitching --pipeline pipeline.json --resume
 Une ligne par step, avec son compte rendu (`getResult()`) :
 
 ```
-Step 1/7 OK {"tiles":6}
-Step 2/7 OK {"confidence":[...],"failures":[],"niveau":2,"pairs":7}
-Step 3/7 OK {"failures":[],"pairs":7,"positions":6}
+Step 1/5 OK {"tiles":6}
+Step 2/5 OK {"confidence":[...],"failures":[],"niveau":2,"pairs":7}
+Step 3/5 OK {"failures":[],"pairs":7,"positions":6}
 ...
 ```
 
-La chaîne complète comporte sept steps (`Step 1/7` à `Step 7/7`). En cas
+La chaîne d'exemple comporte cinq steps (`Step 1/5` à `Step 5/5`). En cas
 d'échec, le message indique le step concerné et le run s'arrête.
 
 ### Ce que l'on trouve sur le disque
@@ -139,9 +139,7 @@ output/checkpoints/
 ├── 01_phase-correlation/  matches.json, manifest.json
 ├── 02_absolute-pos/       positions.json, manifest.json
 ├── 03_intensity-correction/  intensityCorrection.json, manifest.json
-├── 04_graphcut/           territories.json, manifest.json
-├── 05_fusion/             checkpoint incomplet (CompositeBlocks non sérialisé)
-└── 06_export/             manifest.json (pas de sortie DataStore)
+└── 04_graphcut/           territories.json, manifest.json
 ```
 
 Relancer le même script reprend où le run s'était arrêté, et saute les steps dont le checkpoint est encore valide. Détails : [core/Pipeline.md](core/Pipeline.md#reprise-pause-checkpoints).
@@ -173,9 +171,9 @@ Relancer le même script reprend où le run s'était arrêté, et saute les step
                          └──────────┘
 ```
 
-`fusion` consomme `tiles`, `positions`, `territories` et, si disponible,
-`intensityCorrection`; il produit `compositeBlocks`, que `export` écrit en
-TIFF. Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et
+La chaîne testée s'arrête à `graphcut`. Le step `export` attend une donnée
+`compositeBlocks`, mais aucun step actuellement enregistré ne la produit.
+Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et
 `intensityCorrection`, et produit `seamlines`. C'est l'autre méthode de couture,
 à côté de `graphcut`.
 
@@ -189,8 +187,7 @@ TIFF. Non dessiné : `dynamic-programming-dijkstra` lit `tiles`, `positions` et
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
-| `fusion` | `blockSize`, `outputPath`, `enableBlending` | `tiles`, `positions`, `territories`, correction facultative | `compositeBlocks` : `CompositeBlocks` | [FusionStep.md](steps/FusionStep.md) |
-| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
+| `export` | `outputDirectory` | `compositeBlocks` : `CompositeBlocks` | aucun DataStore ; écrit `mosaic.tif` (entrée non produite par un step enregistré) | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 
@@ -285,7 +282,7 @@ C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorith
 
 Chaque bloc contient l'image couleur `imageRgb` (`CV_16UC3`), son rectangle `blockRect` dans la mosaïque, ainsi que `provenance` et `mask`. L'export lit seulement `imageRgb` et `blockRect` et écrit l'image couleur dans `mosaic.tif`. Les blocs doivent former une grille complète alignée sur `DataNs::BLOCK_SIZE` ; les blocs de bord peuvent être plus petits.
 
-C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints.
+C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints. `export` l'attend, mais aucun step du registre ne le produit actuellement.
 
 #### Les deux fichiers du moteur
 
@@ -313,23 +310,15 @@ C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`cor
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Sur
-`pipeline3`, les steps `fusion` et `export` produisent la mosaïque.
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Le
+pipeline CLI et son test 2×2 s'arrêtent aux territoires produits par
+`graphcut`. Le step `export` existe, mais attend `compositeBlocks`, donnée
+qu'aucun step du registre ne produit ; `buildPipeline` rejette donc une chaîne
+qui tente de l'utiliser.
 
-`fusion` parcourt la grille du canevas par blocs et, pour chaque bloc, lit les
-tuiles qui le recouvrent, applique leur position et leur territoire, puis
-conserve les pixels en `CV_16UC3`. Il applique le gain par tuile issu de
-`intensity-correction`; le coefficient spatial `fieldStrength` n'est pas
-appliqué par ce step. `export` écrit les blocs dans un TIFF tuilé `mosaic.tif`.
-
-`fusion` fournit la clé `compositeBlocks` (`DataNs::CompositeBlockList`). Chaque
-bloc contient `imageRgb` en `CV_16UC3`, `provenance`, `mask` et un `blockRect`
-aligné sur `DataNs::BLOCK_SIZE`; `export` écrit la mosaïque TIFF. Le pipeline
-2×2 est testé via `stitching --pipeline` et le test vérifie l'image exportée.
-Les blocs sont actuellement conservés dans le `DataStore` en mémoire : le test
-ne démontre pas encore un budget mémoire borné pour les grandes œuvres.
-- `fusion` garde actuellement tous les blocs composites dans le `DataStore` en mémoire ; l'écriture TIFF est tuilée, mais cela ne garantit pas une consommation mémoire bornée pendant l'assemblage.
-- `graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque (`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait servir d'aperçu rapide.
+`graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque
+(`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait
+servir d'aperçu rapide en attendant un step d'assemblage.
 
 ---
 
@@ -434,7 +423,7 @@ Tout ce qu'il faut existe déjà côté backend :
 | construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
 | lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
-| afficher le journal | le `logger` reçoit chaque message (`Step 2/7 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
+| afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
 | mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
 | reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
 | afficher l'avancement et l'état sauvegardé | `run.json` (`status`, `completedSteps`), réécrit après chaque step |
@@ -450,7 +439,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Valider Fusion et Export sur des œuvres réelles**, notamment le temps et la mémoire ; le test 2×2 courant est synthétique (§5).
+- **Implémenter l'assemblage**, producteur de `compositeBlocks`, puis valider l'enchaînement avec `export` sur des images synthétiques et réelles (§5).
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
 - **Le branchement du front** (§9) et le choix d'une seule interface.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).

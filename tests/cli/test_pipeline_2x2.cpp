@@ -15,7 +15,6 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <vector>
 
 #ifndef _WIN32
 #include <sys/wait.h>   // NOLINT(misc-include-cleaner)
@@ -35,7 +34,6 @@ constexpr int SHIFT_X = TILE_WIDTH - OVERLAP_X;
 constexpr int SHIFT_Y = TILE_HEIGHT - OVERLAP_Y;
 constexpr int CANVAS_WIDTH = SHIFT_X + TILE_WIDTH;
 constexpr int CANVAS_HEIGHT = SHIFT_Y + TILE_HEIGHT;
-constexpr int SIZE_TOLERANCE_PX = 20;
 
 struct Workspace {
     Workspace() {
@@ -95,18 +93,14 @@ CommandResult runStitching(const std::string& arguments, const fs::path& logDire
 }
 
 void createSyntheticTiles(const fs::path& imageDirectory) {
-    cv::Mat texture(CANVAS_HEIGHT, CANVAS_WIDTH, CV_32FC1);
+    cv::Mat canvas(CANVAS_HEIGHT, CANVAS_WIDTH, CV_32FC3);
     cv::RNG randomGenerator(4242);
-    randomGenerator.fill(texture, cv::RNG::UNIFORM, 0.0, 1.0);
-    cv::GaussianBlur(texture, texture, cv::Size(), 2.0);
-    cv::normalize(texture, texture, 5000.0, 35000.0, cv::NORM_MINMAX);
+    randomGenerator.fill(canvas, cv::RNG::UNIFORM, 0.0, 1.0);
+    cv::GaussianBlur(canvas, canvas, cv::Size(), 2.0);
+    cv::normalize(canvas, canvas, 2000.0, 60000.0, cv::NORM_MINMAX);
 
-    std::vector<cv::Mat> channels(3);
-    texture.convertTo(channels[0], CV_16U);
-    texture.convertTo(channels[1], CV_16U, 0.7, 10000.0);
-    texture.convertTo(channels[2], CV_16U, 0.4, 20000.0);
     cv::Mat canvas16;
-    cv::merge(channels, canvas16);
+    canvas.convertTo(canvas16, CV_16UC3);
     const cv::Rect tileRegions[] = {
         {0, 0, TILE_WIDTH, TILE_HEIGHT},
         {SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT},
@@ -140,11 +134,7 @@ Json makeScript() {
         {{"name", "intensity-correction"},
          {"parameters", Json::array({{{"valueType", "int"}, {"name", "borderMargin"}, {"value", 5}}})}},
         {{"name", "graphcut"},
-         {"parameters", Json::array({{{"valueType", "float"}, {"name", "scale"}, {"value", 0.5}}})}},
-        {{"name", "fusion"},
-         {"parameters", Json::array({{{"valueType", "int"}, {"name", "blockSize"}, {"value", 512}}})}},
-        {{"name", "export"},
-         {"parameters", Json::array({{{"valueType", "string"}, {"name", "outputDirectory"}, {"value", "output"}}})}}
+         {"parameters", Json::array({{{"valueType", "float"}, {"name", "scale"}, {"value", 0.5}}})}}
     });
     return {{"pipeline", {{"steps", steps}}}, {"run", {{"checkpointDirectory", "checkpoints"}}}};
 }
@@ -173,7 +163,7 @@ TEST(CommandLineTest, UnknownOptionIsRejected) {
     EXPECT_NE(result.errors.find("unknown option '--pipline'"), std::string::npos);
 }
 
-TEST(Pipeline2x2CliTest, RunsAndResumesFullPipelineFromScriptDirectory) {
+TEST(Pipeline2x2CliTest, RunsAndResumesPipelineFromScriptDirectory) {
     Workspace workspace;
     createSyntheticTiles(workspace.root / "images");
     const fs::path scriptPath = workspace.root / "pipeline.json";
@@ -182,36 +172,22 @@ TEST(Pipeline2x2CliTest, RunsAndResumesFullPipelineFromScriptDirectory) {
 
     const CommandResult firstRun = runStitching(command, workspace.root);
     ASSERT_EQ(firstRun.exitCode, EXIT_SUCCESS) << firstRun.output << firstRun.errors;
-    EXPECT_NE(firstRun.output.find("Step 7/7 OK"), std::string::npos) << firstRun.output;
-
-    const fs::path mosaicPath = workspace.root / "output" / "mosaic.tif";
-    ASSERT_TRUE(fs::exists(mosaicPath));
-    EXPECT_GT(fs::file_size(mosaicPath), 0U);
-    const cv::Mat mosaic = cv::imread(mosaicPath.string(), cv::IMREAD_UNCHANGED);
-    ASSERT_FALSE(mosaic.empty());
-    EXPECT_EQ(mosaic.type(), CV_16UC3);
-    EXPECT_GE(mosaic.cols, CANVAS_WIDTH - SIZE_TOLERANCE_PX);
-    EXPECT_GE(mosaic.rows, CANVAS_HEIGHT - SIZE_TOLERANCE_PX);
-    const cv::Mat sourceTile = cv::imread((workspace.root / "images" / "img_c00_r00_c00.tif").string(),
-                                          cv::IMREAD_UNCHANGED);
-    ASSERT_FALSE(sourceTile.empty());
-    const cv::Rect colorCheckRegion(50, 50, 200, 150);
-    const cv::Scalar sourceMean = cv::mean(sourceTile(colorCheckRegion));
-    const cv::Scalar mosaicMean = cv::mean(mosaic(colorCheckRegion));
-    ASSERT_GT(mosaicMean[2], 0.0);
-    EXPECT_LT(sourceMean[0], sourceMean[2]);
-    EXPECT_NEAR(mosaicMean[0] / mosaicMean[2], sourceMean[0] / sourceMean[2], 0.03);
+    EXPECT_NE(firstRun.output.find("Step 5/5 OK"), std::string::npos) << firstRun.output;
+    const fs::path territoriesPath =
+        workspace.root / "checkpoints" / "04_graphcut" / "territories.json";
+    ASSERT_TRUE(fs::exists(territoriesPath));
+    EXPECT_GT(fs::file_size(territoriesPath), 0U);
 
     std::ifstream runStateInput(workspace.root / "checkpoints" / "run.json", std::ios::binary);
     ASSERT_TRUE(runStateInput.good());
     const Json runState = Json::parse(runStateInput);
     EXPECT_EQ(runState.at("run").at("status"), "completed");
-    EXPECT_EQ(runState.at("run").at("completedSteps").size(), 7U);
+    EXPECT_EQ(runState.at("run").at("completedSteps").size(), 5U);
 
     const CommandResult resumedRun = runStitching(command + " --resume", workspace.root);
     EXPECT_EQ(resumedRun.exitCode, EXIT_SUCCESS) << resumedRun.output << resumedRun.errors;
-    EXPECT_NE(resumedRun.output.find("resuming at step"), std::string::npos) << resumedRun.output;
-    EXPECT_NE(resumedRun.output.find("Step 7/7 OK"), std::string::npos) << resumedRun.output;
+    EXPECT_NE(resumedRun.output.find("nothing to do: all steps are already done"), std::string::npos)
+        << resumedRun.output;
 }
 
 // NOLINTEND

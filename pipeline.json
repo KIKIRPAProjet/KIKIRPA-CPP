@@ -39,19 +39,6 @@
       },
       {
         "name": "graphcut"
-      },
-      {
-        "name": "fusion"
-      },
-      {
-        "name": "export",
-        "parameters": [
-          {
-            "valueType": "string",
-            "name": "outputDirectory",
-            "value": "output/"
-          }
-        ]
       }
     ]
   },

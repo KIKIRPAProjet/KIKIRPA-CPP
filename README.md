@@ -8,7 +8,7 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (17/11/2026, branche `pipeline3`)** : le pipeline backend inclut Fusion, l'export TIFF et l'exécution CLI (`stitching --pipeline`). Un test d'intégration exécute la chaîne complète sur des tuiles 2×2 synthétiques. Le branchement de l'interface Qt au calcul reste distinct.
+**État (17/11/2026, branche `pipeline3`)** : le backend s'exécute en CLI (`stitching --pipeline`) et le test d'intégration lance un pipeline 2×2 synthétique jusqu'à `graphcut`. L'assemblage/export de la mosaïque n'est pas encore intégré à cette chaîne. Le branchement de l'interface Qt au calcul reste distinct.
 
 ## Par où commencer
 

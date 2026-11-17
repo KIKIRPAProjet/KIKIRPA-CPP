@@ -17,8 +17,8 @@ Les chemins relatifs du script sont résolus depuis le dossier du script. `--res
 lit l'état sauvegardé dans `run.checkpointDirectory/run.json` ; sans cette option,
 toutes les étapes sont relancées. Codes de sortie : `0` succès, `1` étape en
 échec, `2` argument/script invalide, `3` erreur de fichier. Le script
-[pipeline.json](../../pipeline.json) est un exemple complet ; il attend des
-images compatibles dans un dossier `images/` à côté du script.
+[pipeline.json](../../pipeline.json) illustre la chaîne CLI jusqu'à `graphcut` ;
+il attend des images compatibles dans un dossier `images/` à côté du script.
 
 L'API C++ reste disponible pour les tests et les intégrations :
 
@@ -111,8 +111,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` |
 
-- `CompositeBlocks` n'est pas encore sérialisé : son checkpoint est incomplet
-  et `fusion` est donc réexécuté lors d'une reprise.
+- `CompositeBlocks` n'est pas encore sérialisé. Aucun step actuellement
+  enregistré ne produit cette donnée.
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
 - Les checkpoints écrits avant la réorganisation sont jugés périmés : les steps sont refaits.
@@ -135,11 +135,12 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |
 | `dynamic-programming-dijkstra` | `StepsNs::DynamicProgrammingDijkstraStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `intensityCorrection` : `IntensityCorrection` | `seamlines` : `Seamlines` |
-| `fusion` | `StepsNs::FusionStepClass` | `tiles` : `Tiles`, `positions` : `Positions`, `territories` : `Territories` | `compositeBlocks` : `CompositeBlocks` |
 | `export` | `StepsNs::ExportStepClass` | `compositeBlocks` : `CompositeBlocks` | — (écrit `mosaic.tif`) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
-`fusion` est le producteur de blocs composites ; `export` est terminal et écrit la mosaïque TIFF.
+`export` est terminal et écrit la mosaïque TIFF, mais aucun producteur de
+`compositeBlocks` n'est actuellement enregistré ; un pipeline qui contient
+`export` est donc refusé par la validation d'enchaînement.
 
 ## Contrats des données du `DataStoreClass`
 
@@ -153,9 +154,9 @@ doivent donc employer le même type C++.
 | `tiles` | `Tiles` | `DataNs::TileList` | Produit par `import` ; consommé par tous les steps suivants |
 | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | Produit par `phase-correlation`, `sift`, `lightglue` ; consommé par `absolute-pos`, `intensity-correction` |
 | `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Produit par `absolute-pos` ; consommé par `graphcut`, `dynamic-programming-dijkstra` |
-| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `dynamic-programming-dijkstra` et lu facultativement par `fusion` (gain par tuile uniquement) |
-| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` ; consommé par `fusion` |
-| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Produit par `fusion` ; consommé par `export` |
+| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `dynamic-programming-dijkstra` |
+| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` |
+| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Aucun producteur enregistré ; consommé par `export` |
 
 Les contrats actifs ci-dessus décrivent les échanges de la branche, mais
 certains choix de représentation et de cycle de vie restent à valider :
@@ -163,8 +164,8 @@ certains choix de représentation et de cycle de vie restent à valider :
 | Donnée demandée | État du code | Décisions à faire valider |
 |---|---|---|
 | Transformations et rejets | `DataNs::Alignment` contient une matrice `cv::Mat` et un masque d'inliers ; aucun step ni type sérialisable ne l'échange | Type de transformation, repère, unités, lien avec les identifiants de paire et forme sérialisée |
-| Corrections lumineuses | `intensityCorrection` échange `DataNs::IntensityCorrection`; `fusion` applique le gain par tuile, mais pas `fieldStrength` | Valider la formule et l'application complète du modèle, ainsi que la sérialisation |
-| Blocs de mosaïque | `compositeBlocks` échange `DataNs::CompositeBlockList` en mémoire et n'est pas sérialisé dans les checkpoints | Valider le cycle de vie et le stockage temporaire pour les grandes mosaïques |
+| Corrections lumineuses | `intensityCorrection` échange `DataNs::IntensityCorrection`; aucun step d'assemblage ne consomme actuellement cette donnée | Valider la formule et son application à l'assemblage, ainsi que la sérialisation |
+| Blocs de mosaïque | `DataNs::CompositeBlockList` est attendu par `export`, mais aucun step enregistré ne le produit et il n'est pas sérialisé | Définir un producteur, le cycle de vie et le stockage temporaire pour les grandes mosaïques |
 
 ### Proposition à faire valider
 
@@ -181,7 +182,7 @@ hypothèses et ne remplacent pas les contrats actuellement utilisés par le code
 | Identité canonique d'une tuile | `TileClass` et `PairMatches` utilisent un entier ; `TilePositionData` un nom de grille et `TileTerritory` un indice de vecteur. Proposition : utiliser l'identifiant entier stable attribué à l'import partout. | Modification des types partagés, des steps de positionnement et de découpe, et des checkpoints concernés. |
 | Repère et unités communs | Les coordonnées sont des pixels, X vers la droite et Y vers le bas ; l'origine au centre du pixel supérieur gauche est documentée pour les correspondances. Proposition : conserver les pixels de pleine résolution pour toutes les sorties de pipeline et expliciter si chaque position désigne un centre ou un coin. | Conversion entre niveaux pyramidaux, algorithmes, géométrie des territoires et export. |
 | Modèle des transformations | `Alignment` contient aujourd'hui un `cv::Mat` 3×3 `CV_64F` et un masque d'inliers, sans identifiants de paire. À valider : modèle autorisé (translation, affine ou projectif), sens B→A, représentation sérialisée et relation entre masque et correspondances. | Compatibilité RANSAC, positionnement global et format des checkpoints. |
-| Modèle et application des corrections lumineuses | `intensityCorrection` expose les gains par tuile et `fieldStrength`; `fusion` applique actuellement l'inverse de `tileGains` seulement. À valider : formule retenue et application du champ spatial. | Résultat photométrique de la mosaïque et sérialisation des sorties. |
+| Modèle et application des corrections lumineuses | `intensityCorrection` expose les gains par tuile et `fieldStrength`; aucun step d'assemblage ne les applique actuellement. | Résultat photométrique de la mosaïque et sérialisation des sorties. |
 | Géométrie des territoires | `TileTerritory` stocke des contours entiers et un `tileIndex`. À valider : référence de tuile canonique, repère, règle d'arrondi et convention des trous/contours. | Alignement des masques de découpe sur les pixels exportés et stabilité si l'ordre des tuiles change. |
 | Représentation et durée de vie des blocs mosaïque | Le contrat courant est `DataNs::CompositeBlockList` en mémoire (`imageRgb`, `provenance`, `mask`, `blockRect`). À valider : quand basculer vers des fichiers temporaires et qui en possède le nettoyage. | Budget mémoire, reprise sur checkpoint et contrat de l'exporteur. |
 | Paramètres et erreurs | Le JSON accepte `string`, `int`, `float`, `bool`; les erreurs de configuration sont des `invalid_argument`, les échecs d'exécution des résultats d'étape transmis au logger. À valider : règles de nommage/rétrocompatibilité et quels échecs de paire sont tolérés plutôt que fatals. | Compatibilité des scripts et interprétation fiable des runs partiels. |
@@ -191,9 +192,9 @@ hypothèses et ne remplacent pas les contrats actuellement utilisés par le code
 | Correspondances par paire | `matches` / `PairMatches` | `std::vector<DataNs::PairMatches>` (existant) | Identifiants `tileIdA`/`tileIdB` égaux à `TileClass::getId()` ; points et translations en pixels de pleine résolution |
 | Transformations et rejets | `alignments` / `PairAlignments` | nouveau `std::vector<DataNs::PairAlignment>` contenant les deux identifiants, `Direction`, une transformation B→A fixe 3×3 en `double` et le masque d'inliers aligné sur `featureMatches` | Même ordre que `matches` ou, de préférence, correspondance explicite par identifiants ; sérialisation numérique explicite plutôt que `cv::Mat` opaque |
 | Positions | `positions` / `Positions` | `std::vector<DataNs::TilePositionData>` (existant) | À terme, identifiant entier `TileClass::getId()` ; origine mosaïque en haut à gauche, coordonnées X droite / Y bas, pixels de pleine résolution, rotation en radians. Ce changement remplacerait le `tileId` texte historique |
-| Corrections lumineuses | `intensityCorrection` / `IntensityCorrection` (actif) | `DataNs::IntensityCorrection` (existant) | Le type contient `tileGains`, `fieldStrength` et `isolatedTileIndices`; valider l'identité par tuile et la formule complète à appliquer. `fusion` n'utilise actuellement que l'inverse de `tileGains`. |
+| Corrections lumineuses | `intensityCorrection` / `IntensityCorrection` (actif) | `DataNs::IntensityCorrection` (existant) | Le type contient `tileGains`, `fieldStrength` et `isolatedTileIndices`; valider l'identité par tuile et la formule complète à appliquer lors de l'assemblage. |
 | Territoires | `territories` / `Territories` | `std::vector<DataNs::TileTerritory>` (existant) | Coordonnées entières de pleine résolution dans le repère mosaïque ; remplacer `tileIndex` par l'identifiant canonique si les consommateurs doivent survivre à un changement d'ordre |
-| Blocs de mosaïque | `compositeBlocks` / `CompositeBlocks` (actif) | `DataNs::CompositeBlockList` de `DataNs::CompositeBlock` (actif) | Blocs de 512×512 pixels en mémoire ; `blockRect` est exprimé dans le repère mosaïque et le step `export` les consomme. Un stockage temporaire reste une évolution à valider. |
+| Blocs de mosaïque | `compositeBlocks` / `CompositeBlocks` (entrée de `export`, sans producteur enregistré) | `DataNs::CompositeBlockList` de `DataNs::CompositeBlock` | Définir le format, la production, la sérialisation et le stockage temporaire avant de pouvoir exécuter l'export. |
 | Tuiles | `tiles` / `Tiles` | `DataNs::TileList` (existant) | Les pixels restent dans les TIFF ; les fiches portent l'identité et la grille. L'identifiant doit être la référence unique des autres échanges |
 
 Cette proposition harmonise les identifiants actuellement hétérogènes
@@ -201,8 +202,9 @@ Cette proposition harmonise les identifiants actuellement hétérogènes
 `TileTerritory` un indice de vecteur). Elle implique une migration des
 consommateurs et des checkpoints `Positions`/`Territories`, ainsi que
 l'enregistrement de sérialiseurs pour les nouveaux types. À l'exception de
-`compositeBlocks` / `CompositeBlocks`, déjà utilisés par `fusion` et `export`,
-les clés et types proposés ne sont pas encore des contrats actifs du registre.
+`compositeBlocks` / `CompositeBlocks`, déclaré comme entrée de `export` mais
+sans producteur dans le registre, les clés et types proposés ne sont pas encore
+des contrats actifs du registre.
 
 ### Repères, paramètres et erreurs
 
@@ -231,10 +233,10 @@ les clés et types proposés ne sont pas encore des contrats actifs du registre.
   `result["error"]`, ensuite transmise au logger du pipeline.
 
 Le pipeline enregistré prend en charge la chaîne `import` → appariement →
-positionnement → découpe → `fusion` → `export`. Le test
-`Pipeline2x2CliTest.RunsAndResumesFullPipelineFromScriptDirectory` lance cette
-chaîne avec l'exécutable CLI sur un jeu 2×2 synthétique et vérifie la mosaïque
-exportée ainsi que la reprise depuis les checkpoints.
+positionnement → `graphcut`. Le test
+`Pipeline2x2CliTest.RunsAndResumesPipelineFromScriptDirectory` lance cette
+chaîne avec l'exécutable CLI sur un jeu 2×2 synthétique et vérifie les
+territoires sauvegardés ainsi que la reprise depuis les checkpoints.
 
 ## Reprise des branches existantes
 
