@@ -17,10 +17,14 @@ public:
     QLabel *currentStepLabel() const { return m_currentStepLabel; }
     QProgressBar *progressBar() const { return m_progressBar; }
 
+    void updatePairSummary(int currentPairOneBased, int totalPairs, int dubiousCount, int failedCount);
+
 private:
     MainWindow *m_mainWindow;
 
+    QLabel *m_pairViewLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
+    QLabel *m_dubiousSummaryLabel = nullptr;
     QLabel *m_currentStepLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
 };

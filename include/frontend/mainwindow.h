@@ -4,6 +4,8 @@
 #include <QMainWindow>
 #include <QString>
 #include <QStringList>
+#include <QVector>
+#include "frontendutils.h"
 
 class QKeyEvent;
 class QWidget;
@@ -51,6 +53,14 @@ private:
     void setupHomePageConnections();
     void setupMenuConnections();
     void setupPageConnections();
+    void setupPairAlignmentConnections();
+
+    void selectPair(int pairIndex);
+    void selectPreviousPair();
+    void selectNextDubiousPair();
+    void validatePair(int pairIndex);
+    void applyManualPairOffset(int pairIndex, double dx, double dy);
+    void refreshPairViews();
 
     // Met à jour la grille à partir de l'état du projet.
     void refreshGrid();
@@ -129,4 +139,6 @@ private:
     int zoomPercent = 12;
     bool panelsVisible = true;
     bool maskVisible = true;
+    QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
+    int m_currentPairIndex = 0;
 };

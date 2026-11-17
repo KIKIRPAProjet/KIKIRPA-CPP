@@ -3,6 +3,7 @@
 
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
+#include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline_report.h"
 #include "core/pipeline/run_state.h"
 #include "core/step/data_store.h"
@@ -10,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <ctime>
 #include <exception>
 #include <filesystem>
@@ -246,12 +248,12 @@ namespace PipelineNs {
                 if (!MoveFileExW(temporaryPath.c_str(), scriptPath.c_str(),
                                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
                     throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
-                                            "cannot replace " + scriptPath.string());
+                                            "cannot replace " + IONs::pathToUtf8(scriptPath));
 #else
                 FilesystemNs::rename(temporaryPath, scriptPath);
 #endif
             } catch (const std::exception& exception) {
-                report(log, "warning: cannot write " + scriptPath.string() + ": " + exception.what(), true);
+                report(log, "warning: cannot write " + IONs::pathToUtf8(scriptPath) + ": " + exception.what(), true);
             }
         }
 
@@ -477,7 +479,7 @@ namespace PipelineNs {
     }
 
     bool PipelineClass::run(const Logger& log) {
-        const CheckpointNs::CheckpointClass checkpoint(runState.checkpointDirectory);
+        const CheckpointNs::CheckpointClass checkpoint(IONs::pathFromUtf8(runState.checkpointDirectory));
         const auto saveScript = [this, &log]() {
             saveScriptFile(scriptPath, exportScript(), log);
         };

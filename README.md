@@ -8,14 +8,17 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (08/11/2026)** : les étapes jusqu'à la seamline existent. L'assemblage, l'export, l'exécutable en ligne de commande et le lien entre l'interface Qt et le calcul sont en cours.
+**État (15/11/2026)** : toutes les étapes, de l'import à l'export, existent et s'enchaînent en ligne de commande. Le lien entre l'interface Qt et le calcul est en cours.
+
+Un pipeline JSON se lance avec `build/<preset>/stitching --pipeline <script.json>` (ajouter `.exe` sous Windows), et se reprend après un échec avec `--resume`. Options, codes de sortie et reprise : [docs/core/Pipeline.md](docs/core/Pipeline.md#lancer-un-pipeline). Les chemins peuvent contenir des caractères non ASCII (« œuvre_été », « 作品 »). Sans argument, `stitching` ouvre l'interface graphique.
 
 ## Par où commencer
 
 | Pour… | Lire |
 |---|---|
 | **comprendre le projet** : ce que fait chaque step, ses entrées et sorties, comment le lancer, ce qui reste à faire | [docs/COMPRENDRE_LE_PROJET.md](docs/COMPRENDRE_LE_PROJET.md) |
-| compiler et lancer les tests | [docs/BUILD.md](docs/BUILD.md) |
+| **installer le projet sur son poste**, du poste vide à l'application lancée | [docs/DEMARRER.md](docs/DEMARRER.md) |
+| les dépendances et les options du build | [docs/BUILD.md](docs/BUILD.md) |
 | se repérer dans le code | [docs/CARTE_ARCHITECTURE.md](docs/CARTE_ARCHITECTURE.md) |
 | écrire du code, ouvrir une pull request | [docs/CONVENTIONS.md](docs/CONVENTIONS.md) |
 | le script JSON, la reprise et les checkpoints | [docs/core/Pipeline.md](docs/core/Pipeline.md) |
@@ -24,13 +27,21 @@ import → appariement → positionnement → intensité → seamline → assemb
 
 ## Compiler en bref
 
+Sous Windows, une fois les dépendances installées, une commande compile et lance l'application, depuis n'importe quel terminal :
+
+```sh
+python scripts/demarrer.py
+```
+
+Sous Linux et macOS, ou à la main :
+
 ```sh
 cmake --preset <windows-aqt | linux | macos>
 cmake --build --preset <même preset>
 ctest --preset <même preset>
 ```
 
-Avant cela, il faut installer les dépendances : voir [docs/BUILD.md](docs/BUILD.md).
+Avant cela, il faut installer les dépendances : pas à pas dans [docs/DEMARRER.md](docs/DEMARRER.md), liste complète dans [docs/BUILD.md](docs/BUILD.md).
 
 ## Organisation du dépôt
 
@@ -40,4 +51,5 @@ include/frontend, src/frontend interface Qt
 tests/                         tests unitaires GoogleTest
 docs/                          documentation
 cmake/                         modules CMake (dépendances, cibles, tests, installation)
+scripts/                       demarrer.py : compiler et lancer sous Windows (docs/DEMARRER.md)
 ```
