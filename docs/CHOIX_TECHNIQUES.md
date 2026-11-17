@@ -16,7 +16,15 @@ CMake du backend et du frontend.
 ## Bibliothèques
 
 > [!WARNING]
-> Les choix techniques concertnant les bibliothèques doivent encore être complétés voir #117
+> Les choix techniques concernant les bibliothèques doivent encore être complétés voir #117
+
+### ONNX Runtime 1.20.1
+
+ONNX Runtime est utilisé par le backend pour exécuter l'inférence du step d'appariement `lightglue`.
+
+- **Pourquoi ONNX plutôt que LibTorch / PyTorch** : Les algorithmes d'apprentissage profond pour l'extraction et l'appariement de points clés (LightGlue, ALIKED, SuperPoint, DISK) sont conçus sous PyTorch en Python. L'intégration de PyTorch C++ (LibTorch) aurait imposé une dépendance de plusieurs gigaoctets, complexe à compiler et à distribuer. ONNX permet d'exporter ces modèles sous un format standardisé et de les exécuter via un runtime C++ léger, autonome et multiplateforme.
+- **Modèle utilisé** : Le pipeline utilise des exports bout-en-bout issus de [fabio-sim/LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX), combinant l'extracteur de descripteurs et le réseau d'appariement LightGlue - ce qui nous permet de ne pas devoir nous occuper de "donner" les points-clés à LightGlue. Le modèle de référence validé est `raco_aliked_lightglue_pipeline_k1024.onnx` (extracteur ALIKED avec 1024 points clés). Le code supporte également les formats d'export par paires pour SuperPoint et DISK (SuperPoint se débrouillait très bien pendant la phase de test).
+- **Intégration et portabilité** : ONNX Runtime est automatiquement récupéré par CMake via des binaires précompilés officiels pour Windows (x64), Linux (x64) et macOS (universal2). L'inférence est parallélisée sur CPU en limitant l'utilisation des cœurs pour préserver la réactivité du système, avec support optionnel de l'accélération matérielle CoreML sous macOS (très utile pour accélérer significativement la vitesse d'inférence).
 
 ## Architecture frontend / backend
 
