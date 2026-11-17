@@ -9,12 +9,13 @@
 
 namespace StepsNs {
 
+    constexpr double DEFAULT_GRAPH_CUT_SCALE = 0.25;
     // Entrées pour un appel direct, hors pipeline. Dans un pipeline, tuiles et positions viennent du DataStoreClass
     // et seule `scale` est lue (dans la configuration du step).
     struct GraphCutInput {
         std::vector<std::string> tilePaths;   // chemins des images des tuiles
         std::vector<DataNs::TilePositionData> positions;   // une entrée par tuile, dans le même ordre que tilePaths
-        double scale = 0.25;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
+        double scale = DEFAULT_GRAPH_CUT_SCALE;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
     };
 
     // Sortie du step.
