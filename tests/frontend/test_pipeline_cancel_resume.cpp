@@ -1,11 +1,9 @@
 // tests/frontend/test_pipeline_cancel_resume.cpp
 // NOLINTBEGIN
-#include "project_setup_model.h"
-#include "simulationrunner.h"
-
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/run_state.h"
+#include "pipeline_runner.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -21,8 +19,10 @@
 #include <QTimer>
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -34,9 +34,6 @@ constexpr int TILE_WIDTH = 400;
 constexpr int TILE_HEIGHT = 300;
 constexpr int TILE_SHIFT_X = 320;
 constexpr int TEXTURE_SEED = 12345;
-constexpr double TEXTURE_SIGMA = 2.0;
-constexpr double PIXEL_MIN = 2000.0;
-constexpr double PIXEL_MAX = 60000.0;
 constexpr int EVENT_LOOP_TIMEOUT_MS = 30000;
 
 int dummyArgc = 1;
@@ -60,7 +57,7 @@ struct TempDirGuard {
         outputDir = root / "output";
         checkpointsDir = outputDir / "checkpoints";
         fs::create_directories(inputDir);
-        fs::create_directories(outputDir);
+        fs::create_directories(checkpointsDir);
     }
 
     ~TempDirGuard()
@@ -78,52 +75,58 @@ struct TempDirGuard {
 void createSyntheticTwoTileDataset(const fs::path &inputDir)
 {
     cv::Mat source(TILE_HEIGHT, TILE_SHIFT_X + TILE_WIDTH, CV_32F);
-    cv::RNG rng(TEXTURE_SEED);
-    rng.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
-    cv::GaussianBlur(source, source, cv::Size(), TEXTURE_SIGMA);
-    cv::normalize(source, source, PIXEL_MIN, PIXEL_MAX, cv::NORM_MINMAX);
+    cv::RNG randomGenerator(TEXTURE_SEED);
+    randomGenerator.fill(source, cv::RNG::UNIFORM, 0.0, 1.0);
+    cv::GaussianBlur(source, source, cv::Size(), 2.0);
+    cv::normalize(source, source, 2000.0, 60000.0, cv::NORM_MINMAX);
     cv::Mat source16;
     source.convertTo(source16, CV_16U);
-    cv::imwrite((inputDir / "img_C00_R00.tif").string(), source16(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT)));
-    cv::imwrite((inputDir / "img_C01_R00.tif").string(), source16(cv::Rect(TILE_SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT)));
+
+    const cv::Rect tileRegions[] = {
+        {0, 0, TILE_WIDTH, TILE_HEIGHT},
+        {TILE_SHIFT_X, 0, TILE_WIDTH, TILE_HEIGHT}};
+    const char *tileNames[] = {"img_C00_R00.tif", "img_C01_R00.tif"};
+    for (std::size_t index = 0; index < 2; ++index) {
+        if (!cv::imwrite((inputDir / tileNames[index]).string(), source16(tileRegions[index])))
+            throw std::runtime_error("could not write a synthetic tile");
+    }
 }
 
-fs::path writeThreeStepBackendScript(const TempDirGuard &dirs)
+Json makeThreeStepBackendScript(const TempDirGuard &dirs)
 {
     Json importStep = PipelineNs::createStep("import")->getConfigJson();
-    for (Json &param : importStep.at("parameters")) {
-        if (param.value("name", "") == "path")
-            param["value"] = dirs.inputDir.string();
-        else if (param.value("name", "") == "format")
-            param["value"] = R"(img_C(\d+)_R(\d+)\.tif)";
+    for (Json &parameter : importStep.at("parameters")) {
+        const std::string name = parameter.value("name", "");
+        if (name == "path")
+            parameter["value"] = dirs.inputDir.string();
+        else if (name == "format")
+            parameter["value"] = R"(img_C(\d+)_R(\d+)\.tif)";
     }
 
-    Json phaseStep = PipelineNs::createStep("phase-correlation")->getConfigJson();
-    Json absStep = PipelineNs::createStep("absolute-pos")->getConfigJson();
+    const Json steps = Json::array({
+        importStep,
+        PipelineNs::createStep("phase-correlation")->getConfigJson(),
+        PipelineNs::createStep("absolute-pos")->getConfigJson()});
+    return {{"pipeline", {{"steps", steps}}},
+            {"run", {{"checkpointDirectory", dirs.checkpointsDir.string()}}}};
+}
 
-    const Json script = {
-        {"pipeline", {{"steps", Json::array({importStep, phaseStep, absStep})}}},
-        {"run",
-         {{"status", "idle"},
-          {"completedSteps", Json::array()},
-          {"skipCompletedSteps", true},
-          {"startFromStep", ""},
-          {"checkpointDirectory", dirs.checkpointsDir.string()}}}};
-
-    const fs::path scriptPath = dirs.outputDir / "pipeline.json";
-    std::ofstream out(scriptPath, std::ios::binary);
-    out << script.dump(2) << '\n';
-    return scriptPath;
+void writeJsonFile(const fs::path &path, const Json &json)
+{
+    std::ofstream output(path, std::ios::binary);
+    output << json.dump(2) << '\n';
+    if (!output)
+        throw std::runtime_error("could not write the pipeline script");
 }
 
 Json readJsonFile(const fs::path &path)
 {
-    std::ifstream in(path, std::ios::binary);
-    return Json::parse(in);
+    std::ifstream input(path, std::ios::binary);
+    return Json::parse(input);
 }
 
-template <typename Signal>
-bool waitForSignal(SimulationRunner &runner, Signal signal, int timeoutMs = EVENT_LOOP_TIMEOUT_MS)
+template <typename Runner, typename Signal>
+bool waitForSignal(Runner &runner, Signal signal, int timeoutMs = EVENT_LOOP_TIMEOUT_MS)
 {
     QEventLoop loop;
     bool triggered = false;
@@ -141,140 +144,80 @@ bool waitForSignal(SimulationRunner &runner, Signal signal, int timeoutMs = EVEN
     return triggered;
 }
 
-TEST(PipelineCancelResumeTest, CancelsRunningBackendPipelineAndResumesFromScript)
+TEST(PipelineCancelResumeTest, PausesAtAStepBoundaryAndResumesFromCheckpoint)
 {
     ensureQtApp();
     TempDirGuard dirs;
     createSyntheticTwoTileDataset(dirs.inputDir);
-    const fs::path scriptPath = writeThreeStepBackendScript(dirs);
-    const QString qtScriptPath = QString::fromStdString(scriptPath.string());
+    const Json script = makeThreeStepBackendScript(dirs);
 
-    SimulationRunner runner;
-    QStringList logs;
-    bool cancellationRequestedSignalSeen = false;
-    bool pauseSignalSeen = false;
+    PipelineRunnerClass runner;
+    runner.setScriptJson(QString::fromStdString(script.dump()));
+    bool pauseOnStart = true;
+    QObject::connect(&runner, &PipelineRunnerClass::runStarted, &runner, [&runner, &pauseOnStart]() {
+        if (pauseOnStart) {
+            pauseOnStart = false;
+            runner.pauseRun();
+        }
+    });
 
-    QObject::connect(&runner, &SimulationRunner::backendLogReceived,
-                     [&logs](const QString &message, const QString &) {
-                         logs.append(message);
-                     });
-    QObject::connect(&runner, &SimulationRunner::cancellationRequested,
-                     [&cancellationRequestedSignalSeen]() {
-                         cancellationRequestedSignalSeen = true;
-                     });
-    QObject::connect(&runner, &SimulationRunner::runPaused,
-                     [&pauseSignalSeen]() {
-                         pauseSignalSeen = true;
-                     });
+    runner.startRun();
+    ASSERT_TRUE(waitForSignal(runner, &PipelineRunnerClass::pausedStateChanged));
+    ASSERT_TRUE(runner.isPaused());
 
-    runner.startBackendRun(qtScriptPath, 1);
-    EXPECT_TRUE(runner.isRunning());
-    runner.cancelRun();
-    EXPECT_TRUE(cancellationRequestedSignalSeen);
-    EXPECT_TRUE(runner.isCancellationPending());
+    const fs::path runStatePath = dirs.checkpointsDir / "run.json";
+    const Json pausedRun = readJsonFile(runStatePath);
+    EXPECT_EQ(pausedRun.at("run").at("status"), "paused");
+    EXPECT_LT(pausedRun.at("run").at("completedSteps").size(), 3U);
 
-    ASSERT_TRUE(waitForSignal(runner, &SimulationRunner::runPaused));
-    EXPECT_TRUE(pauseSignalSeen);
-    EXPECT_FALSE(runner.isRunning());
-    EXPECT_TRUE(runner.isPaused());
-    EXPECT_TRUE(runner.canResume());
-
-    const Json pausedScript = readJsonFile(scriptPath);
-    EXPECT_EQ(pausedScript.at("run").at("status"), "paused");
-    const std::size_t completedBeforeResume = pausedScript.at("run").at("completedSteps").size();
-    EXPECT_LT(completedBeforeResume, 3U);
-
-    logs.clear();
     runner.resumeRun();
-    EXPECT_TRUE(runner.isRunning());
-    ASSERT_TRUE(waitForSignal(runner, &SimulationRunner::runFinished));
-
-    EXPECT_FALSE(runner.isRunning());
+    ASSERT_TRUE(waitForSignal(runner, &PipelineRunnerClass::runFinished));
     EXPECT_FALSE(runner.isPaused());
-    EXPECT_FALSE(runner.canResume());
-    EXPECT_EQ(runner.currentProgress(), 100);
 
-    const Json finishedScript = readJsonFile(scriptPath);
-    EXPECT_EQ(finishedScript.at("run").at("status"), "completed");
-    EXPECT_EQ(finishedScript.at("run").at("completedSteps").size(), 3U);
+    const Json finishedRun = readJsonFile(runStatePath);
+    EXPECT_EQ(finishedRun.at("run").at("status"), "completed");
+    EXPECT_EQ(finishedRun.at("run").at("completedSteps").size(), 3U);
 }
 
-TEST(PipelineCancelResumeTest, DetectsPausedScriptAndSkipsCompletedStepsOnResume)
+TEST(PipelineCancelResumeTest, ResumesPersistedCheckpointWithANewRunner)
 {
     ensureQtApp();
     TempDirGuard dirs;
     createSyntheticTwoTileDataset(dirs.inputDir);
-    const fs::path scriptPath = writeThreeStepBackendScript(dirs);
+    const Json script = makeThreeStepBackendScript(dirs);
+    const fs::path scriptPath = dirs.outputDir / "pipeline.json";
+    const fs::path runStatePath = dirs.checkpointsDir / "run.json";
+    writeJsonFile(scriptPath, script);
 
-    // Prépare un script déjà arrêté en pause après la première étape (import) via le backend.
-    {
-        PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(scriptPath);
-        PipelineNs::RunState state = pipeline.getRunState();
-        state.skipCompletedSteps = false;
-        pipeline.setRunState(state);
-        pipeline.setScriptPath(scriptPath);
-        ASSERT_FALSE(pipeline.run([&pipeline](const std::string &message) {
-            if (message.rfind("Step 1/3 OK", 0) == 0)
-                pipeline.requestPause();
-        }));
-    }
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipelineFromFile(scriptPath);
+    PipelineNs::RunState state = pipeline.getRunState();
+    state.skipCompletedSteps = false;
+    pipeline.setRunState(state);
+    pipeline.setScriptPath(runStatePath);
+    ASSERT_FALSE(pipeline.run([&pipeline](const std::string &message) {
+        if (message.rfind("Step 1/3 OK", 0) == 0)
+            pipeline.requestPause();
+    }));
 
-    const Json pausedScript = readJsonFile(scriptPath);
-    ASSERT_EQ(pausedScript.at("run").at("status"), "paused");
-    ASSERT_EQ(pausedScript.at("run").at("completedSteps").size(), 1U);
+    const Json pausedRun = readJsonFile(runStatePath);
+    ASSERT_EQ(pausedRun.at("run").at("status"), "paused");
+    ASSERT_EQ(pausedRun.at("run").at("completedSteps").size(), 1U);
 
-    SimulationRunner runner;
+    PipelineRunnerClass runner;
+    runner.setScriptJson(QString::fromStdString(script.dump()));
     QStringList resumeLogs;
-    QObject::connect(&runner, &SimulationRunner::backendLogReceived,
-                     [&resumeLogs](const QString &message, const QString &) {
+    QObject::connect(&runner, &PipelineRunnerClass::logMessage,
+                     [&resumeLogs](const QString &message) {
                          resumeLogs.append(message);
                      });
 
-    runner.setBackendScriptPath(QString::fromStdString(scriptPath.string()));
-    EXPECT_TRUE(runner.isPaused());
-    EXPECT_TRUE(runner.canResume());
-    EXPECT_EQ(runner.currentProgress(), 33);
+    runner.startRun(1, true);
+    ASSERT_TRUE(waitForSignal(runner, &PipelineRunnerClass::runFinished));
 
-    runner.resumeRun();
-    ASSERT_TRUE(waitForSignal(runner, &SimulationRunner::runFinished));
-
-    EXPECT_FALSE(runner.canResume());
     EXPECT_TRUE(resumeLogs.contains(QStringLiteral("resuming at step 2/3")));
-    const Json completedScript = readJsonFile(scriptPath);
-    EXPECT_EQ(completedScript.at("run").at("status"), "completed");
-    EXPECT_EQ(completedScript.at("run").at("completedSteps").size(), 3U);
-}
-
-TEST(PipelineCancelResumeTest, PausesAndResumesDemoSimulationWithoutLosingProgress)
-{
-    ensureQtApp();
-    SimulationRunner runner;
-    runner.startRun(1);
-    ASSERT_TRUE(runner.isRunning());
-
-    QEventLoop waitProgressLoop;
-    QObject::connect(&runner, &SimulationRunner::progressAdvanced,
-                     [&waitProgressLoop](int percentage) {
-                         if (percentage >= 12)
-                             waitProgressLoop.quit();
-                     });
-    QTimer::singleShot(5000, &waitProgressLoop, &QEventLoop::quit);
-    waitProgressLoop.exec();
-
-    const int progressBeforePause = runner.currentProgress();
-    ASSERT_GE(progressBeforePause, 12);
-
-    runner.cancelRun();
-    EXPECT_FALSE(runner.isRunning());
-    EXPECT_TRUE(runner.isPaused());
-    EXPECT_TRUE(runner.canResume());
-    EXPECT_EQ(runner.currentProgress(), progressBeforePause);
-
-    runner.resumeRun();
-    EXPECT_TRUE(runner.isRunning());
-    EXPECT_FALSE(runner.canResume());
-    ASSERT_TRUE(waitForSignal(runner, &SimulationRunner::runFinished));
-    EXPECT_EQ(runner.currentProgress(), 100);
+    const Json finishedRun = readJsonFile(runStatePath);
+    EXPECT_EQ(finishedRun.at("run").at("status"), "completed");
+    EXPECT_EQ(finishedRun.at("run").at("completedSteps").size(), 3U);
 }
 
 } // namespace

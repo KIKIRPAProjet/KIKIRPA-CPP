@@ -86,9 +86,9 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     m_resumeAction = assemblyMenu->addAction(tr("Reprendre l'assemblage"));
     m_resumeAction->setEnabled(false);
     connect(m_resumeAction, &QAction::triggered, this, &MenuBarManager::resumeRequested);
-    m_cancelAction = assemblyMenu->addAction(tr("Annuler l'assemblage en cours"));
-    m_cancelAction->setEnabled(false);
-    connect(m_cancelAction, &QAction::triggered, this, &MenuBarManager::cancelRunRequested);
+    m_pauseAction = assemblyMenu->addAction(tr("Mettre en pause l'assemblage"));
+    m_pauseAction->setEnabled(false);
+    connect(m_pauseAction, &QAction::triggered, this, &MenuBarManager::pauseRunRequested);
     connect(assemblyMenu->addAction(tr("Relancer à partir de…")),
             &QAction::triggered, this, [this]() { emit runRequested(6); });
     connect(assemblyMenu->addAction(tr("Comparer deux exécutions…")),
@@ -105,8 +105,8 @@ void MenuBarManager::setResumeAvailable(bool available)
         m_resumeAction->setEnabled(available);
 }
 
-void MenuBarManager::setCancelAvailable(bool available)
+void MenuBarManager::setPauseAvailable(bool available)
 {
-    if (m_cancelAction)
-        m_cancelAction->setEnabled(available);
+    if (m_pauseAction)
+        m_pauseAction->setEnabled(available);
 }

@@ -15,7 +15,7 @@ public:
 
     void setupMenus(QMenuBar *menuBar);
     void setResumeAvailable(bool available);
-    void setCancelAvailable(bool available);
+    void setPauseAvailable(bool available);
 
 signals:
     void newProjectRequested();
@@ -34,13 +34,13 @@ signals:
     void modeChangeRequested(int mode);
     void runRequested(int startStep);
     void resumeRequested();
-    void cancelRunRequested();
+    void pauseRunRequested();
     void comparisonRequested();
     void aboutRequested();
 
 private:
     QAction *m_resumeAction = nullptr;
-    QAction *m_cancelAction = nullptr;
+    QAction *m_pauseAction = nullptr;
 };
 
 #endif
