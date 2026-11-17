@@ -107,12 +107,12 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
     if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
         const QRect target = rect().adjusted(24, 24, -24, -24);
-        p.drawImage(target, m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-
-        // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
-        p.setPen(QColor("#dddddd"));
-        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
-                   QString::number(zoomPercent) + QStringLiteral(" %"));
+        // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
+        // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
+        const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
+                             target.top() + (target.height() - fitted.height()) / 2);
+        p.drawImage(topLeft, fitted);
         return; // On arrête de dessiner ici
     }
 
