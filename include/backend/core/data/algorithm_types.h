@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace DataNs {
@@ -83,7 +82,7 @@ namespace DataNs {
 
     // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
-        std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
+        int tileId = 0;         // TileClass::getId() de la tuile, comme PairMatches
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
