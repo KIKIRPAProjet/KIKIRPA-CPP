@@ -25,7 +25,7 @@ Seule dépendance : **OpenCV** (déjà utilisée par le projet). Pas besoin d'Ei
 Deux tuiles voisines A et B se recouvrent sur une bande (environ 20 % de leur taille). L'algorithme mesure **où se trouve B par rapport à A**, avec une précision inférieure au pixel, en deux passes : une première au pixel près sur les bandes de recouvrement nominal, une deuxième au sous-pixel sur la zone commune réelle (voir l'étape 1). Il renvoie :
 
 1. **une translation globale** `(translationX, translationY)` : la position du coin haut-gauche de B dans le repère de A ;
-2. **des paires de points** `pointsInA[i] ↔ pointsInB[i]` avec un **score de confiance** `confidenceScores[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à RANSAC / MAGSAC++.
+2. **des paires de points** `pointsInA[i] ↔ pointsInB[i]` avec un **score de confiance** `confidenceScores[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à Vote2D.
 
 ```
           A                              repère de A
