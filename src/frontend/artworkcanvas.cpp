@@ -119,7 +119,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
     // Afficher les couches lorsqu'elles sont disponibles.
     // Conserver le dessin habituel dans les autres cas.
-    const bool layersDrawn = !pair && drawImageLayers(p, firstImageRect);
+    // Afficher les images superposées uniquement en mode Assemblage.
+    const bool layersDrawn =
+        modeValue == kModeAssembly &&
+        drawImageLayers(p, firstImageRect);
 
     if (!layersDrawn) {
         if (!imagePaths.isEmpty())
@@ -164,7 +167,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
                    tr("Masque d'exclusion — proposition"));
     } else if (modeValue == kModeAssembly || modeValue == kModeExport) {
-        if(seamVisible){
+        if(seamVisible && !layersDrawn){
             p.setPen(QPen(QColor("#df4038"), 2));
             QPainterPath seam;
             seam.moveTo(x0 + imageW * 0.72, y0);

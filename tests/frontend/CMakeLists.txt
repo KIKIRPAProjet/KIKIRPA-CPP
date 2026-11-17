@@ -16,3 +16,12 @@ target_link_libraries(demo_image_layers PRIVATE
     kikirpa_frontend
     Qt6::Widgets
 )
+# Demonstration de superposition avec TIFF pyramidaux reels
+add_executable(demo_real_image_layers
+    demo_real_image_layers.cpp
+)
+
+target_link_libraries(demo_real_image_layers PRIVATE
+    kikirpa_frontend
+    Qt6::Widgets
+)
