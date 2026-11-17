@@ -222,7 +222,7 @@ void MainWindow::setupMenuConnections()
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
         zoomPercent = 100;
         workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
     connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
         setMode(mode);

@@ -208,11 +208,14 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
-    QSize previewSize = r.size();
-    if (rotation % 180 != 0)
-        previewSize.transpose();
-    QImage image = readPreviewImage(path, previewSize);
-    if (image.isNull()) {
+    QImage image = m_imageCache.value(path);
+    if(image.isNull()){
+        image = readPreviewImage(path,QSize(2048,2048));
+        if(!image.isNull()){
+            m_imageCache.insert(path,image);
+        }
+    }
+    if(image.isNull()){
         p.fillRect(r, QColor("#262626"));
         p.setPen(QColor("#d35b55"));
         p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
@@ -222,16 +225,12 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         image = image.mirrored(true, false);
     if (rotation != 0)
         image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
-    if (image.width() > r.width() || image.height() > r.height())
-        image = image.scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    
+    const QSize targetSize = image.size().scaled(r.size(),Qt::KeepAspectRatio);
+    const QRect targetRect(r.left()+(r.width()-targetSize.width())/2,r.top()+(r.height()-targetSize.height())/2,targetSize.width(),targetSize.height());
 
     p.save();
     p.setClipRect(r);
-    const int x = r.left() + (r.width() - image.width()) / 2;
-    const int y = r.top() + (r.height() - image.height()) / 2;
-    p.drawImage(x, y, image);
+    p.drawImage(targetRect, image);
     p.restore();
-    p.setPen(QPen(QColor("#101010"), 5));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(r);
 }

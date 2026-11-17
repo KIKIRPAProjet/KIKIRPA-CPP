@@ -88,7 +88,7 @@ void WorkspaceCenter::createCanvasAndControls()
     auto *minus = FrontendUtils::makeButton(QStringLiteral("−"), canvasControls);
     auto *plus = FrontendUtils::makeButton(QStringLiteral("+"), canvasControls);
     
-    m_zoomLabel = new QLabel(QStringLiteral("12,4 %"));
+    m_zoomLabel = new QLabel(QStringLiteral("100 %"));
     m_zoomLabel->setMinimumWidth(48);
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
@@ -117,13 +117,18 @@ void WorkspaceCenter::createCanvasAndControls()
         m_canvas->setZoom(m_mainWindow->zoomPercent);
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
+        m_mainWindow->zoomPercent = 100;
         m_zoomLabel->setText(tr("Ajuster"));
-        m_canvas->setZoom(100);
+        m_canvas->resetView();
     });
     connect(oneToOne, &QPushButton::clicked, this, [this]() {
         m_mainWindow->zoomPercent = 100;
         m_zoomLabel->setText(QStringLiteral("100 %"));
         m_canvas->setZoom(m_mainWindow->zoomPercent);
+    });
+    connect(m_canvas, &ArtworkCanvas::zoomChanged, this, [this](int zoom) {
+        m_mainWindow->zoomPercent = zoom;
+        m_zoomLabel->setText(QString::number(zoom) + QStringLiteral(" %"));
     });
     connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
         m_canvas->setPairOverlayMode(checked);

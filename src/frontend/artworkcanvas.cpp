@@ -3,6 +3,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWheelEvent>
 
 #include <utility>
 
@@ -40,6 +41,12 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     update();
 }
 
+void ArtworkCanvas::resetView(){
+    zoomPercent = 100;
+    m_panOffset = QPointF(0.0, 0.0);
+    update();
+}
+
 void ArtworkCanvas::setGridState(int rows, int columns, int order,
                                  const QVector<GridTile> &tiles, int selectedCell)
 {
@@ -71,7 +78,25 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
+    if(event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton){
+        m_panning = true;
+        m_lastPanPos = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
     QWidget::mousePressEvent(event);
+}
+
+void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event){
+    if(m_panning){
+        m_panOffset += event->pos()-m_lastPanPos;
+        m_lastPanPos = event->pos();
+        update();
+        event->accept();
+        return;
+    }
+    QWidget::mouseMoveEvent(event);
 }
 
 void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
@@ -86,7 +111,35 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if(m_panning){
+        m_panning = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
     QWidget::mouseReleaseEvent(event);
+}
+
+void ArtworkCanvas::wheelEvent(QWheelEvent *event){
+    const int delta = event->angleDelta().y();
+    if(delta == 0){
+        QWidget::wheelEvent(event);
+        return;
+    }
+
+    const qreal factor = (delta > 0) ? 1.15 : (1.0/1.15);
+    const int newZoom = qBound(5,qRound(zoomPercent * factor),1600);
+    if(newZoom != zoomPercent){
+        const qreal oldScale = zoomPercent/100.0;
+        const qreal newScale = newZoom/100.0;
+        const QPointF center(width()/2.0,height()/2.0);
+        const QPointF mousePos = event->position();
+        m_panOffset = mousePos - center - (mousePos - center - m_panOffset)*(newScale/oldScale);
+        zoomPercent = newZoom;
+        emit zoomChanged(zoomPercent);
+        update();
+    }
+    event->accept();
 }
 
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
@@ -104,11 +157,24 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#484848"));
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    const qreal scale = zoomPercent/100.0;
+    const QPointF viewCenter(width()/2.0,height()/2.0);
+    auto beginViewTransform = [&](){
+        p.save();
+        p.translate(viewCenter + m_panOffset);
+        p.scale(scale,scale);
+        p.translate(-viewCenter);
+    };
 
     if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
         const QRect target = rect().adjusted(24, 24, -24, -24);
-        p.drawImage(target, m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-
+        const QSize fitted = m_mosaicPreview.size().scaled(target.size(),Qt::KeepAspectRatio);
+        const QRect fittedRect(target.left()+(target.width()-fitted.width())/2,target.top()+(target.height() - fitted.height())/2,fitted.width(),fitted.height());
+        beginViewTransform();
+        p.drawImage(fittedRect, m_mosaicPreview);
+        p.restore();
         // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
         p.setPen(QColor("#dddddd"));
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
@@ -145,7 +211,8 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     const int indexB = (!imagePaths.isEmpty() && currentPair.tileIndexB >= 0)
                            ? (currentPair.tileIndexB % imagePaths.size())
                            : qMin(1, qMax(0, static_cast<int>(imagePaths.size()) - 1));
-
+    
+    beginViewTransform();
     if (!imagePaths.isEmpty())
         drawPhoto(p, firstImageRect, imagePaths.at(indexA));
     else
@@ -253,8 +320,9 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
             p.setPen(currentPair.isDubious() ? QColor("#1c1c1c") : QColor("#ffffff"));
             p.drawText(errorBadgeRect, Qt::AlignCenter,
                        tr("Erreur paire : %1 px")
-                           .arg(QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+                           .arg(QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));                   
         }
+        p.restore();
         return;
     }
 
@@ -305,6 +373,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         }
     }
 
+    p.restore();
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                QString::number(zoomPercent) + QStringLiteral(" %"));

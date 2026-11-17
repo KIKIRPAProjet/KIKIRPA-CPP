@@ -9,12 +9,16 @@
 #include <QVector>
 #include <QWidget>
 #include <QImage>
+#include <QHash>
+#include <QPoint>
+#include <QPointF>
 
 #include <functional>
 
 class QMouseEvent;
 class QPaintEvent;
 class QPainter;
+class QWheelEvent;
 
 /**
  * Zone d'affichage centrale : œuvre, grille de tuiles, paire, masque et couture.
@@ -23,12 +27,13 @@ class QPainter;
  */
 class ArtworkCanvas final : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
     void setMode(int mode) { modeValue = mode; update(); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
-    void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
@@ -46,10 +51,18 @@ public:
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
+    void resetView();
+    void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
+
+    signals:
+        void zoomChanged(int zoomPercent);
+
 protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
     // artworkcanvas_draw.cpp
@@ -61,7 +74,7 @@ private:
     int gridCellAt(const QPoint &point) const;
 
     int modeValue = 4;
-    int zoomPercent = 12;
+    int zoomPercent = 100;
     QStringList imagePaths;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
@@ -79,6 +92,11 @@ private:
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;
     FrontendUtils::PairAlignmentInfo currentPair;
+
+    QPointF m_panOffset;
+    QPoint m_lastPanPos;
+    bool m_panning = false;
+    QHash<QString, QImage> m_imageCache;
 };
 
 #endif // ARTWORKCANVAS_H
