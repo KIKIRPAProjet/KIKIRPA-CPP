@@ -339,18 +339,18 @@ La marge de la deuxième passe (±4 px autour de la position de la première) es
 
 ## 7. Comment vérifier
 
-Les points 2 et 3 sont automatisés dans `tests/phase_correlation/test_phase_correlation.cpp` (GoogleTest, lancé par `ctest`, sur une texture générée) ; le point 1 par `tests/comparer_python.py`. Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
+Les points 1 et 2 sont automatisés dans `tests/phase_correlation/test_phase_correlation.cpp` (GoogleTest, lancé par `ctest`, sur une texture générée). Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
 
-1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(matches.translationY, matches.translationX)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Les deux versions ne font pas le même sous-pixel (parabole sur la surface lissée en Python, DFT sur la surface brute ici) : des écarts de quelques dixièmes de pixel sont normaux, pas des écarts de plusieurs pixels.
-2. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsInA[i] − pointsInB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.
-3. **Cas limites** :
+
+1. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsInA[i] − pointsInB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.
+2. **Cas limites** :
    - bande noire → `match` renvoie `false`, sans exception ;
    - bande surtout saturée (plus de 75 % de pixels au maximum) → `false` ;
    - `Top`/`Left` → résultat de signe opposé à celui de `Bottom`/`Right` sur la paire inversée ;
    - motif périodique de période supérieure à la marge : le pic retenu doit être celui de la marge, même si une copie du motif donne un pic plus haut au-delà ;
    - recouvrement réel de 27 % annoncé à 20 % (70 px hors de la marge de 50 px) → `false`, et `getFailureReason()` dit d'augmenter la marge ; avec `railMargin = 100`, la translation est juste ;
    - **deux passes**, recouvrements réels de 23 % et 17 % annoncés à 20 % : la première passe donne une position entière à moins de 1 px de la vérité et le recouvrement réel au pixel près ; `Top(B, A) = −Bottom(A, B)` ; la zone commune fait toute la hauteur du recouvrement réel (230 ou 170 px, contre 200 px pour la bande nominale) ; `match` est juste au 1/100 px ; avec `context.estimatedTranslation` fournie, le résultat est identique au bit près ; fausse de (+2, −2) px, elle est rattrapée ; fausse de 10 px, ou sans recouvrement → `false`, avec la raison.
-4. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`. **Non fait** : ces jeux ne sont pas dans `KIKIRPA-Research/data/`.
+3. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`. **Non fait** : ces jeux ne sont pas dans `KIKIRPA-Research/data/`.
 
 ### Résultats
 
@@ -364,15 +364,11 @@ Les mesures ci-dessous ont été faites avec `maximumPointCount = 500` (défaut 
 | Points | 67 à 362 par paire ; écart médian 0,004 à 0,014 px, max 0,027 px |
 | Cas limites | tous conformes (bandes noires, saturées, uniformes, tailles différentes, tache noire isolée, Top = −Bottom, motif périodique, paramètres invalides) |
 
-**Paires réelles** (`comparer_python.py`, 7 paires Savery et 4 VanDerVeken du README de la piste Python, tuiles 5176 × 5176) :
 
-| | |
-|---|---|
-| Même pic que le Python | 11 / 11 |
-| Écart C++ / Python | médiane 0,43 px, max 1,32 px (Savery 05 → 06, rapport 5,1) |
-| Points | 136 à 500 par paire, à 1 à 2,7 px (médiane) de la translation globale. Sur le synthétique, cet écart est de 0,01 px : il mesure la déformation réelle le long de la couture, qu'une translation ne décrit pas (voir le README Python, « arche » de 12 px) |
-| Temps de `match()` | 2 à 8 s par paire, contre 0,8 à 2,5 s pour `mesurer_decalage` (Python, translation seule) |
 
-Détail du temps sur Savery 01 → 02 : 8,1 s avec `maximumPointCount = 500`, 2,5 s en translation seule (`maximumPointCount = 0`, autant que le Python), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `upsamplingFactor = 10`, la paire entière prend 2,5 s.
+
+
+
+Détail du temps sur Savery 01 → 02 : 8,1 s avec `maximumPointCount = 500`, 2,5 s en translation seule (`maximumPointCount = 0`), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `upsamplingFactor = 10`, la paire entière prend 2,5 s.
 
 **Deux passes** (20/10/2026, build Debug, `maximumPointCount = 10`) : sur Savery 01 → 02, 03 → 04 et 04 → 05, la translation change d'au plus 0,06 px par rapport à la version à une passe, avec le même nombre de points (10, 10 et 2). Le temps de `match()` augmente de 15 à 25 % en Debug (par exemple 17,0 → 19,0 s sur 01 → 02). La cause n'a pas été mesurée. Piste probable : `PreparationClass::orientPair` est appelé deux fois quand `match()` fait aussi la première passe, et `computeOutsideMask` est donc recalculée sur les deux tuiles entières. **Non mesuré en Release.**
