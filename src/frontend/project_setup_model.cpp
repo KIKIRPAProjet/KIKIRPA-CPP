@@ -1,6 +1,7 @@
 #include "project_setup_model.h"
 
 #include "core/pipeline/pipeline_builder.h"
+#include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
 
@@ -28,7 +29,7 @@ namespace fs = std::filesystem;
 namespace {
 
 bool isTiff(const fs::path &path) {
-  std::string extension = path.extension().string();
+  std::string extension = IONs::pathToUtf8(path.extension());
   std::transform(extension.begin(), extension.end(), extension.begin(),
                  [](unsigned char character) {
                    return static_cast<char>(std::tolower(character));
@@ -62,7 +63,7 @@ tileFromFilename(const fs::path &path, const std::regex &pattern,
                  const ProjectSetup &setup,
                  std::set<std::pair<int, int>> &occupiedCells) {
   std::smatch match;
-  const std::string fileName = path.filename().string();
+  const std::string fileName = IONs::pathToUtf8(path.filename());
   if (!std::regex_match(fileName, match, pattern))
     return std::nullopt;
   try {
@@ -175,7 +176,7 @@ std::optional<std::regex> validatedPattern(const ProjectSetup &setup,
 void validateTileCoordinates(const ProjectTile &tile, const std::regex &pattern,
                              std::vector<std::string> &errors) {
   std::smatch match;
-  const std::string fileName = tile.path.filename().string();
+  const std::string fileName = IONs::pathToUtf8(tile.path.filename());
   if (!std::regex_match(fileName, match, pattern)) {
     errors.emplace_back("Nom incompatible avec le format : " + fileName);
     return;
@@ -203,9 +204,9 @@ void validateTile(const ProjectTile &tile, TileValidationContext &context) {
   const fs::path absolutePath = fs::absolute(tile.path).lexically_normal();
   if (!context.uniquePaths.insert(absolutePath).second)
     context.errors.emplace_back("Tuile dupliquée : " +
-                                absolutePath.filename().string());
+                                IONs::pathToUtf8(absolutePath.filename()));
   if (!fs::is_regular_file(absolutePath))
-    context.errors.emplace_back("Fichier absent : " + absolutePath.string());
+    context.errors.emplace_back("Fichier absent : " + IONs::pathToUtf8(absolutePath));
   if (!context.uniqueCells.insert({tile.row, tile.column}).second)
     context.errors.emplace_back("Plusieurs tuiles occupent la case (" +
                                 std::to_string(tile.row + 1) + ", " +
@@ -213,7 +214,7 @@ void validateTile(const ProjectTile &tile, TileValidationContext &context) {
   if (tile.row < 0 || tile.row >= context.setup.gridRows || tile.column < 0 ||
       tile.column >= context.setup.gridColumns)
     context.errors.emplace_back("Tuile hors de la grille : " +
-                                absolutePath.filename().string());
+                                IONs::pathToUtf8(absolutePath.filename()));
   if (context.pattern)
     validateTileCoordinates(tile, *context.pattern, context.errors);
 }
@@ -224,7 +225,7 @@ Json createGridJson(const ProjectSetup &setup) {
     tiles.push_back(
         {{"row", tile.row},
          {"column", tile.column},
-         {"path", fs::absolute(tile.path).lexically_normal().string()}});
+         {"path", IONs::pathToUtf8(fs::absolute(tile.path).lexically_normal())}});
   return {{"rows", setup.gridRows},
           {"columns", setup.gridColumns},
           {"tiles", std::move(tiles)}};
@@ -234,9 +235,9 @@ Json createProjectJson(const ProjectSetup &setup) {
   return {{"formatVersion", "1.0"},
           {"name", setup.projectName},
           {"inputDirectory",
-           fs::absolute(setup.inputDirectory).lexically_normal().string()},
+           IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal())},
           {"outputDirectory",
-           fs::absolute(setup.outputDirectory).lexically_normal().string()},
+           IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal())},
           {"grid", createGridJson(setup)}};
 }
 
@@ -247,7 +248,7 @@ Json createRunJson(const ProjectSetup &setup) {
           {"completedSteps", Json::array()},
           {"skipCompletedSteps", true},
           {"startFromStep", ""},
-          {"checkpointDirectory", (output / "checkpoints").string()}};
+          {"checkpointDirectory", IONs::pathToUtf8(output / "checkpoints")}};
 }
 
 } // namespace
@@ -255,7 +256,7 @@ Json createRunJson(const ProjectSetup &setup) {
 fs::path backendScriptPath(const fs::path &outputDirectory,
                            const std::string &projectName) {
   return fs::absolute(outputDirectory).lexically_normal() /
-         (safeFileStem(projectName) + ".json");
+         IONs::pathFromUtf8(safeFileStem(projectName) + ".json");
 }
 
 void ProjectSetupModelClass::setSetup(ProjectSetup newSetup) {
@@ -321,7 +322,7 @@ Json ProjectSetupModelClass::createBackendScript() const {
   Json importStep = PipelineNs::createStep("import")->getConfigJson();
   replaceParameter(
       importStep, "path",
-      fs::absolute(setup.inputDirectory).lexically_normal().string());
+      IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal()));
   if (!setup.filenameFormat.empty())
     replaceParameter(importStep, "format", setup.filenameFormat);
 
@@ -344,7 +345,8 @@ fs::path ProjectSetupModelClass::writeBackendScript() const {
   const fs::path destination =
       backendScriptPath(setup.outputDirectory, setup.projectName);
   fs::create_directories(destination.parent_path());
-  const fs::path temporary = destination.string() + ".tmp";
+  fs::path temporary = destination;
+  temporary += ".tmp";
   {
     std::ofstream output(temporary, std::ios::binary);
     output << script.dump(2) << '\n';

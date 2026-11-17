@@ -140,15 +140,42 @@ def run(command: List[str], environment: Dict[str, str]) -> None:
                          "les erreurs courantes sont dans docs/DEMARRER.md, § 9.")
 
 
-def needs_configure() -> bool:
+def configuration_state() -> str:
+    """« absente », « deplacee » (configurée depuis un autre emplacement du dépôt), « incomplete » ou « ok ».
+
+    Une configuration qui échoue (une bibliothèque manque, par exemple) laisse un CMakeCache.txt mais pas de
+    build.ninja : sans elle, Ninja s'arrête sur « loading 'build.ninja': GetLastError()=2 ».
+    """
     cache = BUILD_DIR / "CMakeCache.txt"
     if not cache.exists():
-        return True
+        return "absente"
     for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
-            configured = Path(line.split("=", 1)[1])
-            return configured.resolve() != REPO_DIR.resolve()
-    return True
+            if Path(line.split("=", 1)[1]).resolve() != REPO_DIR.resolve():
+                return "deplacee"
+            break
+    if not (BUILD_DIR / "build.ninja").exists():
+        return "incomplete"
+    return "ok"
+
+
+def check_opencv_knows_msvc(environment: Dict[str, str]) -> None:
+    """OpenCVConfig.cmake choisit ses binaires d'après la version de MSVC : une version qu'il ne connaît pas
+    n'en trouve aucun (« OpenCV RUNTIME: » vide, puis « OpenCV_FOUND to FALSE »). Ex. : OpenCV 4.10 et Visual Studio 2026."""
+    tools = environment.get("VCToolsVersion", "").split(".")
+    if len(tools) < 2 or not tools[1].isdigit():
+        return
+    msvc_version = f"19{tools[1]}"   # outils 14.51 → compilateur 19.51 → MSVC_VERSION 1951
+    config = (Path(environment["OpenCV_DIR"]) / "OpenCVConfig.cmake").read_text(encoding="utf-8", errors="replace")
+    patterns = re.findall(r'MSVC_VERSION MATCHES "([^"]+)"', config)
+    exact = re.findall(r"MSVC_VERSION EQUAL (\d+)", config)
+    if not patterns and not exact:
+        return   # format inconnu : on laisse CMake juger
+    if msvc_version in exact or any(re.match(pattern, msvc_version) for pattern in patterns):
+        return
+    raise SetupError(f"Votre OpenCV ({environment['OpenCV_DIR']}) est trop ancien pour votre compilateur MSVC 19.{tools[1]} "
+                     f"(outils {environment['VCToolsVersion']}) : il n'y trouvera aucun binaire. Installez OpenCV 4.14 "
+                     "ou plus récent dans C:\\opencv (docs/DEMARRER.md, § 2.1).")
 
 
 def prepare() -> Dict[str, str]:
@@ -157,6 +184,7 @@ def prepare() -> Dict[str, str]:
     vcvars = find_vcvars()
     environment = msvc_environment(vcvars)
     environment.update(find_libraries())
+    check_opencv_knows_msvc(environment)
     cmake = find_tool("cmake", environment, [r"C:\Program Files\JetBrains\CLion*\bin\cmake\win\x64\bin\cmake.exe",
                                              r"C:\Qt\Tools\CMake_64\bin\cmake.exe", r"C:\Program Files\CMake\bin\cmake.exe"])
     ninja = find_tool("ninja", environment, [r"C:\Program Files\JetBrains\CLion*\bin\ninja\win\x64\ninja.exe",
@@ -247,11 +275,14 @@ def main() -> int:
         # Chemins complets : sous Windows, un programme se cherche dans le PATH du script, pas dans celui passé à env.
         cmake = environment["KIKIRPA_CMAKE"]
         ctest = str(Path(cmake).with_name("ctest.exe"))
-        if needs_configure():
-            if (BUILD_DIR / "CMakeCache.txt").exists():
-                info("Le dossier de build vient d'un autre emplacement du dépôt : sa configuration est refaite.")
-                (BUILD_DIR / "CMakeCache.txt").unlink()
-                shutil.rmtree(BUILD_DIR / "CMakeFiles", ignore_errors=True)
+        state = configuration_state()
+        if state == "deplacee":
+            info("Le dossier de build vient d'un autre emplacement du dépôt : sa configuration est refaite.")
+            (BUILD_DIR / "CMakeCache.txt").unlink()
+            shutil.rmtree(BUILD_DIR / "CMakeFiles", ignore_errors=True)
+        elif state == "incomplete":
+            info("La configuration précédente n'a pas abouti : elle est relancée.")
+        if state != "ok":
             run([cmake, "--preset", PRESET], environment)
         elif generated_with_other_code_page():
             info("Les règles de build ont été générées dans un autre encodage de console : elles sont regénérées.")

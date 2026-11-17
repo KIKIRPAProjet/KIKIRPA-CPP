@@ -3,7 +3,12 @@
 
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
+#include "core/io/unicode_path.h"
+#include "core/pipeline/run_state.h"
+#include "core/step/step.h"
 
+#include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -100,7 +105,8 @@ namespace PipelineNs {
         try {
             if (scriptPath.has_parent_path()) fs::create_directories(scriptPath.parent_path());
             // Fichier temporaire puis renommage : le script n'est jamais écrit à moitié.
-            const fs::path temporaryPath = scriptPath.string() + ".tmp";
+            fs::path temporaryPath = scriptPath;
+            temporaryPath += ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
                 output << exportScript().dump(2) << '\n';
@@ -108,7 +114,7 @@ namespace PipelineNs {
             }
             fs::rename(temporaryPath, scriptPath);
         } catch (const std::exception& exception) {
-            report(log, "warning: cannot write " + scriptPath.string() + ": " + exception.what(), true);
+            report(log, "warning: cannot write " + IONs::pathToUtf8(scriptPath) + ": " + exception.what(), true);
         }
     }
 
@@ -116,7 +122,7 @@ namespace PipelineNs {
     // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
     bool PipelineClass::run(const Logger& log) {
         const size_t stepCount = steps.size();
-        const CheckpointNs::CheckpointClass checkpoint(runState.checkpointDirectory);
+        const CheckpointNs::CheckpointClass checkpoint(IONs::pathFromUtf8(runState.checkpointDirectory));
 
         // 1. Où démarrer ?
         size_t startIndex = 0;

@@ -15,8 +15,12 @@ kikirpa_copy_onnxruntime_dlls(memory_scope_tests)
 target_link_libraries(memory_scope_tests PRIVATE kikirpa_backend GTest::gtest_main)
 
 add_executable(saved_state_tests test_saved_state.cpp)
+add_executable(tiled_tiff_writer_tests test_tiled_tiff_writer.cpp)
 kikirpa_copy_onnxruntime_dlls(saved_state_tests)
 target_link_libraries(saved_state_tests PRIVATE kikirpa_backend GTest::gtest_main)
+kikirpa_copy_onnxruntime_dlls(tiled_tiff_writer_tests)
+target_link_libraries(tiled_tiff_writer_tests PRIVATE kikirpa_backend GTest::gtest_main)
+
 
 add_executable(export_step_tests test_export_step.cpp)
 kikirpa_copy_onnxruntime_dlls(export_step_tests)
@@ -28,4 +32,15 @@ gtest_discover_tests(pipeline_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(reprise_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(saved_state_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(pyramidal_tiff_reader_tests PROPERTIES LABELS "unit")
+gtest_discover_tests(tiled_tiff_writer_tests PROPERTIES LABELS "unit")
 gtest_discover_tests(export_step_tests PROPERTIES LABELS "unit")
+
+add_executable(mosaic_corners_tests test_mosaic_corners.cpp)
+kikirpa_copy_onnxruntime_dlls(mosaic_corners_tests)
+target_link_libraries(mosaic_corners_tests PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(mosaic_corners_tests PROPERTIES LABELS "unit")
+
+add_executable(unicode_path_tests test_unicode_path.cpp)
+kikirpa_copy_onnxruntime_dlls(unicode_path_tests)
+target_link_libraries(unicode_path_tests PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(unicode_path_tests PROPERTIES LABELS "unit")

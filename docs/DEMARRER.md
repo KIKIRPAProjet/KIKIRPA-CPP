@@ -19,14 +19,14 @@ Toutes les commandes de ce guide se tapent dans un terminal ordinaire : PowerShe
 ## 1. Installer les outils (Windows, une seule fois)
 
 1. **Git pour Windows** : [git-scm.com](https://git-scm.com/download/win). Il installe aussi **Git Bash**, qui sert à lancer les scripts `.sh` du projet.
-2. **Visual Studio 2022 Build Tools** ([visualstudio.microsoft.com](https://visualstudio.microsoft.com/fr/downloads/), section « Outils pour Visual Studio »). Dans l'installeur, cochez la charge de travail **« Développement Desktop en C++ »**. Dans le détail à droite, laissez coché **« Outils CMake C++ pour Windows »** : cette option fournit `cmake` et `ninja`. Si vous utilisez CLion, ses propres `cmake` et `ninja` suffisent, et le script les trouve.
+2. **Visual Studio 2022 ou 2026 Build Tools** (ou la version Community) ([visualstudio.microsoft.com](https://visualstudio.microsoft.com/fr/downloads/), section « Outils pour Visual Studio »). Dans l'installeur, cochez la charge de travail **« Développement Desktop en C++ »**. Dans le détail à droite, laissez coché **« Outils CMake C++ pour Windows »** : cette option fournit `cmake` et `ninja`. Si vous utilisez CLion, ses propres `cmake` et `ninja` suffisent, et le script les trouve.
 
    Le compilateur MSVC est indispensable, même pour ne travailler que sur l'interface : les binaires d'OpenCV pour Windows ne se lient qu'avec lui, pas avec le MinGW fourni avec Qt Creator.
 3. **Python 3.8 ou plus** ([python.org](https://www.python.org/downloads/)) : il sert à installer Qt (§ 2) et à lancer le script (§ 4).
 
 ## 2. Installer les bibliothèques (Windows, une seule fois)
 
-1. **OpenCV 4** : téléchargez l'installeur Windows sur [opencv.org/releases](https://opencv.org/releases/) (par exemple `opencv-4.10.0-windows.exe`) et extrayez-le dans `C:\`. Vous devez obtenir `C:\opencv\build\OpenCVConfig.cmake`. La CI utilise la 4.10, et la 4.14 fonctionne aussi.
+1. **OpenCV 4** : téléchargez l'installeur Windows sur [opencv.org/releases](https://opencv.org/releases/) (`opencv-4.14.0-windows.exe` ou plus récent) et extrayez-le dans `C:\`. Vous devez obtenir `C:\opencv\build\OpenCVConfig.cmake`. **Avec Visual Studio 2026, prenez au moins la 4.14** : les versions plus anciennes, comme la 4.10 qu'utilise la CI, ne reconnaissent pas son compilateur (MSVC 19.5x) et n'y trouvent aucun binaire. Le script le vérifie.
 2. **vcpkg, libtiff et GoogleTest** :
    ```powershell
    git clone https://github.com/microsoft/vcpkg C:\vcpkg
@@ -190,5 +190,7 @@ Détails : [BUILD.md](BUILD.md).
 | `grep : Le terme «grep» n'est pas reconnu` | `grep` n'existe pas dans PowerShell | `git grep -n "texte" -- <dossier>`, ou Git Bash |
 | « Qt6Widgets.dll est introuvable » ou « opencv_world… est introuvable » en lançant `stitching.exe` à la main | les DLL ne sont pas dans le `PATH` | passer par le script, ou suivre le § 5 |
 | la compilation affiche des milliers de lignes `Remarque : inclusion du fichier : …` | MSVC écrit ces notes dans l'encodage de la console, et l'étape AUTOMOC de Qt le change en plein build : Ninja ne les reconnaît plus, et ne recompile plus un `.cpp` quand un `.h` qu'il inclut change | passer par le script, qui le règle ; à la main, `chcp 65001` puis `cmake --preset windows-aqt` (§ 5) |
+| `Found OpenCV Windows Pack but it has no binaries compatible with your configuration`, `OpenCV RUNTIME:` vide, puis `OpenCV_FOUND to FALSE` ; ou `Votre OpenCV … est trop ancien` (script) | OpenCV est plus ancien que le compilateur : la 4.10 ne connaît pas celui de Visual Studio 2026 (MSVC 19.5x) | installer OpenCV 4.14 ou plus récent dans `C:\opencv` (§ 2.1), supprimer `build\windows-aqt`, relancer |
+| `ninja: error: loading 'build.ninja': GetLastError()=2` (ou « The system cannot find the file specified ») | une configuration précédente a échoué, par exemple faute d'une bibliothèque, et n'a pas créé `build.ninja` | corriger ce qui manquait (le script le signale), puis relancer le script, qui refait la configuration ; à la main : `cmake --preset windows-aqt` avant `cmake --build` |
 | CMake refuse le dossier de build après un déplacement du dépôt | le build garde l'ancien chemin en mémoire | le script refait la configuration tout seul ; à la main, supprimer `build\windows-aqt` |
 | `warning: in the working copy of '…', LF will be replaced by CRLF` | Git signale qu'il convertira les fins de ligne | rien à faire, ce n'est pas une erreur |

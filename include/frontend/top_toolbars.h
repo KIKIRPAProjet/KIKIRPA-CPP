@@ -15,8 +15,13 @@ public:
     explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, SimulationRunner *simulationRunner, QWidget *parent = nullptr);
 
     void updateTitle(const QString &projectName, const QString &modality);
+    void updateDubiousState(int dubiousCount);
 
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
+
+signals:
+    void previousPairRequested();
+    void nextDubiousPairRequested();
 
 private:
     void createToolbar();
