@@ -11,7 +11,9 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <map>
@@ -30,16 +32,67 @@ namespace StepsNs {
 
     namespace {
 
+        // D'où vient la case d'une tuile.
+        enum class CellSource : std::uint8_t {
+            List,        // la liste `tiles`
+            FileName,    // le nom du fichier, lu avec `format`
+            NameOrder    // l'ordre des noms, rangés ligne par ligne sur `columns` colonnes
+        };
+
+        const char* cellSourceName(CellSource cellSource) {
+            switch (cellSource) {
+                case CellSource::List: return "list";
+                case CellSource::FileName: return "fileName";
+                case CellSource::NameOrder: return "nameOrder";
+            }
+            return "";
+        }
+
         // Une image retenue et sa case dans la grille.
         struct ImageFile {
             fs::path filePath;
             int row = 0;
             int column = 0;
-            bool listed = false;   // vient de la liste `tiles` (sinon : mode format)
+            CellSource cellSource = CellSource::FileName;
         };
 
-        // Mode format : fichiers du dossier dont le nom correspond à `format` ; groupe 1 = colonne, groupe 2 = ligne.
-        std::vector<ImageFile> listFilesByFormat(const fs::path& directory, const std::string& format) {
+        // Paramètres du step, relus dans la configuration.
+        struct ImportParameters {
+            fs::path directory;
+            std::string format;
+            int columns = 0;
+            Json tiles;
+        };
+
+        bool isTiff(const fs::path& path) {
+            std::string extension = IONs::pathToUtf8(path.extension());
+            std::transform(extension.begin(), extension.end(), extension.begin(),
+                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+            return extension == ".tif" || extension == ".tiff";
+        }
+
+        // Sans liste, quand aucun nom ne donne sa case : les TIFF du dossier, triés par nom, remplissent la grille ligne par
+        // ligne sur `columns` colonnes (le même ordre que l'interface quand les noms ne donnent pas les cases).
+        std::vector<ImageFile> listFilesByNameOrder(const fs::path& directory, const std::string& format, int columns) {
+            std::vector<fs::path> filePaths;
+            for (const auto& entry : fs::directory_iterator(directory))
+                if (entry.is_regular_file() && isTiff(entry.path())) filePaths.push_back(entry.path());
+            if (filePaths.empty()) throw std::invalid_argument("no TIFF image (.tif or .tiff) in " + IONs::pathToUtf8(directory));
+            if (columns <= 0)
+                throw std::invalid_argument("no file name in " + IONs::pathToUtf8(directory) + " gives its grid cell with format '" +
+                                            format + "': give the number of columns (parameter 'columns') or the list 'tiles'");
+            std::sort(filePaths.begin(), filePaths.end());
+            std::vector<ImageFile> imageFiles;
+            for (std::size_t index = 0; index < filePaths.size(); ++index) {
+                const int rank = static_cast<int>(index);
+                imageFiles.push_back({filePaths[index], rank / columns, rank % columns, CellSource::NameOrder});
+            }
+            return imageFiles;
+        }
+
+        // Sans liste : les fichiers du dossier dont le nom correspond à `format` (groupe 1 = colonne, groupe 2 = ligne) ;
+        // les autres sont ignorés. Si aucun nom ne correspond, les cases suivent l'ordre des noms (listFilesByNameOrder).
+        std::vector<ImageFile> listFilesWithoutList(const fs::path& directory, const std::string& format, int columns) {
             std::regex filenamePattern;
             try {
                 filenamePattern = std::regex(format, std::regex::icase);   // .tif et .TIF
@@ -53,11 +106,9 @@ namespace StepsNs {
                 const std::string fileName = IONs::pathToUtf8(entry.path().filename());
                 std::smatch nameMatch;
                 if (!entry.is_regular_file() || !std::regex_match(fileName, nameMatch, filenamePattern)) continue;
-                imageFiles.push_back({entry.path(), std::stoi(nameMatch[2].str()), std::stoi(nameMatch[1].str()), false});
+                imageFiles.push_back({entry.path(), std::stoi(nameMatch[2].str()), std::stoi(nameMatch[1].str()), CellSource::FileName});
             }
-            if (imageFiles.empty())
-                throw std::invalid_argument("no file matching '" + format + "' in " + IONs::pathToUtf8(directory));
-            return imageFiles;
+            return imageFiles.empty() ? listFilesByNameOrder(directory, format, columns) : imageFiles;
         }
 
         bool hasIntegerField(const Json& entry, const char* name) {
@@ -77,7 +128,7 @@ namespace StepsNs {
             const fs::path listedPath = IONs::pathFromUtf8(entry.at("file").get<std::string>());
             const fs::path filePath = listedPath.is_absolute() ? listedPath : directory / listedPath;
             if (!fs::is_regular_file(filePath)) throw std::invalid_argument(where + ": missing file " + IONs::pathToUtf8(filePath));
-            return {filePath, row, column, true};
+            return {filePath, row, column, CellSource::List};
         }
 
         std::vector<ImageFile> listFilesFromList(const fs::path& directory, const Json& tilesJson) {
@@ -91,10 +142,12 @@ namespace StepsNs {
             return imageFiles;
         }
 
-        // Images à importer : la liste `tiles` si elle n'est pas vide, sinon les fichiers qui correspondent à `format`.
-        std::vector<ImageFile> listImageFiles(const fs::path& directory, const std::string& format, const Json& tilesJson) {
-            if (!tilesJson.is_array()) throw std::invalid_argument("parameter 'tiles' must be an array");
-            return tilesJson.empty() ? listFilesByFormat(directory, format) : listFilesFromList(directory, tilesJson);
+        // Images à importer : la liste `tiles` si elle n'est pas vide, sinon les fichiers du dossier (listFilesWithoutList).
+        std::vector<ImageFile> listImageFiles(const ImportParameters& parameters) {
+            if (!parameters.tiles.is_array()) throw std::invalid_argument("parameter 'tiles' must be an array");
+            if (parameters.columns < 0) throw std::invalid_argument("parameter 'columns' must be non-negative");
+            return parameters.tiles.empty() ? listFilesWithoutList(parameters.directory, parameters.format, parameters.columns)
+                                            : listFilesFromList(parameters.directory, parameters.tiles);
         }
 
         // Ordre fixe, indépendant de celui du disque ou de la liste : ligne par ligne, puis colonne par colonne.
@@ -169,21 +222,23 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "import";
         stepConfig.parameters = {{"string", "path", initialInput.path}, {"string", "format", initialInput.format},
-                                 {"json", "tiles", initialInput.tiles}};
+                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles}};
         stepConfig.outputs = {{"Tiles", "tiles"}};
         configJson = stepConfig;
     }
 
     // Les images lues sont des données extérieures au pipeline : si l'une change, le checkpoint de ce step n'est plus
     // valable. L'empreinte liste, pour chaque fichier retenu, son nom (son chemin complet en mode liste), sa taille et sa
-    // date de modification. Elle est triée par nom, car l'ordre de parcours d'un dossier n'est pas garanti. Dossier,
-    // format ou liste invalide : JSON nul (execute() échouera de toute façon).
+    // date de modification. Elle est triée par nom, car l'ordre de parcours d'un dossier n'est pas garanti. Paramètres
+    // invalides ou aucune image : JSON nul (execute() échouera de toute façon).
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
-            const fs::path directory = IONs::pathFromUtf8(getParameter("path").get<std::string>());
+            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
+                                              getParameter("columns").get<int>(), getParameter("tiles")};
             std::map<std::string, Json> filesByName;
-            for (const ImageFile& imageFile : listImageFiles(directory, getParameter("format").get<std::string>(), getParameter("tiles"))) {
-                const std::string fileName = IONs::pathToUtf8(imageFile.listed ? imageFile.filePath : imageFile.filePath.filename());
+            for (const ImageFile& imageFile : listImageFiles(parameters)) {
+                const bool listed = imageFile.cellSource == CellSource::List;
+                const std::string fileName = IONs::pathToUtf8(listed ? imageFile.filePath : imageFile.filePath.filename());
                 filesByName[fileName] = {static_cast<long long>(fs::file_size(imageFile.filePath)),
                                          static_cast<long long>(fs::last_write_time(imageFile.filePath).time_since_epoch().count())};
             }
@@ -200,11 +255,15 @@ namespace StepsNs {
     bool ImportStepClass::execute() {
         try {
             // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
-            const fs::path directory = IONs::pathFromUtf8(getParameter("path").get<std::string>());
-            if (!fs::is_directory(directory)) throw std::invalid_argument("not a directory: " + IONs::pathToUtf8(directory));
-            std::vector<ImageFile> imageFiles = listImageFiles(directory, getParameter("format").get<std::string>(), getParameter("tiles"));
+            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
+                                              getParameter("columns").get<int>(), getParameter("tiles")};
+            if (!fs::is_directory(parameters.directory))
+                throw std::invalid_argument("not a directory: " + IONs::pathToUtf8(parameters.directory));
+            std::vector<ImageFile> imageFiles = listImageFiles(parameters);
             sortAndCheckGrid(imageFiles);
-            const fs::path outputDirectory = prepareOutputDirectory(directory);
+            // Comment les cases ont été trouvées : liste, noms des fichiers, ou ordre des noms.
+            result["placement"] = cellSourceName(imageFiles.front().cellSource);
+            const fs::path outputDirectory = prepareOutputDirectory(parameters.directory);
             DataNs::TileList tiles;
             for (const ImageFile& imageFile : imageFiles) tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), outputDirectory));
             linkNeighbours(tiles);
