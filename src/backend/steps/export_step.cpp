@@ -73,10 +73,9 @@ namespace StepsNs {
             std::string directory;
             if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
                 for (const Json& parameter : configJson.at("parameters")) {
-                    if (parameter.value("name", "") == "outputDirectory") {
-                        if (parameter.contains("value") && parameter["value"].is_string()) {
-                            directory = parameter["value"].get<std::string>();
-                        }
+                    if (parameter.value("name", "") == "outputDirectory" && parameter.contains("value") &&
+                        parameter["value"].is_string()) {
+                        directory = parameter["value"].get<std::string>();
                         break;
                     }
                 }
@@ -88,10 +87,9 @@ namespace StepsNs {
             std::string filename;
             if (configJson.contains("parameters") && configJson["parameters"].is_array()) {
                 for (const Json& parameter : configJson.at("parameters")) {
-                    if (parameter.value("name", "") == "filename") {
-                        if (parameter.contains("value") && parameter["value"].is_string()) {
-                            filename = parameter["value"].get<std::string>();
-                        }
+                    if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
+                        parameter["value"].is_string()) {
+                        filename = parameter["value"].get<std::string>();
                         break;
                     }
                 }

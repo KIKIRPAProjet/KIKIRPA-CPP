@@ -44,6 +44,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTimer>
 #include <QAbstractItemView>
 #include <QFontMetrics>
 #include <QFrame>

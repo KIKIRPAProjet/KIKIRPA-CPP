@@ -27,6 +27,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QIODevice>
 #include <QMessageBox>
 #include <QDir>
 #include <QLabel>
