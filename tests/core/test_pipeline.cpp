@@ -11,6 +11,7 @@
 #include "core/pipeline/pipeline_builder.h"
 #include "core/pipeline/pipeline_report.h"
 #include "core/pipeline/run_state.h"
+#include "core/step/data_store.h"
 #include "core/step/step.h"
 #include "steps/import_step.h"
 
@@ -49,6 +50,8 @@ constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
 constexpr int PATCH_SIZE = 10;
 constexpr int MODIFIED_PIXEL = 1000;
+constexpr int MOSAIC_REPORT_WIDTH = 640;
+constexpr int MOSAIC_REPORT_HEIGHT = 480;
 
 using Json = nlohmann::json;
 
@@ -124,16 +127,18 @@ void testerRapportMosaic() {
         fs::path("mosaic_image.tif"),
         fs::path("mosaic_provenance.tif"),
         fs::path("mosaic_mask.tif"),
-        cv::Size(640, 480)
+        cv::Size(MOSAIC_REPORT_WIDTH, MOSAIC_REPORT_HEIGHT)
     });
 
     const MosaicOutputStepClass step;
     const Json report = PipelineNs::createStepReport(0, step, dataStore, Json::array());
     const Json& output = report.at("outputs").at(0).at("value");
-    EXPECT_EQ(output.at("width"), 640);
-    EXPECT_EQ(output.at("height"), 480);
+    EXPECT_EQ(output.at("width"), MOSAIC_REPORT_WIDTH);
+    EXPECT_EQ(output.at("height"), MOSAIC_REPORT_HEIGHT);
     EXPECT_EQ(output.at("imagePath"), "mosaic_image.tif");
-    EXPECT_NE(report.at("summary").get<std::string>().find("640 × 480"), std::string::npos);
+    EXPECT_NE(report.at("summary").get<std::string>().find(
+                  std::to_string(MOSAIC_REPORT_WIDTH) + " × " + std::to_string(MOSAIC_REPORT_HEIGHT)),
+              std::string::npos);
 }
 
 void testerRegistre() {
