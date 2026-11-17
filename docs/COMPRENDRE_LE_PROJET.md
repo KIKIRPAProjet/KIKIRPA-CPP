@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **10/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **17/11/2026** (`d02ca58`). Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -28,12 +28,12 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | # | Étape | Question à laquelle elle répond | Step sur main |
 |---|---|---|---|
 | 1 | Import | Quelles tuiles, où dans la grille ? | ✅ `import` |
-| 2 | Recouvrement | De combien les tuiles se chevauchent-elles vraiment ? | ⚙️ intégré aux steps d'appariement ; step dédié dans la PR #90 |
+| 2 | Recouvrement | De combien les tuiles se chevauchent-elles vraiment ? | ✅ `overlap-estimation` ; mais aucun step ne lit encore sa sortie : les steps d'appariement refont cette passe en interne |
 | 3 | Appariement | De combien B est-elle décalée par rapport à A, pour chaque paire de voisines ? | ✅ `phase-correlation`, `sift`, `lightglue` (un seul au choix) |
-| 4 | Rejet des aberrants | Quels points appariés sont faux ? | ❌ algorithme prêt (vote 2D), **pas branché** |
+| 4 | Rejet des aberrants | Quels points appariés sont faux ? | ✅ `vote-2d` (facultatif) |
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
-| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
+| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ; ⚠️ `dynamic-programming-dijkstra` calcule aussi des coutures, mais `fusion` ne sait pas encore les lire |
 | 8 | Assemblage | Fabriquer l'image finale | ✅ `fusion` (bloc par bloc, sans fondu) |
 | 9 | Export | Écrire le fichier final | ✅ `export` |
 
@@ -46,7 +46,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 ### Trois couches
 
 ```
- frontend/ (Qt)            interface : aujourd'hui des maquettes, non reliées au backend (§9)
+ frontend/ (Qt)            interface : fenêtres sur main, calcul encore simulé (§9)
       │ écrit un script JSON, lance le pipeline
       ▼
  core/                     le moteur : lit le script, enchaîne les steps, sauve les checkpoints
@@ -325,9 +325,9 @@ C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorith
 #### `Mosaic` (clé `mosaic`) : la mosaïque assemblée, sur disque
 
 ```json
-{ "imagePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_image.tif",
-  "provenancePath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_provenance.tif",
-  "maskPath": "D:/oeuvre/tuiles/.cache/fusion/mosaic_mask.tif",
+{ "imagePath": "D:/oeuvre/tuiles/.cache/mosaic/mosaic_image.tif",
+  "provenancePath": "D:/oeuvre/tuiles/.cache/mosaic/mosaic_provenance.tif",
+  "maskPath": "D:/oeuvre/tuiles/.cache/mosaic/mosaic_mask.tif",
   "canvasSize": [17400, 6810] }
 ```
 
@@ -430,15 +430,15 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 | Algorithme | À quoi il sert | Comment il marche, en bref | État | Doc |
 |---|---|---|---|---|
-| Estimation du recouvrement (`OverlapEstimationNs`) | trouver le vrai recouvrement d'une paire avant l'appariement fin | corrélation de phase grossière sur les bandes communes, d'où un décalage au pixel près | ✅ utilisé par les trois steps d'appariement | [OverlapEstimation.md](algorithms/stitching/overlap_estimation/OverlapEstimation.md) |
+| Estimation du recouvrement (`OverlapEstimationNs`) | trouver le vrai recouvrement d'une paire avant l'appariement fin | corrélation de phase grossière sur les bandes communes, d'où un décalage au pixel près | ✅ utilisé par les trois steps d'appariement, et step `overlap-estimation` | [OverlapEstimation.md](algorithms/stitching/overlap_estimation/OverlapEstimation.md) |
 | Corrélation de phase (`PhaseCorrelationNs`) | décalage précis entre deux tuiles | dans le domaine de Fourier, un décalage devient un déphasage : le pic de la corrélation donne la translation, affinée au sous-pixel, puis contrôlée sur des petits patchs (NCC) | ✅ step `phase-correlation` | [PhaseCorrelation.md](algorithms/stitching/phase_correlation/PhaseCorrelation.md) |
 | SIFT (`SiftNs`) | apparier des points remarquables | détecte des points caractéristiques dans les deux bandes, compare leurs descripteurs, garde les paires nettes (test de Lowe) ; translation = médiane | ✅ step `sift` | fiche du step : [SiftStep.md](steps/SiftStep.md) |
 | LightGlue (`LightGlueNs`) | apparier des points par réseau de neurones | un modèle ONNX détecte et apparie les points ; on garde les paires de score ≥ 0,9 ; translation = médiane | ✅ step `lightglue` | fiche du step : [LightGlueStep.md](steps/LightGlueStep.md) |
-| Vote 2D (`RejectionNs::VoteRejectorClass`) | éliminer les faux appariements | chaque paire de points vote pour une translation dans une grille ; on garde la case la plus votée, puis on affine par médianes successives | ⚠️ codé et testé, **pas branché** | [Vote2D.md](algorithms/rejection/vote_2d/Vote2D.md) |
+| Vote 2D (`RejectionNs::VoteRejectorClass`) | éliminer les faux appariements | chaque paire de points vote pour une translation dans une grille ; on garde la case la plus votée, puis on affine par médianes successives | ✅ step `vote-2d` | [Vote2D.md](algorithms/rejection/vote_2d/Vote2D.md), [Vote2DStep.md](steps/Vote2DStep.md) |
 | Solveur de positions (`PositioningNs::solveRelativePositions`) | placer toutes les tuiles d'un coup | chaque paire donne une équation `position B − position A = translation` ; moindres carrés sur toutes les équations (SVD) | ✅ step `absolute-pos` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | Égalisation de luminosité (`BrightnessEqualizationNs`) | égaliser la luminosité entre tuiles | compare les pixels des recouvrements sur des images réduites ; moindres carrés robustes pour trouver un gain par tuile et un champ d'éclairage commun | ✅ step `intensity-correction` (estimation seulement) | [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) |
 | Graph cut (`GraphCutNs`) | couture entre les tuiles | la coupe de graphe d'OpenCV cherche la frontière où les deux tuiles se ressemblent le plus, paire par paire ; on en tire les territoires | ✅ step `graphcut` | [GraphCutStep.md](steps/GraphCutStep.md) |
-| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ✅ step `dynamic-programming-dijkstra` ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
+| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ⚠️ step `dynamic-programming-dijkstra`, dont la sortie (`seamlines`) n'est lue par aucun step ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
 | Ancien positionneur (`PositioningNs::computeTilePositions`) | ancienne chaîne complète SIFT → vote → moindres carrés | — | ⚠️ code mort : appelé par aucun step ni aucun test | — |
 
 ---
@@ -455,9 +455,9 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 |---|---|
 | Build and test | compilation et tests sous Ubuntu 24.04 (paquets `apt`) |
 | Build and test (Windows) | compilation et tests sous Windows avec MSVC (preset `windows-aqt`) |
-| clang-tidy | règles de style et de qualité, **seulement sur les fichiers C++ modifiés** par la branche |
+| clang-tidy | règles de style et de qualité, **seulement sur les fichiers C++ modifiés** par une PR. Sur un push vers `main`, il n'y a rien à comparer : le job passe sans rien analyser |
 
-`release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
+Les tests sont lancés avec `-L "unit|integration"` : les 7 tests de `tests/frontend/`, qui n'ont pas de label, ne tournent donc pas en CI. `release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
 
 ---
 
@@ -465,15 +465,20 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 
 ### Ce qu'il y a sur main
 
-Presque rien : `src/frontend/PipelineJson.cpp`, qui sait **écrire** un script JSON de pipeline (`FrontendNs::pipelineToJson`, `writePipelineJson`). Aucune fenêtre.
+Depuis les PR #91, #104, #109, #114 et #131 (09 au 11/11), l'interface est sur `main` : 25 fichiers dans `src/frontend/`, compilés dans `kikirpa_frontend`, et ouverts par `stitching` lancé sans argument. On y trouve :
+- la page d'accueil et l'assistant « nouveau projet » (`ProjectSetupModelClass`, qui produit déjà le script du pipeline avec `createBackendScript`) ;
+- la grille du projet, les onglets (grille, alignement, masques, assemblage), le panneau de journal, le dessin de l'œuvre avec ou sans seamline.
 
-### Ce qu'il y a dans les branches
+Fichier par fichier : [CARTE_ARCHITECTURE.md §4](CARTE_ARCHITECTURE.md#frontend--interface-graphique).
 
-Plusieurs maquettes de l'interface Qt existent en branche (`Valerie`, `frontendJonas`, `frontendMathias`, `fr-rahim` / PR #91…) : page d'accueil, grille du projet, onglets, panneau de journal, aperçu.
-
-**Ce sont des maquettes : aucune n'appelle le backend.**
+**Mais le calcul n'est pas encore appelé.**
 - L'avancement affiché est simulé par un minuteur (`SimulationRunner`, un `QTimer`).
-- Les boutons qui ont l'air d'agir n'agissent pas. Par exemple, **Annuler / Rétablir** dans la branche `Valerie` affichent seulement « Dernière action annulée. » dans la barre d'état. Il n'y a ni historique, ni annulation réelle.
+- Certains boutons ne font encore rien (par exemple la comparaison A/B de l'onglet d'assemblage).
+
+### Ce qui est en cours
+
+- **#132** remplace `SimulationRunner` par l'exécution réelle du pipeline dans un `QThread`, avec pause, arrêt et reprise. Elle est en cours de modification après review.
+- D'autres PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
 
 ### Comment le brancher au backend
 
@@ -492,7 +497,7 @@ Tout ce qu'il faut existe déjà côté backend :
 | dessiner la vraie seamline | les polygones de `territories` : leurs bords sont les coutures |
 | dessiner le placement des tuiles | `positions` et les dimensions de chaque tuile (`tiles`) |
 
-Il reste à décider quelle maquette devient l'interface unique, puis à remplacer `SimulationRunner` par ce branchement.
+C'est ce que fait #132. La reprise y suit la ligne de commande : `setScriptPath(<checkpoints>/run.json)` avant `run()`, puis relire `completedSteps` dans ce fichier pour reprendre (voir `prepareRunState` dans `src/main.cpp`).
 
 ---
 
@@ -500,17 +505,20 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 À faire, sur une base connue :
 
-- **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle (§5) ; fondu le long des coutures, si besoin.
-- **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
-- **Le branchement du front** (§9) et le choix d'une seule interface.
+- **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle du KIKIRPA (§5) ; fondu le long des coutures, si besoin.
+- **Le branchement du front** (§9) : PR #132.
+- **L'export** : choisir le nom du fichier, refuser d'écraser une mosaïque existante, produire un aperçu JPEG réduit.
+- **La reprise** : refaire un step dont un fichier de sortie a disparu, au lieu d'échouer à chaque relance ; ne laisser sortir de `run()` aucune exception levée par un checkpoint.
+- **Faire lire `seamlines` par l'assemblage** (ou les convertir en territoires), pour que `dynamic-programming-dijkstra` puisse produire une mosaïque.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
-- **Unifier le nommage des fichiers** entre `import` et `absolute-pos` / `graphcut`.
+- **Garder ligne et colonne dans `TileClass`**, pour que le `format` d'`import` soit vraiment libre (aujourd'hui, les noms doivent finir par `_C<colonne>_R<ligne>.tif`).
+- **Une tuile isolée** (sans aucun appariement) fait échouer tout le run dans `absolute-pos` : la placer à sa position de grille et le signaler.
 
 À chercher ou à décider :
 
 - **Les rotations** : le pipeline suppose des tuiles seulement translatées.
 - **Le calage local** : corriger des déformations à l'intérieur des tuiles, au-delà d'une translation globale.
-- **Le format et l'organisation de l'export** : TIFF pyramidal, BigTIFF, profil ICC…
+- **Le format et l'organisation de l'export** : TIFF pyramidal, profil ICC (perdu aujourd'hui), résolution…
 - **Le comportement sur de vraies œuvres** : temps, mémoire mesurée avec `MemoryScopeClass`, qualité des coutures.
 
 ---
