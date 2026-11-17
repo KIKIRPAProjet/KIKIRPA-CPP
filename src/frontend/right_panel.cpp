@@ -11,7 +11,6 @@
 #include <QScrollArea>
 
 namespace {
-constexpr int kMinimumWidth = 218;
 
 // Place un onglet dans une zone de défilement, comme GridTab. Sans elle, la hauteur minimale d'un onglet chargé
 // (l'onglet Paire demande environ 420 px) devient celle de toute la partie haute de l'espace de travail : sur un
@@ -34,7 +33,8 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
       m_projectGrid(projectGrid),
       m_centerArea(centerArea)
 {
-    setMinimumWidth(kMinimumWidth);
+    // Pas de largeur minimale imposée, comme le panneau du bas : le panneau peut être réduit jusqu'à sa barre
+    // d'onglets (qui affiche alors des flèches), sans disparaître ; ses onglets défilent si la place manque.
 
     ArtworkCanvas *canvas = m_centerArea->canvas();
 
