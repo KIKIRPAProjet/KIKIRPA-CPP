@@ -6,6 +6,7 @@
 #include "algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h"
 #include "algorithms/seamline/dynamic_programming_dijkstra/solver.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#include "algorithms/seamline/dynamic_programming_dijkstra/territory_builder.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
@@ -208,7 +209,7 @@ namespace StepsNs {
                                  {"string", "costFunction", initialInput.costFunction},
                                  {"int", "corridorRadius", initialInput.corridorRadius}};
         stepConfig.inputs = {{"Tiles", "tiles"}, {"Positions", "positions"}, {"IntensityCorrection", "intensityCorrection"}};
-        stepConfig.outputs = {{"Seamlines", "seamlines"}};
+        stepConfig.outputs = {{"Seamlines", "seamlines"}, {"Territories", "territories"}};
         configJson = stepConfig;
     }
 
@@ -237,16 +238,28 @@ namespace StepsNs {
         std::string error = readInputs(inputs);
         if (error.empty()) error = validateInputs(inputs);
         if (error.empty()) error = indexTiles(inputs, tileIndexById);
-        if (error.empty()) error = computeSeamlines(inputs, tileIndexById, output.seamlines);
+        if (error.empty())
+            error = computeSeamlines(inputs, tileIndexById, output.seamlines);
+
+        if (error.empty()) {
+            const DP::TerritoryInput territoryInput{
+                inputs.tiles, inputs.positions, output.seamlines
+            };
+            DP::buildTerritories(territoryInput, output.territories, error);
+        }
+
         if (!error.empty()) {
             result["error"] = error;
             return false;
         }
 
         result["seamlines"] = output.seamlines.size();
+        result["territories"] = output.territories.size();
         result["method"] = DP::getMethodName(inputs.method);
         result["costFunction"] = DP::getCostFunctionName(inputs.costFunction);
+
         dataStore->replace("seamlines", output.seamlines);
+        dataStore->replace("territories", output.territories);
         return true;
     }
 
