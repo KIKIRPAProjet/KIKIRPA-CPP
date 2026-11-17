@@ -169,7 +169,7 @@ void MainWindow::setupSimulationConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée (simulation)."));
-                    showExportDialog();
+                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
     });
 }

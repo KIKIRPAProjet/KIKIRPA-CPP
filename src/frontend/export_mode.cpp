@@ -17,7 +17,7 @@
 #include "projectgrid.h"
 #include "frontendutils.h"
 #include "artworkcanvas.h"
-#include "workspaceui.h"
+#include "workspace_ui.h"
 
 #include <QCheckBox>
 #include <QComboBox>
