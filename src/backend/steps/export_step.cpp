@@ -13,8 +13,9 @@
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
-#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <tiff.h>
 #include <tiffio.h>
@@ -42,6 +43,7 @@ namespace StepsNs {
         // Format attendu de l'image de la mosaïque : RGB, 16 bits par canal, tuilée.
         constexpr std::uint16_t EXPECTED_SAMPLES_PER_PIXEL = 3;
         constexpr std::uint16_t EXPECTED_BITS_PER_SAMPLE = 16;
+        constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
 
         // Ce que l'en-tête du TIFF de la mosaïque dit de l'image, lu sans décoder de pixel.
         struct TiffHeader {
@@ -142,6 +144,37 @@ namespace StepsNs {
                 "cannot create output directory '" + IONs::pathToUtf8(directory) + "': " + directoryError.message();
             return false;
         }
+        
+        bool exportJpeg(const DataNs::Mosaic& mosaic, const fs::path& imagePath, ExportOutput& output, Json& result) {
+            cv::Mat image;
+            std::string errorMessage;
+            if (!IONs::PyramidalTiffReaderClass(mosaic.imagePath).readRegion(
+                    0, cv::Rect({0, 0}, mosaic.canvasSize), image, errorMessage)) {
+                result["error"] = "cannot read mosaic image for JPEG export: " + errorMessage;
+                return false;
+            }
+            cv::Mat image8;
+            image.convertTo(image8, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
+            cv::Mat bgrImage;
+            cv::cvtColor(image8, bgrImage, cv::COLOR_RGB2BGR);
+            const fs::path temporaryPath = IONs::makeTemporaryPath(imagePath).concat(".jpg");
+            if (!IONs::writeImage(temporaryPath, bgrImage)) {
+                std::error_code removeError;
+                fs::remove(temporaryPath, removeError);
+                result["error"] = "cannot write JPEG mosaic '" + IONs::pathToUtf8(imagePath) + "'";
+                return false;
+            }
+            if (!IONs::replaceFile(temporaryPath, imagePath, errorMessage)) {
+                std::error_code removeError;
+                fs::remove(temporaryPath, removeError);
+                result["error"] = errorMessage;
+                return false;
+            }
+            output = {imagePath, mosaic.canvasSize, false, "jpeg"};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"format", "jpeg"}};
+            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
+            return true;
+        }
 
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
             TiffHeader header;
@@ -159,33 +192,7 @@ namespace StepsNs {
             }
             const fs::path imagePath = makeImagePath(directory, format);
             if (format == "jpeg") {
-                cv::Mat image;
-                if (!IONs::PyramidalTiffReaderClass(mosaic.imagePath).readRegion(
-                        0, cv::Rect({0, 0}, mosaic.canvasSize), image, errorMessage)) {
-                    result["error"] = "cannot read mosaic image for JPEG export: " + errorMessage;
-                    return false;
-                }
-                cv::Mat image8;
-                image.convertTo(image8, CV_8UC3, 1.0 / 257.0);
-                cv::Mat bgrImage;
-                cv::cvtColor(image8, bgrImage, cv::COLOR_RGB2BGR);
-                const fs::path temporaryPath = IONs::makeTemporaryPath(imagePath).concat(".jpg");
-                if (!IONs::writeImage(temporaryPath, bgrImage)) {
-                    std::error_code removeError;
-                    fs::remove(temporaryPath, removeError);
-                    result["error"] = "cannot write JPEG mosaic '" + IONs::pathToUtf8(imagePath) + "'";
-                    return false;
-                }
-                if (!IONs::replaceFile(temporaryPath, imagePath, errorMessage)) {
-                    std::error_code removeError;
-                    fs::remove(temporaryPath, removeError);
-                    result["error"] = errorMessage;
-                    return false;
-                }
-                output = {imagePath, mosaic.canvasSize, false, format};
-                result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"format", format}};
-                result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
-                return true;
+                return exportJpeg(mosaic, imagePath, output, result);
             }
             if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
                 result["error"] = errorMessage;
