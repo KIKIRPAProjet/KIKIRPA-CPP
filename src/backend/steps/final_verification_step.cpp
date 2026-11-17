@@ -72,7 +72,7 @@ namespace StepsNs {
             }
             const auto modifiedTime = fs::last_write_time(imagePath, errorCode);
             fingerprint.push_back({{"path", IONs::pathToUtf8(imagePath)}, {"exists", true}, {"size", fileSize},
-                                   {"modified", errorCode ? std::string() : std::to_string(modifiedTime.time_since_epoch().count())}});
+                                   {"modified", errorCode ? std::string() : std::to_string(static_cast<long long>(modifiedTime.time_since_epoch().count()))}});
         }
         return fingerprint;
     }

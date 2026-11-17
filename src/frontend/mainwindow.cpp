@@ -13,16 +13,20 @@
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
 //  implemente la fenetre principale de lapplication
+
+// src/frontend/mainwindow.cpp
 #include "mainwindow.h"
+
 #include "artworkcanvas.h"
+#include "core/pipeline/pipeline_builder.h"
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
 #include "menubar_manager.h"
-#include "projectgrid.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
-#include "simulationrunner.h"
+#include "projectgrid.h"
+#include "pipeline_runner.h"
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
@@ -31,26 +35,31 @@
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <nlohmann/json.hpp>
+
+#include <QAbstractItemView>
 #include <QApplication>
+#include <QCloseEvent>
 #include <QComboBox>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QKeyEvent>
+#include <QFontMetrics>
+#include <QFrame>
 #include <QImage>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
-#include <QAbstractItemView>
-#include <QFontMetrics>
-#include <QFrame>
-#include <QPixmap>
 #include <QtMath>
-#include <functional>
+#include <QProgressDialog>
+
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -60,7 +69,6 @@
 #include <windows.h>
 #endif
 
-
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("KIK-IRPA Assemblage"));
@@ -69,14 +77,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     applyStyleSheet();
 
     projectGrid = new ProjectGrid(this);
-    simulationRunner = new SimulationRunner(this);
-    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
+    pipelineRunner = new PipelineRunnerClass(this);
+    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, pipelineRunner);
     menuBarManager = new MenuBarManager(this);
     menuBarManager->setupMenus(menuBar());
     refreshGrid();
     refreshProjectInfo();
     setupProjectGridConnections();
-    setupSimulationConnections();
+    setupPipelineConnections();
     setupHomePageConnections();
     setupMenuConnections();
     setupPageConnections();
@@ -135,40 +143,40 @@ void MainWindow::setupProjectGridConnections()
             this, &MainWindow::handleGridValidation);
 }
 
-void MainWindow::setupSimulationConnections()
+void MainWindow::setupPipelineConnections()
 {
-    connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
-    connect(simulationRunner, &SimulationRunner::progressAdvanced,
+    connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
-    connect(simulationRunner, &SimulationRunner::stepChanged,
+    connect(pipelineRunner, &PipelineRunnerClass::stepChanged,
             this, [this](int stepNumber, const QString &stepName) {
                 workspaceUI->currentStepLabel()->setText(stepName);
                 workspaceUI->setActiveStep(stepNumber);
     });
-    connect(simulationRunner, &SimulationRunner::statusChanged,
+    connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
-    connect(simulationRunner, &SimulationRunner::cancellationAvailable,
+    connect(pipelineRunner, &PipelineRunnerClass::cancellationAvailable,
             this, &MainWindow::showCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runFinished,
+    connect(pipelineRunner, &PipelineRunnerClass::runFinished,
             this, &MainWindow::removeCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runCancelled,
+    connect(pipelineRunner, &PipelineRunnerClass::runCancelled,
             this, &MainWindow::removeCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::comparisonRequested,
+    connect(pipelineRunner, &PipelineRunnerClass::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
-    connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
+    connect(pipelineRunner, &PipelineRunnerClass::comparisonVisibilityChanged,
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
-    connect(simulationRunner, &SimulationRunner::logMessage,
+    connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
-    connect(simulationRunner, &SimulationRunner::mosaicReady,
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
-                    updateStatus(tr("Mosaïque finale générée (simulation)."));
+                    updateStatus(tr("Mosaïque finale générée."));
                 }
     });
 }
@@ -236,7 +244,7 @@ void MainWindow::setupMenuConnections()
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
-            simulationRunner, &SimulationRunner::showComparison);
+            pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage — prototype d'interface.\n"
@@ -488,6 +496,7 @@ void MainWindow::setMode(int mode)
     }
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
+
     const QStringList descriptions = {
         tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
         tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
@@ -588,24 +597,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         }
     }
 
-    FrontendNs::ProjectSetup setup;
-    setup.projectName = projectName.toStdString();
-    setup.inputDirectory = IONs::pathFromUtf8(gridState.tileDirectory.toStdString());   // toStdString : UTF-8
-    setup.outputDirectory = IONs::pathFromUtf8(outputDirectory.toStdString());
-    setup.gridRows = gridState.gridRows;
-    setup.gridColumns = gridState.gridColumns;
-    setup.filenameFormat.clear();
-    setup.overlap = static_cast<double>(gridState.horizontalOverlap) / 100.0;
-    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
-        if (index >= gridState.gridTiles.size())
-            continue;
-        const GridTile &tile = gridState.gridTiles.at(index);
-        if (tile.empty || tile.path.isEmpty())
-            continue;
-        setup.tiles.push_back({IONs::pathFromUtf8(tile.path.toStdString()),
-                               index / gridState.gridColumns,
-                               index % gridState.gridColumns});
-    }
+    FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
 
     std::filesystem::path scriptPath;
     try {
@@ -659,29 +651,93 @@ void MainWindow::saveProject()
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
+FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
+{
+    const auto& gridState = projectGrid->state();
+    FrontendNs::ProjectSetup setup;
+    setup.projectName = projectName.toStdString();
+    setup.inputDirectory = gridState.tileDirectory.isEmpty()
+        ? std::filesystem::current_path()
+        : IONs::pathFromUtf8(gridState.tileDirectory.toStdString());
+    setup.outputDirectory = outputDirectory.isEmpty()
+        ? (setup.inputDirectory / "output")
+        : IONs::pathFromUtf8(outputDirectory.toStdString());
+    setup.gridRows = gridState.gridRows;
+    setup.gridColumns = gridState.gridColumns;
+    setup.overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
+
+    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
+        if (index >= gridState.gridTiles.size()) continue;
+        const GridTile &tile = gridState.gridTiles.at(index);
+        if (tile.empty || tile.path.isEmpty()) continue;
+        setup.tiles.push_back({IONs::pathFromUtf8(tile.path.toStdString()),
+                               index / gridState.gridColumns,
+                               index % gridState.gridColumns});
+    }
+    return setup;
+}
+
+QString MainWindow::generatePipelineScript(int firstStep) const
+{
+    FrontendNs::ProjectSetupModelClass model;
+    model.setSetup(buildCurrentProjectSetup());
+
+    nlohmann::json script = model.createBackendScript();
+
+    const auto& steps = FrontendUtils::pipelineSteps();
+    if (firstStep > 1 && firstStep <= static_cast<int>(steps.size())) {
+        nlohmann::json completedStepsArray = nlohmann::json::array();
+        for (int i = 0; i < firstStep - 1; ++i) {
+            completedStepsArray.push_back(steps[static_cast<std::size_t>(i)].technicalName);
+        }
+        script["run"]["completedSteps"] = completedStepsArray;
+        script["run"]["startFromStep"] = steps[static_cast<std::size_t>(firstStep - 1)].technicalName;
+    }
+
+    return QString::fromStdString(script.dump(2));
+}
+
 void MainWindow::requestRun(int firstStep)
 {
-    if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Une exécution du pipeline est déjà en cours."));
         return;
     }
+    // Vérification préalable : au moins une tuile doit être chargée dans la grille.
     if (projectGrid->state().tilePaths.isEmpty()) {
-        const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
-            tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer != QMessageBox::Yes)
-            return;
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de lancer le pipeline de calcul."));
+        return;
     }
-    if (firstStep > 1) {
-        if (!DialogHelpers::confirmRunRestart(this, firstStep))
-            return;
+    // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep)) {
+        return;
     }
-    simulationRunner->startRun(firstStep);
+
+    QString scriptJson;
+    try {
+        scriptJson = generatePipelineScript(firstStep);
+    } catch (const std::exception& exception) {
+        QMessageBox::critical(this, tr("Erreur de configuration"),
+            tr("Pipeline invalide : %1").arg(exception.what()));
+        return;
+    }
+    if (scriptJson.isEmpty()) return;
+
+    const auto& steps = FrontendUtils::pipelineSteps();
+    const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(steps.size()))
+        ? QString::fromStdString(steps[static_cast<std::size_t>(firstStep - 1)].technicalName)
+        : QString();
+
+    // Transmet la configuration à la façade asynchrone puis démarre le calcul.
+    pipelineRunner->setScriptJson(scriptJson);
+    pipelineRunner->setStartFromStepName(startStep);
+    pipelineRunner->startRun(firstStep);
 }
 
 void MainWindow::showComparisonDialog()
 {
-    DialogHelpers::showComparisonDialog(this, simulationRunner);
+    DialogHelpers::showComparisonDialog(this, pipelineRunner);
 }
 
 void MainWindow::showCancelRunButton()
@@ -693,7 +749,7 @@ void MainWindow::showCancelRunButton()
     cancelRunButton->setObjectName(QStringLiteral("cancelRunButton"));
     statusBar()->addPermanentWidget(cancelRunButton);
     connect(cancelRunButton, &QPushButton::clicked,
-            simulationRunner, &SimulationRunner::cancelRun);
+            pipelineRunner, &PipelineRunnerClass::cancelRun);
 }
 
 void MainWindow::removeCancelRunButton()
@@ -736,4 +792,59 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         return;
     }
     QMainWindow::keyPressEvent(event);
+}
+
+// Sécurise la fermeture : si un calcul est en cours dans le QThread secondaire,
+// demande confirmation à l'opérateur avant d'ordonner l'arrêt du worker pour éviter
+// un arrêt brutal en pleine écriture de fichier ou une fuite de ressources.
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // Si la fermeture a déjà été ordonnée et que le worker s'est arrêté, on accepte la fermeture
+    if (isClosing) {
+        event->accept();
+        return;
+    }
+
+    if (pipelineRunner && pipelineRunner->isRunning()) {
+        const QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            tr("Calcul en cours"),
+            tr("Un calcul du pipeline est en cours d'exécution.\n"
+               "Voulez-vous vraiment l'interrompre et quitter l'application ?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+
+        if (reply != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+
+        // Empêche la fermeture immédiate de la fenêtre
+        event->ignore();
+        isClosing = true;
+        setEnabled(false); // Bloque les entrées utilisateur sur la fenêtre
+
+        // Affiche une boîte de dialogue indiquant que l'étape courante doit se terminer
+        auto *progressDialog = new QProgressDialog(
+            tr("Arrêt du pipeline après l'étape en cours...\nVeuillez patienter."),
+            QString(), 0, 0, this);
+        progressDialog->setWindowTitle(tr("Fermeture"));
+        progressDialog->setWindowModality(Qt::WindowModal);
+        progressDialog->setCancelButton(nullptr);
+        progressDialog->show();
+
+        // Ferme définitivement la fenêtre dès que le thread backend s'est arrêté
+        auto finalizeClose = [this, progressDialog]() {
+            progressDialog->close();
+            this->close();
+        };
+
+        connect(pipelineRunner, &PipelineRunnerClass::runCancelled, this, finalizeClose);
+        connect(pipelineRunner, &PipelineRunnerClass::runFinished, this, finalizeClose);
+
+        pipelineRunner->cancelRun();
+        return;
+    }
+
+    event->accept();
 }
