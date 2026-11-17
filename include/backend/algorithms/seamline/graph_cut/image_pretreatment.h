@@ -21,16 +21,17 @@ namespace GraphCutNs {
 
         public:
             // Prépare la liste des tuiles : tailles, positions (coins) et masques réduits.
-            // Prend en entrée la structure DataNs::TilePositionData (sortie du positionnement) au lieu d'un fichier JSON.
+            // Prend en entrée la structure DataNs::TilePositionData (sortie du positionnement) au lieu d'un fichier JSON :
+            // une position par tuile, dans l'ordre de tilePaths (le step graphcut les range ainsi par identifiant).
             // Les vecteurs de sortie doivent être vides avant l'appel ; ils suivent l'ordre des fichiers de tilePaths.
             // Renvoie 1 en cas de succès, ou -1 lorsqu'une erreur est détectée (les vecteurs peuvent alors être
             // partiellement remplis).
             const std::string& getErrorMessage() const{ return errorMessage;}
             int processImages(const std::vector<DataNs::TilePositionData>& inputPositions, const std::vector<std::string>& tilePaths, double scale, PreprocessedTiles& tiles) ;
 
-            // Extrait (ligne, colonne) d'un nom de fichier "..._rLL_cCC.tif(f)" et fabrique l'identifiant "rLL_cCC"
-            // (2 chiffres minimum). Source unique de l'identifiant : utilisée par le positionnement (SIFT + RANSAC) ET par
-            // processImages.
+            // Extrait (ligne, colonne) d'un nom de fichier "..._C<colonne>_R<ligne>.tif(f)" et fabrique l'identifiant
+            // "rLL_cCC" (2 chiffres minimum). Utilisé seulement par le positionnement autonome (computeTilePositions), qui
+            // part de chemins de fichiers ; les steps du pipeline identifient les tuiles par TileClass::getId().
             static bool parseTileName(const std::string& path, int& row, int& column, std::string& tileId);
 
             // Relit une tuile sur le disque et renvoie sa copie réduite, en trois canaux flottants sur [0, 255]
