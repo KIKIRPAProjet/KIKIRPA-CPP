@@ -503,19 +503,32 @@ void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, 5);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
-        const int gridIndex = workspaceUI->rightTabs()->indexOf(workspaceUI->gridTabPage());
-        if (gridIndex >= 0) {
-            const bool isGridMode = (currentMode == 1);
-            workspaceUI->rightTabs()->setTabEnabled(gridIndex, isGridMode);
-            workspaceUI->rightTabs()->setTabToolTip(
-                gridIndex, isGridMode ? QString() : tr("Disponible uniquement en mode Grille"));
-            if (isGridMode) {
-                workspaceUI->rightTabs()->setCurrentWidget(workspaceUI->gridTabPage());
-            } else if (workspaceUI->rightTabs()->currentWidget() == workspaceUI->gridTabPage()
-                       && workspaceUI->rightTabs()->count() > 1) {
-                workspaceUI->rightTabs()->setCurrentIndex(gridIndex == 0 ? 1 : 0);
-            }
+    if (QTabWidget *tabs = workspaceUI->rightTabs()) {
+        const bool isGridMode = (currentMode == 1);
+        const bool isPairMode = (currentMode == 3);
+        const bool isLayersMode = (currentMode != 1);
+
+        if (tabs->count() >= 4) {
+            tabs->setTabEnabled(0, isGridMode);
+            tabs->setTabToolTip(0, isGridMode ? QString() : tr("Disponible uniquement en mode Tuiles"));
+
+            tabs->setTabEnabled(1, true); // Chaîne toujours accessible
+
+            tabs->setTabEnabled(2, isPairMode);
+            tabs->setTabToolTip(2, isPairMode ? QString() : tr("Disponible uniquement en mode Alignement"));
+
+            tabs->setTabEnabled(3, isLayersMode);
+            tabs->setTabToolTip(3, isLayersMode ? QString() : tr("Indisponible en mode Tuiles"));
+        }
+
+        if (isGridMode) {
+            tabs->setCurrentIndex(0);
+        } else if (currentMode == 2) {
+            tabs->setCurrentIndex(3);
+        } else if (isPairMode) {
+            tabs->setCurrentIndex(2);
+        } else if (tabs->currentIndex() >= 0 && !tabs->isTabEnabled(tabs->currentIndex())) {
+            tabs->setCurrentIndex(1); // Chaîne par défaut
         }
     }
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
