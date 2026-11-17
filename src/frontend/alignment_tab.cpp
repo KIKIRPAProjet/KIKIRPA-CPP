@@ -128,18 +128,22 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     auto *separatorBottom = new QFrame(this);
     separatorBottom->setFrameShape(QFrame::HLine);
     separatorBottom->setStyleSheet(QStringLiteral("color:#424242;"));
+    separatorBottom->setVisible(false);
     mainLayout->addWidget(separatorBottom);
 
-    // Résumé du projet 
+    // Résumé du projet (masqué pour alléger l'onglet Paire, déjà visible dans Projet/Grille)
     m_projectNameLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectNameLabel->setWordWrap(true);
+    m_projectNameLabel->setVisible(false);
     mainLayout->addWidget(m_projectNameLabel);
 
     m_tileCountLabel = FrontendUtils::mutedLabel(QString(), this);
+    m_tileCountLabel->setVisible(false);
     mainLayout->addWidget(m_tileCountLabel);
 
     m_projectMetadataLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectMetadataLabel->setObjectName(QStringLiteral("projectMetadataLabel"));
+    m_projectMetadataLabel->setVisible(false);
     mainLayout->addWidget(m_projectMetadataLabel);
 
     mainLayout->addStretch();

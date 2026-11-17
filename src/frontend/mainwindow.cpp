@@ -22,6 +22,7 @@
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
+#include "left_toolbar.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -114,6 +115,7 @@ void MainWindow::applyStyleSheet()
         "QPushButton[primary=\"true\"] { background:#397fb8; border-color:#438bca; color:white; }"
         "QPushButton[primary=\"true\"]:hover { background:#4b91cd; }"
         "QPushButton:checked,QToolButton:checked { background:#2c5273; border-color:#438bca; color:#ffffff; }"
+        "QPushButton:disabled,QToolButton:disabled { background:#2b2b2b; border-color:#3a3a3a; color:#666666; }"
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
@@ -157,6 +159,9 @@ void MainWindow::setupPipelineConnections()
 {
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
+        if (workspaceUI->bottomTabs())
+            workspaceUI->bottomTabs()->setVisible(true);
+        panelsVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -307,6 +312,11 @@ void MainWindow::setupPairAlignmentConnections()
                 this, &MainWindow::selectPreviousPair);
         connect(top, &TopToolbars::nextDubiousPairRequested,
                 this, &MainWindow::selectNextDubiousPair);
+        connect(top, &TopToolbars::togglePanelsRequested, this, [this]() {
+            panelsVisible = !panelsVisible;
+            workspaceUI->rightTabs()->setVisible(panelsVisible);
+            workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        });
     }
 
     refreshPairViews();
@@ -523,6 +533,8 @@ void MainWindow::setMode(int mode)
         workspaceUI->projectInfoPanel()->setVisible(currentMode == 0);
     if (workspaceUI->canvas())
         workspaceUI->canvas()->setVisible(currentMode != 0);
+    if (workspaceUI->leftToolbar())
+        workspaceUI->leftToolbar()->setVisible(currentMode == 2 || currentMode == 3);
     if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
@@ -544,6 +556,9 @@ void MainWindow::setMode(int mode)
     if (currentMode == 1)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
+        if (workspaceUI->bottomTabs())
+            workspaceUI->bottomTabs()->setVisible(true);
+        panelsVisible = true;
         workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
@@ -555,6 +570,19 @@ void MainWindow::setMode(int mode)
 void MainWindow::refreshProjectInfo()
 {
     workspaceUI->updateFromGridState(projectName, projectGrid->state());
+
+    const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
+    const QString lockedTip = hasTiles ? QString() : tr("Importez d'abord un dossier de tuiles");
+    for (int m = 2; m <= 5; ++m) {
+        if (auto *btn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(m))) {
+            btn->setEnabled(hasTiles);
+            btn->setToolTip(lockedTip);
+        }
+    }
+    if (auto *runBtn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("runPipelineButton"))) {
+        runBtn->setEnabled(hasTiles);
+        runBtn->setToolTip(lockedTip);
+    }
 }
 
 void MainWindow::refreshGrid()

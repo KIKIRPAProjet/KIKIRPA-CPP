@@ -48,7 +48,10 @@ void ArtworkCanvas::drawEmptyState(QPainter &p)
     p.drawLine(QPoint(c.x(), c.y() - 10), QPoint(c.x(), c.y() + 10));
 
     QFont titleFont = p.font();
-    titleFont.setPointSize(titleFont.pointSize() + 1);
+    if (titleFont.pointSize() > 0)
+        titleFont.setPointSize(titleFont.pointSize() + 1);
+    else if (titleFont.pixelSize() > 0)
+        titleFont.setPixelSize(titleFont.pixelSize() + 2);
     titleFont.setBold(true);
     p.setFont(titleFont);
     p.setPen(QColor("#ececec"));
@@ -57,7 +60,10 @@ void ArtworkCanvas::drawEmptyState(QPainter &p)
 
     QFont subFont = p.font();
     subFont.setBold(false);
-    subFont.setPointSize(qMax(8, subFont.pointSize() - 1));
+    if (subFont.pointSize() > 0)
+        subFont.setPointSize(qMax(8, subFont.pointSize() - 2));
+    else if (subFont.pixelSize() > 0)
+        subFont.setPixelSize(qMax(10, subFont.pixelSize() - 2));
     p.setFont(subFont);
     p.setPen(QColor("#aaaaaa"));
     p.drawText(QRect(card.left() + 18, circleRect.bottom() + 42, card.width() - 36, 36),

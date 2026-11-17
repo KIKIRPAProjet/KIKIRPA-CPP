@@ -19,7 +19,6 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    createToolbar();
     createModesBar();
     createOptionsBar();
 
@@ -30,24 +29,6 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
         connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
     }
-}
-
-void TopToolbars::createToolbar()
-{
-    QWidget *toolbar = new QWidget(this);
-    auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 5, 8, 5);
-
-    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
-    title->setObjectName(QStringLiteral("workspaceTitle"));
-    toolbarLayout->addWidget(title);
-    toolbarLayout->addStretch();
-
-    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), toolbar);
-    toolbarLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
-
-    static_cast<QVBoxLayout *>(layout())->addWidget(toolbar);
 }
 
 void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
@@ -87,6 +68,16 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
     stageLayout->addWidget(compare);
     connect(compare, &QPushButton::clicked, m_pipelineRunner, &PipelineRunnerClass::showComparison);
+
+    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    save->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
+    stageLayout->addWidget(save);
+    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
+
+    auto *panelsBtn = FrontendUtils::makeButton(tr("◫ Panneaux"), stages);
+    panelsBtn->setToolTip(tr("Afficher / masquer les panneaux (Tab)"));
+    stageLayout->addWidget(panelsBtn);
+    connect(panelsBtn, &QPushButton::clicked, this, &TopToolbars::togglePanelsRequested);
 }
 
 void TopToolbars::createModesBar()
@@ -181,8 +172,8 @@ void TopToolbars::createOptionsBar()
 
 void TopToolbars::updateTitle(const QString &projectName, const QString &modality)
 {
-    if (auto *title = findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
-        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
+    if (m_mainWindow) {
+        m_mainWindow->setWindowTitle(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
     }
 }
 
