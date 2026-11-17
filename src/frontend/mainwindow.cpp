@@ -271,8 +271,10 @@ void MainWindow::setupPageConnections()
 {
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
+        statusBar()->setVisible(index != 0);
     });
     menuBar()->setVisible(false);
+    statusBar()->setVisible(false);
 }
 
 void MainWindow::setupPairAlignmentConnections()
