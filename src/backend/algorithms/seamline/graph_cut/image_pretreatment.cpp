@@ -11,17 +11,17 @@
 #include <opencv2/core/saturate.hpp>      // Pour cv::saturate_cast
 #include <tiffio.h>
 #include <tiff.h>
-#include <algorithm>
 #include "core/data/algorithm_types.h"
-#include <cmath>
+#include "core/data/mosaic_corners.h"
+#include "core/io/unicode_path.h"
 #include <cstdio>
 #include <string>
 #include <map>
 #include <regex>
 #include <vector>
-#include <limits>
 #include <memory>
 #include <cstdint>
+#include <utility>
 
 
 namespace GraphCutNs {
@@ -79,7 +79,7 @@ namespace GraphCutNs {
     // La transparence est supprimée, les niveaux de gris sont dupliqués sur trois canaux.
     // Renvoie une image vide si la lecture échoue.
     cv::Mat ImagePretreatmentClass::read16Bit(const std::string& path) {
-        cv::Mat rawImage = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat rawImage = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (rawImage.empty()) return rawImage;
         return toUnsigned16Bit(toThreeChannels(rawImage));
     }
@@ -94,7 +94,7 @@ namespace GraphCutNs {
     // réduction, comme à l'origine. Réduire d'abord en 8 bits arrondirait les valeurs interpolées à l'entier et décalerait
     // légèrement les coûts, donc, mesuré sur des tuiles de test, des pixels de la mosaïque changeraient de tuile.
     cv::Mat ImagePretreatmentClass::readSmallFloat(const std::string& path, double scale) {
-        cv::Mat image = cv::imread(path, cv::IMREAD_UNCHANGED);
+        cv::Mat image = IONs::readImage(IONs::pathFromUtf8(path), cv::IMREAD_UNCHANGED);
         if (image.empty()) return image;
 
         if (image.depth() != CV_16U)
@@ -103,7 +103,7 @@ namespace GraphCutNs {
         if (scale < 1.0) {
             cv::Mat smallImage;
             cv::resize(image, smallImage, cv::Size(), scale, scale, cv::INTER_LINEAR);
-            image = smallImage;   // l'image pleine résolution n'a plus de référence : sa mémoire est libérée ici
+            image = std::move(smallImage);   // l'image pleine résolution n'a plus de référence : mémoire libérée ici
         }
 
         cv::Mat floatImage;
@@ -155,7 +155,7 @@ namespace GraphCutNs {
         // complète (comportement d'origine). Renvoie false si l'image est illisible ou vide.
         bool readImageSize(const std::string& imagePath, cv::Size& size) {
             using TiffHandle = std::unique_ptr<TIFF, decltype(&TIFFClose)>;
-            const TiffHandle tiffFile(TIFFOpen(imagePath.c_str(), "r"), &TIFFClose);
+            const TiffHandle tiffFile(IONs::openTiff(IONs::pathFromUtf8(imagePath), "r"), &TIFFClose);
             if (tiffFile) {
                 std::uint32_t width = 0;
                 std::uint32_t height = 0;
@@ -213,31 +213,11 @@ namespace GraphCutNs {
             return true;
         }
 
-        // Déplace les positions dans un repère de mosaïque à coordonnées positives ou nulles.
-        // Soustrait les minima arrondis vers le bas, puis arrondit les positions au pixel.
-        // Toutes les tuiles subissent la même translation avant cet arrondi.
-        std::vector<cv::Point> toMosaicCorners(const std::vector<cv::Point2d>& rawCorners) {
-            double minimumX = std::numeric_limits<double>::max();
-            double minimumY = std::numeric_limits<double>::max();
-
-            for (const cv::Point2d& corner : rawCorners) {
-                minimumX = std::min(minimumX, corner.x);
-                minimumY = std::min(minimumY, corner.y);
-            }
-            const double offsetX = std::floor(minimumX);
-            const double offsetY = std::floor(minimumY);
-            std::vector<cv::Point> originalCorners;
-            // Réserve la taille, sinon clang-tidy est pas content
-            originalCorners.reserve(rawCorners.size());
-            for (const cv::Point2d& corner : rawCorners)
-                originalCorners.push_back(cv::Point(cvRound(corner.x - offsetX), cvRound(corner.y - offsetY)));
-            return originalCorners;
-        }
-
         // Convertit les positions pleine résolution vers la grille réduite.
         // Arrondit vers le bas pour obtenir des coordonnées entières sur cette grille.
         std::vector<cv::Point> toSmallCorners(const std::vector<cv::Point>& originalCorners, double scale) {
             std::vector<cv::Point> smallCorners;
+            smallCorners.reserve(originalCorners.size());
             for (size_t tileIndex = 0; tileIndex < originalCorners.size(); ++tileIndex)
                 smallCorners.push_back(cv::Point(cvFloor(originalCorners[tileIndex].x * scale),
                                                  cvFloor(originalCorners[tileIndex].y * scale)));
@@ -270,7 +250,8 @@ namespace GraphCutNs {
             errorMessage = "No tile provided for image pretreatment";
             return -1;
         }
-        tiles.originalCorners = toMosaicCorners(rawCorners);
+        // Repère partagé avec fusion : les territoires et les pixels de la mosaïque tombent ainsi au même endroit.
+        tiles.originalCorners = DataNs::computeMosaicCorners(rawCorners);
         tiles.cornersSmall = toSmallCorners(tiles.originalCorners, scale);
         return 1;
     }

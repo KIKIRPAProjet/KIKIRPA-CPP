@@ -6,6 +6,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
 #include "core/step/step.h"
 
 #include <opencv2/core/mat.hpp>
@@ -81,7 +82,7 @@ namespace StepsNs {
                 resolvedInput.tilePaths.clear();
                 // L'algorithme relit les images depuis les fichiers d'origine.
                 for (const auto& tile : dataStore->get<DataNs::TileList>("tiles"))
-                    resolvedInput.tilePaths.push_back(tile->getSource().string());
+                    resolvedInput.tilePaths.push_back(IONs::pathToUtf8(tile->getSource()));
             }
             if (dataStore && dataStore->has("positions"))
                 resolvedInput.positions = dataStore->get<std::vector<DataNs::TilePositionData>>("positions");
