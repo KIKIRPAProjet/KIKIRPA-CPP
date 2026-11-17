@@ -229,7 +229,7 @@ Le calcul de la corrélation est le même dans les deux passes.
 
 ### Étapes 2 à 5 : les points de correspondance
 
-La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que RANSAC puisse détecter une rotation ou une déformation et écarter les mauvais points.
+La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que le rejector puisse détecter une rotation ou une déformation et écarter les mauvais points.
 
 - **Candidats** : `cv::goodFeaturesToTrack` (Shi-Tomasi) choisit des coins bien texturés dans la zone commune. On en demande 3 × `maximumPointCount`, espacés d'au moins `minimumPointSpacing` px, et assez loin des bords pour que les patchs restent dans l'image.
 - **Mesure locale** : pour chaque candidat, on prend un patch de `patchSize`×`patchSize` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlatePhase` sur ces deux patchs, ce qui donne un petit résidu local, au 1/100 px lui aussi. Ici le pic est cherché **sans marge** : limiter la recherche à ±`maximumLocalDeviation` masquerait tout le voisinage du pic et viderait le test du second pic. L'écart à la translation globale est contrôlé juste après.
