@@ -6,14 +6,30 @@
 
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
+#include <cstddef>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
 namespace {
+
+    constexpr int VALID_PIXEL = 255;
+    constexpr int TILE_ID_A = 10;
+    constexpr int TILE_ID_B = 20;
+    constexpr int TILE_WIDTH = 8;
+    constexpr int TILE_HEIGHT = 6;
+    constexpr int CANVAS_WIDTH = 12;
+    constexpr int TERRITORY_WIDTH = 6;
+    constexpr double POSITION_X_A = -10.25;
+    constexpr double POSITION_X_B = -6.25;
+    constexpr double POSITION_Y = -5.75;
+    constexpr double SEAM_X = -5.25;
 
     cv::Mat rasterizeTerritory(const DataNs::TileTerritory& territory,
         const cv::Size& size) {
@@ -24,7 +40,7 @@ namespace {
             const std::vector<std::vector<cv::Point>> outline{
                 territory.polygons[polygonIndex]
             };
-            cv::fillPoly(polygonMask, outline, cv::Scalar(255));
+            cv::fillPoly(polygonMask, outline, cv::Scalar(VALID_PIXEL));
             if (!territory.holes[polygonIndex].empty())
                 cv::fillPoly(polygonMask, territory.holes[polygonIndex],
                     cv::Scalar(0));
@@ -35,26 +51,28 @@ namespace {
 
 }
 
+// Les positions négatives et fractionnaires vérifient le même changement
+// de repère que la fusion. Les identifiants diffèrent volontairement des indices.
 TEST(TerritoryBuilderTest, PreservesSeamlinesAndPartitionsTranslatedTiles) {
     DataNs::TileList tiles{
         std::make_shared<DataNs::TileClass>(
-            10, std::filesystem::path{}, std::filesystem::path{},
-            8, 6, CV_16UC3),
+            TILE_ID_A, std::filesystem::path{}, std::filesystem::path{},
+            TILE_WIDTH, TILE_HEIGHT, CV_16UC3),
         std::make_shared<DataNs::TileClass>(
-            20, std::filesystem::path{}, std::filesystem::path{},
-            8, 6, CV_16UC3)
+            TILE_ID_B, std::filesystem::path{}, std::filesystem::path{},
+            TILE_WIDTH, TILE_HEIGHT, CV_16UC3)
     };
     const std::vector<DataNs::TilePositionData> positions{
-        {"r00_c00", {-10.25, -5.75}, 0.0},
-        {"r00_c01", {-6.25, -5.75}, 0.0}
+        {"r00_c00", {POSITION_X_A, POSITION_Y}, 0.0},
+        {"r00_c01", {POSITION_X_B, POSITION_Y}, 0.0}
     };
 
     DataNs::Seamline seamline;
-    seamline.tileIdA = 10;
-    seamline.tileIdB = 20;
+    seamline.tileIdA = TILE_ID_A;
+    seamline.tileIdB = TILE_ID_B;
     seamline.direction = DataNs::Direction::Right;
-    for (int rowIndex = 0; rowIndex < 6; ++rowIndex)
-        seamline.points.emplace_back(-5.25, -5.75 + rowIndex);
+    for (int rowIndex = 0; rowIndex < TILE_HEIGHT; ++rowIndex)
+        seamline.points.emplace_back(SEAM_X, POSITION_Y + rowIndex);
 
     const DataNs::Seamlines seamlines{ seamline };
     const auto originalPoints = seamlines.front().points;
@@ -72,7 +90,7 @@ TEST(TerritoryBuilderTest, PreservesSeamlinesAndPartitionsTranslatedTiles) {
     EXPECT_EQ(territories[0].tileIndex, 0);
     EXPECT_EQ(territories[1].tileIndex, 1);
 
-    const cv::Size canvasSize(12, 6);
+    const cv::Size canvasSize(CANVAS_WIDTH, TILE_HEIGHT);
     const cv::Mat maskA = rasterizeTerritory(territories[0], canvasSize);
     const cv::Mat maskB = rasterizeTerritory(territories[1], canvasSize);
 
@@ -84,6 +102,6 @@ TEST(TerritoryBuilderTest, PreservesSeamlinesAndPartitionsTranslatedTiles) {
     cv::bitwise_or(maskA, maskB, coverage);
     EXPECT_EQ(cv::countNonZero(coverage), canvasSize.area());
 
-    EXPECT_EQ(cv::countNonZero(maskA), 6 * 6);
-    EXPECT_EQ(cv::countNonZero(maskB), 6 * 6);
+    EXPECT_EQ(cv::countNonZero(maskA), TERRITORY_WIDTH * TILE_HEIGHT);
+    EXPECT_EQ(cv::countNonZero(maskB), TERRITORY_WIDTH * TILE_HEIGHT);
 }

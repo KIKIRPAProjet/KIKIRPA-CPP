@@ -1,10 +1,14 @@
 // src/backend/algorithms/seamline/dynamic_programming_dijkstra/territory_builder.cpp
 #include "algorithms/seamline/dynamic_programming_dijkstra/territory_builder.h"
 
+#include "core/data/algorithm_types.h"
 #include "core/data/mosaic_corners.h"
+#include "core/data/tile.h"
 
-#include <opencv2/core.hpp>
 #include <opencv2/core/fast_math.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -13,6 +17,7 @@
 #include <cstddef>
 #include <limits>
 #include <map>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -72,31 +77,31 @@ namespace DynamicProgrammingDijkstraNs {
             return true;
         }
 
-        bool buildGeometry(const TerritoryInput& input,
-            TerritoryGeometry& geometry,
-            std::string& error) {
+        std::vector<cv::Point2d> collectPositions(const TerritoryInput& input) {
             std::vector<cv::Point2d> positions;
+            positions.reserve(input.positions.size());
             for (const auto& position : input.positions)
                 positions.push_back(position.position);
+            return positions;
+        }
 
-            const auto minimumX = std::min_element(
-                positions.begin(), positions.end(),
-                [](const cv::Point2d& first, const cv::Point2d& second) {
-                    return first.x < second.x;
-                });
-            const auto minimumY = std::min_element(
-                positions.begin(), positions.end(),
-                [](const cv::Point2d& first, const cv::Point2d& second) {
-                    return first.y < second.y;
-                });
+        cv::Point2d findMinimumPosition(const std::vector<cv::Point2d>& positions) {
+            cv::Point2d minimum = positions.front();
+            for (const cv::Point2d& position : positions) {
+                minimum.x = std::min(minimum.x, position.x);
+                minimum.y = std::min(minimum.y, position.y);
+            }
+            return minimum;
+        }
 
-            for (std::size_t tileIndex = 0;
-                tileIndex < input.tiles.size(); ++tileIndex) {
+        // Contrôle les bornes avant cvRound et les additions entières des rectangles.
+        bool validateDimensions(const TerritoryInput& input, std::string& error) {
+            const cv::Point2d minimum = findMinimumPosition(collectPositions(input));
+            for (std::size_t tileIndex = 0; tileIndex < input.tiles.size(); ++tileIndex) {
                 const DataNs::Level& level = input.tiles[tileIndex]->getLevel(0);
-                const double right = positions[tileIndex].x - minimumX->x +
-                    level.width;
-                const double bottom = positions[tileIndex].y - minimumY->y +
-                    level.height;
+                const cv::Point2d offset = input.positions[tileIndex].position - minimum;
+                const double right = offset.x + level.width;
+                const double bottom = offset.y + level.height;
                 if (!std::isfinite(right) || !std::isfinite(bottom) ||
                     right > std::numeric_limits<int>::max() - 1.0 ||
                     bottom > std::numeric_limits<int>::max() - 1.0) {
@@ -104,25 +109,32 @@ namespace DynamicProgrammingDijkstraNs {
                     return false;
                 }
             }
+            return true;
+        }
 
+        // La fusion soustrait le minimum avant d'arrondir : arrondir les positions
+        // absolues séparément pourrait décaler les territoires d'un pixel.
+        bool buildGeometry(const TerritoryInput& input, TerritoryGeometry& geometry,
+            std::string& error) {
+            if (!validateDimensions(input, error)) return false;
             const std::vector<cv::Point> corners =
-                DataNs::computeMosaicCorners(positions);
-            for (std::size_t tileIndex = 0;
-                tileIndex < input.tiles.size(); ++tileIndex) {
+                DataNs::computeMosaicCorners(collectPositions(input));
+            geometry.tileRects.reserve(input.tiles.size());
+            for (std::size_t tileIndex = 0; tileIndex < input.tiles.size(); ++tileIndex) {
                 const DataNs::Level& level = input.tiles[tileIndex]->getLevel(0);
-                const cv::Rect rectangle(corners[tileIndex],
-                    cv::Size(level.width, level.height));
+                const cv::Rect rectangle(corners[tileIndex], cv::Size(level.width, level.height));
                 geometry.tileRects.push_back(rectangle);
-                geometry.canvasSize.width =
-                    std::max(geometry.canvasSize.width, rectangle.br().x);
-                geometry.canvasSize.height =
-                    std::max(geometry.canvasSize.height, rectangle.br().y);
+                geometry.canvasSize.width = std::max(geometry.canvasSize.width, rectangle.br().x);
+                geometry.canvasSize.height = std::max(geometry.canvasSize.height, rectangle.br().y);
             }
             return true;
         }
 
         // Le chemin reste complet : Dijkstra peut visiter plusieurs pixels
         // d'une même ligne. Une seule abscisse par ligne perdrait cette géométrie.
+        // Le chemin est orienté du haut vers le bas (Right), ou de gauche à droite
+        // après détransposition (Bottom). Le fermer vers le bord gauche ou haut
+        // décrit le côté A ; le complément dans le recouvrement décrit le côté B.
         void closePolygon(const DataNs::Seamline& seamline, PairCut& cut) {
             const cv::Point first = cut.polygonA.front();
             const cv::Point last = cut.polygonA.back();
@@ -145,76 +157,79 @@ namespace DynamicProgrammingDijkstraNs {
             }
         }
 
-        bool buildPairCut(const TerritoryInput& input,
-            const TerritoryGeometry& geometry,
-            const DataNs::Seamline& seamline,
-            PairCut& cut,
-            std::string& error) {
-            for (std::size_t tileIndex = 0;
-                tileIndex < input.tiles.size(); ++tileIndex) {
-                const int tileId = input.tiles[tileIndex]->getId();
-                if (tileId == seamline.tileIdA)
-                    cut.tileIndexA = static_cast<int>(tileIndex);
-                if (tileId == seamline.tileIdB)
-                    cut.tileIndexB = static_cast<int>(tileIndex);
-            }
+        struct PairCutInput {
+            const DataNs::Seamline& seamline;
+            const cv::Rect& rectangleA;
+            cv::Point2d positionA;
+        };
 
-            const cv::Rect& rectangleA = geometry.tileRects[cut.tileIndexA];
-            cut.overlap = rectangleA & geometry.tileRects[cut.tileIndexB];
+        // Préserve chaque point du chemin, puis le replace relativement au coin
+        // entier de A : la seamline d'origine conserve son repère absolu.
+        bool appendPath(const PairCutInput& input, PairCut& cut, std::string& error) {
+            cut.polygonA.reserve(input.seamline.points.size() + 4);
+            for (const cv::Point2d& point : input.seamline.points) {
+                const cv::Point2d localPoint = point - input.positionA;
+                if (!std::isfinite(localPoint.x) || !std::isfinite(localPoint.y) ||
+                    localPoint.x < 0.0 || localPoint.y < 0.0 ||
+                    localPoint.x >= input.rectangleA.width || localPoint.y >= input.rectangleA.height) {
+                    error = "territories: seamline point is outside tile A";
+                    return false;
+                }
+                cut.polygonA.emplace_back(input.rectangleA.x + cvRound(localPoint.x),
+                    input.rectangleA.y + cvRound(localPoint.y));
+            }
+            return true;
+        }
+
+        bool buildPairCut(const PairCutInput& input, PairCut& cut, std::string& error) {
             if (cut.overlap.empty()) {
                 error = "territories: seamline tiles do not overlap";
                 return false;
             }
-
-            const cv::Point2d positionA =
-                input.positions[cut.tileIndexA].position;
-            for (const cv::Point2d& point : seamline.points) {
-                // Même arrondi du coin de tuile que FusionStep.
-                const cv::Point2d localPoint = point - positionA;
-                if (!std::isfinite(localPoint.x) ||
-                    !std::isfinite(localPoint.y) ||
-                    localPoint.x < 0.0 || localPoint.y < 0.0 ||
-                    localPoint.x >= rectangleA.width ||
-                    localPoint.y >= rectangleA.height) {
-                    error = "territories: seamline point is outside tile A";
-                    return false;
-                }
-                cut.polygonA.emplace_back(
-                    rectangleA.x + cvRound(localPoint.x),
-                    rectangleA.y + cvRound(localPoint.y));
-            }
-            closePolygon(seamline, cut);
+            if (!appendPath(input, cut, error)) return false;
+            closePolygon(input.seamline, cut);
             return true;
         }
 
-        bool buildPairCuts(const TerritoryInput& input,
-            const TerritoryGeometry& geometry,
-            PairCuts& cuts,
-            std::string& error) {
-            std::map<int, int> tileIndexById;
-            for (std::size_t tileIndex = 0;
-                tileIndex < input.tiles.size(); ++tileIndex)
-                tileIndexById.emplace(input.tiles[tileIndex]->getId(),
-                    static_cast<int>(tileIndex));
+        using TileIndexById = std::map<int, int>;
 
+        TileIndexById indexTileIds(const DataNs::TileList& tiles) {
+            TileIndexById tileIndexById;
+            for (std::size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex)
+                tileIndexById.emplace(tiles[tileIndex]->getId(), static_cast<int>(tileIndex));
+            return tileIndexById;
+        }
+
+        // Les identifiants des coutures ne sont pas les indices attendus par fusion.
+        bool findPairIndices(const DataNs::Seamline& seamline,
+            const TileIndexById& tileIndexById, PairCut& cut) {
+            const auto entryA = tileIndexById.find(seamline.tileIdA);
+            const auto entryB = tileIndexById.find(seamline.tileIdB);
+            if (entryA == tileIndexById.end() || entryB == tileIndexById.end() ||
+                entryA->second == entryB->second || seamline.points.empty() ||
+                (seamline.direction != DataNs::Direction::Right &&
+                    seamline.direction != DataNs::Direction::Bottom))
+                return false;
+            cut.tileIndexA = entryA->second;
+            cut.tileIndexB = entryB->second;
+            return true;
+        }
+
+        bool buildPairCuts(const TerritoryInput& input, const TerritoryGeometry& geometry,
+            PairCuts& cuts, std::string& error) {
+            const TileIndexById tileIndexById = indexTileIds(input.tiles);
             for (const DataNs::Seamline& seamline : input.seamlines) {
-                const auto entryA = tileIndexById.find(seamline.tileIdA);
-                const auto entryB = tileIndexById.find(seamline.tileIdB);
-                if (entryA == tileIndexById.end() ||
-                    entryB == tileIndexById.end() ||
-                    entryA->second == entryB->second ||
-                    seamline.points.empty() ||
-                    (seamline.direction != DataNs::Direction::Right &&
-                        seamline.direction != DataNs::Direction::Bottom)) {
+                PairCut cut;
+                if (!findPairIndices(seamline, tileIndexById, cut)) {
                     error = "territories: invalid seamline";
                     return false;
                 }
-
-                PairCut cut;
-                if (!buildPairCut(input, geometry, seamline, cut, error))
-                    return false;
-                const TilePair key =
-                    buildPairKey(cut.tileIndexA, cut.tileIndexB);
+                const cv::Rect& rectangleA = geometry.tileRects[cut.tileIndexA];
+                cut.overlap = rectangleA & geometry.tileRects[cut.tileIndexB];
+                const PairCutInput pairInput{ seamline, rectangleA,
+                                             input.positions[cut.tileIndexA].position };
+                if (!buildPairCut(pairInput, cut, error)) return false;
+                const TilePair key = buildPairKey(cut.tileIndexA, cut.tileIndexB);
                 if (!cuts.emplace(key, std::move(cut)).second) {
                     error = "territories: duplicate seamline for tile pair";
                     return false;
@@ -223,6 +238,8 @@ namespace DynamicProgrammingDijkstraNs {
             return true;
         }
 
+        // Le décalage rasterise uniquement le bloc demandé, sans masque pleine
+        // mosaïque. fillPoly inclut les pixels du chemin dans le côté A.
         cv::Mat rasterizeSideA(const PairCut& cut, const cv::Rect& area) {
             cv::Mat mask = cv::Mat::zeros(area.size(), CV_8UC1);
             const std::vector<std::vector<cv::Point>> polygons{ cut.polygonA };
@@ -231,36 +248,36 @@ namespace DynamicProgrammingDijkstraNs {
             return mask;
         }
 
+        // Une paire ne peut retirer un pixel qu'à son autre tuile. Un propriétaire
+        // tiers reste inchangé : cela évite de réattribuer des pixels hors de la paire.
         void applyPairCut(cv::Mat& owners, const cv::Rect& block,
             const PairCut& cut, int candidateIndex) {
             const cv::Rect area = block & cut.overlap;
             if (area.empty()) return;
 
             const cv::Mat sideA = rasterizeSideA(cut, area);
-            cv::Mat areaOwners = owners(cv::Rect(area.tl() - block.tl(),
-                area.size()));
+            cv::Mat areaOwners = owners(cv::Rect(area.tl() - block.tl(), area.size()));
             const int previousIndex = candidateIndex == cut.tileIndexA ?
                 cut.tileIndexB : cut.tileIndexA;
 
             for (int rowIndex = 0; rowIndex < area.height; ++rowIndex) {
                 int* ownerRow = areaOwners.ptr<int>(rowIndex);
-                const unsigned char* sideRow =
-                    sideA.ptr<unsigned char>(rowIndex);
-                for (int columnIndex = 0;
-                    columnIndex < area.width; ++columnIndex) {
+                const unsigned char* sideRow = sideA.ptr<unsigned char>(rowIndex);
+                for (int columnIndex = 0; columnIndex < area.width; ++columnIndex) {
                     const bool candidateWins =
                         (sideRow[columnIndex] != 0) ==
                         (candidateIndex == cut.tileIndexA);
-                    if (ownerRow[columnIndex] == previousIndex &&
-                        candidateWins)
+                    if (ownerRow[columnIndex] == previousIndex && candidateWins)
                         ownerRow[columnIndex] = candidateIndex;
                 }
             }
         }
 
+        // Une case contient un seul propriétaire. Les tuiles remplissent d'abord
+        // les cases libres, puis leurs coutures peuvent remplacer un propriétaire
+        // précédent. Sans couture entre les deux, la première tuile reste prioritaire.
         cv::Mat buildBlockOwners(const TerritoryGeometry& geometry,
-            const PairCuts& cuts,
-            const cv::Rect& block) {
+            const PairCuts& cuts, const cv::Rect& block) {
             cv::Mat owners(block.size(), CV_32SC1, cv::Scalar(NO_TILE));
             for (std::size_t tileIndex = 0;
                 tileIndex < geometry.tileRects.size(); ++tileIndex) {
@@ -268,8 +285,7 @@ namespace DynamicProgrammingDijkstraNs {
                 if (area.empty()) continue;
 
                 const int candidateIndex = static_cast<int>(tileIndex);
-                cv::Mat areaOwners = owners(cv::Rect(area.tl() - block.tl(),
-                    area.size()));
+                cv::Mat areaOwners = owners(cv::Rect(area.tl() - block.tl(), area.size()));
                 areaOwners.setTo(candidateIndex, areaOwners == NO_TILE);
 
                 for (std::size_t previousIndex = 0;
@@ -283,6 +299,8 @@ namespace DynamicProgrammingDijkstraNs {
             return owners;
         }
 
+        // RETR_CCOMP rattache les trous à leur contour extérieur. Aucun filtre
+        // d'aire : supprimer un petit contour ferait perdre des pixels à la fusion.
         void appendPolygons(const cv::Mat& mask, const cv::Point& origin,
             DataNs::TileTerritory& territory) {
             std::vector<std::vector<cv::Point>> contours;
@@ -317,42 +335,46 @@ namespace DynamicProgrammingDijkstraNs {
             }
         }
 
+        // Les blocs ne partagent aucun pixel. Leurs polygones restent séparés,
+        // même pour une même tuile ; leur union reconstitue son territoire.
+        void buildAllBlocks(const TerritoryGeometry& geometry, const PairCuts& cuts,
+            std::vector<DataNs::TileTerritory>& territories) {
+            int blockTop = 0;
+            while (blockTop < geometry.canvasSize.height) {
+                const int blockHeight = std::min(
+                    DataNs::BLOCK_SIZE, geometry.canvasSize.height - blockTop);
+                int blockLeft = 0;
+                while (blockLeft < geometry.canvasSize.width) {
+                    const int blockWidth = std::min(
+                        DataNs::BLOCK_SIZE, geometry.canvasSize.width - blockLeft);
+                    const cv::Rect block(blockLeft, blockTop, blockWidth, blockHeight);
+                    const cv::Mat owners = buildBlockOwners(geometry, cuts, block);
+                    appendBlockTerritories(geometry, owners, block, territories);
+                    blockLeft += blockWidth;
+                }
+                blockTop += blockHeight;
+            }
+        }
+
     }
 
+    // Valide toute la géométrie avant de construire les masques. Seuls les
+    // polygones finaux persistent ; les cartes de propriétaires restent par bloc.
     bool buildTerritories(const TerritoryInput& input,
         std::vector<DataNs::TileTerritory>& territories,
         std::string& error) {
         territories.clear();
         error.clear();
         if (!validateInput(input, error)) return false;
-
         TerritoryGeometry geometry;
         PairCuts cuts;
         if (!buildGeometry(input, geometry, error) ||
             !buildPairCuts(input, geometry, cuts, error))
             return false;
-
         territories.resize(input.tiles.size());
-        for (std::size_t tileIndex = 0;
-            tileIndex < territories.size(); ++tileIndex)
+        for (std::size_t tileIndex = 0; tileIndex < territories.size(); ++tileIndex)
             territories[tileIndex].tileIndex = static_cast<int>(tileIndex);
-
-        int blockTop = 0;
-        while (blockTop < geometry.canvasSize.height) {
-            const int blockHeight = std::min(
-                DataNs::BLOCK_SIZE, geometry.canvasSize.height - blockTop);
-            int blockLeft = 0;
-            while (blockLeft < geometry.canvasSize.width) {
-                const int blockWidth = std::min(
-                    DataNs::BLOCK_SIZE, geometry.canvasSize.width - blockLeft);
-                const cv::Rect block(blockLeft, blockTop,
-                    blockWidth, blockHeight);
-                const cv::Mat owners = buildBlockOwners(geometry, cuts, block);
-                appendBlockTerritories(geometry, owners, block, territories);
-                blockLeft += blockWidth;
-            }
-            blockTop += blockHeight;
-        }
+        buildAllBlocks(geometry, cuts, territories);
         return true;
     }
 
