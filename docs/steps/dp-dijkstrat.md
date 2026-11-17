@@ -16,6 +16,7 @@ Le step est enregistré sous le nom `dynamic-programming-dijkstra` dans `pipelin
 | Entrée | `std::vector<DataNs::TilePositionData>` | `Positions` | `positions` |
 | Entrée | `DataNs::IntensityCorrection` | `IntensityCorrection` | `intensityCorrection` |
 | Sortie | `DataNs::Seamlines` (`std::vector<DataNs::Seamline>`) | `Seamlines` | `seamlines` |
+| Sortie | `std::vector<DataNs::TileTerritory>` | `Territories` | `territories` |
 
 Les paramètres sont facultatifs dans le script : en leur absence, les valeurs par défaut du step sont conservées.
 
