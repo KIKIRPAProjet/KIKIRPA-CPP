@@ -197,14 +197,15 @@ namespace PipelineNs {
     void PipelineClass::restoreOutputCheckpoints(
         size_t& startIndex, const CheckpointNs::CheckpointClass& checkpoint,
         const Logger& log) {
-        std::map<std::string, CheckpointProducer> latestOutputByKey;
-        for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex) {
-            const ConfigNs::StepConfig stepConfig =
-                steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>();
-            for (const ConfigNs::DataSlot& output : stepConfig.outputs)
-                latestOutputByKey[output.key] = {stepIndex, output};
-        }
         while (true) {
+            // Après un recul, seuls les producteurs précédant le nouveau point de reprise restent valides.
+            std::map<std::string, CheckpointProducer> latestOutputByKey;
+            for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex) {
+                const ConfigNs::StepConfig stepConfig =
+                    steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>();
+                for (const ConfigNs::DataSlot& output : stepConfig.outputs)
+                    latestOutputByKey[output.key] = {stepIndex, output};
+            }
             dataStore = StepNs::DataStoreClass();
             const OutputRestoreContext context{steps, checkpoint, dataStore, log};
             const std::optional<size_t> brokenStep =

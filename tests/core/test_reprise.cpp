@@ -394,6 +394,36 @@ TEST_F(Reprise, SansCheckpoint) { testerSansCheckpoint(); }
 TEST_F(Reprise, EchecPuisReprise) { testerEchecPuisReprise(dossier); }
 TEST_F(Reprise, Pause) { testerPause(dossier); }
 TEST_F(Reprise, CheckpointCorrompu) { testerCheckpointCorrompu(dossier); }
+TEST_F(Reprise, CheckpointSupprimeApresValidation) {
+    Banc b(dossier);
+    ASSERT_TRUE(b.lancer());
+    int outputReads = 0;
+    int failures = 0;
+    // La première lecture valide y ; la seconde simule sa disparition avant restauration.
+    CheckpointNs::CheckpointClass::registerType(
+        "Compteur",
+        [](const StepNs::DataStoreClass& data, const std::string& key, const fs::path& directory) {
+            std::ofstream(directory / (key + ".txt")) << data.get<int>(key);
+        },
+        [&outputReads](StepNs::DataStoreClass& data, const std::string& key, const fs::path& directory) {
+            if (key == "y" && ++outputReads == 2)
+                fs::remove(directory / (key + ".txt"));
+            std::ifstream input(directory / (key + ".txt"));
+            int value = 0;
+            if (!(input >> value)) throw std::runtime_error("lecture impossible");
+            data.replace(key, value);
+        });
+    // Borne les tentatives pour que l'ancienne boucle échoue sans bloquer la suite de tests.
+    EXPECT_NO_THROW(EXPECT_TRUE(b.p.run([&failures](const std::string& message) {
+        if (message.find("is unreadable") != std::string::npos && ++failures > 2)
+            throw std::runtime_error("restauration répétée d'un checkpoint supprimé");
+    })));
+    EXPECT_EQ(failures, 1);
+    EXPECT_EQ(b.execA, 1);
+    EXPECT_EQ(b.execB, 2);
+    EXPECT_EQ(b.y(), VALEUR_A + VALEUR_B);
+    declarerCompteur();
+}
 TEST_F(Reprise, Script) { testerScript(dossier); }
 TEST_F(Reprise, TypesDuPipeline) { testerTypesDuPipeline(dossier); }
 
