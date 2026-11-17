@@ -22,6 +22,51 @@ constexpr qreal kArrowLength = 16.0;
 constexpr qreal kArrowAngleDegrees = 28.0;
 }
 
+void ArtworkCanvas::drawEmptyState(QPainter &p)
+{
+    const QRect card = emptyImportCardRect();
+
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    const QColor bgColor = m_emptyCardHovered ? QColor("#3e4852") : QColor("#3a3a3a");
+    const QColor borderColor = m_emptyCardHovered ? QColor("#4b9bea") : QColor("#6d6d6d");
+    p.setBrush(bgColor);
+    p.setPen(QPen(borderColor, 1.5, Qt::DashLine));
+    p.drawRoundedRect(card, 10, 10);
+
+    const int circleSize = 48;
+    const QRect circleRect(card.center().x() - circleSize / 2,
+                           card.top() + 34, circleSize, circleSize);
+    p.setPen(Qt::NoPen);
+    p.setBrush(m_emptyCardHovered ? QColor("#4b91cd") : QColor("#397fb8"));
+    p.drawEllipse(circleRect);
+
+    p.setPen(QPen(Qt::white, 2.6, Qt::SolidLine, Qt::RoundCap));
+    const QPoint c = circleRect.center();
+    p.drawLine(QPoint(c.x() - 10, c.y()), QPoint(c.x() + 10, c.y()));
+    p.drawLine(QPoint(c.x(), c.y() - 10), QPoint(c.x(), c.y() + 10));
+
+    QFont titleFont = p.font();
+    titleFont.setPointSize(titleFont.pointSize() + 1);
+    titleFont.setBold(true);
+    p.setFont(titleFont);
+    p.setPen(QColor("#ececec"));
+    p.drawText(QRect(card.left() + 16, circleRect.bottom() + 16, card.width() - 32, 24),
+               Qt::AlignCenter, tr("Ajouter des images"));
+
+    QFont subFont = p.font();
+    subFont.setBold(false);
+    subFont.setPointSize(qMax(8, subFont.pointSize() - 1));
+    p.setFont(subFont);
+    p.setPen(QColor("#aaaaaa"));
+    p.drawText(QRect(card.left() + 18, circleRect.bottom() + 42, card.width() - 36, 36),
+               Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
+               tr("Cliquez ici pour importer un dossier de tuiles"));
+
+    p.restore();
+}
+
 void ArtworkCanvas::drawGrid(QPainter &p)
 {
     const int rows = qMax(1, gridRows);
@@ -107,8 +152,12 @@ void ArtworkCanvas::drawGrid(QPainter &p)
                        tile.empty ? tr("CASE VIDE") : tr("Déposer une tuile ici"));
         }
 
-        p.setPen(QPen(index == selectedGridCell ? QColor("#4b9bea") : QColor("#e8c638"),
-                      index == selectedGridCell ? 3 : 1, Qt::DashLine));
+        const bool isDragTarget = (dragStartCell >= 0 && index == dragTargetCell && index != dragStartCell);
+        if (isDragTarget)
+            p.fillRect(cell, QColor(75, 155, 234, 55));
+
+        p.setPen(QPen((index == selectedGridCell || isDragTarget) ? QColor("#4b9bea") : QColor("#e8c638"),
+                      (index == selectedGridCell || isDragTarget) ? 3 : 1, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
         p.drawRect(cell.adjusted(1, 1, -2, -2));
         p.setPen(Qt::NoPen);

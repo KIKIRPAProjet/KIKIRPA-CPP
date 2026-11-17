@@ -29,6 +29,7 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QDialogButtonBox>
+#include <QKeySequence>
 #include <QSignalBlocker>
 
 AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *parent)
@@ -110,6 +111,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
 
     auto *addPointButton = FrontendUtils::makeButton(tr("Ajouter un point P"), this);
     auto *deletePointButton = FrontendUtils::makeButton(tr("Supprimer Suppr"), this);
+    deletePointButton->setShortcut(QKeySequence::Delete);
     auto *adjustButton = FrontendUtils::makeButton(tr("Saisir un décalage…"), this);
     m_validateButton = FrontendUtils::makeButton(tr("Valider la paire"), this);
 
@@ -120,6 +122,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     mainLayout->addLayout(actionsGrid);
 
     auto *recalcButton = FrontendUtils::makeButton(tr("↻ Recalculer les positions F7"), this, true);
+    recalcButton->setShortcut(QKeySequence(Qt::Key_F7));
     mainLayout->addWidget(recalcButton);
 
     auto *separatorBottom = new QFrame(this);
@@ -180,7 +183,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
         m_mainWindow->requestRun(4);
     });
 
-    setPairs(FrontendUtils::defaultPairAlignments(), 0);
+    setPairs({}, 0);
 }
 
 // enregistre la liste des paires et l'index de la paire active 
@@ -195,6 +198,20 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
     rebuildPairSelector();
     if (!m_pairs.isEmpty()) {
         setCurrentPair(m_pairs.at(m_currentPairIndex));
+    } else {
+        if (m_pairTitleLabel)
+            m_pairTitleLabel->setText(tr("Aucune paire calculée"));
+        if (m_statusBadgeLabel) {
+            m_statusBadgeLabel->setText(tr("—"));
+            m_statusBadgeLabel->setStyleSheet(QStringLiteral(
+                "background:#3a3a3a; color:#aaaaaa; border-radius:3px; padding:2px 8px;"));
+        }
+        if (m_reasonValueLabel) m_reasonValueLabel->setText(QStringLiteral("—"));
+        if (m_confidenceValueLabel) m_confidenceValueLabel->setText(QStringLiteral("—"));
+        if (m_offsetValueLabel) m_offsetValueLabel->setText(QStringLiteral("—"));
+        if (m_pointsShownValueLabel) m_pointsShownValueLabel->setText(QStringLiteral("—"));
+        if (m_errorValueLabel) m_errorValueLabel->setText(QStringLiteral("—"));
+        if (m_interventionValueLabel) m_interventionValueLabel->setText(QStringLiteral("—"));
     }
 }
 

@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QObject>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QVBoxLayout>
 
@@ -63,9 +65,50 @@ HomePage::HomePage(QWidget *parent)
     auto *open = FrontendUtils::makeButton(tr("Importer un projet…"), side);
     sideLayout->addWidget(open);
     sideLayout->addStretch();
-    sideLayout->addWidget(FrontendUtils::mutedLabel(
-        tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
+    auto *footerRow = new QHBoxLayout;
+    footerRow->setContentsMargins(0, 0, 0, 0);
+    footerRow->setSpacing(6);
+    auto makeFooterLink = [side](const QString &text) {
+        auto *btn = new QPushButton(text, side);
+        btn->setFlat(true);
+        btn->setCursor(Qt::PointingHandCursor);
+        btn->setStyleSheet(QStringLiteral(
+            "QPushButton { background:transparent; border:0; color:#8fa8c2; padding:2px 0; text-align:left; }"
+            "QPushButton:hover { color:#ffffff; text-decoration:underline; }"));
+        return btn;
+    };
+    auto *shortcutsBtn = makeFooterLink(tr("Raccourcis clavier"));
+    auto *aboutBtn = makeFooterLink(tr("À propos"));
+    footerRow->addWidget(shortcutsBtn);
+    footerRow->addWidget(FrontendUtils::mutedLabel(QStringLiteral("·"), side));
+    footerRow->addWidget(aboutBtn);
+    footerRow->addStretch();
+    sideLayout->addLayout(footerRow);
     layout->addWidget(side);
+
+    connect(shortcutsBtn, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(this, tr("Raccourcis clavier"),
+            tr("<b>Projets & fichiers</b><br>"
+               "Ctrl+N : Nouveau projet<br>"
+               "Ctrl+O : Ouvrir un projet<br>"
+               "Ctrl+I : Importer un dossier de photos<br>"
+               "Ctrl+S : Enregistrer<br>"
+               "Ctrl+E : Exporter / rapport<br><br>"
+               "<b>Navigation & vue</b><br>"
+               "Tab : Afficher / masquer les panneaux<br>"
+               "Ctrl++ / Ctrl+- / Molette : Zoom<br>"
+               "Ctrl+0 : Ajuster à la fenêtre<br><br>"
+               "<b>Outils & pipeline</b><br>"
+               "H, Z, V, B, E, L, M, P, I : Outils du canevas<br>"
+               "N : Paire douteuse suivante<br>"
+               "Suppr : Supprimer le point sélectionné<br>"
+               "F5 : Tout lancer · F7 : Recalculer les positions"));
+    });
+    connect(aboutBtn, &QPushButton::clicked, this, [this]() {
+        QMessageBox::about(this, tr("À propos"),
+            tr("KIK-IRPA Assemblage\n"
+               "Assemblage de tuiles haute résolution de peintures planes."));
+    });
 
     auto *recentArea = new QWidget(this);
     auto *recentLayout = new QVBoxLayout(recentArea);
@@ -73,11 +116,18 @@ HomePage::HomePage(QWidget *parent)
     recentLayout->addWidget(new QLabel(tr("Projets récents"), recentArea));
     recentEmptyLabel = FrontendUtils::mutedLabel(tr("Aucun projet récent."), recentArea);
     recentLayout->addWidget(recentEmptyLabel);
-    auto *cardsContainer = new QWidget(recentArea);
+
+    auto *cardsScroll = new QScrollArea(recentArea);
+    cardsScroll->setWidgetResizable(true);
+    cardsScroll->setFrameShape(QFrame::NoFrame);
+    cardsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    cardsScroll->setMinimumHeight(130);
+    auto *cardsContainer = new QWidget(cardsScroll);
     recentCardsLayout = new QHBoxLayout(cardsContainer);
     recentCardsLayout->setContentsMargins(0, 0, 0, 0);
     recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    recentLayout->addWidget(cardsContainer);
+    cardsScroll->setWidget(cardsContainer);
+    recentLayout->addWidget(cardsScroll);
     recentLayout->addStretch();
     layout->addWidget(recentArea, 1);
 

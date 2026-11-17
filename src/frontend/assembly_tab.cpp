@@ -28,6 +28,8 @@ void AssemblyTab::setupStepList(QVBoxLayout *layout)
     for (std::size_t i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem(QStringLiteral("•  ") + steps[i].displayName, m_stepList);
         item->setData(Qt::UserRole, static_cast<int>(i + 1));
+        item->setToolTip(tr("Double-cliquez pour relancer le pipeline à partir de « %1 »")
+                             .arg(steps[i].displayName));
     }
     layout->addWidget(m_stepList);
 
@@ -39,8 +41,20 @@ void AssemblyTab::setupStepList(QVBoxLayout *layout)
 
 void AssemblyTab::setupActionControls(QVBoxLayout *layout)
 {
-    auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), this);
+    auto *relaunch = FrontendUtils::makeButton(tr("Sélectionnez une étape à relancer"), this);
+    relaunch->setEnabled(false);
     layout->addWidget(relaunch);
+
+    connect(m_stepList, &QListWidget::currentRowChanged, this, [this, relaunch](int row) {
+        if (row < 0 || !m_stepList->item(row)) {
+            relaunch->setEnabled(false);
+            relaunch->setText(tr("Sélectionnez une étape à relancer"));
+            return;
+        }
+        const QString stepName = m_stepList->item(row)->text().remove(QStringLiteral("•  "));
+        relaunch->setEnabled(true);
+        relaunch->setText(tr("Relancer depuis : %1").arg(stepName));
+    });
 
     // Relance le pipeline à partir de l'étape sélectionnée en exploitant les checkpoints existants.
     connect(relaunch, &QPushButton::clicked, this, [this]() {

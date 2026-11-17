@@ -44,23 +44,34 @@ void WorkspaceCenter::createProjectMode()
     m_projectNameEdit->setObjectName(QStringLiteral("projectNameEdit"));
 
     auto *renameProject = FrontendUtils::makeButton(tr("Renommer"), m_projectInfoPanel);
+    renameProject->setEnabled(false);
     auto *projectNameRow = new QHBoxLayout;
     projectNameRow->addWidget(m_projectNameEdit, 1);
     projectNameRow->addWidget(renameProject);
     projectNameForm->addRow(tr("Nom du projet"), projectNameRow);
 
-    connect(renameProject, &QPushButton::clicked, this, [this]() {
+    auto performRename = [this, renameProject]() {
         const QString newName = m_projectNameEdit->text().trimmed();
         if (newName.isEmpty()) {
             QMessageBox::warning(m_mainWindow, tr("Nom invalide"),
                 tr("Le nom du projet ne peut pas être vide."));
             return;
         }
+        if (newName == m_mainWindow->projectName)
+            return;
         m_mainWindow->projectName = newName;
         m_mainWindow->refreshProjectInfo();
         m_mainWindow->updateStatus(
             tr("Projet renommé : %1").arg(m_mainWindow->projectName));
+        renameProject->setEnabled(false);
+    };
+
+    connect(m_projectNameEdit, &QLineEdit::textChanged, this, [this, renameProject](const QString &text) {
+        const QString trimmed = text.trimmed();
+        renameProject->setEnabled(!trimmed.isEmpty() && trimmed != m_mainWindow->projectName);
     });
+    connect(m_projectNameEdit, &QLineEdit::returnPressed, this, performRename);
+    connect(renameProject, &QPushButton::clicked, this, performRename);
 
     projectInfoLayout->addLayout(projectNameForm);
 
@@ -86,16 +97,21 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->setContentsMargins(8, 3, 8, 3);
     
     auto *minus = FrontendUtils::makeButton(QStringLiteral("−"), canvasControls);
+    minus->setToolTip(tr("Zoom arrière (Ctrl+-)"));
     auto *plus = FrontendUtils::makeButton(QStringLiteral("+"), canvasControls);
+    plus->setToolTip(tr("Zoom avant (Ctrl++)"));
     
     m_zoomLabel = new QLabel(QStringLiteral("100 %"));
     m_zoomLabel->setMinimumWidth(48);
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
+    fit->setToolTip(tr("Ajuster à la fenêtre (Ctrl+0)"));
     auto *oneToOne = FrontendUtils::makeButton(QStringLiteral("100 %"), canvasControls);
+    oneToOne->setToolTip(tr("Réinitialiser le zoom à 100 %"));
     auto *overlayDiff = FrontendUtils::makeButton(tr("Superposer (différence)"), canvasControls);
     overlayDiff->setCheckable(true);
     overlayDiff->setObjectName(QStringLiteral("pairOverlayButton"));
+    overlayDiff->setVisible(false);
 
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
@@ -106,29 +122,29 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addStretch();
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
-    connect(minus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::max(5, m_mainWindow->zoomPercent - 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
+    auto applyZoom = [this](int targetZoom) {
+        m_mainWindow->zoomPercent = qBound(5, targetZoom, 1600);
+        m_zoomLabel->setText(QStringLiteral("%1 %").arg(m_mainWindow->zoomPercent));
         m_canvas->setZoom(m_mainWindow->zoomPercent);
+    };
+
+    connect(minus, &QPushButton::clicked, this, [this, applyZoom]() {
+        applyZoom(m_mainWindow->zoomPercent - 10);
     });
-    connect(plus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::min(1600, m_mainWindow->zoomPercent + 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+    connect(plus, &QPushButton::clicked, this, [this, applyZoom]() {
+        applyZoom(m_mainWindow->zoomPercent + 10);
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
         m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(tr("Ajuster"));
+        m_zoomLabel->setText(QStringLiteral("100 %"));
         m_canvas->resetView();
     });
-    connect(oneToOne, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+    connect(oneToOne, &QPushButton::clicked, this, [applyZoom]() {
+        applyZoom(100);
     });
     connect(m_canvas, &ArtworkCanvas::zoomChanged, this, [this](int zoom) {
         m_mainWindow->zoomPercent = zoom;
-        m_zoomLabel->setText(QString::number(zoom) + QStringLiteral(" %"));
+        m_zoomLabel->setText(QStringLiteral("%1 %").arg(zoom));
     });
     connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
         m_canvas->setPairOverlayMode(checked);

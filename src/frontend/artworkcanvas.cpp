@@ -1,5 +1,6 @@
 #include "artworkcanvas.h"
 
+#include <QEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -28,10 +29,6 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
 {
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
-    const auto defaultPairs = FrontendUtils::defaultPairAlignments();
-    if (!defaultPairs.isEmpty()) {
-        currentPair = defaultPairs.first();
-    }
 }
 
 //enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
@@ -65,12 +62,39 @@ void ArtworkCanvas::setGridCallbacks(std::function<void(int)> selectionChanged,
     cellsSwappedCallback = std::move(cellsSwapped);
 }
 
+bool ArtworkCanvas::hasActiveImages() const
+{
+    if (!imagePaths.isEmpty())
+        return true;
+    for (const GridTile &tile : gridTiles) {
+        if (!tile.path.isEmpty())
+            return true;
+    }
+    return false;
+}
+
+QRect ArtworkCanvas::emptyImportCardRect() const
+{
+    const int cardW = qMin(340, qMax(220, width() - 48));
+    const int cardH = qMin(190, qMax(140, height() - 48));
+    return QRect((width() - cardW) / 2, (height() - cardH) / 2, cardW, cardH);
+}
+
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 {
+    if (!hasActiveImages()) {
+        if (event->button() == Qt::LeftButton && emptyImportCardRect().contains(event->pos())) {
+            emit importTilesRequested();
+            event->accept();
+            return;
+        }
+    }
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
         dragStartCell = gridCellAt(event->pos());
         if (dragStartCell >= 0) {
+            dragTargetCell = dragStartCell;
             selectedGridCell = dragStartCell;
+            setCursor(Qt::ClosedHandCursor);
             if (selectionChangedCallback)
                 selectionChangedCallback(selectedGridCell);
             update();
@@ -89,6 +113,28 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 }
 
 void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event){
+    if (!hasActiveImages()) {
+        const bool hovered = emptyImportCardRect().contains(event->pos());
+        if (hovered != m_emptyCardHovered) {
+            m_emptyCardHovered = hovered;
+            if (hovered)
+                setCursor(Qt::PointingHandCursor);
+            else
+                unsetCursor();
+            update();
+        }
+        event->accept();
+        return;
+    }
+    if (modeValue == kModeGrid && dragStartCell >= 0) {
+        const int hovered = gridCellAt(event->pos());
+        if (hovered != dragTargetCell) {
+            dragTargetCell = hovered;
+            update();
+        }
+        event->accept();
+        return;
+    }
     if(m_panning){
         m_panOffset += event->pos()-m_lastPanPos;
         m_lastPanPos = event->pos();
@@ -97,6 +143,16 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event){
         return;
     }
     QWidget::mouseMoveEvent(event);
+}
+
+void ArtworkCanvas::leaveEvent(QEvent *event)
+{
+    if (m_emptyCardHovered) {
+        m_emptyCardHovered = false;
+        unsetCursor();
+        update();
+    }
+    QWidget::leaveEvent(event);
 }
 
 void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
@@ -108,6 +164,8 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
                 cellsSwappedCallback(dragStartCell, targetCell);
         }
         dragStartCell = -1;
+        dragTargetCell = -1;
+        unsetCursor();
         event->accept();
         return;
     }
@@ -180,6 +238,11 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                    QString::number(zoomPercent) + QStringLiteral(" %"));
         return; // On arrête de dessiner ici
+    }
+
+    if (!hasActiveImages()) {
+        drawEmptyState(p);
+        return;
     }
 
     if (modeValue == kModeGrid) {

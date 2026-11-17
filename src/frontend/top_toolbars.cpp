@@ -100,11 +100,13 @@ void TopToolbars::createModesBar()
 
     auto *prevPairBtn = FrontendUtils::makeButton(tr("‹ Préc."), stages);
     prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
+    prevPairBtn->setVisible(false);
     stageLayout->addWidget(prevPairBtn);
     connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
 
     auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante N ›"), stages);
     nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
+    nextDubiousBtn->setVisible(false);
     stageLayout->addWidget(nextDubiousBtn);
     connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
 

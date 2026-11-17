@@ -31,9 +31,6 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     setMinimumHeight(80);
 
     m_journalList = new QListWidget(this);
-    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                             tr("14:10  4 tuiles importées"),
-                             tr("14:02  Projet ouvert")});
     addTab(m_journalList, tr("Journal"));
 
     m_pairsTable = new QTableWidget(0, 10, this);
@@ -43,30 +40,39 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
         tr("Points (inliers / total)"), tr("Erreur après optimisation"), tr("Correction")
     });
 
-    m_pairsTable->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    auto *header = m_pairsTable->horizontalHeader();
+    header->setSectionResizeMode(QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(0, QHeaderView::Stretch);
+    header->setSectionResizeMode(9, QHeaderView::Stretch);
+    if (auto *confHeader = m_pairsTable->horizontalHeaderItem(3))
+        confHeader->setToolTip(tr("Score de confiance moyen des correspondances (0 à 1)"));
+    if (auto *nccHeader = m_pairsTable->horizontalHeaderItem(4))
+        nccHeader->setToolTip(tr("Corrélation croisée normalisée sur la zone de recouvrement"));
+    m_pairsTable->setAlternatingRowColors(true);
+    m_pairsTable->setSortingEnabled(true);
     m_pairsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_pairsTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_pairsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_pairsTabIndex = addTab(m_pairsTable, tr("Paires"));
 
-    auto *positions = new QTableWidget(4, 3, this);
+    auto *positions = new QTableWidget(0, 3, this);
     positions->setHorizontalHeaderLabels({tr("Tuile"), tr("X"), tr("Y")});
-    for (int i = 0; i < 4; ++i) {
-        positions->setItem(i, 0, new QTableWidgetItem(QStringLiteral("r%1_c%2").arg(i / 2).arg(i % 2)));
-        positions->setItem(i, 1, new QTableWidgetItem(QString::number((i % 2) * 4065)));
-        positions->setItem(i, 2, new QTableWidgetItem(QString::number((i / 2) * 4080)));
-    }
+    positions->setEditTriggers(QAbstractItemView::NoEditTriggers);
     addTab(positions, tr("Positions"));
 
-    updatePairs(FrontendUtils::defaultPairAlignments());
+    updatePairs({});
     setCurrentIndex(m_pairsTabIndex);
 
     connect(m_pairsTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        const auto *firstItem = m_pairsTable->item(row, 0);
+        const int pairIndex = firstItem ? firstItem->data(Qt::UserRole).toInt() : row;
         m_mainWindow->setMode(3);
-        emit pairSelected(row);
+        emit pairSelected(pairIndex);
     });
     connect(m_pairsTable, &QTableWidget::cellClicked, this, [this](int row, int) {
-        emit pairSelected(row);
+        const auto *firstItem = m_pairsTable->item(row, 0);
+        const int pairIndex = firstItem ? firstItem->data(Qt::UserRole).toInt() : row;
+        emit pairSelected(pairIndex);
     });
 }
 
@@ -74,6 +80,8 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
 void BottomTabs::updatePairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
 {
     const QSignalBlocker blocker(m_pairsTable);
+    const bool wasSorting = m_pairsTable->isSortingEnabled();
+    m_pairsTable->setSortingEnabled(false);
     const int currentSelected = m_pairsTable->currentRow();
     m_pairsTable->setRowCount(pairs.size());
 
@@ -116,7 +124,9 @@ void BottomTabs::updatePairs(const QVector<FrontendUtils::PairAlignmentInfo> &pa
 
         for (int col = 0; col < rowValues.size(); ++col) {
             auto *item = new QTableWidgetItem(rowValues.at(col));
-            if (col == 2) {
+            if (col == 0) {
+                item->setData(Qt::UserRole, row);
+            } else if (col == 2) {
                 item->setTextAlignment(Qt::AlignCenter);
                 item->setBackground(QBrush(statusBg));
                 item->setForeground(QBrush(statusFg));
@@ -141,6 +151,7 @@ void BottomTabs::updatePairs(const QVector<FrontendUtils::PairAlignmentInfo> &pa
         const int rowToSelect = qBound(0, currentSelected >= 0 ? currentSelected : 0, pairs.size() - 1);
         m_pairsTable->selectRow(rowToSelect);
     }
+    m_pairsTable->setSortingEnabled(wasSorting);
 }
 
 //permet de mettre en évidence la paire sélectionnée dans le tableau du bas
@@ -149,6 +160,13 @@ void BottomTabs::selectPairRow(int pairIndex)
     if (!m_pairsTable || pairIndex < 0 || pairIndex >= m_pairsTable->rowCount())
         return;
     const QSignalBlocker blocker(m_pairsTable);
+    for (int row = 0; row < m_pairsTable->rowCount(); ++row) {
+        const auto *item = m_pairsTable->item(row, 0);
+        if (item && item->data(Qt::UserRole).toInt() == pairIndex) {
+            m_pairsTable->selectRow(row);
+            return;
+        }
+    }
     m_pairsTable->selectRow(pairIndex);
 }
 

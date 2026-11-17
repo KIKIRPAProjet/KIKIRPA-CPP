@@ -52,10 +52,14 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     connect(quitAction, &QAction::triggered, this, &MenuBarManager::quitRequested);
 
     auto *editMenu = menuBar->addMenu(tr("Édition"));
-    connect(editMenu->addAction(tr("Annuler"), QKeySequence::Undo),
-            &QAction::triggered, this, &MenuBarManager::undoRequested);
-    connect(editMenu->addAction(tr("Rétablir"), QKeySequence::Redo),
-            &QAction::triggered, this, &MenuBarManager::redoRequested);
+    auto *undoAction = editMenu->addAction(tr("Annuler"), QKeySequence::Undo);
+    undoAction->setEnabled(false);
+    undoAction->setToolTip(tr("Historique d'annulation non disponible"));
+    connect(undoAction, &QAction::triggered, this, &MenuBarManager::undoRequested);
+    auto *redoAction = editMenu->addAction(tr("Rétablir"), QKeySequence::Redo);
+    redoAction->setEnabled(false);
+    redoAction->setToolTip(tr("Historique de rétablissement non disponible"));
+    connect(redoAction, &QAction::triggered, this, &MenuBarManager::redoRequested);
 
     auto *viewMenu = menuBar->addMenu(tr("Affichage"));
     connect(viewMenu->addAction(tr("Afficher / masquer les panneaux")),

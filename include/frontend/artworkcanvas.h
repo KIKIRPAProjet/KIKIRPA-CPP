@@ -56,21 +56,26 @@ public:
 
     signals:
         void zoomChanged(int zoomPercent);
+        void importTilesRequested();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void leaveEvent(QEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
 private:
     // artworkcanvas_draw.cpp
+    void drawEmptyState(QPainter &p);
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
 
+    bool hasActiveImages() const;
+    QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
 
     int modeValue = 4;
@@ -85,6 +90,7 @@ private:
     int captureOrder = 0;
     int selectedGridCell = 0;
     int dragStartCell = -1;
+    int dragTargetCell = -1;
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
@@ -96,6 +102,7 @@ private:
     QPointF m_panOffset;
     QPoint m_lastPanPos;
     bool m_panning = false;
+    bool m_emptyCardHovered = false;
     QHash<QString, QImage> m_imageCache;
 };
 
