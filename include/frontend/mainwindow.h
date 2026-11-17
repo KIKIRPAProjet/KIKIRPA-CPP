@@ -1,16 +1,19 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+// include/frontend/mainwindow.h
+#pragma once
 
 #include <QMainWindow>
 #include <QString>
 #include <QStringList>
 #include <QVector>
-#include "frontendutils.h"
 
+#include "frontendutils.h"
+#include "project_setup_model.h"
+
+class QCloseEvent;
 class QKeyEvent;
 class QWidget;
 class ProjectGrid;
-class SimulationRunner;
+class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
@@ -41,10 +44,13 @@ private:
 
     void keyPressEvent(QKeyEvent *event) override;
 
+    // Intercepte la fermeture de la fenêtre pour interrompre proprement un éventuel calcul en cours.
+    void closeEvent(QCloseEvent *event) override;
+
     // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
     void setupProjectGridConnections();
-    void setupSimulationConnections();
+    void setupPipelineConnections();
     void setupHomePageConnections();
     void setupMenuConnections();
     void setupPageConnections();
@@ -66,6 +72,8 @@ private:
     void setMode(int mode);
     void refreshProjectInfo();
     void saveProject();
+    // Construit et valide le script JSON décrivant la suite des étapes backend.
+    QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
     void showExportDialog();
     void updateStatus(const QString &message);
@@ -88,7 +96,7 @@ private slots:
 
 private:
     ProjectGrid *projectGrid = nullptr;
-    SimulationRunner *simulationRunner = nullptr;
+    PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
@@ -101,6 +109,6 @@ private:
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
+    bool isClosing = false;
+    FrontendNs::ProjectSetup buildCurrentProjectSetup() const;
 };
-
-#endif

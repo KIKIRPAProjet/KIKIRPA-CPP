@@ -326,14 +326,34 @@ Json ProjectSetupModelClass::createBackendScript() const {
   if (!setup.filenameFormat.empty())
     replaceParameter(importStep, "format", setup.filenameFormat);
 
-  Json phaseCorrelationStep =
+    Json phaseCorrelationStep =
       PipelineNs::createStep("phase-correlation")->getConfigJson();
   replaceParameter(phaseCorrelationStep, "overlap", setup.overlap);
   replaceParameter(phaseCorrelationStep, "niveau", setup.pyramidLevel);
 
+  Json absolutePosStep =
+      PipelineNs::createStep("absolute-pos")->getConfigJson();
+
+  Json intensityCorrectionStep =
+      PipelineNs::createStep("intensity-correction")->getConfigJson();
+
+  Json graphcutStep =
+      PipelineNs::createStep("graphcut")->getConfigJson();
+
+  Json fusionStep =
+      PipelineNs::createStep("fusion")->getConfigJson();
+
+  Json exportStep =
+      PipelineNs::createStep("export")->getConfigJson();
+  replaceParameter(
+      exportStep, "outputDirectory",
+      IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
+
   Json script = {{"project", createProjectJson(setup)},
                  {"pipeline",
-                  {{"steps", Json::array({importStep, phaseCorrelationStep})}}},
+                  {{"steps", Json::array({importStep, phaseCorrelationStep,
+                                          absolutePosStep, intensityCorrectionStep,
+                                          graphcutStep, fusionStep, exportStep})}}},
                  {"run", createRunJson(setup)}};
 
   static_cast<void>(PipelineNs::buildPipeline(script));
