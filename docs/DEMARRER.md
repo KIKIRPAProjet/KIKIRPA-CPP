@@ -155,7 +155,7 @@ Le script est pour Windows. Sur ces systèmes, trois commandes suffisent, et il 
 
 **Ubuntu 24.04**, la configuration de la CI :
 ```bash
-sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev
+sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev qt6-image-formats-plugins
 ```
 ```bash
 cmake --preset linux && cmake --build --preset linux && ctest --preset linux
