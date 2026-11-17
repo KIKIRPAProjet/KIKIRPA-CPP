@@ -15,14 +15,8 @@ CMake du backend et du frontend.
 
 ## Bibliothèques
 
-| Technologie | Rôle et justification |
-|---|---|
-| **OpenCV 4** | Fournit les opérations courantes sur les images et plusieurs briques algorithmiques (matrices, traitement, détection et appariement). Elle évite de réimplémenter des traitements éprouvés et prépare notamment les entrées du modèle LightGlue via son module `dnn` ; l'inférence est exécutée par ONNX Runtime. |
-| **Qt 6 (Widgets, Concurrent)** | `Widgets` permet de construire une interface de bureau native en C++. `Concurrent` fournit des outils de travail asynchrone, utiles pour ne pas bloquer l'interface pendant les traitements. La bibliothèque frontend est séparée du backend. |
-| **libtiff** | Prend en charge les fichiers TIFF, notamment les images tuilées et pyramidales adaptées aux grandes mosaïques. |
-| **ONNX Runtime 1.20.1** | Exécute le modèle neuronal LightGlue au format ONNX pour l'appariement de points entre images. Sa version est fixée et l'archive téléchargée par CMake est vérifiée par empreinte SHA-256 afin de rendre les configurations plus reproductibles. |
-| **nlohmann/json** | Fournit la lecture et l'écriture du format JSON du pipeline. C'est une bibliothèque C++ légère, intégrable au projet et disponible via le gestionnaire de dépendances CMake si elle n'est pas déjà installée. |
-| **GoogleTest** | Sert à écrire des tests unitaires isolés pour le backend, les étapes de traitement et l'interface. CTest les découvre et les exécute. |
+> [!WARNING]
+> Les choix techniques concertnant les bibliothèques doivent encore être complétés voir #117
 
 ## Architecture frontend / backend
 
