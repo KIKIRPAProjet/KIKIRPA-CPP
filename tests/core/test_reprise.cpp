@@ -245,6 +245,7 @@ void testerPause(const fs::path& dossier) {
 
     std::ifstream scriptInput(scriptPath, std::ios::binary);
     const Json pausedScript = Json::parse(scriptInput, nullptr, false);
+    scriptInput.close();
     verifier(!pausedScript.is_discarded() && pausedScript.at("run").at("status") == "paused",
              "script de pause sauvegardé");
     Banc suite(dossier);   // nouveau processus : même script et dossier de checkpoints
