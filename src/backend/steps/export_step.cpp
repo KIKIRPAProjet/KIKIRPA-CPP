@@ -12,6 +12,7 @@
 #include "core/io/file_replacement.h"
 #include "core/io/unicode_path.h"
 
+#include <nlohmann/json.hpp>
 #include <opencv2/core/types.hpp>
 #include <tiff.h>
 #include <tiffio.h>

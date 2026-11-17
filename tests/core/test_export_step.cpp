@@ -8,6 +8,7 @@
 #include "core/step/data_store.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
@@ -149,7 +150,7 @@ TEST(ExportStepTest, PublishesOnlyTheMosaicImage) {
 TEST(ExportStepTest, IncrementsFilenameWhenFileAlreadyExists) {
     ExportFixture fixture(CV_16UC3);
     fs::create_directories(fixture.outputDirectory);
-    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old output";
+    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old_output";
 
     ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
     const StepsNs::ExportOutput& output = fixture.step.getOutput();
@@ -159,11 +160,12 @@ TEST(ExportStepTest, IncrementsFilenameWhenFileAlreadyExists) {
     // Vérifie que l'ancien fichier est conservé et n'a pas été écrasé
     std::string oldContent;
     std::ifstream(fixture.outputDirectory / "mosaic.tif") >> oldContent;
-    EXPECT_EQ(oldContent, "old output");
+    EXPECT_EQ(oldContent, "old_output");
 
     std::vector<std::string> names = fileNames(fixture.outputDirectory);
     std::sort(names.begin(), names.end());
-    EXPECT_EQ(names, (std::vector<std::string>{"mosaic (1).tif", "mosaic.tif"}));
+    const std::vector<std::string> expectedNames = {"mosaic (1).tif", "mosaic.tif"};
+    EXPECT_EQ(names, expectedNames);
 
     // Une exécution suivante incrémente vers (2)
     StepsNs::ExportStepClass secondStep;
