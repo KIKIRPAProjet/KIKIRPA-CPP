@@ -14,6 +14,12 @@ namespace DynamicProgrammingDijkstraNs {
         const std::vector<DataNs::TilePositionData>& positions;
         const DataNs::Seamlines& seamlines;
     };
+    // Associe les positions à TileClass::getId() et les range dans l'ordre de tiles.
+    // Refuse les positions manquantes ou dupliquées. En cas d'échec, positions
+    // reste inchangé et error contient la cause ; sinon error est vide.
+    bool orderTilePositions(const DataNs::TileList& tiles,
+        std::vector<DataNs::TilePositionData>& positions,
+        std::string& error);
 
     // Construit les territoires dans le repère entier utilisé par FusionStep.
     // Les coutures d'entrée restent inchangées. Les pixels sur une couture

@@ -62,9 +62,10 @@ TEST(TerritoryBuilderTest, PreservesSeamlinesAndPartitionsTranslatedTiles) {
             TILE_ID_B, std::filesystem::path{}, std::filesystem::path{},
             TILE_WIDTH, TILE_HEIGHT, CV_16UC3)
     };
+    // Ordre volontairement inversé : l'association doit utiliser les identifiants.
     const std::vector<DataNs::TilePositionData> positions{
-        {"r00_c00", {POSITION_X_A, POSITION_Y}, 0.0},
-        {"r00_c01", {POSITION_X_B, POSITION_Y}, 0.0}
+        {TILE_ID_B, {POSITION_X_B, POSITION_Y}, 0.0},
+        {TILE_ID_A, {POSITION_X_A, POSITION_Y}, 0.0}
     };
 
     DataNs::Seamline seamline;

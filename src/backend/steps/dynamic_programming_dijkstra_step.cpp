@@ -287,7 +287,10 @@ namespace StepsNs {
         catch (const std::exception& exception) {
             return std::string("cannot read inputs or parameters: ") + exception.what();
         }
-        return {};
+
+        std::string error;
+        DP::orderTilePositions(inputs.tiles, inputs.positions, error);
+        return error;
     }
 
     // Publie les coutures et leurs territoires après réussite des deux calculs.

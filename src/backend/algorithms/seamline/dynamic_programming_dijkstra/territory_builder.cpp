@@ -335,6 +335,19 @@ namespace DynamicProgrammingDijkstraNs {
             }
         }
 
+        using PositionByTileId = std::map<int, const DataNs::TilePositionData*>;
+
+        bool indexPositions(const std::vector<DataNs::TilePositionData>& positions,
+            PositionByTileId& positionByTileId, std::string& error) {
+            for (const auto& position : positions) {
+                if (!positionByTileId.emplace(position.tileId, &position).second) {
+                    error = "positions: duplicate tile id " + std::to_string(position.tileId);
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // Les blocs ne partagent aucun pixel. Leurs polygones restent séparés,
         // même pour une même tuile ; leur union reconstitue son territoire.
         void buildAllBlocks(const TerritoryGeometry& geometry, const PairCuts& cuts,
@@ -358,18 +371,53 @@ namespace DynamicProgrammingDijkstraNs {
 
     }
 
-    // Valide toute la géométrie avant de construire les masques. Seuls les
-    // polygones finaux persistent ; les cartes de propriétaires restent par bloc.
+    // L'association utilise les identifiants, jamais le nom des fichiers.
+    // La liste d'origine n'est remplacée qu'après validation de toutes les tuiles.
+    bool orderTilePositions(const DataNs::TileList& tiles,
+        std::vector<DataNs::TilePositionData>& positions,
+        std::string& error) {
+        error.clear();
+        if (positions.size() != tiles.size()) {
+            error = "positions: count does not match tile list";
+            return false;
+        }
+        PositionByTileId positionByTileId;
+        if (!indexPositions(positions, positionByTileId, error)) return false;
+        std::vector<DataNs::TilePositionData> orderedPositions;
+        orderedPositions.reserve(tiles.size());
+        for (const auto& tile : tiles) {
+            if (!tile) {
+                error = "positions: null tile";
+                return false;
+            }
+            const auto entry = positionByTileId.find(tile->getId());
+            if (entry == positionByTileId.end()) {
+                error = "positions: missing or repeated tile id " + std::to_string(tile->getId());
+                return false;
+            }
+            orderedPositions.push_back(*entry->second);
+            positionByTileId.erase(entry);
+        }
+        positions = std::move(orderedPositions);
+        return true;
+    }
+
+    
+    // Les appels directs au constructeur de territoires bénéficient du même
+    // contrôle des identifiants que les appels effectués depuis le step.
     bool buildTerritories(const TerritoryInput& input,
         std::vector<DataNs::TileTerritory>& territories,
         std::string& error) {
         territories.clear();
         error.clear();
         if (!validateInput(input, error)) return false;
+        auto orderedPositions = input.positions;
+        if (!orderTilePositions(input.tiles, orderedPositions, error)) return false;
+        const TerritoryInput orderedInput{ input.tiles, orderedPositions, input.seamlines };
         TerritoryGeometry geometry;
         PairCuts cuts;
-        if (!buildGeometry(input, geometry, error) ||
-            !buildPairCuts(input, geometry, cuts, error))
+        if (!buildGeometry(orderedInput, geometry, error) ||
+            !buildPairCuts(orderedInput, geometry, cuts, error))
             return false;
         territories.resize(input.tiles.size());
         for (std::size_t tileIndex = 0; tileIndex < territories.size(); ++tileIndex)
