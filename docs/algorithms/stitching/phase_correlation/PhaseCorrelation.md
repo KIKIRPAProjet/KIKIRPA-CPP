@@ -243,20 +243,19 @@ Coordonnées : `pointsInA[i]` est entier (centre du patch dans A) ; `pointsInB[i
 
 ## 4. Correspondance avec le Python
 
-| Python (`correlation_phase.py`) | C++ | Remarque |
-|---|---|---|
-| `charger` | `computeOutsideMask` + `convertToGrey` | Lecture de fichier retirée (rôle d'`ImportStepClass`). Pas de normalisation par percentiles (voir §6). **Amélioration** : en Python, tous les pixels à 0 deviennent NaN ; en C++, seulement ceux qui sont reliés au bord de la tuile. |
-| `stripRectangle` | `stripRectangle` | Renvoie un `cv::Rect` : la bande n'est pas copiée. |
-| `_zone_avec_contenu` | `findContentRectangle` | `PasDeContenu` devient `std::nullopt`. Mêmes seuils (0.1 / 0.5 / 32 px), nommés en constantes. |
-| `_sous_pixel` | remplacé par `refinePeak` | Parabole remplacée par la DFT suréchantillonnée (voir ci-dessous). |
-| `correlation_de_phase` | `correlatePhase` | Même calcul, en double précision comme numpy, découpé en `computeSpectrum`, `normalizeCrossSpectrum`, `buildGaussianFilter`, `inverseRealPart`, `locatePeak` et `refinePeak`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
-| `rapport_pics` | `computePeakRatio` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même ; les pics sont cherchés dans la marge. |
-| `mesurer_decalage` + `decalage_entre_bandes` | `PreparationClass::orientPair` + `PreparationClass::extractNominalStrips` + `AlgorithmClass::measureGlobalTranslation` | L'échange A↔B pour haut/gauche se fait une seule fois (`orientPair`) et s'annule dans `undoOrientation`. |
-| `zone_commune` (partie calcul) | `PreparationClass::extractOverlap` | Sert de zone de recherche des points. |
-| — | `AlgorithmClass::measureLocalPoints` + `OutputClass` | **Nouveau** : génération et mise en forme des points de correspondance. |
-| `profil_couture`, `variation_profil` | non porté | Diagnostics de déformation ; les points locaux + RANSAC jouent ce rôle. |
-| `assembler`, `coller` | non porté | Rôle de `FusionStep`. |
-| `metadonnees_tiff` | non porté | Rôle d'`ExportStep`. |
+| C++ | Remarque |
+|---|---|
+| `computeOutsideMask` + `convertToGrey` | Lecture de fichier retirée (rôle d'`ImportStepClass`). Pas de normalisation par percentiles (voir §6). **Amélioration** : en Python, tous les pixels à 0 deviennent NaN ; en C++, seulement ceux qui sont reliés au bord de la tuile. |
+| `stripRectangle` | Renvoie un `cv::Rect` : la bande n'est pas copiée. |
+| `findContentRectangle` | `PasDeContenu` devient `std::nullopt`. Mêmes seuils (0.1 / 0.5 / 32 px), nommés en constantes. |
+| remplacé par `refinePeak` | Parabole remplacée par la DFT suréchantillonnée (voir ci-dessous). |
+| `correlatePhase` | Même calcul, en double précision comme numpy, découpé en `computeSpectrum`, `normalizeCrossSpectrum`, `buildGaussianFilter`, `inverseRealPart`, `locatePeak` et `refinePeak`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
+| `computePeakRatio` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même ; les pics sont cherchés dans la marge. |
+| `PreparationClass::orientPair` + `PreparationClass::extractNominalStrips` + `AlgorithmClass::measureGlobalTranslation` | L'échange A↔B pour haut/gauche se fait une seule fois (`orientPair`) et s'annule dans `undoOrientation`. |
+| `PreparationClass::extractOverlap` | Sert de zone de recherche des points. |
+| `AlgorithmClass::measureLocalPoints` + `OutputClass` | **Nouveau** : génération et mise en forme des points de correspondance. |
+
+
 
 Trois éléments viennent de la version révisée du chef de projet (notebook `Stitching_Python/01_correlation_de_phase.ipynb`, classe `CorrelationDePhase`) et non du prototype :
 
