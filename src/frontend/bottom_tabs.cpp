@@ -15,6 +15,7 @@
 #include "bottom_tabs.h"
 #include "mainwindow.h"
 
+#include <QDateTime>
 #include <QTableWidget>
 #include <QListWidget>
 #include <QHeaderView>
@@ -71,7 +72,7 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     });
 }
 
-//affichage des paire en fonction des status 
+//affichage des paire en fonction des status
 void BottomTabs::updatePairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
 {
     const QSignalBlocker blocker(m_pairsTable);

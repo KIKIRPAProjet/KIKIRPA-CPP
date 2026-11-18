@@ -126,9 +126,7 @@ void TopToolbars::handleRunButtonClicked()
     if (m_pipelineRunner->isRunning()) {
         m_pipelineRunner->pauseRun();
     } else if (m_pipelineRunner->isPaused()) {
-        const int nextStep = m_pipelineRunner->pausedStep() + 1;
-        m_pipelineRunner->resetPausedState();
-        m_mainWindow->requestRun(nextStep);   
+        m_pipelineRunner->resumeRun();
     } else {
         m_mainWindow->requestRun(1);
     }

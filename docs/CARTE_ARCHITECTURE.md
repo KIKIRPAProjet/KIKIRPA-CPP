@@ -483,7 +483,7 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 
 Les trois branches de fin de chaîne (`feature/fusion-step`, `fe/export`, `feature/full-2x2-pipeline`) définissent chacune leurs propres types de mosaïque, incompatibles entre eux.
 
-**Frontend.** Aucune branche n'est reliée au calcul : la progression est un minuteur de démonstration (`SimulationRunner`), l'export de la mosaïque affiche « backend non connecté ».
+**Frontend.** Le frontend Qt est intégré au build et relié au pipeline via `PipelineRunnerClass` et `PipelineWorkerClass`. Le runner prend en charge le lancement asynchrone, la pause entre deux steps, la reprise depuis les checkpoints et l'annulation immédiate.
 
 | Branche (PR)                    | Dernier commit | État                                                                                                                                                                                       |
 | ------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

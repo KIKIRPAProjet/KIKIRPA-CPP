@@ -467,36 +467,24 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 
 ## 9. Le frontend
 
-### Ce qu'il y a sur main
-
-Presque rien : `src/frontend/PipelineJson.cpp`, qui sait **écrire** un script JSON de pipeline (`FrontendNs::pipelineToJson`, `writePipelineJson`). Aucune fenêtre.
-
-### Ce qu'il y a dans les branches
-
-Plusieurs maquettes de l'interface Qt existent en branche (`Valerie`, `frontendJonas`, `frontendMathias`, `fr-rahim` / PR #91…) : page d'accueil, grille du projet, onglets, panneau de journal, aperçu.
-
-**Ce sont des maquettes : aucune n'appelle le backend.**
-- L'avancement affiché est simulé par un minuteur (`SimulationRunner`, un `QTimer`).
-- Les boutons qui ont l'air d'agir n'agissent pas. Par exemple, **Annuler / Rétablir** dans la branche `Valerie` affichent seulement « Dernière action annulée. » dans la barre d'état. Il n'y a ni historique, ni annulation réelle.
-
-### Comment le brancher au backend
-
-Tout ce qu'il faut existe déjà côté backend :
+Le frontend Qt est intégré au build. `MainWindow` assemble les panneaux de projet et de suivi; `PipelineRunnerClass` et `PipelineWorkerClass` exécutent le pipeline dans un `QThread` dédié.
 
 | Le front veut… | Il utilise |
 |---|---|
 | construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
-| lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
+| lancer sans geler la fenêtre | `PipelineRunnerClass` et `PipelineWorkerClass`, qui exécutent `pipeline.run(logger)` dans un thread de travail |
 | afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
-| mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
-| reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
+| mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps et l'état est sauvegardé |
+| reprendre | relancer le pipeline en réutilisant les checkpoints; les steps déjà terminés sont ignorés |
+| annuler l'exécution | `PipelineRunnerClass::cancelRun()` demande un arrêt propre après l'étape courante; contrairement à la pause, l'interface ne propose pas de reprise depuis cet état |
+| repartir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
 | afficher l'avancement et l'état sauvegardé | `run.json` (`status`, `completedSteps`), réécrit après chaque step |
 | afficher les résultats | **après** la fin de `run()`, `pipeline.getDataStore()`, ou à tout moment les `<clé>.json` des checkpoints. Le DataStore n'est pas protégé contre les accès concurrents : ne pas le lire pendant le run |
 | dessiner la vraie seamline | les polygones de `territories` : leurs bords sont les coutures |
 | dessiner le placement des tuiles | `positions` et les dimensions de chaque tuile (`tiles`) |
 
-Il reste à décider quelle maquette devient l'interface unique, puis à remplacer `SimulationRunner` par ce branchement.
+La pause est donc la voie à utiliser pour interrompre un assemblage et le reprendre depuis l'interface ensuite.
 
 ---
 
@@ -506,7 +494,7 @@ Il reste à décider quelle maquette devient l'interface unique, puis à remplac
 
 - **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle (§5) ; fondu le long des coutures, si besoin.
 - **Brancher le rejet des aberrants** (vote 2D) entre l'appariement et `absolute-pos`.
-- **Le branchement du front** (§9) et le choix d'une seule interface.
+- **Améliorer et valider le frontend** (§9) sur des projets et des mosaïques réels.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
 
 À chercher ou à décider :
