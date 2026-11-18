@@ -219,16 +219,6 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
     }
 
     if (success) {
-        const auto& dataStore = pipeline->getDataStore();
-
-        if (dataStore.has("mosaic")) {
-            const auto& mosaic = dataStore.get<DataNs::Mosaic>("mosaic");
-
-            if (!mosaic.imagePath.empty()) {
-                emit mosaicFileReady(
-                    QString::fromStdString(IONs::pathToUtf8(mosaic.imagePath)));
-            }
-        }
         emit progressChanged(100);
         emit pipelineFinished(true, QString(), generatePreviewImage());
         return;
