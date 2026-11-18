@@ -85,7 +85,8 @@ jobs:
             libtiff-dev \
             ninja-build \
             nlohmann-json3-dev \
-            qt6-base-dev
+            qt6-base-dev \
+            qt6-image-formats-plugins
 
       - name: Restore LightGlue model
         if: steps.changed-files.outputs.cpp == 'true'
