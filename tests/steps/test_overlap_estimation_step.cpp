@@ -7,6 +7,8 @@
 #include "core/data/tile.h"
 #include "core/step/data_store.h"
 #include "steps/overlap_estimation_step.h"
+#include "steps/phase_correlation_step.h"
+#include "steps/sift_step.h"
 
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
@@ -217,6 +219,58 @@ TEST(OverlapEstimationStepTest, OutputKeyAndType) {
     StepsNs::OverlapEstimationStepClass step;
     EXPECT_EQ(step.getOutput().key, "overlapEstimates");
     EXPECT_EQ(step.getOutput().type, "OverlapEstimates");
+}
+
+// --- Branchement de overlapEstimates sur les steps d'appariement ---
+
+constexpr float WRONG_NOMINAL_OVERLAP = 0.5f;   // recouvrement nominal faux : le vrai est de 20 %
+
+// Une paire horizontale A | B, et une estimation de overlap-estimation donnant la translation de B dans A.
+DataNs::TileList makeHorizontalPair(const Directory& dir, const cv::Mat& source) {
+    auto tileA = saveTile(dir, source, {0, 0}, TILE_ID_A);
+    auto tileB = saveTile(dir, source, {1, 0}, TILE_ID_B);
+    tileA->setNeighbours(nullptr, tileB.get(), nullptr, nullptr);
+    tileB->setNeighbours(tileA.get(), nullptr, nullptr, nullptr);
+    return {tileA, tileB};
+}
+
+DataNs::OverlapEstimates makeEstimate(cv::Point2d translationBInA) {
+    DataNs::PairOverlapEstimate pairEstimate;
+    pairEstimate.tileIdA = TILE_ID_A;
+    pairEstimate.tileIdB = TILE_ID_B;
+    pairEstimate.direction = DataNs::Direction::Right;
+    pairEstimate.estimate.translationBInA = translationBInA;
+    return {pairEstimate};
+}
+
+// Avec un recouvrement nominal faux, la corrélation de phase retrouve la bonne translation grâce à overlapEstimates.
+TEST(OverlapEstimatesConsumptionTest, PhaseCorrelationStartsFromTheEstimatedTranslation) {
+    Directory dir;
+    StepNs::DataStoreClass data;
+    data.replace("tiles", makeHorizontalPair(dir, makeTexture()));
+    data.replace("overlapEstimates", makeEstimate(cv::Point2d(TILE_SHIFT, 0)));
+    StepsNs::PhaseCorrelationInput input;
+    input.overlap = WRONG_NOMINAL_OVERLAP;
+    StepsNs::PhaseCorrelationStepClass step(input);
+    step.setDataStore(data);
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const auto& matches = data.get<std::vector<DataNs::PairMatches>>("matches");
+    ASSERT_EQ(matches.size(), 1u);
+    EXPECT_NEAR(matches[0].featureMatches.translationX, TILE_SHIFT, TRANSLATION_TOLERANCE);
+}
+
+// SIFT prend la zone commune donnée par overlapEstimates : une estimation qui n'en laisse aucune fait échouer la paire.
+TEST(OverlapEstimatesConsumptionTest, SiftUsesTheEstimatedCommonArea) {
+    Directory dir;
+    StepNs::DataStoreClass data;
+    data.replace("tiles", makeHorizontalPair(dir, makeTexture()));
+    data.replace("overlapEstimates", makeEstimate(cv::Point2d(TILE_WIDTH + TILE_SHIFT, 0)));   // aucune zone commune
+    StepsNs::SiftStepClass step;
+    step.setDataStore(data);
+
+    EXPECT_FALSE(step.execute());
+    EXPECT_NE(step.getResult().dump().find("no common region"), std::string::npos) << step.getResult().dump();
 }
 
 }   // namespace

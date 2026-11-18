@@ -196,8 +196,7 @@ Relancer le même script avec `--resume` reprend où le run s'était arrêté, e
                                         └────────┘             └────────┘
 ```
 
-Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se met à la place de `graphcut`. Il lit `tiles`, `positions` et `intensityCorrection`, et produit `territories` (lus par `fusion`) et `seamlines` (le tracé de chaque couture) depuis #137. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
-
+Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se met à la place de `graphcut`. Il lit `tiles`, `positions` et `intensityCorrection`, et produit `territories` (lus par `fusion`) et `seamlines` (le tracé de chaque couture) depuis #137. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe de `phase-correlation`, `sift` et `lightglue` : placé avant eux, il leur donne leur point de départ ; sans lui, chacun la fait lui-même.
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `tiles` (liste des tuiles), `format`, `columns` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |

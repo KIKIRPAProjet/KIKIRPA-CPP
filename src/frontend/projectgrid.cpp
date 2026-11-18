@@ -310,6 +310,15 @@ void ProjectGrid::setOverlapsLinked(bool linked)
     emit gridUpdated();
 }
 
+// Les méthodes ne touchent pas à la grille : elle reste validée.
+void ProjectGrid::setPipelineChoices(const FrontendNs::PipelineChoices &choices)
+{
+    if (gridState.pipelineChoices == choices)
+        return;
+    gridState.pipelineChoices = choices;
+    emit gridUpdated();
+}
+
 void ProjectGrid::setModality(const QString &modality)
 {
     if (gridState.modality == modality)

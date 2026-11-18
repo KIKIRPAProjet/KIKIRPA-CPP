@@ -12,6 +12,7 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 | Sortie | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `absolute-pos`, `intensity-correction` |
 
 - **Lit** dans chaque fiche de `tiles` : l'identifiant, les voisines de droite et du dessous, et le chemin de l'image source, relue en entier puis réduite au niveau `niveau` (voir « Lecture des pixels »).
+- **Lit aussi**, si le pipeline en contient (step `overlap-estimation` placé avant), `overlapEstimates` : la translation mesurée de chaque paire, ramenée au niveau `niveau`, sert de point de départ à la mesure au lieu du recouvrement nominal `overlap`. Ce n'est pas une entrée déclarée : sans elle, le step fonctionne comme avant ([OverlapEstimationStep.md](OverlapEstimationStep.md#qui-lit-cette-sortie)).
 - **Écrit** dans `matches` une entrée par paire réussie (une tuile A et sa voisine de droite ou du dessous, B) : `tileIdA`, `tileIdB`, `direction`, les points locaux `pointsInA` ↔ `pointsInB` (au plus `nbPoints` ; aucun si la zone commune est trop petite ou si `nbPoints = 0`) avec la NCC de chacun dans `confidenceScores`, et la translation de B dans A (`translationX`, `translationY`). Les coordonnées sont en pixels de pleine résolution, dans le repère de chaque tuile entière. Une paire en échec n'y figure pas : elle est dans `failures`.
 
 Les signes et les axes sont détaillés dans « Conventions ».

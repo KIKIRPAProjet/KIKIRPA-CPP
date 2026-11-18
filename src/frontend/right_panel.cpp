@@ -40,7 +40,7 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
 
     m_gridTab = new GridTab(m_mainWindow, m_projectGrid, canvas, this);
     m_alignmentTab = new AlignmentTab(m_mainWindow, canvas, this);
-    m_assemblyTab = new AssemblyTab(m_mainWindow, this);
+    m_assemblyTab = new AssemblyTab(m_mainWindow, m_projectGrid, this);
 
     addTab(m_gridTab, tr("Grille"));   // GridTab est déjà une zone de défilement
     addTab(makeScrollable(m_assemblyTab, this), tr("Chaîne"));
@@ -60,6 +60,9 @@ void RightPanel::updateGridState(const ProjectGrid::State &gridState)
 {
     if (m_gridTab) {
         m_gridTab->updateState(gridState);
+    }
+    if (m_assemblyTab) {
+        m_assemblyTab->updateChoices(gridState.pipelineChoices);   // méthodes de l'onglet Chaîne (ex. projet rouvert)
     }
 }
 

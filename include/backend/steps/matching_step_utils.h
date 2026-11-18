@@ -3,11 +3,13 @@
 
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/step/data_store.h"
 
 #include <nlohmann/json_fwd.hpp>
 
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,14 @@ namespace StepsNs {
 
     // Ajoute les origines des bandes aux points et leur différence à la translation (pixels).
     void restoreCoordinates(DataNs::Matches& matches, const cv::Rect& regionA, const cv::Rect& regionB);
+
+    // Mesures de la première passe publiées par le step overlap-estimation (clé "overlapEstimates"), ou nullptr si le
+    // pipeline n'en contient pas. Les steps d'appariement s'en servent quand elles existent, sans l'exiger.
+    const DataNs::OverlapEstimates* findOverlapEstimates(const StepNs::DataStoreClass& dataStore);
+
+    // Translation de B dans A (pixels pleine résolution) mesurée par overlap-estimation pour la paire (tileIdA, tileIdB).
+    // Absente si `estimates` est nul ou si la paire n'a pas été mesurée : le step fait alors sa propre première passe.
+    std::optional<cv::Point2d> findEstimatedTranslation(const DataNs::OverlapEstimates* estimates, int tileIdA, int tileIdB);
 
     // Enveloppe JSON key/value/type ; lève std::invalid_argument pour une direction non prise en charge.
     nlohmann::json serializeOutput(const std::string& key, const std::vector<DataNs::PairMatches>& pairs,
