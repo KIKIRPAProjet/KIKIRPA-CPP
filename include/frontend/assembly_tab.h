@@ -24,8 +24,9 @@ public:
     // Met en surbrillance l'étape actuellement en cours d'exécution dans le pipeline (1-indexée).
     void setActiveStep(int stepNumber);
 
-    // Affiche les méthodes du projet (ouverture, autre onglet) et la liste d'étapes qui en découle.
-    void updateChoices(const FrontendNs::PipelineChoices &choices);
+    // Affiche les méthodes du projet (ouverture, autre onglet) et la liste d'étapes qui en découle. LightGlue sans
+    // modèle sur ce poste est remplacé par la méthode par défaut, dans le projet aussi.
+    void updateChoices(const FrontendNs::PipelineChoices &requestedChoices);
 
 private:
     // Construit les menus de méthodes, puis la liste des étapes et le bouton de relance ciblée.
@@ -52,5 +53,6 @@ private:
     QComboBox *m_intensityCombo = nullptr;
     QComboBox *m_seamCombo = nullptr;
     QComboBox *m_verificationCombo = nullptr;
+    bool m_isLightGlueAvailable = false;   // modèle présent à côté de l'exécutable (FrontendUtils::lightGlueModelPath)
     int m_activeStep = 0;
 };

@@ -675,6 +675,7 @@ FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
     setup.gridColumns = gridState.gridColumns;
     setup.overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
     setup.pipelineChoices = gridState.pipelineChoices;   // méthodes de l'onglet Chaîne
+    setup.lightGlueModelPath = FrontendUtils::lightGlueModelPath();   // absolu : le script ne dépend pas du dossier courant
 
     for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
         if (index >= gridState.gridTiles.size()) continue;

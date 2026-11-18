@@ -34,8 +34,8 @@ struct PipelineChoices {
   }
 };
 
-// Modèle de LightGlue, téléchargé par CMake dans le dossier de build (dossier de travail de l'application). Le matcher
-// résout ce chemin relatif.
+// Modèle de LightGlue, relatif au dossier de l'exécutable : CMake le télécharge dans le dossier de build, à côté de
+// stitching (seulement si les tests sont activés).
 inline constexpr const char *LIGHTGLUE_MODEL_PATH = "models/raco_aliked_lightglue_pipeline_k1024.onnx";
 
 // Le Vote 2D filtre des points appariés : ajouté d'office après SIFT et LightGlue, jamais après la corrélation de phase,
@@ -46,6 +46,10 @@ inline bool usesVote2D(const PipelineChoices &choices) {
 
 // Noms des steps du script, dans l'ordre, pour ces choix.
 std::vector<std::string> pipelineStepNames(const PipelineChoices &choices);
+
+// Choix lus dans un projet : une valeur inconnue (fichier modifié à la main, version plus récente) reprend sa valeur par
+// défaut, pour que le menu affiché et le script envoyé restent d'accord.
+PipelineChoices validatedChoices(const PipelineChoices &choices);
 
 struct ProjectSetup {
   std::string projectName;
@@ -60,6 +64,9 @@ struct ProjectSetup {
   int pyramidLevel = 0;
   std::vector<ProjectTile> tiles;
   PipelineChoices pipelineChoices;
+  // Chemin du modèle écrit dans le script (paramètre modelPath de lightglue). L'interface y met un chemin absolu, tiré
+  // du dossier de l'exécutable, pour que le script ne dépende pas du dossier courant.
+  std::filesystem::path lightGlueModelPath = LIGHTGLUE_MODEL_PATH;
 };
 
 // Modèle indépendant de l'affichage pour que le parcours puisse être validé

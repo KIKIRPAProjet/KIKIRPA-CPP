@@ -12,6 +12,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <ios>
 #include <optional>
 #include <regex>
@@ -228,7 +229,7 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "overlap", setup.overlap);
   } else if (stepName == "lightglue") {
     replaceParameter(stepJson, "overlap", setup.overlap);
-    replaceParameter(stepJson, "modelPath", LIGHTGLUE_MODEL_PATH);
+    replaceParameter(stepJson, "modelPath", IONs::pathToUtf8(setup.lightGlueModelPath));
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
   } else if (stepName == "export") {
@@ -264,6 +265,21 @@ std::vector<std::string> pipelineStepNames(const PipelineChoices &choices) {
   names.emplace_back("fusion");
   names.emplace_back("export");
   return names;
+}
+
+PipelineChoices validatedChoices(const PipelineChoices &choices) {
+  const PipelineChoices defaults;
+  const auto oneOf = [](const std::string &value, std::initializer_list<const char *> allowed,
+                        const std::string &fallback) {
+    const bool isKnown = std::any_of(allowed.begin(), allowed.end(),
+                                     [&value](const char *name) { return value == name; });
+    return isKnown ? value : fallback;
+  };
+  PipelineChoices valid = choices;
+  valid.matchingStep = oneOf(choices.matchingStep, {"phase-correlation", "sift", "lightglue"}, defaults.matchingStep);
+  valid.intensityMethod = oneOf(choices.intensityMethod, {"gain-and-field", "gain"}, defaults.intensityMethod);
+  valid.seamStep = oneOf(choices.seamStep, {"graphcut", "dynamic-programming-dijkstra"}, defaults.seamStep);
+  return valid;
 }
 
 void ProjectSetupModelClass::setSetup(ProjectSetup newSetup) {

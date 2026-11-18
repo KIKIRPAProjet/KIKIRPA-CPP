@@ -236,4 +236,38 @@ TEST_F(ProjectSetupTestClass, DynamicProgrammingReplacesGraphCut) {
   EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
 }
 
+// Le chemin du modèle fixé par l'interface (absolu, tiré du dossier de l'exécutable) est celui du script.
+TEST_F(ProjectSetupTestClass, LightGlueUsesTheModelPathOfTheSetup) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  setup.lightGlueModelPath = root / "bin" / FrontendNs::LIGHTGLUE_MODEL_PATH;
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const fs::path written(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath").get<std::string>());
+  EXPECT_TRUE(written.is_absolute());
+  EXPECT_EQ(written, setup.lightGlueModelPath);
+}
+
+// Une méthode inconnue lue dans un projet reprend sa valeur par défaut ; les méthodes connues sont gardées.
+TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
+  FrontendNs::PipelineChoices read;
+  read.estimateOverlap = true;
+  read.matchingStep = "manual-matches";
+  read.intensityMethod = "gain";
+  read.seamStep = "voronoi";
+
+  const FrontendNs::PipelineChoices valid = FrontendNs::validatedChoices(read);
+  const FrontendNs::PipelineChoices defaults;
+  EXPECT_TRUE(valid.estimateOverlap);
+  EXPECT_EQ(valid.matchingStep, defaults.matchingStep);
+  EXPECT_EQ(valid.intensityMethod, "gain");
+  EXPECT_EQ(valid.seamStep, defaults.seamStep);
+
+  FrontendNs::PipelineChoices known;
+  known.matchingStep = "lightglue";
+  known.seamStep = "dynamic-programming-dijkstra";
+  EXPECT_EQ(FrontendNs::validatedChoices(known), known);
+}
+
 } // namespace

@@ -61,17 +61,21 @@ namespace StepsNs {
             return {std::move(pairOutput), {}};
         }
 
+        constexpr int NO_CACHED_TILE = -1;   // collectPairs refuse les identifiants négatifs
+
+        // Le cache retient l'identifiant de la tuile, pas son pointeur : comparer un pointeur au nullptr initial faisait
+        // supposer à clang-analyzer une tuile nulle, que collectPairs exclut pourtant.
         struct ImageCache {
             cv::Mat pixels;
-            const DataNs::TileClass* tile = nullptr;
+            int tileId = NO_CACHED_TILE;   // identifiant de la tuile dont pixels contient l'image
         };
 
         PairMeasurement tryMeasurePair(const NeighborPair& pair, const PairProcessingContext& context,
                                        ImageCache& cache) {
             try {
-                if (cache.tile != pair.tileA) {
+                if (cache.tileId != pair.tileA->getId()) {
                     cache.pixels = readImage(*pair.tileA);
-                    cache.tile = pair.tileA;
+                    cache.tileId = pair.tileA->getId();
                 }
                 const cv::Mat imageB = readImage(*pair.tileB);
                 return measurePair(pair, cache.pixels, imageB, context);

@@ -15,6 +15,9 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/unicode_path.h"
+
+#include <QCoreApplication>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
@@ -58,6 +61,15 @@ std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &c
         steps.push_back({technicalName, number + QStringLiteral("  ") + stepDisplayName(technicalName)});
     }
     return steps;
+}
+
+// Le dossier de l'exécutable, et non le dossier courant : stitching et models/ sont tous deux dans le dossier de build,
+// d'où que l'application soit lancée.
+std::filesystem::path lightGlueModelPath()
+{
+    const std::filesystem::path applicationDirectory =
+        IONs::pathFromUtf8(QCoreApplication::applicationDirPath().toStdString());
+    return (applicationDirectory / FrontendNs::LIGHTGLUE_MODEL_PATH).lexically_normal();
 }
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)

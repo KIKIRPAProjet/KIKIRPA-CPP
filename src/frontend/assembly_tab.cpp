@@ -4,7 +4,10 @@
 #include "mainwindow.h"
 #include "projectgrid.h"
 
+#include "core/io/unicode_path.h"
+
 #include <algorithm>
+#include <filesystem>
 #include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
@@ -114,6 +117,12 @@ void AssemblyTab::setupMethodControls(QVBoxLayout *layout)
     addMethod(m_matchingCombo, tr("Corrélation de phase"), QStringLiteral("phase-correlation"));
     addMethod(m_matchingCombo, QStringLiteral("SIFT"), QStringLiteral("sift"));
     addMethod(m_matchingCombo, QStringLiteral("LightGlue"), QStringLiteral("lightglue"));
+    // Sans modèle, LightGlue échouerait au moment du calcul : mieux vaut ne pas le proposer.
+    const std::filesystem::path modelPath = FrontendUtils::lightGlueModelPath();
+    m_isLightGlueAvailable = std::filesystem::is_regular_file(modelPath);
+    setMethodAvailable(m_matchingCombo, m_matchingCombo->findData(QStringLiteral("lightglue")), m_isLightGlueAvailable,
+                       tr("Modèle introuvable : %1. Il est téléchargé dans le dossier de build quand les tests sont "
+                          "activés.").arg(QString::fromStdString(IONs::pathToUtf8(modelPath))));
 
     // Le Vote 2D suit l'appariement (voir usesVote2D) : rien à choisir, seulement une note.
     m_voteNote = FrontendUtils::mutedLabel(tr("+ Vote 2D (automatique)"), m_methodsForm->parentWidget());
@@ -182,8 +191,16 @@ void AssemblyTab::applyChoices()
     m_mainWindow->updateStatus(tr("Méthodes modifiées — les étapes suivantes sont à refaire."));
 }
 
-void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &choices)
+void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &requestedChoices)
 {
+    FrontendNs::PipelineChoices choices = requestedChoices;
+    // Un projet rouvert peut avoir choisi LightGlue sur un poste où le modèle manque : on revient à la méthode par
+    // défaut, dans le projet aussi, pour que le menu affiché et le script envoyé restent d'accord.
+    if (choices.matchingStep == "lightglue" && !m_isLightGlueAvailable) {
+        choices.matchingStep = FrontendNs::PipelineChoices{}.matchingStep;
+        m_projectGrid->setPipelineChoices(choices);   // peut rappeler updateChoices avec ces choix : sans effet de plus
+        m_mainWindow->updateStatus(tr("Modèle LightGlue introuvable : appariement par corrélation de phase."));
+    }
     const QSignalBlocker overlapBlocker(m_overlapCombo);
     const QSignalBlocker matchingBlocker(m_matchingCombo);
     const QSignalBlocker intensityBlocker(m_intensityCombo);

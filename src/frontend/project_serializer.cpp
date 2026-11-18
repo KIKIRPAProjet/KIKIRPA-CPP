@@ -39,7 +39,7 @@ QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
     return json;
 }
 
-// Une clé absente (projet enregistré avant cet ajout) garde la valeur par défaut.
+// Une clé absente (projet enregistré avant cet ajout) ou une méthode inconnue garde la valeur par défaut.
 FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
 {
     FrontendNs::PipelineChoices choices;
@@ -50,7 +50,7 @@ FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
     choices.matchingStep = text("matchingStep", choices.matchingStep);
     choices.intensityMethod = text("intensityMethod", choices.intensityMethod);
     choices.seamStep = text("seamStep", choices.seamStep);
-    return choices;
+    return FrontendNs::validatedChoices(choices);
 }
 
 }
