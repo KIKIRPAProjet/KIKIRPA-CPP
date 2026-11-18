@@ -84,7 +84,7 @@ namespace {
         EXPECT_NEAR(positions[0].position.x, 0.0, TOLERANCE);
         EXPECT_NEAR(positions[1].position.x, SHIFT, TOLERANCE);
         EXPECT_NEAR(positions[2].position.x, 2 * SHIFT, TOLERANCE);
-        EXPECT_EQ(positions[1].tileId, "r01_c02");
+        EXPECT_EQ(positions[1].tileId, 1);   // TileClass::getId() de la tuile
         EXPECT_EQ(step.getOutput().key, "positions");
         EXPECT_EQ(step.getOutput().type, "Positions");
         EXPECT_EQ(step.getResult()["positions"], 3);
@@ -215,22 +215,21 @@ namespace {
         checkpoint.load(0, step, "positions", "Positions", restored);
         auto positions = restored.get<std::vector<DataNs::TilePositionData>>("positions");
         ASSERT_EQ(positions.size(), 3U);
-        EXPECT_EQ(positions[2].tileId, "r01_c03");
+        EXPECT_EQ(positions[2].tileId, 2);
         EXPECT_NEAR(positions[2].position.x, 2 * SHIFT, TOLERANCE);
     }
 
-    TEST(AbsolutePosStep, RejectsMalformedNamesAndDuplicateGridCoordinates) {
+    // Les tuiles sont identifiées par TileClass::getId() : le nom du fichier source n'est pas lu.
+    TEST(AbsolutePosStep, AcceptsAnyTileFileName) {
         StepNs::DataStoreClass store;
         fillStore(store);
         auto tiles = makeTiles();
-        tiles[1] = std::make_shared<DataNs::TileClass>(1, "bad.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
+        tiles[1] = std::make_shared<DataNs::TileClass>(1, "1_no filter f8 v30 20cm.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
         store.replace("tiles", tiles);
         StepsNs::AbsolutePosStepClass step;
         step.setDataStore(store);
-        EXPECT_FALSE(step.execute());
-        tiles[1] = std::make_shared<DataNs::TileClass>(1, "tile_C01_R01.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
-        store.replace("tiles", tiles);
-        EXPECT_FALSE(step.execute());
+        ASSERT_TRUE(step.execute()) << step.getResult();
+        EXPECT_EQ(step.getOutput().value[1].tileId, 1);
     }
 
     TEST(AbsolutePosStep, RejectsOutOfRangeIntegerWithoutWrappingToDefaultReference) {
