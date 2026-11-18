@@ -8,7 +8,7 @@
 
 namespace {
 constexpr int kMinimumWidth = 360;
-constexpr int kMinimumHeight = 260;
+constexpr int kMinimumHeight = 120;   // assez bas pour laisser grandir le panneau du bas ; le dessin est recadré
 constexpr int kPairGutter = 22;
 constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
