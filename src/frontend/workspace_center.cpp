@@ -13,6 +13,12 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QFileDialog>
+
+namespace {
+constexpr double DEFAULT_CANVAS_ZOOM = 12.0;
+constexpr int MODE_EXPORT = 5;
+}
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
@@ -88,14 +94,19 @@ void WorkspaceCenter::createCanvasAndControls()
     auto *minus = FrontendUtils::makeButton(QStringLiteral("−"), canvasControls);
     auto *plus = FrontendUtils::makeButton(QStringLiteral("+"), canvasControls);
     
-    m_zoomLabel = new QLabel(QStringLiteral("12,4 %"));
+    m_zoomLabel = new QLabel(FrontendUtils::formatZoom(DEFAULT_CANVAS_ZOOM));
     m_zoomLabel->setMinimumWidth(48);
+    m_canvas->setZoomChangedCallback([this](double zoom) {
+        m_mainWindow->zoomPercent = zoom;
+        m_zoomLabel->setText(FrontendUtils::formatZoom(zoom));
+    });
 
     auto *fit = FrontendUtils::makeButton(tr("Ajuster"), canvasControls);
     auto *oneToOne = FrontendUtils::makeButton(QStringLiteral("100 %"), canvasControls);
     auto *overlayDiff = FrontendUtils::makeButton(tr("Superposer (différence)"), canvasControls);
     overlayDiff->setCheckable(true);
     overlayDiff->setObjectName(QStringLiteral("pairOverlayButton"));
+    auto *openMosaic = FrontendUtils::makeButton(tr("Ouvrir mosaïque TIFF…"), canvasControls);
 
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
@@ -103,27 +114,39 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
     canvasControlsLayout->addWidget(overlayDiff);
+    canvasControlsLayout->addWidget(openMosaic);
     canvasControlsLayout->addStretch();
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
     connect(minus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::max(5, m_mainWindow->zoomPercent - 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->zoomOut();
     });
     connect(plus, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = std::min(1600, m_mainWindow->zoomPercent + 5);
-        m_zoomLabel->setText(QString::number(m_mainWindow->zoomPercent) + "%");
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->zoomIn();
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
-        m_zoomLabel->setText(tr("Ajuster"));
-        m_canvas->setZoom(100);
+        m_canvas->fitMosaicToView();
     });
     connect(oneToOne, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        m_canvas->setZoom(m_mainWindow->zoomPercent);
+        m_canvas->setZoom(100.0);
+    });
+    connect(openMosaic, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Ouvrir une mosaïque TIFF"), QString(),
+            tr("Images TIFF (*.tif *.tiff)"));
+        if (path.isEmpty())
+            return;
+
+        QString errorMessage;
+        if (!m_canvas->setMosaicTiff(path, &errorMessage)) {
+            QMessageBox::warning(this, tr("Ouverture impossible"),
+                tr("La mosaïque TIFF n’a pas pu être ouverte :\n%1").arg(errorMessage));
+            return;
+        }
+
+        m_mainWindow->setMode(MODE_EXPORT);
+        m_mainWindow->updateStatus(
+            tr("Mosaïque ouverte : %1").arg(QFileInfo(path).fileName()));
     });
     connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
         m_canvas->setPairOverlayMode(checked);

@@ -222,19 +222,15 @@ void MainWindow::setupMenuConnections()
         workspaceUI->bottomTabs()->setVisible(panelsVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
-        zoomPercent = qMin(1600, zoomPercent + 10);
-        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+            canvas->zoomIn();
     });
     connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
-        zoomPercent = qMax(5, zoomPercent - 10);
-        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+            canvas->zoomOut();
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
-        zoomPercent = 100;
-        workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->fitMosaicToView();
     });
     connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
         setMode(mode);
@@ -434,6 +430,8 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
     projectCreated = true;
+    if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvas->clearMosaic();
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
@@ -466,6 +464,8 @@ void MainWindow::applyLoadedProject(const QString &path)
         projectGrid->initializeGridFromPaths();
     projectPath = path;
     projectCreated = true;
+    if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvas->clearMosaic();
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);

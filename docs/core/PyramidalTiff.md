@@ -113,6 +113,81 @@ positives. Elle doit être entièrement contenue dans le niveau demandé : le re
 tronque pas automatiquement. En cas de succès, `output` a exactement la taille de `region`
 et le type du niveau lu.
 
+`readPyramidDimensions` permet de connaître les dimensions réellement stockées, dans l'ordre
+du niveau `0` aux niveaux réduits.
+
+## Lire la région correspondant à une vue et un zoom
+
+`readViewport` est une fonction backend destinée à une future vue interactive. Elle reçoit :
+
+| Paramètre | Signification |
+|---|---|
+| `origin` | coin supérieur gauche visible, en pixels de l'image pleine résolution |
+| `viewportSize` | largeur et hauteur disponibles pour afficher l'image, en pixels écran |
+| `zoomPercent` | facteur de zoom d'affichage : `100` signifie 1 pixel écran par pixel source |
+
+Ce pourcentage est bien un **pourcentage de zoom**, pas un pourcentage de qualité. Par exemple,
+à `25 %`, une vue de 1 200 × 800 pixels couvre environ 4 800 × 3 200 pixels de l'image d'origine.
+Le backend choisit le niveau dont la résolution est la plus appropriée à ce facteur, convertit
+la zone visible vers les coordonnées du niveau et la limite aux dimensions de l'image.
+
+Le résultat `PyramidViewportRegion` fournit le niveau lu, le rectangle transmis à `readRegion`
+(`region`, dans les coordonnées de ce niveau), le rectangle équivalent en coordonnées pleine
+résolution (`fullResolutionRegion`) et les pixels lus (`pixels`). Le frontend peut dessiner
+`pixels` à la position `fullResolutionRegion` de son image, en appliquant son facteur de zoom.
+À `100 %`, le niveau `0` est choisi et le rectangle correspond directement aux pixels originaux.
+
+Exemple : avec `origin = (5000, 3000)`, une zone écran de 1 200 × 800 et un zoom de `100 %`,
+le lecteur demande le rectangle `(5000, 3000, 1200, 800)` au niveau `0`, s'il est entièrement
+dans l'image. Si une partie dépasse un bord, elle est rognée. Un viewport sans intersection
+avec l'image ou des paramètres invalides renvoient `false` avec un message d'erreur.
+
+Le frontend doit appeler cette fonction en dehors du fil graphique si la lecture peut être
+lente, puis appliquer le résultat uniquement s'il correspond toujours à la dernière position
+et au dernier zoom demandés. Cette vérification protège la vue contre les lectures asynchrones
+qui se terminent dans un ordre différent des déplacements.
+
+Exemple de calcul côté vue : convertir le rectangle pleine résolution retourné en coordonnées
+locales du viewport, puis appliquer le zoom à son dessin :
+
+```cpp
+const double zoom = zoomPercent / 100.0;
+IONs::PyramidViewportRegion result;
+std::string errorMessage;
+
+if (reader.readViewport(
+        IONs::PyramidViewportRequest{
+            originInFullResolution,
+            cv::Size(viewportWidth, viewportHeight),
+            zoomPercent},
+        result,
+        errorMessage)) {
+    const cv::Rect2d& sourceRect = result.fullResolutionRegion;
+    const QRectF target(
+        (sourceRect.x - originInFullResolution.x) * zoom,
+        (sourceRect.y - originInFullResolution.y) * zoom,
+        sourceRect.width * zoom,
+        sourceRect.height * zoom);
+    // Convert result.pixels to QImage and draw it into target.
+}
+```
+
+Le calcul d'un identifiant de requête reste à la charge de la vue : incrémenter cet identifiant
+pour chaque nouvelle demande et ignorer un résultat asynchrone si son identifiant n'est plus
+celui de la vue courante.
+
+Dans l'application Qt, le canevas du mode Export propose « Ouvrir mosaïque TIFF… ». Après
+ouverture, « Ajuster » affiche l'ensemble, les boutons ou la molette changent le zoom et un
+glisser-déposer déplace l'image. Chaque nouvelle vue utilise `readViewport` en tâche de fond;
+le résultat est dessiné à sa position pleine résolution et seules les réponses de la dernière
+demande sont appliquées. Pour que la vue d'ensemble utilise un niveau réduit, le fichier ouvert
+doit contenir une pyramide. Un TIFF à un seul niveau reste lisible, mais n'offre pas de niveau
+réduit distinct. Pour prévenir l'épuisement de la mémoire lors d'un fort dézoom ou d'un affichage
+complet (« Ajuster ») sur une image sans pyramide ou avec une pyramide courte, `readViewport`
+plafonne l'allocation mémoire (64 Mio) et applique un sous-échantillonnage régulier des tuiles
+si la région dépasse ce seuil. De même, `readRegion` protège le processus en refusant les
+allocations brutes dépassant 256 Mio.
+
 ## Lecture par tuiles
 
 Le reader n'a pas besoin de charger tout le niveau en mémoire. Il :
