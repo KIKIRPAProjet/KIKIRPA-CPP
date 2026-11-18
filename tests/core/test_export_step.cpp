@@ -227,10 +227,22 @@ TEST(ExportStepTest, ReportsAMissingMosaicInput) {
 }
 
 // L'empreinte suit mosaic.tif : le checkpoint de l'export se périme si le fichier publié disparaît.
-TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
+/*TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     ExportFixture fixture(CV_16UC3);
     EXPECT_FALSE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
 
     ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
     EXPECT_TRUE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
+}*/
+
+TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
+    ExportFixture fixture(CV_16UC3);
+
+    EXPECT_TRUE(fixture.step.externalInputsFingerprint().is_null());
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+
+    const auto fingerprint = fixture.step.externalInputsFingerprint();
+    ASSERT_TRUE(fingerprint.is_object());
+    EXPECT_TRUE(fingerprint.at("exists").get<bool>());
 }

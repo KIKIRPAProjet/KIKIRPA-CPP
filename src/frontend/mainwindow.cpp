@@ -108,6 +108,10 @@ void MainWindow::applyStyleSheet()
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
+        // Flèches de défilement des onglets (panneau étroit) : sans ces règles, le padding des QToolButton ne laisse
+        // plus de place pour dessiner la flèche.
+        "QTabBar::scroller { width:40px; }"
+        "QTabBar QToolButton { padding:0px; border-radius:0px; }"
         "QTableWidget,QListWidget { background:#303030; alternate-background-color:#363636;"
         " gridline-color:#484848; selection-background-color:#36536d; }"
         "QHeaderView::section { background:#303030; color:#bdbdbd; border:0;"
@@ -146,6 +150,15 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
+        this, [this](const QString& imagePath) {
+            mosaicFilePath = imagePath;
+        });
+
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                mosaicFilePath.clear();
+            });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
@@ -428,6 +441,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    mosaicFilePath.clear();
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -455,7 +469,7 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
-
+    mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();

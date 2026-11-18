@@ -135,7 +135,7 @@ namespace StepsNs {
                 ++counter;
             }
         }
-
+/*
         fs::path findLatestExistingPath(const fs::path& directory, const std::string& filename) {
             fs::path target = directory / IONs::pathFromUtf8(filename);
             if (!fs::exists(target)) {
@@ -154,7 +154,7 @@ namespace StepsNs {
                 ++counter;
             }
             return latest;
-        }
+        }*/
 
         bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
             TIFF* rawTiffFile = IONs::openTiff(path, "r");
@@ -239,10 +239,11 @@ namespace StepsNs {
     }
 
     Json ExportStepClass::externalInputsFingerprint() const {
-        const fs::path targetPath = output.imagePath.empty()
-            ? findLatestExistingPath(configuredOutputDirectory(configJson), configuredFilename(configJson))
-            : output.imagePath;
-        return IONs::computeFileFingerprint(targetPath);
+        if (output.imagePath.empty()) {
+            return Json();
+        }
+
+        return IONs::computeFileFingerprint(output.imagePath);
     }
 
     bool ExportStepClass::execute() {

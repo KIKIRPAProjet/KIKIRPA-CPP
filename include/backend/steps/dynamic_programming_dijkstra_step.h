@@ -6,6 +6,7 @@
 #include "core/step/step.h"
 
 #include <string>
+#include <vector>
 
 namespace StepsNs {
 
@@ -17,13 +18,15 @@ namespace StepsNs {
 
     struct DynamicProgrammingDijkstraOutput {
         DataNs::Seamlines seamlines;
+        std::vector<DataNs::TileTerritory> territories;
     };
 
     // Entrées lues par execute() (paramètres et données du DataStore), définies dans le .cpp.
     struct DynamicProgrammingDijkstraData;
 
-    // Calcule une couture par paire de tuiles voisines à partir de leurs pixels, positions et gains d'égalisation.
-    // Les coutures produites sont exprimées en pixels de pleine résolution dans le repère de la mosaïque.
+    // Calcule une couture par paire de tuiles voisines et les territoires pour la fusion.
+    // Les coutures restent dans le repère absolu ; les territoires utilisent le repère
+    // entier normalisé de FusionStep.
     class DynamicProgrammingDijkstraStepClass : public StepNs::StepClass {
 
         public:

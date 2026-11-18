@@ -16,8 +16,7 @@
 #include "mainwindow.h"
 #include "projectgrid.h"
 #include "frontendutils.h"
-#include "artworkcanvas.h"
-#include "workspace_ui.h"
+
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -35,6 +34,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QVBoxLayout>
+#include <QFile>
 
 void MainWindow::showExportDialog()
 {
@@ -87,6 +87,11 @@ void MainWindow::showExportDialog()
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     connect(exportButton, &QPushButton::clicked, this, [this, &dialog, format, report, imagePathEdit]() {
+        if (format->currentIndex() != 0) {
+            QMessageBox::information(&dialog, tr("Format non disponible"),
+                tr("Seul l'export TIFF 16 bits est actuellement pris en charge."));
+            return;
+        }
         const QString chosenPath = imagePathEdit->text().trimmed();
         if (chosenPath.isEmpty()) {
             QMessageBox::warning(&dialog, tr("Champ requis"),
@@ -94,22 +99,56 @@ void MainWindow::showExportDialog()
             return;
         }
 
-        const QFileInfo fileInfo(chosenPath);
-        if (!fileInfo.dir().exists()) {
-            QDir().mkpath(fileInfo.absolutePath());
+        if (mosaicFilePath.isEmpty() || !QFileInfo(mosaicFilePath).isFile()) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("Aucun TIFF final disponible. Lancez un calcul complet avant l'export."));
+            return;
         }
-        outputDirectory = fileInfo.absolutePath();
 
-        auto *canvas = workspaceUI ? dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()) : nullptr;
-        bool mosaicSaved = false;
-        if (canvas && !canvas->mosaicPreview().isNull()) {
-            if (!canvas->mosaicPreview().save(fileInfo.absoluteFilePath())) {
-                QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("L'image mosaïque n'a pas pu être enregistrée."));
-                return;
-            }
-            mosaicSaved = true;
+        QString destination = chosenPath;
+        if (QFileInfo(destination).suffix().isEmpty()) {
+            destination += QStringLiteral(".tif");
         }
+
+        const QFileInfo requestedFile(destination);
+        const QString extension = requestedFile.suffix();
+
+        if (extension.compare(QStringLiteral("tif"), Qt::CaseInsensitive) != 0 &&
+            extension.compare(QStringLiteral("tiff"), Qt::CaseInsensitive) != 0) {
+            QMessageBox::warning(&dialog, tr("Format non pris en charge"),
+                tr("Cet export produit un TIFF. Choisissez une extension .tif ou .tiff."));
+            return;
+        }
+
+        QDir destinationDirectory(requestedFile.absolutePath());
+        if (!destinationDirectory.exists() &&
+            !QDir().mkpath(destinationDirectory.absolutePath())) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("Impossible de créer le dossier de destination."));
+            return;
+        }
+
+        destination = requestedFile.absoluteFilePath();
+
+        int counter = 1;
+        while (QFileInfo::exists(destination)) {
+            const QString numberedName =
+                requestedFile.completeBaseName() +
+                QStringLiteral(" (%1).").arg(counter) + extension;
+            destination = destinationDirectory.filePath(numberedName);
+            ++counter;
+        }
+
+        QFile sourceFile(mosaicFilePath);
+        if (!sourceFile.copy(destination)) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("Impossible de copier le TIFF : %1")
+                    .arg(sourceFile.errorString()));
+            return;
+        }
+
+        const QFileInfo fileInfo(destination);
+        outputDirectory = fileInfo.absolutePath();
 
         if (report->isChecked()) {
             const QString reportName = projectName + QStringLiteral("_rapport.html");
@@ -136,11 +175,8 @@ void MainWindow::showExportDialog()
             }
         }
 
-        if (mosaicSaved) {
-            updateStatus(tr("Mosaïque et rapport exportés."));
-        } else {
-            updateStatus(tr("Paramètres d'export enregistrés."));
-        }
+        updateStatus(tr("TIFF exporté : %1")
+                         .arg(fileInfo.absoluteFilePath()));
         dialog.accept();
     });
     dialog.exec();
