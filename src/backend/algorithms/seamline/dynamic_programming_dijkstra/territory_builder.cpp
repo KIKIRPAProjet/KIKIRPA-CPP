@@ -401,6 +401,8 @@ namespace DynamicProgrammingDijkstraNs {
         positions = std::move(orderedPositions);
         return true;
     }
+
+    
     // Les appels directs au constructeur de territoires bénéficient du même
     // contrôle des identifiants que les appels effectués depuis le step.
     bool buildTerritories(const TerritoryInput& input,

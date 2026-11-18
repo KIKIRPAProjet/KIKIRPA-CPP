@@ -55,7 +55,6 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
-#include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
 
@@ -155,15 +154,6 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
-    connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
-        this, [this](const QString& imagePath) {
-            mosaicFilePath = imagePath;
-        });
-
-    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
-            this, [this]() {
-                mosaicFilePath.clear();
-            });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
@@ -196,7 +186,6 @@ void MainWindow::setupPipelineConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
-                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
     });
 }
@@ -446,7 +435,6 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
-    mosaicFilePath.clear();
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -474,7 +462,7 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
-    mosaicFilePath.clear();
+
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -610,7 +598,12 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     if (outputDirectory.isEmpty()) {
-        outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
+        outputDirectory = QFileDialog::getExistingDirectory(
+            this, tr("Choisir le dossier de sortie"));
+        if (outputDirectory.isEmpty()) {
+            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
+            return;
+        }
     }
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
