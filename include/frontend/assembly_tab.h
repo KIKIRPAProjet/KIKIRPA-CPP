@@ -7,13 +7,14 @@
 
 class MainWindow;
 class ProjectGrid;
-class QCheckBox;
 class QComboBox;
+class QFormLayout;
+class QLabel;
 class QListWidget;
 class QVBoxLayout;
 
-// Onglet latéral affichant la chaîne de traitement (les étapes réelles du script envoyé au backend), le choix de la
-// méthode de chaque étape, et le point d'entrée pour la relance ciblée sur checkpoint.
+// Onglet latéral « Chaîne » : la méthode de chaque étape qui en propose plusieurs (tous les steps du registre qui
+// peuvent la remplir), puis les étapes réelles du script envoyé au backend et la relance ciblée sur checkpoint.
 class AssemblyTab : public QWidget
 {
     Q_OBJECT
@@ -27,26 +28,29 @@ public:
     void updateChoices(const FrontendNs::PipelineChoices &choices);
 
 private:
-    // Construit la liste visuelle ordonnée des étapes du script.
-    void setupStepList(QVBoxLayout *layout);
-
-    // Initialise les boutons d'action (relance ciblée) et le choix des méthodes.
-    void setupActionControls(QVBoxLayout *layout);
+    // Construit les menus de méthodes, puis la liste des étapes et le bouton de relance ciblée.
     void setupMethodControls(QVBoxLayout *layout);
+    QComboBox *addStage(const QString &title);
+    void setupStepList(QVBoxLayout *layout);
 
     // Remplit la liste des étapes pour ces méthodes.
     void refreshStepList(const FrontendNs::PipelineChoices &choices);
+
+    // Note « Vote 2D automatique », affichée seulement avec SIFT et LightGlue.
+    void refreshVoteNote(const FrontendNs::PipelineChoices &choices);
 
     // Lit les méthodes affichées et les enregistre dans le projet.
     void applyChoices();
 
     MainWindow *m_mainWindow;
     ProjectGrid *m_projectGrid;
+    QFormLayout *m_methodsForm = nullptr;
     QListWidget *m_stepList = nullptr;
-    QCheckBox *m_overlapCheck = nullptr;
+    QComboBox *m_overlapCombo = nullptr;
     QComboBox *m_matchingCombo = nullptr;
-    QCheckBox *m_voteCheck = nullptr;
+    QLabel *m_voteNote = nullptr;
     QComboBox *m_intensityCombo = nullptr;
     QComboBox *m_seamCombo = nullptr;
+    QComboBox *m_verificationCombo = nullptr;
     int m_activeStep = 0;
 };

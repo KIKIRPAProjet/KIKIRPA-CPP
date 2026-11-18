@@ -38,13 +38,14 @@ static QString stepDisplayName(const std::string &technicalName)
 {
     if (technicalName == "import") return QObject::tr("Importation des tuiles");
     if (technicalName == "overlap-estimation") return QObject::tr("Recouvrement réel (première passe)");
-    if (technicalName == "phase-correlation") return QObject::tr("Correspondance (corrélation de phase)");
-    if (technicalName == "sift") return QObject::tr("Correspondance (SIFT)");
-    if (technicalName == "lightglue") return QObject::tr("Correspondance (LightGlue)");
+    if (technicalName == "phase-correlation") return QObject::tr("Appariement (corrélation de phase)");
+    if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
+    if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
     if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
     if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
     if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
     if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
+    if (technicalName == "dynamic-programming-dijkstra") return QObject::tr("Ligne de couture (programmation dynamique)");
     if (technicalName == "fusion") return QObject::tr("Fusion des tuiles");
     if (technicalName == "export") return QObject::tr("Export de la mosaïque");
     return QString::fromStdString(technicalName);

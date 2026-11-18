@@ -224,9 +224,11 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
   } else if (stepName == "phase-correlation") {
     replaceParameter(stepJson, "overlap", setup.overlap);
     replaceParameter(stepJson, "niveau", setup.pyramidLevel);
-  } else if (stepName == "overlap-estimation" || stepName == "sift" ||
-             stepName == "lightglue") {
+  } else if (stepName == "overlap-estimation" || stepName == "sift") {
     replaceParameter(stepJson, "overlap", setup.overlap);
+  } else if (stepName == "lightglue") {
+    replaceParameter(stepJson, "overlap", setup.overlap);
+    replaceParameter(stepJson, "modelPath", LIGHTGLUE_MODEL_PATH);
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
   } else if (stepName == "export") {
@@ -254,7 +256,7 @@ std::vector<std::string> pipelineStepNames(const PipelineChoices &choices) {
   if (choices.estimateOverlap)
     names.emplace_back("overlap-estimation");   // première passe commune, lue par les trois méthodes d'appariement
   names.push_back(choices.matchingStep);
-  if (choices.rejectOutliers && canRejectOutliers(choices))
+  if (usesVote2D(choices))
     names.emplace_back("vote-2d");
   names.emplace_back("absolute-pos");
   names.emplace_back("intensity-correction");

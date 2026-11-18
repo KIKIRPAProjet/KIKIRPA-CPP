@@ -182,12 +182,12 @@ TEST_F(ProjectSetupTestClass, DefaultChoicesKeepThePreviousPipeline) {
   EXPECT_EQ(stepNames(model.createBackendScript()), expected);
 }
 
-// Recouvrement réel, SIFT et Vote 2D : les étapes sont ajoutées à leur place, et le backend accepte le script.
+// Recouvrement réel et SIFT (avec son Vote 2D automatique) : les étapes sont ajoutées à leur place, et le backend
+// accepte le script.
 TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
   FrontendNs::ProjectSetup setup = model.getSetup();
   setup.pipelineChoices.estimateOverlap = true;
   setup.pipelineChoices.matchingStep = "sift";
-  setup.pipelineChoices.rejectOutliers = true;
   setup.pipelineChoices.intensityMethod = "gain";
   model.setSetup(setup);
 
@@ -204,11 +204,36 @@ TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
 TEST_F(ProjectSetupTestClass, PhaseCorrelationNeverGetsVote2D) {
   FrontendNs::ProjectSetup setup = model.getSetup();
   setup.pipelineChoices.matchingStep = "phase-correlation";
-  setup.pipelineChoices.rejectOutliers = true;
   model.setSetup(setup);
 
   const std::vector<std::string> names = stepNames(model.createBackendScript());
   EXPECT_EQ(std::find(names.begin(), names.end(), "vote-2d"), names.end());
+}
+
+// LightGlue : Vote 2D automatique, et le modèle téléchargé dans le dossier de build par CMake.
+TEST_F(ProjectSetupTestClass, LightGlueGetsVote2DAndTheBuildModel) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "lightglue", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath"), FrontendNs::LIGHTGLUE_MODEL_PATH);
+}
+
+// Couture par programmation dynamique : remplace graphcut, et le backend accepte le script (territoires pour la fusion).
+TEST_F(ProjectSetupTestClass, DynamicProgrammingReplacesGraphCut) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.seamStep = "dynamic-programming-dijkstra";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "dynamic-programming-dijkstra", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
 }
 
 } // namespace

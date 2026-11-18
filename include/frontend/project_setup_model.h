@@ -25,19 +25,22 @@ struct ProjectTile {
 struct PipelineChoices {
   bool estimateOverlap = false;                    // ajoute overlap-estimation avant l'appariement
   std::string matchingStep = "phase-correlation";  // "phase-correlation", "sift" ou "lightglue"
-  bool rejectOutliers = false;                     // ajoute vote-2d après l'appariement, sauf avec phase-correlation
   std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
-  std::string seamStep = "graphcut";               // seule méthode de couture reliée à la fusion aujourd'hui
+  std::string seamStep = "graphcut";               // "graphcut" ou "dynamic-programming-dijkstra" (territoires pour la fusion)
 
   bool operator==(const PipelineChoices &other) const {
     return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
-           rejectOutliers == other.rejectOutliers && intensityMethod == other.intensityMethod &&
-           seamStep == other.seamStep;
+           intensityMethod == other.intensityMethod && seamStep == other.seamStep;
   }
 };
 
-// Le Vote 2D filtre des points appariés : la corrélation de phase en donne peu par paire, il n'est pas proposé avec elle.
-inline bool canRejectOutliers(const PipelineChoices &choices) {
+// Modèle de LightGlue, téléchargé par CMake dans le dossier de build (dossier de travail de l'application). Le matcher
+// résout ce chemin relatif.
+inline constexpr const char *LIGHTGLUE_MODEL_PATH = "models/raco_aliked_lightglue_pipeline_k1024.onnx";
+
+// Le Vote 2D filtre des points appariés : ajouté d'office après SIFT et LightGlue, jamais après la corrélation de phase,
+// qui donne peu de points par paire.
+inline bool usesVote2D(const PipelineChoices &choices) {
   return choices.matchingStep != "phase-correlation";
 }
 

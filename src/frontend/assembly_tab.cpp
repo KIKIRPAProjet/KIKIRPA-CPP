@@ -5,20 +5,52 @@
 #include "projectgrid.h"
 
 #include <algorithm>
-#include <QCheckBox>
+#include <QColor>
 #include <QComboBox>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QLabel>
 #include <QListWidget>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
 #include <QVBoxLayout>
 
 namespace {
 
-// Sélectionne l'entrée dont la donnée vaut `value` (nom de step ou de méthode).
+// Nom affiché d'une entrée sans la mention « indisponible », pour pouvoir la remettre ou l'enlever.
+constexpr int BASE_TEXT_ROLE = Qt::UserRole + 1;
+
+// Ajoute une entrée dont la donnée est le nom du step (ou de la méthode) envoyé au backend.
+void addMethod(QComboBox *combo, const QString &text, const QString &data)
+{
+    combo->addItem(text, data);
+    combo->setItemData(combo->count() - 1, text, BASE_TEXT_ROLE);
+}
+
+// Rend une entrée choisissable ou non. Indisponible, elle est grisée, marquée et ne peut pas être sélectionnée ;
+// la raison est dans l'infobulle.
+void setMethodAvailable(QComboBox *combo, int row, bool available, const QString &reason)
+{
+    auto *model = qobject_cast<QStandardItemModel *>(combo->model());
+    if (!model || row < 0 || row >= model->rowCount())
+        return;
+    QStandardItem *item = model->item(row);
+    const QString baseText = item->data(BASE_TEXT_ROLE).toString();
+    item->setEnabled(available);
+    item->setText(available ? baseText : baseText + QObject::tr("  (indisponible)"));
+    item->setForeground(available ? QBrush() : QBrush(QColor(QStringLiteral("#6f6f6f"))));
+    item->setToolTip(available ? QString() : reason);
+}
+
+void addUnavailableMethod(QComboBox *combo, const QString &text, const QString &data, const QString &reason)
+{
+    addMethod(combo, text, data);
+    setMethodAvailable(combo, combo->count() - 1, false, reason);
+}
+
 void selectData(QComboBox *combo, const std::string &value)
 {
     const int index = combo->findData(QString::fromStdString(value));
@@ -31,6 +63,15 @@ std::string selectedData(const QComboBox *combo)
     return combo->currentData().toString().toStdString();
 }
 
+QLabel *sectionTitle(const QString &text, QWidget *parent)
+{
+    auto *label = new QLabel(text, parent);
+    QFont font = label->font();
+    font.setBold(true);
+    label->setFont(font);
+    return label;
+}
+
 }
 
 AssemblyTab::AssemblyTab(MainWindow *mainWindow, ProjectGrid *projectGrid, QWidget *parent)
@@ -38,30 +79,89 @@ AssemblyTab::AssemblyTab(MainWindow *mainWindow, ProjectGrid *projectGrid, QWidg
 {
     auto *chainLayout = new QVBoxLayout(this);
     chainLayout->setContentsMargins(6, 8, 6, 8);
-    chainLayout->addWidget(new QLabel(tr("Chaîne de traitement")));
-
-    setupStepList(chainLayout);
-    setupActionControls(chainLayout);
     setupMethodControls(chainLayout);
+    chainLayout->addSpacing(12);
+    setupStepList(chainLayout);
+    chainLayout->addStretch(1);
+
     updateChoices(m_projectGrid->state().pipelineChoices);
+}
+
+QComboBox *AssemblyTab::addStage(const QString &title)
+{
+    auto *combo = new QComboBox(m_methodsForm->parentWidget());
+    // Largeur imposée par le panneau, pas par l'entrée la plus longue du menu.
+    combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    combo->setMinimumContentsLength(6);
+    m_methodsForm->addRow(title, combo);
+    return combo;
+}
+
+// Une ligne par étape qui peut être remplie par plusieurs steps du registre. Les données des entrées sont les noms du
+// registre (ou du paramètre method d'intensity-correction) : c'est ce que le script envoie au backend.
+void AssemblyTab::setupMethodControls(QVBoxLayout *layout)
+{
+    layout->addWidget(sectionTitle(tr("Méthodes"), layout->parentWidget()));
+    m_methodsForm = new QFormLayout;
+    m_methodsForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout->addLayout(m_methodsForm);
+
+    m_overlapCombo = addStage(tr("Recouvrement"));
+    addMethod(m_overlapCombo, tr("Réglage de la grille"), QString());
+    addMethod(m_overlapCombo, tr("Mesuré"), QStringLiteral("overlap-estimation"));
+
+    m_matchingCombo = addStage(tr("Appariement"));
+    addMethod(m_matchingCombo, tr("Corrélation de phase"), QStringLiteral("phase-correlation"));
+    addMethod(m_matchingCombo, QStringLiteral("SIFT"), QStringLiteral("sift"));
+    addMethod(m_matchingCombo, QStringLiteral("LightGlue"), QStringLiteral("lightglue"));
+
+    // Le Vote 2D suit l'appariement (voir usesVote2D) : rien à choisir, seulement une note.
+    m_voteNote = FrontendUtils::mutedLabel(tr("+ Vote 2D (automatique)"), m_methodsForm->parentWidget());
+    m_voteNote->setToolTip(tr("Écarte les correspondances aberrantes. Pas avec la corrélation de phase."));
+    m_methodsForm->addRow(QString(), m_voteNote);
+
+    m_intensityCombo = addStage(tr("Égalisation"));
+    addMethod(m_intensityCombo, tr("Gains et éclairage"), QStringLiteral("gain-and-field"));
+    addMethod(m_intensityCombo, tr("Gains seuls"), QStringLiteral("gain"));
+
+    m_seamCombo = addStage(tr("Couture"));
+    addMethod(m_seamCombo, tr("Coupe de graphe"), QStringLiteral("graphcut"));
+    addMethod(m_seamCombo, tr("Programmation dynamique"), QStringLiteral("dynamic-programming-dijkstra"));
+
+    m_verificationCombo = addStage(tr("Vérification"));
+    addMethod(m_verificationCombo, tr("Aucune"), QString());
+    addUnavailableMethod(m_verificationCombo, tr("Image de référence"), QStringLiteral("final-verification"),
+                         tr("Demande une image de référence, pas encore réglable ici."));
+
+    // Le menu ouvert montre les entrées en entier, même si le menu fermé est étroit.
+    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo, m_verificationCombo}) {
+        int widest = 0;
+        for (int row = 0; row < combo->count(); ++row)
+            widest = std::max(widest, combo->fontMetrics().horizontalAdvance(combo->itemText(row)));
+        combo->view()->parentWidget()->setMinimumWidth(widest + 40);   // conteneur du menu ouvert
+    }
+    // Connectés une fois tous les menus remplis : ajouter une entrée change l'index courant.
+    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo})
+        connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
+                &AssemblyTab::applyChoices);
 }
 
 void AssemblyTab::setupStepList(QVBoxLayout *layout)
 {
-    m_stepList = new QListWidget(this);
+    layout->addWidget(sectionTitle(tr("Étapes"), layout->parentWidget()));
+    m_stepList = new QListWidget(layout->parentWidget());
+    m_stepList->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_stepList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_stepList->setTextElideMode(Qt::ElideRight);
+    m_stepList->setToolTip(tr("Double-clic : relancer à partir de cette étape"));
     layout->addWidget(m_stepList);
+    auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), layout->parentWidget());
+    layout->addWidget(relaunch);
 
     // Un double-clic sur une étape déclenche immédiatement la relance à partir de celle-ci.
     connect(m_stepList, &QListWidget::itemDoubleClicked, this, [this](QListWidgetItem *item) {
         m_mainWindow->requestRun(item->data(Qt::UserRole).toInt());
     });
-}
-
-void AssemblyTab::setupActionControls(QVBoxLayout *layout)
-{
-    auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), this);
-    layout->addWidget(relaunch);
-
     // Relance le pipeline à partir de l'étape sélectionnée en exploitant les checkpoints existants.
     connect(relaunch, &QPushButton::clicked, this, [this]() {
         const int row = std::max(0, m_stepList->currentRow());
@@ -69,60 +169,11 @@ void AssemblyTab::setupActionControls(QVBoxLayout *layout)
     });
 }
 
-// Une méthode par étape qui en propose plusieurs. Les données des entrées sont les noms du registre des steps (ou du
-// paramètre method d'intensity-correction) : c'est ce que le script envoie au backend.
-void AssemblyTab::setupMethodControls(QVBoxLayout *layout)
-{
-    auto *methods = new QGroupBox(tr("Méthodes"), this);
-    auto *form = new QFormLayout(methods);
-
-    m_overlapCheck = new QCheckBox(tr("Mesurer le recouvrement réel"), methods);
-    m_overlapCheck->setToolTip(tr("Ajoute l'étape « Recouvrement réel » : la translation mesurée sert de point de départ "
-                                  "à l'appariement, au lieu du recouvrement nominal."));
-    form->addRow(m_overlapCheck);
-
-    m_matchingCombo = new QComboBox(methods);
-    m_matchingCombo->addItem(tr("Corrélation de phase"), QStringLiteral("phase-correlation"));
-    m_matchingCombo->addItem(QStringLiteral("SIFT"), QStringLiteral("sift"));
-    m_matchingCombo->addItem(QStringLiteral("LightGlue"), QStringLiteral("lightglue"));
-    form->addRow(tr("Appariement"), m_matchingCombo);
-
-    m_voteCheck = new QCheckBox(tr("Rejet des aberrants (Vote 2D)"), methods);
-    form->addRow(m_voteCheck);
-
-    m_intensityCombo = new QComboBox(methods);
-    m_intensityCombo->addItem(tr("Gains + champ d'éclairage"), QStringLiteral("gain-and-field"));
-    m_intensityCombo->addItem(tr("Gains seuls"), QStringLiteral("gain"));
-    form->addRow(tr("Égalisation"), m_intensityCombo);
-
-    // Le choix d'algorithme de couture existait déjà ici ; seule la coupe de graphe produit les territoires que lit la fusion.
-    m_seamCombo = new QComboBox(methods);
-    m_seamCombo->addItem(tr("Coupe de graphe"), QStringLiteral("graphcut"));
-    m_seamCombo->addItem(tr("Programmation dynamique"), QStringLiteral("dynamic-programming"));
-    m_seamCombo->addItem(tr("Dijkstra"), QStringLiteral("dijkstra"));
-    if (auto *model = qobject_cast<QStandardItemModel *>(m_seamCombo->model())) {
-        for (int row = 1; row < model->rowCount(); ++row) {
-            model->item(row)->setEnabled(false);
-            model->item(row)->setToolTip(tr("Pas encore relié à la fusion : cette méthode produit des coutures, "
-                                            "pas les territoires qu'utilise l'assemblage."));
-        }
-    }
-    form->addRow(tr("Couture"), m_seamCombo);
-    layout->addWidget(methods);
-
-    connect(m_overlapCheck, &QCheckBox::toggled, this, &AssemblyTab::applyChoices);
-    connect(m_voteCheck, &QCheckBox::toggled, this, &AssemblyTab::applyChoices);
-    for (QComboBox *combo : {m_matchingCombo, m_intensityCombo, m_seamCombo})
-        connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, &AssemblyTab::applyChoices);
-}
-
 void AssemblyTab::applyChoices()
 {
     FrontendNs::PipelineChoices choices;
-    choices.estimateOverlap = m_overlapCheck->isChecked();
+    choices.estimateOverlap = selectedData(m_overlapCombo) == "overlap-estimation";
     choices.matchingStep = selectedData(m_matchingCombo);
-    // Le Vote 2D n'est pas proposé avec la corrélation de phase (case grisée par updateChoices).
-    choices.rejectOutliers = m_voteCheck->isChecked() && FrontendNs::canRejectOutliers(choices);
     choices.intensityMethod = selectedData(m_intensityCombo);
     choices.seamStep = selectedData(m_seamCombo);
     if (choices == m_projectGrid->state().pipelineChoices)
@@ -133,21 +184,29 @@ void AssemblyTab::applyChoices()
 
 void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &choices)
 {
-    const QSignalBlocker overlapBlocker(m_overlapCheck);
+    const QSignalBlocker overlapBlocker(m_overlapCombo);
     const QSignalBlocker matchingBlocker(m_matchingCombo);
-    const QSignalBlocker voteBlocker(m_voteCheck);
     const QSignalBlocker intensityBlocker(m_intensityCombo);
     const QSignalBlocker seamBlocker(m_seamCombo);
-    m_overlapCheck->setChecked(choices.estimateOverlap);
+    selectData(m_overlapCombo, choices.estimateOverlap ? "overlap-estimation" : "");
     selectData(m_matchingCombo, choices.matchingStep);
-    m_voteCheck->setEnabled(FrontendNs::canRejectOutliers(choices));
-    m_voteCheck->setChecked(choices.rejectOutliers && FrontendNs::canRejectOutliers(choices));
-    m_voteCheck->setToolTip(FrontendNs::canRejectOutliers(choices)
-        ? tr("Ajoute l'étape « Rejet des aberrants » après l'appariement.")
-        : tr("Non disponible avec la corrélation de phase, qui donne peu de points par paire."));
     selectData(m_intensityCombo, choices.intensityMethod);
     selectData(m_seamCombo, choices.seamStep);
+    refreshVoteNote(choices);
     refreshStepList(choices);
+    // La note du Vote 2D ou une étape a pu apparaître : la zone de défilement du panneau (RightPanel) recalcule la
+    // hauteur de l'onglet, ce qu'elle ne fait pas d'elle-même quand le contenu change de taille.
+    for (QWidget *ancestor = parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
+        if (auto *scrollArea = qobject_cast<QScrollArea *>(ancestor)) {
+            QCoreApplication::postEvent(scrollArea, new QEvent(QEvent::LayoutRequest));
+            break;
+        }
+    }
+}
+
+void AssemblyTab::refreshVoteNote(const FrontendNs::PipelineChoices &choices)
+{
+    m_methodsForm->setRowVisible(m_voteNote, FrontendNs::usesVote2D(choices));
 }
 
 void AssemblyTab::refreshStepList(const FrontendNs::PipelineChoices &choices)
@@ -156,14 +215,19 @@ void AssemblyTab::refreshStepList(const FrontendNs::PipelineChoices &choices)
     // Mêmes étapes : la liste est gardée telle quelle, avec l'étape sélectionnée pour « Relancer à partir d'ici ».
     bool isUnchanged = m_stepList->count() == static_cast<int>(steps.size());
     for (int row = 0; isUnchanged && row < m_stepList->count(); ++row)
-        isUnchanged = m_stepList->item(row)->text() == QStringLiteral("•  ") + steps[static_cast<std::size_t>(row)].displayName;
+        isUnchanged = m_stepList->item(row)->text() == steps[static_cast<std::size_t>(row)].displayName;
     if (isUnchanged)
         return;
     m_stepList->clear();
     for (std::size_t i = 0; i < steps.size(); ++i) {
-        auto *item = new QListWidgetItem(QStringLiteral("•  ") + steps[i].displayName, m_stepList);
+        auto *item = new QListWidgetItem(steps[i].displayName, m_stepList);
         item->setData(Qt::UserRole, static_cast<int>(i + 1));
     }
+    // Toutes les étapes visibles sans barre de défilement : c'est l'onglet entier qui défile.
+    int height = 2 * m_stepList->frameWidth();
+    for (int row = 0; row < m_stepList->count(); ++row)
+        height += m_stepList->sizeHintForRow(row);
+    m_stepList->setFixedHeight(height + 4);
     setActiveStep(m_activeStep);
 }
 

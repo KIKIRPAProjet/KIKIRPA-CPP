@@ -120,7 +120,12 @@ void MainWindow::applyStyleSheet()
         "QSplitter::handle { background:#202020; }"
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
-        "QCheckBox { spacing:7px; }"));
+        "QCheckBox { spacing:7px; }"
+        // Un élément désactivé doit se voir : texte et bordure atténués, entrées de menu grisées.
+        "QWidget:disabled { color:#6f6f6f; }"
+        "QPushButton:disabled,QToolButton:disabled,QComboBox:disabled,QSpinBox:disabled,QLineEdit:disabled {"
+        " background:#333; border-color:#3d3d3d; }"
+        "QComboBox QAbstractItemView::item:disabled { color:#6f6f6f; }"));
 }
 
 void MainWindow::setupProjectGridConnections()

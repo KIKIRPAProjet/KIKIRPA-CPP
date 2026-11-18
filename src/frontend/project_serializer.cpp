@@ -34,7 +34,6 @@ QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
     QJsonObject json;
     json.insert(QStringLiteral("estimateOverlap"), choices.estimateOverlap);
     json.insert(QStringLiteral("matchingStep"), QString::fromStdString(choices.matchingStep));
-    json.insert(QStringLiteral("rejectOutliers"), choices.rejectOutliers);
     json.insert(QStringLiteral("intensityMethod"), QString::fromStdString(choices.intensityMethod));
     json.insert(QStringLiteral("seamStep"), QString::fromStdString(choices.seamStep));
     return json;
@@ -49,7 +48,6 @@ FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
     };
     choices.estimateOverlap = json.value(QStringLiteral("estimateOverlap")).toBool(choices.estimateOverlap);
     choices.matchingStep = text("matchingStep", choices.matchingStep);
-    choices.rejectOutliers = json.value(QStringLiteral("rejectOutliers")).toBool(choices.rejectOutliers);
     choices.intensityMethod = text("intensityMethod", choices.intensityMethod);
     choices.seamStep = text("seamStep", choices.seamStep);
     return choices;
