@@ -131,13 +131,13 @@ Les chemins relatifs se lisent depuis le dossier du script : ici, les images son
 Une ligne par step, avec son compte rendu (`getResult()`) :
 
 ```
-Step 1/5 OK {"tiles":6}
-Step 2/5 OK {"confidence":[...],"failures":[],"niveau":2,"pairs":7}
-Step 3/5 OK {"failures":[],"pairs":7,"positions":6}
+Step 1/7 OK {"tiles":6}
+Step 2/7 OK {"confidence":[...],"failures":[],"niveau":2,"pairs":7}
+Step 3/7 OK {"failures":[],"pairs":7,"positions":6}
 ...
 ```
 
-En cas d'échec : `Step 3/5 failed: <raison>`, et le run s'arrête. La sortie d'erreur rappelle le step fautif et la commande `--resume` à lancer.
+En cas d'échec : `Step 3/7 failed: <raison>`, et le run s'arrête. La sortie d'erreur rappelle le step fautif et la commande `--resume` à lancer.
 
 ### Ce que l'on trouve sur le disque
 
@@ -151,7 +151,7 @@ D:/oeuvre/checkpoints/
 │   ├── tiles.json                     la sortie du step
 │   └── manifest.json                  écrit en dernier : sa présence marque le checkpoint complet
 ├── 01_phase-correlation/  matches.json, manifest.json
-├── 02_absolute-pos/       positions.json, manifest.json
+├── 02_absolute-pos/       positions.json, pairResiduals.json, manifest.json
 ├── 03_intensity-correction/  intensityCorrection.json, manifest.json
 ├── 04_graphcut/           territories.json, manifest.json
 ├── 05_fusion/             mosaic.json, manifest.json
@@ -185,7 +185,7 @@ Relancer le même script avec `--resume` reprend où le run s'était arrêté, e
                      ┌──────────────┐    ┌──────────────────────┐                         │
                      │ absolute-pos │    │ intensity-correction │──► intensityCorrection  │
                      └──────────────┘    └──────────────────────┘                         │
-                              │ positions                                                 │
+                              │ positions (+ pairResiduals)                               │
                               ▼                                                           │
                          ┌──────────┐◄───────────────────────────────────────────────────┘
                          │ graphcut │──► territories
@@ -200,13 +200,13 @@ Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se 
 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
-| `import` | `path`, `tiles` (liste des tuiles) ou `format` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
+| `import` | `path`, `tiles` (liste des tuiles), `format`, `columns` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
 | `overlap-estimation` | `overlap`, réglages de la corrélation | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
 | `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
 | `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
 | `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
-| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
+| `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` (0,25 par défaut depuis #150) | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
@@ -237,7 +237,7 @@ Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. C'es
 ```
 
 - `id` = rang de la tuile dans l'ordre ligne par ligne, puis colonne par colonne. **C'est le seul identifiant de tuile du pipeline** : `tileIdA` / `tileIdB` des paires, `tileId` des positions, etc.
-- `row`, `column` : la case, à partir de 0, fixée par `import` (liste `tiles` ou nom du fichier).
+- `row`, `column` : la case, à partir de 0, fixée par `import` (liste `tiles`, nom du fichier ou ordre des noms).
 
 C++ : `DataNs::TileList` = `std::vector<std::shared_ptr<DataNs::TileClass>>` (`core/data/tile.h`).
 
@@ -322,7 +322,7 @@ C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 ```
 
 - Une entrée par paire de voisines, de A vers sa voisine de droite ou du dessous B.
-- `points` : le chemin de la couture, pixel par pixel, en pleine résolution et dans le repère de la mosaïque.
+- `points` : le chemin de la couture, pixel par pixel, en pleine résolution et dans le repère d'`absolute-pos` (avant le décalage vers (0, 0) appliqué aux territoires).
 - Produit par `dynamic-programming-dijkstra`, en plus de `territories` ; aucun step ne le lit. `graphcut` ne produit pas de `seamlines` : ses coutures sont les bords des territoires.
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
@@ -462,7 +462,7 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 | Build and test (Windows) | compilation et tests sous Windows avec MSVC (preset `windows-aqt`) |
 | clang-tidy | règles de style et de qualité, **seulement sur les fichiers C++ modifiés** par une PR. Sur un push vers `main`, il n'y a rien à comparer : le job passe sans rien analyser |
 
-Les tests sont lancés avec `-L "unit|integration"` : les 7 tests de `tests/frontend/`, qui n'ont pas de label, ne tournent donc pas en CI. `release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
+Les tests sont lancés avec `-L "unit|integration"` : les 8 tests de `tests/frontend/`, qui n'ont pas de label, ne tournent donc pas en CI. `release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
 
 ---
 
@@ -495,7 +495,7 @@ Tout ce qu'il faut existe déjà côté backend :
 | construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
 | lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
-| afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
+| afficher le journal | le `logger` reçoit chaque message (`Step 2/7 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
 | mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
 | reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
 | afficher l'avancement et l'état sauvegardé | `run.json` (`status`, `completedSteps`), réécrit après chaque step |
