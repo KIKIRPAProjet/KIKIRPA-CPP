@@ -35,6 +35,7 @@ namespace StepsNs {
             const LightGlueInput& input;
             StitchingNs::FeatureMatcherClass& matcher;
             OverlapEstimationNs::OverlapEstimatorClass& estimator;
+            const DataNs::OverlapEstimates* overlapEstimates = nullptr;   // sortie de overlap-estimation, si présente
         };
 
         struct PairMeasurement {
@@ -45,10 +46,14 @@ namespace StepsNs {
         PairMeasurement measurePair(const NeighborPair& pair, const cv::Mat& imageA,
                                     const cv::Mat& imageB, const PairProcessingContext& context) {
             const DataNs::PairContext pairContext{pair.direction, context.input.overlap, std::nullopt};
-            const auto overlap = context.estimator.estimate(imageA, imageB, pairContext);
-            if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
-            const auto regions = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(
-                imageA.size(), imageB.size(), overlap->translationBInA);
+            // Première passe : la mesure de overlap-estimation si elle existe pour cette paire, sinon la nôtre.
+            auto translation = findEstimatedTranslation(context.overlapEstimates, pair.tileA->getId(), pair.tileB->getId());
+            if (!translation) {
+                const auto overlap = context.estimator.estimate(imageA, imageB, pairContext);
+                if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
+                translation = overlap->translationBInA;
+            }
+            const auto regions = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(imageA.size(), imageB.size(), *translation);
             if (regions.first.empty() || regions.second.empty()) return {std::nullopt, "tiles have no common region"};
             DataNs::PairMatches pairOutput{pair.tileA->getId(), pair.tileB->getId(), pair.direction, {}};
             if (!context.matcher.match(imageA(regions.first), imageB(regions.second), pairContext, pairOutput.featureMatches))
@@ -141,7 +146,7 @@ namespace StepsNs {
             const auto pairs = collectPairs(dataStore->get<DataNs::TileList>("tiles"));
             loadMatcher(input.modelPath);
             OverlapEstimationNs::OverlapEstimatorClass estimator;
-            const PairProcessingContext context{input, *matcher, estimator};
+            const PairProcessingContext context{input, *matcher, estimator, findOverlapEstimates(*dataStore)};
             measurePairs(pairs, context, output, result);
             result["pairs"] = output.value.size();
             if (output.value.empty()) {

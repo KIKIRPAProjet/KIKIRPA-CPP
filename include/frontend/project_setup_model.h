@@ -21,6 +21,29 @@ struct ProjectTile {
   int column = 0;
 };
 
+// Méthode choisie pour chaque étape du pipeline (onglet Chaîne). Les noms sont ceux du registre des steps.
+struct PipelineChoices {
+  bool estimateOverlap = false;                    // ajoute overlap-estimation avant l'appariement
+  std::string matchingStep = "phase-correlation";  // "phase-correlation", "sift" ou "lightglue"
+  bool rejectOutliers = false;                     // ajoute vote-2d après l'appariement, sauf avec phase-correlation
+  std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
+  std::string seamStep = "graphcut";               // seule méthode de couture reliée à la fusion aujourd'hui
+
+  bool operator==(const PipelineChoices &other) const {
+    return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
+           rejectOutliers == other.rejectOutliers && intensityMethod == other.intensityMethod &&
+           seamStep == other.seamStep;
+  }
+};
+
+// Le Vote 2D filtre des points appariés : la corrélation de phase en donne peu par paire, il n'est pas proposé avec elle.
+inline bool canRejectOutliers(const PipelineChoices &choices) {
+  return choices.matchingStep != "phase-correlation";
+}
+
+// Noms des steps du script, dans l'ordre, pour ces choix.
+std::vector<std::string> pipelineStepNames(const PipelineChoices &choices);
+
 struct ProjectSetup {
   std::string projectName;
   std::filesystem::path inputDirectory;
@@ -33,6 +56,7 @@ struct ProjectSetup {
   double overlap = DEFAULT_OVERLAP;
   int pyramidLevel = 0;
   std::vector<ProjectTile> tiles;
+  PipelineChoices pipelineChoices;
 };
 
 // Modèle indépendant de l'affichage pour que le parcours puisse être validé

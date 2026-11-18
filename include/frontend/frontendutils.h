@@ -1,6 +1,8 @@
 #ifndef FRONTENDUTILS_H
 #define FRONTENDUTILS_H
 
+#include "project_setup_model.h"
+
 #include <QImage>
 #include <QSize>
 #include <QString>
@@ -25,7 +27,8 @@ struct PipelineStepInfo {
     QString displayName;
 };
 
-const std::vector<PipelineStepInfo>& pipelineSteps();
+// Étapes du script pour ces méthodes, dans l'ordre (liste de l'onglet Chaîne, relance, étape de départ).
+std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &choices);
 
 //définition des 4 états possibles d'une paire de tuiles 
 enum class PairStatus : std::uint8_t {

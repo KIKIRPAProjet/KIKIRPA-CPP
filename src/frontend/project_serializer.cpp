@@ -26,6 +26,37 @@
 
 #include <utility>
 
+namespace {
+
+// Méthodes de l'onglet Chaîne, enregistrées dans l'objet "pipeline" du projet.
+QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
+{
+    QJsonObject json;
+    json.insert(QStringLiteral("estimateOverlap"), choices.estimateOverlap);
+    json.insert(QStringLiteral("matchingStep"), QString::fromStdString(choices.matchingStep));
+    json.insert(QStringLiteral("rejectOutliers"), choices.rejectOutliers);
+    json.insert(QStringLiteral("intensityMethod"), QString::fromStdString(choices.intensityMethod));
+    json.insert(QStringLiteral("seamStep"), QString::fromStdString(choices.seamStep));
+    return json;
+}
+
+// Une clé absente (projet enregistré avant cet ajout) garde la valeur par défaut.
+FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
+{
+    FrontendNs::PipelineChoices choices;
+    const auto text = [&json](const char *key, const std::string &fallback) {
+        return json.value(QLatin1String(key)).toString(QString::fromStdString(fallback)).toStdString();
+    };
+    choices.estimateOverlap = json.value(QStringLiteral("estimateOverlap")).toBool(choices.estimateOverlap);
+    choices.matchingStep = text("matchingStep", choices.matchingStep);
+    choices.rejectOutliers = json.value(QStringLiteral("rejectOutliers")).toBool(choices.rejectOutliers);
+    choices.intensityMethod = text("intensityMethod", choices.intensityMethod);
+    choices.seamStep = text("seamStep", choices.seamStep);
+    return choices;
+}
+
+}
+
 bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectData,
                                      QString *errorMessage)
 {
@@ -95,6 +126,7 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
                  QStringLiteral("automatic_uncertainty")).toBool(true);
     gridState.referenceImagePath =
         valueFor(QStringLiteral("referenceImage"), QStringLiteral("reference_image")).toString();
+    gridState.pipelineChoices = pipelineChoicesFromJson(project.value(QStringLiteral("pipeline")).toObject());
     for (const QJsonValue &tile : project.value(QStringLiteral("tiles")).toArray())
         gridState.tilePaths.append(tile.toString());
 
@@ -144,6 +176,7 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     project.insert(QStringLiteral("uncertaintyMargin"), gridState.uncertaintyMargin);
     project.insert(QStringLiteral("automaticUncertainty"), gridState.automaticUncertainty);
     project.insert(QStringLiteral("referenceImage"), gridState.referenceImagePath);
+    project.insert(QStringLiteral("pipeline"), pipelineChoicesToJson(gridState.pipelineChoices));
 
     QJsonArray tiles;
     for (const QString &tile : gridState.tilePaths)

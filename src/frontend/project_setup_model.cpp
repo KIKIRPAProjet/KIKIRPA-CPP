@@ -212,6 +212,31 @@ Json createProjectJson(const ProjectSetup &setup) {
           {"grid", createGridJson(setup)}};
 }
 
+// Configuration d'un step du script : valeurs par défaut du registre, puis les réglages tirés du projet.
+Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
+  Json stepJson = PipelineNs::createStep(stepName)->getConfigJson();
+  if (stepName == "import") {
+    replaceParameter(
+        stepJson, "path",
+        IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal()));
+    // Les tuiles et leur case viennent de la grille : le format des noms n'est pas utilisé par le backend.
+    replaceParameter(stepJson, "tiles", createImportTilesJson(setup));
+  } else if (stepName == "phase-correlation") {
+    replaceParameter(stepJson, "overlap", setup.overlap);
+    replaceParameter(stepJson, "niveau", setup.pyramidLevel);
+  } else if (stepName == "overlap-estimation" || stepName == "sift" ||
+             stepName == "lightglue") {
+    replaceParameter(stepJson, "overlap", setup.overlap);
+  } else if (stepName == "intensity-correction") {
+    replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
+  } else if (stepName == "export") {
+    replaceParameter(
+        stepJson, "outputDirectory",
+        IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
+  }
+  return stepJson;
+}
+
 Json createRunJson(const ProjectSetup &setup) {
   const fs::path output =
       fs::absolute(setup.outputDirectory).lexically_normal();
@@ -223,6 +248,21 @@ Json createRunJson(const ProjectSetup &setup) {
 }
 
 } // namespace
+
+std::vector<std::string> pipelineStepNames(const PipelineChoices &choices) {
+  std::vector<std::string> names{"import"};
+  if (choices.estimateOverlap)
+    names.emplace_back("overlap-estimation");   // première passe commune, lue par les trois méthodes d'appariement
+  names.push_back(choices.matchingStep);
+  if (choices.rejectOutliers && canRejectOutliers(choices))
+    names.emplace_back("vote-2d");
+  names.emplace_back("absolute-pos");
+  names.emplace_back("intensity-correction");
+  names.push_back(choices.seamStep);
+  names.emplace_back("fusion");
+  names.emplace_back("export");
+  return names;
+}
 
 void ProjectSetupModelClass::setSetup(ProjectSetup newSetup) {
   setup = std::move(newSetup);
@@ -283,41 +323,13 @@ Json ProjectSetupModelClass::createBackendScript() const {
   if (!errors.empty())
     throw std::invalid_argument(errors.front());
 
-  Json importStep = PipelineNs::createStep("import")->getConfigJson();
-  replaceParameter(
-      importStep, "path",
-      IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal()));
-  // Les tuiles et leur case viennent de la grille : le format des noms n'est pas utilisé par le backend.
-  replaceParameter(importStep, "tiles", createImportTilesJson(setup));
-
-    Json phaseCorrelationStep =
-      PipelineNs::createStep("phase-correlation")->getConfigJson();
-  replaceParameter(phaseCorrelationStep, "overlap", setup.overlap);
-  replaceParameter(phaseCorrelationStep, "niveau", setup.pyramidLevel);
-
-  Json absolutePosStep =
-      PipelineNs::createStep("absolute-pos")->getConfigJson();
-
-  Json intensityCorrectionStep =
-      PipelineNs::createStep("intensity-correction")->getConfigJson();
-
-  Json graphcutStep =
-      PipelineNs::createStep("graphcut")->getConfigJson();
-
-  Json fusionStep =
-      PipelineNs::createStep("fusion")->getConfigJson();
-
-  Json exportStep =
-      PipelineNs::createStep("export")->getConfigJson();
-  replaceParameter(
-      exportStep, "outputDirectory",
-      IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
+  // Les steps et leur ordre dépendent des méthodes choisies dans l'onglet Chaîne.
+  Json steps = Json::array();
+  for (const std::string &stepName : pipelineStepNames(setup.pipelineChoices))
+    steps.push_back(createStepJson(stepName, setup));
 
   Json script = {{"project", createProjectJson(setup)},
-                 {"pipeline",
-                  {{"steps", Json::array({importStep, phaseCorrelationStep,
-                                          absolutePosStep, intensityCorrectionStep,
-                                          graphcutStep, fusionStep, exportStep})}}},
+                 {"pipeline", {{"steps", std::move(steps)}}},
                  {"run", createRunJson(setup)}};
 
   static_cast<void>(PipelineNs::buildPipeline(script));

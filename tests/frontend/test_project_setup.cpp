@@ -9,6 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -163,6 +164,51 @@ TEST_F(ProjectSetupTestClass, AcceptsFreeFileNames) {
   const FrontendNs::Json script = model.createBackendScript();
   const FrontendNs::Json &importStep = script.at("pipeline").at("steps").at(0);
   EXPECT_EQ(parameterValue(importStep, "tiles").size(), 4);
+}
+
+// --- Méthodes choisies dans l'onglet Chaîne ---
+
+std::vector<std::string> stepNames(const FrontendNs::Json &script) {
+  std::vector<std::string> names;
+  for (const FrontendNs::Json &step : script.at("pipeline").at("steps"))
+    names.push_back(step.at("name").get<std::string>());
+  return names;
+}
+
+// Les méthodes par défaut donnent le même script qu'avant leur ajout.
+TEST_F(ProjectSetupTestClass, DefaultChoicesKeepThePreviousPipeline) {
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(model.createBackendScript()), expected);
+}
+
+// Recouvrement réel, SIFT et Vote 2D : les étapes sont ajoutées à leur place, et le backend accepte le script.
+TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.estimateOverlap = true;
+  setup.pipelineChoices.matchingStep = "sift";
+  setup.pipelineChoices.rejectOutliers = true;
+  setup.pipelineChoices.intensityMethod = "gain";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "overlap-estimation", "sift", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  EXPECT_DOUBLE_EQ(parameterValue(script.at("pipeline").at("steps").at(2), "overlap"), 0.2);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(5), "method"), "gain");
+}
+
+// Le Vote 2D n'est jamais ajouté avec la corrélation de phase.
+TEST_F(ProjectSetupTestClass, PhaseCorrelationNeverGetsVote2D) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "phase-correlation";
+  setup.pipelineChoices.rejectOutliers = true;
+  model.setSetup(setup);
+
+  const std::vector<std::string> names = stepNames(model.createBackendScript());
+  EXPECT_EQ(std::find(names.begin(), names.end(), "vote-2d"), names.end());
 }
 
 } // namespace

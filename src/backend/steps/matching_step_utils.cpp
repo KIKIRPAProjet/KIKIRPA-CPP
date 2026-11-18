@@ -3,6 +3,7 @@
 #include "core/data/tile.h"
 #include "core/data/algorithm_types.h"
 #include "core/io/unicode_path.h"
+#include "core/step/data_store.h"
 
 #include <cstddef>
 #include <nlohmann/json.hpp>
@@ -15,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -89,6 +91,17 @@ namespace StepsNs {
         }
         matches.translationX += static_cast<float>(regionA.x - regionB.x);
         matches.translationY += static_cast<float>(regionA.y - regionB.y);
+    }
+
+    const DataNs::OverlapEstimates* findOverlapEstimates(const StepNs::DataStoreClass& dataStore) {
+        return dataStore.has("overlapEstimates") ? &dataStore.get<DataNs::OverlapEstimates>("overlapEstimates") : nullptr;
+    }
+
+    std::optional<cv::Point2d> findEstimatedTranslation(const DataNs::OverlapEstimates* estimates, int tileIdA, int tileIdB) {
+        if (estimates == nullptr) return std::nullopt;
+        for (const DataNs::PairOverlapEstimate& pairEstimate : *estimates)
+            if (pairEstimate.tileIdA == tileIdA && pairEstimate.tileIdB == tileIdB) return pairEstimate.estimate.translationBInA;
+        return std::nullopt;
     }
 
     nlohmann::json serializeOutput(const std::string& key, const std::vector<DataNs::PairMatches>& value, const std::string& type) {
