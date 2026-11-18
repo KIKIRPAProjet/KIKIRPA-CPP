@@ -1,6 +1,6 @@
 # Migration : réorganisation du code (nov. 2026)
 
-Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions), les changements apportés depuis par les PR mergées du 04 au 06/11 au [§13](#13-depuis-la-migration-04-au-06112026), et ceux du 09 au 15/11 au [§14](#14-du-09-au-15112026). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
+Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions), les changements apportés depuis par les PR mergées du 04 au 06/11 au [§13](#13-depuis-la-migration-04-au-06112026), ceux du 09 au 15/11 au [§14](#14-du-09-au-15112026), et ceux du 17 et du 18/11 au [§15](#15-les-17-et-18112026). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
 
 ## Résumé
 
@@ -419,7 +419,7 @@ Une vingtaine de PR mergées, dont cinq changent des noms, des fichiers ou des c
 | fichiers `..._rLL_cCC.tif` exigés par `absolute-pos` et `graphcut` | fichiers `..._C<colonne>_R<ligne>.tif` (ou `.tiff`), le format par défaut d'`import` (`img_C(\d+)_R(\d+)\.tif`) |
 | `ImagePretreatmentClass::parseTileName` lisait `_rLL_cCC` | il lit `_C<colonne>_R<ligne>` ; l'**identifiant interne reste `rLL_cCC`** (`TilePositionData::tileId`) |
 
-Les tests qui fabriquent des tuiles `tile_r00_c01.tif` doivent passer au format `_C_R`.
+Les tests qui fabriquent des tuiles `tile_r00_c01.tif` doivent passer au format `_C_R`. Depuis #149 (§15), l'identifiant `rLL_cCC` a disparu du pipeline et le nom des fichiers n'est plus exigé.
 
 ### Assemblage et export (#102, #118, #119)
 
@@ -435,7 +435,7 @@ Une branche qui produit ou lit des `CompositeBlocks` (par exemple l'ancienne #13
 
 | Step | PR | Entrées → sorties |
 |---|---|---|
-| `dynamic-programming-dijkstra` | #72 | `tiles`, `positions`, `intensityCorrection` → `seamlines` |
+| `dynamic-programming-dijkstra` | #72 | `tiles`, `positions`, `intensityCorrection` → `seamlines` (et `territories` depuis #137, §15) |
 | `export` | #102, puis #118 | `mosaic` → `mosaic.tif` |
 | `vote-2d` | #111 | `matches` → `matches` |
 | `final-verification` | #116 | chemins → `verificationReport` |
@@ -477,3 +477,48 @@ Les maquettes des branches `fr-rahim`, `Valerie`, `frontendMathias` ont été re
 - OpenCV 4 est imposé par `find_package` (#106).
 - `scripts/demarrer.py` et `docs/DEMARRER.md` installent et configurent un poste (#113, #130).
 - Le doublon de `tests/seamline/CMakeLists.txt` qui empêchait la configuration avec CMake 4.4 (celui de CLion) est retiré (15/11, `c647057`). Effacer son dossier de build si la configuration échouait avant.
+
+## 15. Les 17 et 18/11/2026
+
+PR mergées : #149 et #151 (17/11), #152, #145, #137 et #150 (18/11). Une branche partie d'avant #149 doit surtout reprendre le changement d'identifiant de tuile.
+
+### Identifiant et case des tuiles (#149)
+
+| Avant | Après |
+|---|---|
+| `TilePositionData::tileId` : texte `"rLL_cCC"` | `int tileId` = `TileClass::getId()`, comme `PairMatches` et `Seamline` |
+| trois identifiants (`getId()`, `rLL_cCC`, indice dans `tiles`) | un seul identifiant, `TileClass::getId()` = rang de la tuile ligne par ligne, puis colonne par colonne, calculé par `import`. L'**indice** dans `tiles` reste utilisé par `TileTerritory::tileIndex` et `IntensityCorrection::tileGains` |
+| ligne et colonne relues dans le nom du fichier par `absolute-pos`, `graphcut` et `fusion` (`parseTileName`) | `TileClass::getGridRow()` / `getGridColumn()`, fixées par `import` (`setGridPosition`). `parseTileName` ne sert plus qu'au code mort `computeTilePositions` |
+| fichiers `..._C<colonne>_R<ligne>.tif` exigés (#86) | noms libres : liste `tiles` d'`import` (`{ file, row, column }`, sans `id`), ou `format` |
+| TIFF pyramidal `<nom>_pyramid.tif` | `<id>_<nom>_pyramid.tif` : deux images de même nom (`a.tif`, `a.tiff`) ne s'écrasent plus |
+
+Un test qui fabriquait des positions avec `tileId = "r00_c01"` doit passer à l'entier de la tuile ; un test qui comptait sur le nom `_C_R` pour placer les tuiles peut garder ce nom (`format` reste le défaut d'`import`) ou donner la liste `tiles`.
+
+### Placement sans nom de fichier (#151)
+
+| Avant | Après |
+|---|---|
+| sans liste `tiles`, au moins un nom devait correspondre à `format`, sinon `no file matching` | si aucun nom ne correspond, les TIFF du dossier, triés par nom, remplissent la grille ligne par ligne sur `columns` colonnes (nouveau paramètre `int` d'`import`, 0 = non donné) |
+| — | `import` indique d'où viennent les cases : `getResult()["placement"]` = `list`, `fileName` ou `nameOrder` |
+
+### Territoires de `dynamic-programming-dijkstra` (#137)
+
+| Avant | Après |
+|---|---|
+| sortie `seamlines` seulement, lue par aucun step | sorties `seamlines` **et** `territories` (`vector<DataNs::TileTerritory>`) : `dynamic-programming-dijkstra` peut remplacer `graphcut` devant `fusion` |
+| positions supposées dans l'ordre de `tiles` | positions rangées par `tileId` (`DynamicProgrammingDijkstraNs::orderTilePositions`) ; une position manquante ou en double fait échouer le step |
+| — | nouveau module `algorithms/seamline/dynamic_programming_dijkstra/territory_builder.{h,cpp}` (`buildTerritories`) et test `tests/seamline/test_territory_builder.cpp` |
+
+Les territoires de ce step sont découpés par blocs de `BLOCK_SIZE` : un territoire y compte plusieurs polygones adjacents. Dans le coin commun à quatre tuiles, l'attribution dépend de l'ordre des tuiles ; le réseau global (`junctions.h`) n'est pas encore branché.
+
+### GraphCut et interface (#150, #152)
+
+| Avant | Après |
+|---|---|
+| `GraphCutInput::scale = 1` (défaut du paramètre `scale` de `graphcut`) | `scale = StepsNs::DEFAULT_GRAPH_CUT_SCALE` (0,25). Un script qui veut la pleine résolution doit écrire `scale` = 1 |
+| aperçu de l'export étiré au rectangle de la vue, pourcentage de zoom affiché | aperçu réduit à son ratio et centré (`ArtworkCanvas::paintEvent`), sans pourcentage de zoom |
+| panneaux du bas et de droite bloqués par leur taille minimale sur petit écran | redimensionnables (#152 : `kMinimumHeight` de `artworkcanvas.cpp` passe de 260 à 120, `right_panel`, `bottom_tabs`, `workspace_ui`) |
+
+### Build (18/11)
+
+- La CI Windows installe une version figée d'aqt (`build-test-windows.yml`, `b9d1839`).

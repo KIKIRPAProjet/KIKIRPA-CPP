@@ -1,17 +1,18 @@
 # Carte de l'architecture : KIKIRPA-CPP
 
-Guide pour se repérer dans le code de **`main`**, à jour du 17/11/2026 (`c939612`, après #132).
+Guide pour se repérer dans le code de **`main`**, à jour du 18/11/2026 (`08bd177`, après #150).
 
 Depuis la version précédente de cette carte (07/11, après #80), `main` a reçu :
 - **le 09/11** : le step `dynamic-programming-dijkstra` et une nouvelle version de `intensity-correction` (#72), le premier export (#98, #99, #102) et les premières fenêtres Qt (#91, #104) ;
 - **le 10/11** : les fenêtres Qt suivantes (#109, #114), les résidus d'`absolute-pos` (#100), le step `vote-2d` (#111), `final-verification` (#116), le writer TIFF par blocs et le contrat `Mosaic` (#118), l'installation d'un poste (#113, #130) ;
 - **le 11/11** : OpenCV 4 forcé (#106), un nouvel apport au frontend (#131) et les corrections de GraphCut, qui imposent le nommage `_C<colonne>_R<ligne>` (#86) ;
 - **le 15/11** : la liste de noms qui remplace `REGISTERED_STEP_COUNT`, le step `overlap-estimation` (#127), l'assemblage `fusion` (#119) et la ligne de commande avec les chemins UTF-8 (#103) ;
-- **le 17/11** : le vrai calcul lancé depuis l'interface (#132), les docs du vote 2D et de RANSAC (#135, #136), l'installation sous Ubuntu 24.04 (#138).
+- **le 17/11** : le vrai calcul lancé depuis l'interface (#132), les docs du vote 2D et de RANSAC (#135, #136), l'installation sous Ubuntu 24.04 (#138), un seul identifiant de tuile et la case fixée par `import` (#149), le placement des tuiles sans exigence sur le nom des fichiers (#151) ;
+- **le 18/11** : les panneaux de l'interface sur petit écran (#152), la doc de la corrélation de phase (#145), les territoires de `dynamic-programming-dijkstra`, enfin lus par `fusion` (#137), l'aperçu de l'export à la bonne taille et `scale` de `graphcut` à 0,25 par défaut (#150).
 
 **La chaîne va maintenant de l'import à `mosaic.tif`, en ligne de commande comme depuis l'interface.**
 
-Les éléments marqués **🆕** ont changé avec la réorganisation de `core/` et `steps/` (PR #50) ou la migration des algorithmes (#76) : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. La correspondance entre anciens et nouveaux noms est dans [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) : §12 pour les algorithmes, §14 pour ce qui a changé du 09 au 15/11. Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
+Les éléments marqués **🆕** ont changé avec la réorganisation de `core/` et `steps/` (PR #50) ou la migration des algorithmes (#76) : dossiers en minuscules, fichiers en `snake_case`, noms anglais, un namespace par dossier, nouveau format JSON. La correspondance entre anciens et nouveaux noms est dans [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) : §12 pour les algorithmes, §14 pour ce qui a changé du 09 au 15/11, §15 pour les 17 et 18/11. Règles de nommage : [CONVENTIONS.md](CONVENTIONS.md).
 
 > **Cette carte doit rester à jour.** Elle est mise à jour, avec [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md), **après le merge** de chaque PR qui ajoute, déplace, renomme ou supprime un fichier, un step, un type partagé ou un test, dans une PR séparée. L'auteur d'une PR n'a pas à modifier ces deux docs.
 
@@ -71,12 +72,12 @@ flowchart LR
     M --> X[Rejet des aberrants<br/>✅ vote-2d]
     X --> L[Moindres carrés<br/>✅ absolute-pos]
     L --> E[Intensité<br/>✅ intensity-correction]
-    E --> S[Seamline<br/>✅ graphcut · ⚠️ dynamic-programming-dijkstra<br/>sans consommateur]
+    E --> S[Seamline<br/>✅ graphcut · ✅ dynamic-programming-dijkstra<br/>⚠️ jonctions non branchées]
     S --> A[Assemblage<br/>✅ fusion]
     A --> O[Export<br/>✅ export]
 ```
 
-Un script complet va de l'import à `mosaic.tif` : `import` → un step d'appariement → `vote-2d` (facultatif) → `absolute-pos` → `intensity-correction` → `graphcut` → `fusion` → `export`. `fusion` applique les gains d'`intensity-correction` s'ils existent. Exemple de script : [COMPRENDRE_LE_PROJET.md §3](COMPRENDRE_LE_PROJET.md#3-faire-tourner-le-pipeline-aujourdhui).
+Un script complet va de l'import à `mosaic.tif` : `import` → un step d'appariement → `vote-2d` (facultatif) → `absolute-pos` → `intensity-correction` → `graphcut` ou `dynamic-programming-dijkstra` → `fusion` → `export`. `fusion` applique les gains d'`intensity-correction` s'ils existent. Exemple de script : [COMPRENDRE_LE_PROJET.md §3](COMPRENDRE_LE_PROJET.md#3-faire-tourner-le-pipeline-aujourdhui).
 
 Une **étape** (step) lit ses entrées dans le `DataStoreClass` et y écrit ses sorties. Pour faire le calcul, elle appelle un **algorithme**. L'algorithme, lui, ne connaît ni le pipeline ni le JSON : il prend des `cv::Mat` et des structures C++.
 
@@ -135,7 +136,7 @@ PipelineClass::run ──► saute les steps déjà faits (checkpoint valide) et
 | Voir le rejet des mauvais points (vote de Hough 2D) | [vote_rejector.cpp](../src/backend/algorithms/rejection/vote_2d/vote_rejector.cpp) + sa [doc](algorithms/rejection/vote_2d/Vote2D.md) (seule méthode de rejet depuis #63) |
 | **Voir l'alignement global** (moindres carrés) | [position_solver.cpp](../src/backend/algorithms/stitching/positioning/position_solver.cpp) : `solveRelativePositions()` |
 | **Égaliser la luminosité entre tuiles** | [brightness_equalizer.h](../include/backend/algorithms/brightness_equalization/brightness_equalizer.h) + sa [doc](algorithms/brightness_equalization/BrightnessEqualization.md) 🆕 |
-| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) (point d'entrée) puis [solver.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.h) 🆕 |
+| Voir le calcul des coutures, méthode DP/Dijkstra | [seam_finder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/seam_finder.h) (point d'entrée) puis [solver.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.h) 🆕 ; des coutures aux territoires lus par `fusion` : [territory_builder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/territory_builder.h) (#137) |
 | Voir le calcul des coutures, méthode GraphCut | [graph_cut_seam_finder.cpp](../src/backend/algorithms/seamline/graph_cut/graph_cut_seam_finder.cpp) + [graph_cut_step.cpp](../src/backend/steps/graph_cut_step.cpp) 🆕 |
 | Voir un vrai pipeline tourner depuis un script JSON | [test_command_line.cpp](../tests/cli/test_command_line.cpp) (l'exécutable lancé sur une chaîne complète) ; [test_pipeline.cpp](../tests/core/test_pipeline.cpp) : `testerPipelineReel()` (import → phase-correlation) et `testerRepriseReelle()` |
 | **Voir la fenêtre principale** | [mainwindow.h](../include/frontend/mainwindow.h) / [mainwindow.cpp](../src/frontend/mainwindow.cpp) ; tout le dossier : §4 « `frontend/` » |
@@ -261,7 +262,7 @@ scripts/             demarrer.py : installation et configuration d'un poste
 
 | Fichier | Nom JSON | Lit | Écrit | Appelle |
 |---|---|---|---|---|
-| [ImportStepClass](../src/backend/steps/import_step.cpp) | `import` | paramètres `path`, `format` (regex : groupe 1 = colonne, groupe 2 = ligne) | `"tiles"` : `Tiles` | `IONs::readImage` + `createPyramidalTiledTiff` (cache dans `<images>/.cache/pyramids`) |
+| [ImportStepClass](../src/backend/steps/import_step.cpp) | `import` | paramètres `path`, `tiles` (liste `{ file, row, column }`), `format` (regex : groupe 1 = colonne, groupe 2 = ligne), `columns` (grille remplie dans l'ordre des noms, #151) | `"tiles"` : `Tiles` | `IONs::readImage` + `createPyramidalTiledTiff` (cache `<images>/.cache/pyramids/<id>_<nom>_pyramid.tif`). Calcule l'`id` de chaque tuile (rang ligne par ligne) et fixe sa case (`getGridRow`, `getGridColumn`, #149). `getResult()["placement"]` : `list`, `fileName` ou `nameOrder` |
 | [OverlapEstimationStepClass](../src/backend/steps/overlap_estimation_step.cpp) | `overlap-estimation` | `"tiles"` ; `overlap` et réglages de la corrélation | `"overlapEstimates"` : `OverlapEstimates` | `OverlapEstimationNs::OverlapEstimatorClass` sur chaque paire droite/dessous (#127). **Aucun step ne lit encore cette sortie.** |
 | [PhaseCorrelationStepClass](../src/backend/steps/phase_correlation_step.cpp) | `phase-correlation` | `"tiles"` ; 12 paramètres, dont `niveau` (analyse sur un niveau réduit, résultat ramené en pleine résolution) | `"matches"` : `vector<PairMatches>` | `PhaseCorrelationNs::PhaseCorrelationMatcherClass` sur chaque paire droite/dessous, pixels lus par `readPixels()` |
 | [SiftStepClass](../src/backend/steps/sift_step.cpp) | `sift` | `"tiles"` ; `overlap`, `maxFeatures`, `loweRatio`, `contrastThreshold`, `claheClipLimit`, `minMatches` | `"matches"` : `vector<PairMatches>` | `SiftNs::SiftMatcherClass` sur les zones communes des voisines droite/bas |
@@ -269,13 +270,13 @@ scripts/             demarrer.py : installation et configuration d'un poste
 | [Vote2DStepClass](../src/backend/steps/vote_2d_step.cpp) | `vote-2d` | `"matches"` ; `seuil`, `case`, `minMatches`, `minInliers` | `"matches"` (remplacés, aberrants retirés) | `RejectionNs::VoteRejectorClass` (#111). ⚠️ supprime aussi une paire sans points venue de `phase-correlation` |
 | [AbsolutePosStepClass](../src/backend/steps/absolute_pos_step.cpp) | `absolute-pos` | `"tiles"`, `"matches"` ; `referenceTileId` (−1 : plus petit identifiant) | `"positions"` : `vector<TilePositionData>`, `"pairResiduals"` : `vector<PairResidual>` | `PositioningNs::solveRelativePositions` (moindres carrés par SVD, translations seules, `rotationRadians` = 0). Une tuile non reliée fait échouer le step |
 | [IntensityCorrectionStepClass](../src/backend/steps/intensity_correction_step.cpp) | `intensity-correction` | `"tiles"`, `"matches"` ; `method` (`gain` ou `gain-and-field`), paramètres de l'égalisation | `"intensityCorrection"` : `IntensityCorrection` | `BrightnessEqualizationNs::BrightnessEqualizerClass` (réduction 1/8, pixels lus par `PhaseCorrelationStepClass::readPixels`). Ne modifie aucun pixel : c'est `fusion` qui applique les gains. |
-| [GraphCutStepClass](../src/backend/steps/graph_cut_step.cpp) | `graphcut` | `"tiles"`, `"positions"` ; `scale` | `"territories"` : `vector<TileTerritory>` | `GraphCutNs::ImagePretreatmentClass` + `GraphCutNs::GraphCutSeamFinderClass`. ⚠️ `scale` vaut 1 par défaut, trop lent sur de vraies tuiles |
-| [DynamicProgrammingDijkstraStepClass](../src/backend/steps/dynamic_programming_dijkstra_step.cpp) | `dynamic-programming-dijkstra` | `"tiles"`, `"positions"`, `"intensityCorrection"` ; `method`, `costFunction`, `corridorRadius` | `"seamlines"` : `Seamlines` | `DynamicProgrammingDijkstraNs::SeamFinderClass` sur chaque recouvrement droite/dessous, après division par les gains. **Aucun step ne lit `seamlines`** : `fusion` ne lit que `territories` |
+| [GraphCutStepClass](../src/backend/steps/graph_cut_step.cpp) | `graphcut` | `"tiles"`, `"positions"` ; `scale` | `"territories"` : `vector<TileTerritory>` | `GraphCutNs::ImagePretreatmentClass` + `GraphCutNs::GraphCutSeamFinderClass`. `scale` vaut 0,25 par défaut depuis #150 (`DEFAULT_GRAPH_CUT_SCALE` ; c'était 1, trop lent sur de vraies tuiles) |
+| [DynamicProgrammingDijkstraStepClass](../src/backend/steps/dynamic_programming_dijkstra_step.cpp) | `dynamic-programming-dijkstra` | `"tiles"`, `"positions"`, `"intensityCorrection"` ; `method`, `costFunction`, `corridorRadius` | `"seamlines"` : `Seamlines`, `"territories"` : `vector<TileTerritory>` (#137) | `DynamicProgrammingDijkstraNs::SeamFinderClass` sur chaque recouvrement droite/dessous, après division par les gains, puis `buildTerritories` (coutures fermées en polygones, pixels attribués bloc par bloc). Positions rangées par `tileId` (`orderTilePositions`). Personne ne lit `seamlines` ; `fusion` lit `territories`. ⚠️ Dans le coin commun à quatre tuiles, l'attribution dépend de l'ordre des tuiles : `junctions` n'est pas branché |
 | [FusionStepClass](../src/backend/steps/fusion_step.cpp) | `fusion` | `"tiles"`, `"positions"`, `"territories"` ; `"intensityCorrection"` si elle existe ; `outputDirectory` (vide = `<dossier des images>/.cache/mosaic/`) | `"mosaic"` : `Mosaic` (chemins de trois TIFF tuilés et dimensions) | Assemblage bloc par bloc (#119) : `renderBlock`, `IONs::PyramidalTiffReaderClass::readRegion`, `OutputClass::correctRegion`, `IONs::TiledTiffWriterClass`. Voir [FusionStep.md](steps/FusionStep.md). |
 | [ExportStepClass](../src/backend/steps/export_step.cpp) | `export` | `"mosaic"` ; `outputDirectory` (vide = Téléchargements) | rien dans le DataStore ; publie `<outputDirectory>/mosaic.tif` | contrôle l'en-tête du TIFF puis `IONs::copyFileReplacing`. ⚠️ nom fixe, remplace sans prévenir un `mosaic.tif` existant. Voir [ExportStep.md](steps/ExportStep.md). |
 | [FinalVerificationStepClass](../src/backend/steps/final_verification_step.cpp) | `final-verification` | chemins des images de référence et reconstruite (`inputImagePath`, `outputImagePath`) | `"verificationReport"` : `VerificationReport` | `VerificationNs::compareImages` : dimensions et métadonnées, sans comparaison des pixels (#116) |
 
-Ces 13 steps sont dans le registre : on peut les mettre dans un script JSON. `absolute-pos`, `graphcut` et `fusion` exigent des fichiers dont le nom finit par `_C<colonne>_R<ligne>.tif` (ou `.tiff`), le format par défaut de `import` (`img_C…_R…`) : ils retrouvent la ligne et la colonne dans le nom, pas dans `TileClass` (voir [AbsolutePosStep.md](steps/AbsolutePosStep.md)). Un nouveau step doit ajouter son nom à la liste `attendus` de `testerRegistre()` ([test_pipeline.cpp](../tests/core/test_pipeline.cpp)).
+Ces 13 steps sont dans le registre : on peut les mettre dans un script JSON. Depuis #149, aucun step ne relit le nom des fichiers : `import` fixe l'`id` et la case de chaque tuile, et les steps suivants n'utilisent que `TileClass::getId()` (et `getGridRow()` / `getGridColumn()` pour la case). Les noms sont libres (liste `tiles`, ou `columns` depuis #151). Un nouveau step doit ajouter son nom à la liste `attendus` de `testerRegistre()` ([test_pipeline.cpp](../tests/core/test_pipeline.cpp)).
 
 [matching_step_utils.h](../include/backend/steps/matching_step_utils.h) / [.cpp](../src/backend/steps/matching_step_utils.cpp) n'est pas un step : c'est le code commun aux steps d'appariement (`collectPairs`, `readImage`, validation des correspondances, `restoreCoordinates`, mise en forme JSON).
 
@@ -339,14 +340,15 @@ Port du notebook `egalisation_gain_champ_final.ipynb`, namespace `BrightnessEqua
 | [solver](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/solver.cpp) | Section 6.3 : `solveEdge()`, point d'entrée unique des 3 méthodes (`SolverMethod`), avec mesures de temps et de mémoire. Rayon du corridor par défaut : `DEFAULT_CORRIDOR_RADIUS` (18 px). |
 | [junctions](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/junctions.cpp) | Sections 7-8 : points de jonction entre 4 tuiles et réseau global de coutures sur la grille (`H_r_c` / `V_r_c`, `SeamGrid`, `solveGlobalNetwork`). Testé, appelé par aucun step. |
 | [overlay](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/overlay.cpp) | Dessin du réseau de coutures sur une mosaïque (`drawSeamNetwork`, illustration). Appelé par aucun code. |
+| [territory_builder.h](../include/backend/algorithms/seamline/dynamic_programming_dijkstra/territory_builder.h) / [.cpp](../src/backend/algorithms/seamline/dynamic_programming_dijkstra/territory_builder.cpp) | #137 : `buildTerritories` convertit les coutures en territoires (`DataNs::TileTerritory`), dans le repère de `fusion` (`DataNs::computeMosaicCorners`). Chaque couture est fermée vers le bord gauche ou haut du recouvrement (côté A), les pixels sont attribués par blocs de `BLOCK_SIZE` dans l'ordre des tuiles, puis les contours extraits (`RETR_CCOMP`). `orderTilePositions` range les positions par `tileId`. |
 
-Le step `dynamic-programming-dijkstra` (Nde-Code, arrivé avec la PR #72) appelle `SeamFinderClass::computeSeam` sur chaque recouvrement, après division par les gains de `intensityCorrection`. Voir [dp-dijkstrat.md](steps/dp-dijkstrat.md).
+Le step `dynamic-programming-dijkstra` (Nde-Code, arrivé avec la PR #72) appelle `SeamFinderClass::computeSeam` sur chaque recouvrement, après division par les gains de `intensityCorrection`, puis `buildTerritories` (Amory707 et Nde-Code, #137). Voir [dp-dijkstrat.md](steps/dp-dijkstrat.md).
 
 **`graph_cut/`** (namespace `GraphCutNs`, ancien `Seamline`) : coupe de graphe d'OpenCV, paire par paire.
 
 | Fichier | Rôle |
 |---|---|
-| [image_pretreatment](../src/backend/algorithms/seamline/graph_cut/image_pretreatment.cpp) | `ImagePretreatmentClass` : relit les tuiles depuis le disque (`read16Bit`, `readSmallFloat`), calcule les coins (par `DataNs::computeMosaicCorners`) et les masques réduits. `parseTileName()` extrait colonne et ligne de `..._C<colonne>_R<ligne>.tif` et fabrique l'identifiant `rLL_cCC`. **Aussi utilisé par `absolute-pos` et `fusion`.** |
+| [image_pretreatment](../src/backend/algorithms/seamline/graph_cut/image_pretreatment.cpp) | `ImagePretreatmentClass` : relit les tuiles depuis le disque (`read16Bit`, `readSmallFloat`), calcule les coins (par `DataNs::computeMosaicCorners`) et les masques réduits. `parseTileName()` extrait colonne et ligne de `..._C<colonne>_R<ligne>.tif` et fabrique l'identifiant `rLL_cCC` ; depuis #149, seul le code mort `computeTilePositions` l'appelle. |
 | [graph_cut_seam_finder](../src/backend/algorithms/seamline/graph_cut/graph_cut_seam_finder.cpp) | `GraphCutSeamFinderClass` : `computeSeamline()` (coupe à échelle réduite, carte de provenance pleine résolution), `extractPolygons()` (territoires par tuile, `DataNs::TileTerritory`). ⚠️ la carte de provenance a la taille de la toile entière (1 octet par pixel). |
 
 ### `algorithms/verification/` : vérification finale
@@ -357,7 +359,7 @@ Le step `dynamic-programming-dijkstra` (Nde-Code, arrivé avec la PR #72) appell
 
 ### `frontend/` : interface graphique
 
-L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est compilée dans `kikirpa_frontend` et s'ouvre quand `stitching` est lancé sans argument. Depuis #132 (17/11), **elle exécute le vrai pipeline** dans un `QThread`, avec pause, arrêt et reprise ; `SimulationRunner` est supprimé.
+L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est compilée dans `kikirpa_frontend` et s'ouvre quand `stitching` est lancé sans argument. Depuis #132 (17/11), **elle exécute le vrai pipeline** dans un `QThread`, avec pause, arrêt et reprise ; `SimulationRunner` est supprimé. Le 18/11, #152 rend les panneaux du bas et de droite redimensionnables sur petit écran, et #150 dessine l'aperçu de l'export à son ratio, centré.
 
 | Fichier(s) | Rôle |
 |---|---|
@@ -365,7 +367,7 @@ L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est c
 | [homepage](../include/frontend/homepage.h), [project_setup_model](../include/frontend/project_setup_model.h), [project_serializer](../include/frontend/project_serializer.h), [projectgrid](../include/frontend/projectgrid.h) | Accueil, assistant « nouveau projet » (`ProjectSetupModelClass`, testable sans Qt, `createBackendScript` produit le script `import` + suite), sauvegarde du projet, grille des tuiles. Scénarios : [SCENARIOS_NOUVEAU_PROJET.md](frontend/SCENARIOS_NOUVEAU_PROJET.md). |
 | [workspace_ui](../include/frontend/workspace_ui.h), [workspace_center](../include/frontend/workspace_center.h), [workspace_status_bar](../include/frontend/workspace_status_bar.h), [top_toolbars](../include/frontend/top_toolbars.h), [left_toolbar](../include/frontend/left_toolbar.h), [right_panel](../include/frontend/right_panel.h), [bottom_tabs](../include/frontend/bottom_tabs.h), [menubar_manager](../include/frontend/menubar_manager.h) | Espace de travail : barres d'outils, panneaux, barre d'état, menus. |
 | [grid_tab](../include/frontend/grid_tab.h), [alignment_tab](../include/frontend/alignment_tab.h), [masks_tab](../include/frontend/masks_tab.h), [assembly_tab](../include/frontend/assembly_tab.h) | Onglets par étape : grille, alignement, masques, assemblage. |
-| [artworkcanvas](../include/frontend/artworkcanvas.h) (+ `artworkcanvas_draw.cpp`) | Dessin de l'œuvre : tuiles, placement, affichage ou non de la seamline (#109). |
+| [artworkcanvas](../include/frontend/artworkcanvas.h) (+ `artworkcanvas_draw.cpp`) | Dessin de l'œuvre : tuiles, placement, affichage ou non de la seamline (#109) ; en mode export, aperçu de la mosaïque réduit à son ratio et centré (#150). |
 | [logpanel](../include/frontend/logpanel.h), [dialog_helpers](../include/frontend/dialog_helpers.h), [frontendutils](../include/frontend/frontendutils.h), `export_mode.cpp` | Journal, boîtes de dialogue, utilitaires, export d'un rapport HTML. |
 | [pipeline_runner.h](../include/frontend/pipeline_runner.h) / [.cpp](../src/frontend/pipeline_runner.cpp) | `PipelineRunnerClass` (#132) : façade côté interface. Crée le `QThread` et le worker, relaie l'avancement, le journal et l'aperçu par des signaux Qt, gère pause, reprise et arrêt. |
 | [pipeline_worker.h](../include/frontend/pipeline_worker.h) / [.cpp](../src/frontend/pipeline_worker.cpp) | `PipelineWorkerClass` (#132) : vit dans le `QThread`, construit le pipeline depuis le script, écrit l'état dans `<checkpoints>/run.json` et le relit pour reprendre (comme la ligne de commande), produit un aperçu à partir des positions et des images sources lues par `QImage`. |
@@ -373,7 +375,7 @@ L'interface vient des PR #91, #104, #109, #114 et #131 (09 au 11/11). Elle est c
 
 ### `tests/`
 
-Tous en GoogleTest et lancés par `ctest`, avec le label `unit` : environ 250 tests au 17/11/2026. Exceptions :
+Tous en GoogleTest et lancés par `ctest`, avec le label `unit` : environ 260 tests au 18/11/2026. Exceptions :
 - `lightglue_model` (label `integration`) fait une vraie inférence avec un modèle ONNX téléchargé à la configuration, ou fourni par `-DLIGHTGLUE_TEST_MODEL=<modèle.onnx>` ;
 - `cli_default_frontend` lance `stitching` sans argument ;
 - les 7 tests de `tests/frontend/` **n'ont pas de label**, et la CI ne les lance donc pas.
@@ -386,8 +388,8 @@ Les tests n'utilisent pas d'images externes (décision du 02/11/2026) : les tuil
 | [brightness_equalization/](../tests/brightness_equalization/) 🆕 | `BrightnessEqualization.*` (3), `RegionCorrectionTest.*` (2) | 6 tuiles générées avec gains et champ connus, gris et couleur, 8 et 16 bits ; cas limites. Correction région par région (`correctRegion`) identique à `correctTile`. |
 | [intensity_correction/](../tests/intensity_correction/) | `IntensityCorrectionStepTest.*` (8) | Step `intensity-correction` (version de #72) : enregistrement, gain connu, gains centrés sur 1, méthode inconnue, `matches` absent, identifiant inconnu, paramètre invalide, enchaînement avec `dynamic-programming-dijkstra`. |
 | [phase_correlation/](../tests/phase_correlation/) 🆕 | `PhaseCorrelation.*` (3), `PhaseCorrelationConfidence.*` (10) | Paires générées à vérité sous-pixel exacte dans les 4 directions, les deux passes, les cas limites ; contrôles de confiance. `etude_confiance` est compilé mais n'est pas un test (outil de l'étude, voir [EtudeConfiance.md](algorithms/stitching/phase_correlation/EtudeConfiance.md)). |
-| [seamline/](../tests/seamline/) | 71 tests DP/Dijkstra, 23 tests GraphCut | `DynamicProgrammingDijkstraNs` : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook. GraphCut : erreurs, échelle, polygones, step. |
-| [steps/](../tests/steps/) | `SiftStepTest.*` (7), `LightGlueStepTest.*` (5), `OverlapEstimationStepTest.*` (7), `Vote2DStep.*` (7), `AbsolutePosStep.*` et `PositionSolver.*` (17), `FinalVerification*` (14), `FusionStepTest.*` (16), `lightglue_model` | Steps d'appariement (formats 8/16 bits, repères, succès partiels, JSON ; inférence LightGlue remplacée par une fabrique de test), recouvrement, vote 2D, placement global (contraintes, graphe déconnecté, référence, résidus), vérification finale. Assemblage : pixels, provenance et masque autour d'une couture, grille de blocs, trous, gains, dossier de sortie par défaut, empreinte, chaînage `graphcut` → `fusion` → `export`. |
+| [seamline/](../tests/seamline/) | 71 tests DP/Dijkstra, `TerritoryBuilderTest.*` (1), 23 tests GraphCut | `DynamicProgrammingDijkstraNs` : carte de coût, catalogue, DP, Dijkstra, solveur, jonctions, parité avec le notebook ; territoires d'une paire droite sur positions négatives et fractionnaires (#137 : pas encore de paire du dessous, de grille 2×2 ni d'enchaînement DP → `fusion`). GraphCut : erreurs, échelle, polygones, step. |
+| [steps/](../tests/steps/) | `ImportStepTest.*` (10, #149 et #151), `SiftStepTest.*` (7), `LightGlueStepTest.*` (5), `OverlapEstimationStepTest.*` (7), `Vote2DStep.*` (7), `AbsolutePosStep.*` et `PositionSolver.*` (17), `FinalVerification*` (14), `FusionStepTest.*` (16), `lightglue_model` | Import : liste `tiles`, case lue dans le nom, ordre des noms avec `columns`, priorité des noms, deux TIFF pyramidaux distincts pour `a.tif` et `a.tiff`. Steps d'appariement (formats 8/16 bits, repères, succès partiels, JSON ; inférence LightGlue remplacée par une fabrique de test), recouvrement, vote 2D, placement global (contraintes, graphe déconnecté, référence, résidus), vérification finale. Assemblage : pixels, provenance et masque autour d'une couture, grille de blocs, trous, gains, dossier de sortie par défaut, empreinte, chaînage `graphcut` → `fusion` → `export`. |
 | [cli/](../tests/cli/) | `CommandLineTestClass.*` (12), `cli_default_frontend` | L'exécutable `stitching` lancé comme par un utilisateur : aide, option inconnue, codes de sortie, chemins relatifs au script, reprise avec `--resume`, chaîne complète dans un dossier « œuvre_été_作品 ». Tuiles générées par le test. |
 | [frontend/](../tests/frontend/) | `ProjectSetupTestClass.*` (7), **sans label** | L'assistant « nouveau projet » (`ProjectSetupModelClass`) : grille, validation, script produit. |
 
@@ -443,11 +445,12 @@ fichiers .tif ──ImportStepClass──► "tiles" : TileList = vector<shared_
    AbsolutePosStepClass                    IntensityCorrectionStepClass (relit les .tif)
               ▼                                        ▼
    "positions" : vector<TilePositionData>  "intensityCorrection" : IntensityCorrection
-   { tileId "rLL_cCC", position,           { tileGains[], fieldStrength, isolatedTileIndices[] }
+   { tileId (= getId()), position,         { tileGains[], fieldStrength, isolatedTileIndices[] }
      rotationRadians = 0 }                             │
    + "pairResiduals"                                   │
               │                                        │
    GraphCutStepClass (relit les .tif sources)          │
+   ou DynamicProgrammingDijkstraStepClass ◄────────────┤ (lit aussi les gains)
               ▼                                        │
    "territories" : vector<TileTerritory>               │
    { tileIndex, polygons, holes } par tuile            │
@@ -460,7 +463,7 @@ fichiers .tif ──ImportStepClass──► "tiles" : TileList = vector<shared_
    ExportStepClass ──► <outputDirectory>/mosaic.tif
 ```
 
-`dynamic-programming-dijkstra`, à côté de `graphcut`, lit `tiles`, `positions` et `intensityCorrection` et produit `"seamlines"`, que personne ne lit.
+`dynamic-programming-dijkstra` se met à la place de `graphcut` : il lit `tiles`, `positions` et `intensityCorrection`, et produit `"territories"` (lus par `fusion`, depuis #137) et `"seamlines"`, que personne ne lit.
 
 **Un type C++ par clé** : le registre vérifie l'enchaînement d'après le _nom_ de type déclaré (`"Tiles"`, `"PairMatches"`…). `DataStoreClass::get<T>` exige, lui, le _type C++_ exact. Un nouveau step doit donc réutiliser ces types, sinon `std::bad_any_cast` à l'exécution. Ce sont aussi les types que les checkpoints savent sérialiser :
 
@@ -484,8 +487,8 @@ fichiers .tif ──ImportStepClass──► "tiles" : TileList = vector<shared_
 - **`Alignment::transformBToA`** est une matrice 3×3 `CV_64F` qui transforme B vers A.
 - **`cv::Point` vaut (x, y) = (colonne, ligne).** Le Python de référence stocke (y, x).
 - **L'égalisation** identifie les tuiles par leur **indice** dans un vecteur, pas par `tileId`, et prend la translation d'une paire telle quelle. `IntensityCorrection::tileGains` suit donc l'ordre de `"tiles"`.
-- **`absolute-pos`** place la tuile de référence en (0, 0) ; les autres positions peuvent être négatives. `graphcut` et `fusion` décalent ensuite le tout pour que le coin le plus petit soit en (0, 0) (`computeMosaicCorners`).
-- **Trois identifiants de tuile coexistent** : l'entier `TileClass::getId()` (`PairMatches`, provenance de la mosaïque), le texte `rLL_cCC` (`TilePositionData`) et l'indice dans `tiles` (`TileTerritory`, `tileGains`).
+- **`absolute-pos`** place la tuile de référence en (0, 0) ; les autres positions peuvent être négatives. `graphcut`, `dynamic-programming-dijkstra` (pour ses territoires) et `fusion` décalent ensuite le tout pour que le coin le plus petit soit en (0, 0) (`computeMosaicCorners`). Les `seamlines` restent dans le repère d'`absolute-pos`.
+- **Un seul identifiant de tuile depuis #149** : l'entier `TileClass::getId()` (rang ligne par ligne, calculé par `import`), utilisé par `PairMatches`, `TilePositionData`, `Seamline` et la provenance de la mosaïque. À ne pas confondre avec l'**indice** dans `tiles`, qu'utilisent `TileTerritory::tileIndex` et `tileGains`.
 
 ---
 
@@ -516,13 +519,14 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 | Un checkpoint de `tiles` contient les images | Non : seulement les fiches. Les pixels restent dans les TIFF source et pyramidaux, qui doivent toujours exister à la reprise. Si l'un d'eux a disparu, la reprise échoue à chaque relance (`cannot restore checkpoint`) : `valid()` ne vérifie pas la présence des fichiers. |
 | Les steps lisent les pixels via le TIFF pyramidal | Seul `fusion` le fait (`readRegion`). Les autres relisent les `.tif` sources entiers (`IONs::readImage`, par exemple dans `PhaseCorrelationStepClass::readPixels()`). |
 | `overlap-estimation` alimente les steps d'appariement | Non : il publie `overlapEstimates`, mais `phase-correlation`, `sift` et `lightglue` refont cette passe en interne et ne lisent pas cette clé. |
-| `dynamic-programming-dijkstra` peut produire une mosaïque | Non : il produit des `seamlines`, et `fusion` ne lit que les `territories` de `graphcut`. |
+| `dynamic-programming-dijkstra` donne des jonctions continues entre quatre tuiles | Non : ses coutures sont calculées paire par paire, et dans le coin commun à quatre tuiles l'attribution des pixels dépend de l'ordre des tuiles (#137). Le réseau global (`junctions.h`) existe, mais aucun step ne l'appelle. |
+| `graphcut` travaille en pleine résolution | Non, plus par défaut : `scale` vaut 0,25 depuis #150. La coupe est calculée sur des images 4 fois plus petites, puis ramenée en pleine résolution ; la mosaïque garde ses pixels d'origine. |
 | `computeTilePositions` prend les matches du step d'appariement | Non : il refait tout lui-même à partir des chemins de fichiers, et personne ne l'appelle. Dans le pipeline, c'est `absolute-pos` qui part des matches. |
 | RANSAC existe encore | Non : supprimé par #63. Le rejet se fait par vote 2D, step `vote-2d`, facultatif. |
 | `absolute-pos` calcule les rotations | Non : `PairMatches` ne porte pas d'angle, `rotationRadians` vaut toujours 0. |
 | `intensity-correction` corrige les tuiles | Non : il publie seulement des gains (`IntensityCorrection`). Les pixels sources ne sont jamais modifiés ; `fusion` applique la correction bloc par bloc. |
-| Le paramètre `format` d'`import` est libre | Seulement en apparence : `absolute-pos`, `graphcut` et `fusion` relisent la ligne et la colonne dans le nom du fichier, qui doit finir par `_C<colonne>_R<ligne>.tif` (#86). |
-| `ImagePretreatmentClass` ne sert qu'à GraphCut | `absolute-pos` et `fusion` l'utilisent aussi (`parseTileName`). |
+| Les noms de fichiers doivent finir par `_C<colonne>_R<ligne>.tif` | Plus depuis #149 et #151 : `import` fixe la case (liste `tiles`, `format`, ou ordre des noms avec `columns`) et aucun step suivant ne relit le nom. |
+| `TilePositionData::tileId` est un texte `rLL_cCC` | Non, depuis #149 : c'est l'entier `TileClass::getId()`. `rLL_cCC` ne sort plus que de `parseTileName`, appelé par le seul code mort `computeTilePositions`. |
 | Les tuiles sont en RGB | OpenCV donne du **BGR**. `DynamicProgrammingDijkstraNs` et la mosaïque de `fusion` sont en **RGB** ; le TIFF pyramidal de l'import stocke du BGR déclaré RGB. |
 | Les champs de `PhaseCorrelationNs::Parameters` portent le nom des paramètres du step | Non 🆕 : les champs sont en anglais (`smoothingSigma`, `railMargin`…), le JSON garde `lissage`, `marge`… (correspondance dans [PhaseCorrelation.md §5](algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres)). |
 | Le TIFF pyramidal est la sortie du pipeline | C'est un cache d'import, par tuile. La sortie est `mosaic.tif`, copie par `export` du `mosaic_image.tif` écrit par `fusion`. |

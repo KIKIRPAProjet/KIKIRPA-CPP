@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **17/11/2026** (`c939612`, après #132). Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> L'état décrit ici est celui de `main` au **18/11/2026** (`08bd177`, après #150). Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
 
 ---
 
@@ -33,7 +33,7 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 | 4 | Rejet des aberrants | Quels points appariés sont faux ? | ✅ `vote-2d` (facultatif) |
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
 | 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
-| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ; ⚠️ `dynamic-programming-dijkstra` calcule aussi des coutures, mais `fusion` ne sait pas encore les lire |
+| 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` (un seul au choix : les deux produisent `territories`) |
 | 8 | Assemblage | Fabriquer l'image finale | ✅ `fusion` (bloc par bloc, sans fondu) |
 | 9 | Export | Écrire le fichier final | ✅ `export` |
 
@@ -196,7 +196,7 @@ Relancer le même script avec `--resume` reprend où le run s'était arrêté, e
                                         └────────┘             └────────┘
 ```
 
-Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `intensityCorrection`, et produit `seamlines` — c'est l'autre méthode de couture, à côté de `graphcut`. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
+Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se met à la place de `graphcut`. Il lit `tiles`, `positions` et `intensityCorrection`, et produit `territories` (lus par `fusion`) et `seamlines` (le tracé de chaque couture) depuis #137. `overlap-estimation` lit `tiles` et produit `overlapEstimates` : le recouvrement réel de chaque paire, mesuré au pixel près. C'est la première passe que `phase-correlation`, `sift` et `lightglue` font encore chacune en interne ; aucun step ne lit encore cette sortie.
 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
@@ -208,9 +208,9 @@ Non dessinés : `dynamic-programming-dijkstra` lit `tiles`, `positions` et `inte
 | `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
-| `graphcut` | `scale` | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
+| `graphcut` | `scale` (0,25 par défaut depuis #150) | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
-| `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
+| `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `territories` : `Territories`, `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
 | `fusion` | `outputDirectory` | `tiles`, `positions`, `territories` (+ `intensityCorrection` si présente) | `mosaic` : `Mosaic` | [FusionStep.md](steps/FusionStep.md) |
 | `export` | `outputDirectory` | `mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
@@ -306,6 +306,7 @@ C++ : `DataNs::IntensityCorrection` (`core/data/algorithm_types.h`).
 - `tileIndex` est la place de la tuile dans `tiles`.
 - Les polygones sont en pixels entiers de la mosaïque, dans un repère décalé pour que le coin le plus petit soit en (0, 0).
 - Les bords entre territoires **sont** les seamlines.
+- Produit par `graphcut` ou par `dynamic-programming-dijkstra` (#137). Ce dernier découpe ses polygones par blocs de 512 pixels : un territoire y compte plusieurs polygones adjacents, dont l'union est la zone de la tuile.
 
 C++ : `std::vector<DataNs::TileTerritory>`.
 
@@ -322,7 +323,7 @@ C++ : `DataNs::VerificationReport` (`core/data/verification_report.h`).
 
 - Une entrée par paire de voisines, de A vers sa voisine de droite ou du dessous B.
 - `points` : le chemin de la couture, pixel par pixel, en pleine résolution et dans le repère de la mosaïque.
-- Produit par `dynamic-programming-dijkstra`. `graphcut` ne produit pas de `seamlines` : ses coutures sont les bords des territoires.
+- Produit par `dynamic-programming-dijkstra`, en plus de `territories` ; aucun step ne le lit. `graphcut` ne produit pas de `seamlines` : ses coutures sont les bords des territoires.
 
 C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorithm_types.h`).
 
@@ -425,7 +426,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 
 - **Seul `fusion` lit le TIFF pyramidal** (`readRegion`, une région par bloc). Les autres steps relisent l'image source entière (`cv::imread`), puis la réduisent si besoin.
 - `sift` et `lightglue` gardent deux images pleine résolution en mémoire.
-- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel).
+- `graphcut` alloue une image de la taille de la mosaïque entière (la carte de provenance, 1 octet par pixel). `dynamic-programming-dijkstra`, lui, attribue les pixels bloc par bloc (#137).
 - `MemoryScopeClass` n'est utilisé par aucun step.
 
 ---
@@ -442,7 +443,7 @@ Une tuile en 16 bits couleur occupe 6 octets par pixel : une tuile de 100 millio
 | Solveur de positions (`PositioningNs::solveRelativePositions`) | placer toutes les tuiles d'un coup | chaque paire donne une équation `position B − position A = translation` ; moindres carrés sur toutes les équations (SVD) | ✅ step `absolute-pos` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | Égalisation de luminosité (`BrightnessEqualizationNs`) | égaliser la luminosité entre tuiles | compare les pixels des recouvrements sur des images réduites ; moindres carrés robustes pour trouver un gain par tuile et un champ d'éclairage commun | ✅ step `intensity-correction` (estimation seulement) | [BrightnessEqualization.md](algorithms/brightness_equalization/BrightnessEqualization.md) |
 | Graph cut (`GraphCutNs`) | couture entre les tuiles | la coupe de graphe d'OpenCV cherche la frontière où les deux tuiles se ressemblent le plus, paire par paire ; on en tire les territoires | ✅ step `graphcut` | [GraphCutStep.md](steps/GraphCutStep.md) |
-| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ⚠️ step `dynamic-programming-dijkstra`, dont la sortie (`seamlines`) n'est lue par aucun step ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
+| DP / Dijkstra (`DynamicProgrammingDijkstraNs`) | couture, autre méthode | carte de coût sur le recouvrement (gradients, différences de couleur), puis chemin de coût minimal : programmation dynamique, Dijkstra, ou DP puis Dijkstra dans un couloir | ✅ step `dynamic-programming-dijkstra`, qui en tire les territoires lus par `fusion` (#137) ; ⚠️ coutures calculées paire par paire, sans le réseau global des jonctions (`junctions.h`, porté mais appelé par aucun step) ; algorithme testé dans `tests/seamline/` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) (step) |
 | Ancien positionneur (`PositioningNs::computeTilePositions`) | ancienne chaîne complète SIFT → vote → moindres carrés | — | ⚠️ code mort : appelé par aucun step ni aucun test | — |
 
 ---
@@ -514,7 +515,7 @@ C'est ce que fait #132 (`src/frontend/pipeline_worker.cpp`). La reprise y suit l
 - **L'aperçu de l'interface** (§9) : le lire dans `mosaic_image.tif` (ou dans le TIFF pyramidal, à un niveau réduit) plutôt que dans les images sources.
 - **L'export** : choisir le nom du fichier, refuser d'écraser une mosaïque existante, produire un aperçu JPEG réduit.
 - **La reprise** : refaire un step dont un fichier de sortie a disparu, au lieu d'échouer à chaque relance ; ne laisser sortir de `run()` aucune exception levée par un checkpoint.
-- **Faire lire `seamlines` par l'assemblage** (ou les convertir en territoires), pour que `dynamic-programming-dijkstra` puisse produire une mosaïque.
+- **Les jonctions de `dynamic-programming-dijkstra`** : dans le coin commun à quatre tuiles, l'attribution des pixels dépend de l'ordre des tuiles (#137). Brancher le réseau global déjà porté (`chooseAllJunctions`, `solveGlobalNetwork` dans `junctions.h`), pour que les quatre coutures d'un coin se rejoignent en un même point.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).
 - **Une tuile isolée** (sans aucun appariement) fait échouer tout le run dans `absolute-pos` : la placer à sa position de grille et le signaler.
 
