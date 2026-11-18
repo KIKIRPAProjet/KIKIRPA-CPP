@@ -1,9 +1,11 @@
 // include/frontend/assembly_tab.h
 #pragma once
 
+#include <QStringList>
 #include <QWidget>
 
 class MainWindow;
+class QLabel;
 class QListWidget;
 class QVBoxLayout;
 
@@ -17,6 +19,9 @@ public:
 
     // Met en surbrillance l'étape actuellement en cours d'exécution dans le pipeline (1-indexée).
     void setActiveStep(int stepNumber);
+    // Affiche l'état sauvegardé du projet : ✓ étapes faites, ▶ étape où le calcul reprendra, ○ étapes suivantes.
+    // stepNames vide : aucun calcul sauvegardé.
+    void showSavedState(const QStringList &stepNames, int savedStepCount);
 
 private:
     // Construit la liste visuelle ordonnée des 5 étapes algorithmiques.
@@ -27,5 +32,6 @@ private:
 
     MainWindow *m_mainWindow;
     QListWidget *m_stepList = nullptr;
+    QLabel *m_savedStateLabel = nullptr;
     int m_activeStep = 0;
 };
