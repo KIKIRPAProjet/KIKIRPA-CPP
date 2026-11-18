@@ -41,6 +41,7 @@ jobs:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PUSH_AFTER_SHA: ${{ github.event.after }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -55,7 +56,8 @@ jobs:
               changed_files=$(git diff --name-only "origin/main...$PUSH_AFTER_SHA")
               ;;
             workflow_dispatch)
-              changed_files=$(git ls-files)
+              git fetch --no-tags origin main:refs/remotes/origin/main
+              changed_files=$(git diff --name-only "origin/main...$WORKFLOW_SHA")
               ;;
             *)
               echo "Unsupported event: $EVENT_NAME" >&2

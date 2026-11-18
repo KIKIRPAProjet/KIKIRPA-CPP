@@ -1,3 +1,4 @@
+// src/frontend/mainwindow.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : la fenêtre principale coordonne les composants sans déplacer leur logique dédiée ;
@@ -12,9 +13,6 @@
  * - ce que ça renvoie : aucune valeur directement, les interactions sont transmises par des signaux ;
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
-//  implemente la fenetre principale de lapplication
-
-// src/frontend/mainwindow.cpp
 #include "mainwindow.h"
 
 #include "artworkcanvas.h"
@@ -41,6 +39,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontMetrics>
@@ -602,7 +601,6 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
-
     std::filesystem::path scriptPath;
     try {
         FrontendNs::ProjectSetupModelClass model;
