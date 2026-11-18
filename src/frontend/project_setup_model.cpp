@@ -324,6 +324,13 @@ Json ProjectSetupModelClass::createBackendScript() const {
   return script;
 }
 
+std::filesystem::path
+ProjectSetupModelClass::scriptPathFor(const fs::path &outputDirectory,
+                                      const std::string &projectName) {
+  const fs::path normalizedOutput = fs::absolute(outputDirectory).lexically_normal();
+  return normalizedOutput / (safeFileStem(projectName) + ".json");
+}
+
 fs::path ProjectSetupModelClass::writeBackendScript() const {
   const Json script = createBackendScript();
   const fs::path outputDirectory =

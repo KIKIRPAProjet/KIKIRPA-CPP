@@ -8,9 +8,7 @@ Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décr
 import → appariement → positionnement → intensité → seamline → assemblage → export
 ```
 
-**État (15/11/2026)** : toutes les étapes, de l'import à l'export, existent et s'enchaînent en ligne de commande. Le lien entre l'interface Qt et le calcul est en cours.
-
-Un pipeline JSON se lance avec `build/<preset>/stitching --pipeline <script.json>` (ajouter `.exe` sous Windows), et se reprend après un échec avec `--resume`. Options, codes de sortie et reprise : [docs/core/Pipeline.md](docs/core/Pipeline.md#lancer-un-pipeline). Les chemins peuvent contenir des caractères non ASCII (« œuvre_été », « 作品 »). Sans argument, `stitching` ouvre l'interface graphique.
+**État (17/11/2026, branche `pipeline3`)** : le backend s'exécute en CLI (`stitching --pipeline`) et le test d'intégration lance un pipeline 2×2 synthétique jusqu'à `graphcut`. L'assemblage/export de la mosaïque n'est pas encore intégré à cette chaîne. Le branchement de l'interface Qt au calcul reste distinct.
 
 ## Par où commencer
 

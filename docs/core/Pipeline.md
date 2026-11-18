@@ -130,6 +130,8 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `Seamlines` | une entrée par couture : `tileIdA`, `tileIdB`, `direction`, `points` |
 | `Mosaic` | `imagePath`, `provenancePath`, `maskPath`, `canvasSize`. **Les pixels ne sont pas recopiés** : ils restent dans les TIFF écrits par l'assemblage. |
 
+- `CompositeBlocks` n'est pas encore sérialisé. Aucun step actuellement
+  enregistré ne produit cette donnée.
 - Un nouveau type s'ajoute dans `pipelineTypes()`, ou par `CheckpointClass::registerType`.
 - Un step dont une sortie n'a pas de sérialisation est refait à chaque reprise. Le journal le signale : `checkpoint incomplete`.
 - Les checkpoints écrits avant la réorganisation sont jugés périmés : les steps sont refaits.
@@ -157,7 +159,127 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `export` | `StepsNs::ExportStepClass` | `mosaic` : `Mosaic` | — (publie `mosaic.tif`) |
 
 `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture. Une fiche par step dans [docs/steps/](../steps/).
-`fusion` écrit la mosaïque sur disque, bloc par bloc ; `export`, terminal, la publie. `fusion` lit `intensityCorrection` sans la déclarer : le moteur n'a pas d'entrée facultative.
+`export` est terminal et écrit la mosaïque TIFF, mais aucun producteur de
+`compositeBlocks` n'est actuellement enregistré ; un pipeline qui contient
+`export` est donc refusé par la validation d'enchaînement.
+
+## Contrats des données du `DataStoreClass`
+
+Le nom de clé et le type C++ concret font partie du contrat : le `dataType` du
+`DataSlot` sert à valider l'enchaînement dans le JSON, mais ne vérifie pas le
+type effacé par `std::any`. Tous les producteurs et consommateurs d'une clé
+doivent donc employer le même type C++.
+
+| Clé | `dataType` | Type C++ concret | Producteur / consommateur actuel |
+|---|---|---|---|
+| `tiles` | `Tiles` | `DataNs::TileList` | Produit par `import` ; consommé par tous les steps suivants |
+| `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | Produit par `phase-correlation`, `sift`, `lightglue` ; consommé par `absolute-pos`, `intensity-correction` |
+| `positions` | `Positions` | `std::vector<DataNs::TilePositionData>` | Produit par `absolute-pos` ; consommé par `graphcut`, `dynamic-programming-dijkstra` |
+| `intensityCorrection` | `IntensityCorrection` | `DataNs::IntensityCorrection` | Produit par `intensity-correction` ; consommé par `dynamic-programming-dijkstra` |
+| `territories` | `Territories` | `std::vector<DataNs::TileTerritory>` | Produit par `graphcut` |
+| `compositeBlocks` | `CompositeBlocks` | `DataNs::CompositeBlockList` | Aucun producteur enregistré ; consommé par `export` |
+
+Les contrats actifs ci-dessus décrivent les échanges de la branche, mais
+certains choix de représentation et de cycle de vie restent à valider :
+
+| Donnée demandée | État du code | Décisions à faire valider |
+|---|---|---|
+| Transformations et rejets | `DataNs::Alignment` contient une matrice `cv::Mat` et un masque d'inliers ; aucun step ni type sérialisable ne l'échange | Type de transformation, repère, unités, lien avec les identifiants de paire et forme sérialisée |
+| Corrections lumineuses | `intensityCorrection` échange `DataNs::IntensityCorrection`; aucun step d'assemblage ne consomme actuellement cette donnée | Valider la formule et son application à l'assemblage, ainsi que la sérialisation |
+| Blocs de mosaïque | `DataNs::CompositeBlockList` est attendu par `export`, mais aucun step enregistré ne le produit et il n'est pas sérialisé | Définir un producteur, le cycle de vie et le stockage temporaire pour les grandes mosaïques |
+
+### Proposition à faire valider
+
+La proposition ci-dessous s'appuie sur les types et algorithmes déjà présents ;
+elle **n'est pas une décision approuvée** et ne doit pas être implémentée comme
+un contrat définitif sans validation.
+
+Avant de faire évoluer ou de dépendre davantage de ces données, les responsables
+doivent confirmer les décisions ci-dessous. Les propositions restent des
+hypothèses et ne remplacent pas les contrats actuellement utilisés par le code.
+
+| Décision à valider | État actuel / proposition | Conséquence si le choix change |
+|---|---|---|
+| Identité canonique d'une tuile | `TileClass` et `PairMatches` utilisent un entier ; `TilePositionData` un nom de grille et `TileTerritory` un indice de vecteur. Proposition : utiliser l'identifiant entier stable attribué à l'import partout. | Modification des types partagés, des steps de positionnement et de découpe, et des checkpoints concernés. |
+| Repère et unités communs | Les coordonnées sont des pixels, X vers la droite et Y vers le bas ; l'origine au centre du pixel supérieur gauche est documentée pour les correspondances. Proposition : conserver les pixels de pleine résolution pour toutes les sorties de pipeline et expliciter si chaque position désigne un centre ou un coin. | Conversion entre niveaux pyramidaux, algorithmes, géométrie des territoires et export. |
+| Modèle des transformations | `Alignment` contient aujourd'hui un `cv::Mat` 3×3 `CV_64F` et un masque d'inliers, sans identifiants de paire. À valider : modèle autorisé (translation, affine ou projectif), sens B→A, représentation sérialisée et relation entre masque et correspondances. | Compatibilité RANSAC, positionnement global et format des checkpoints. |
+| Modèle et application des corrections lumineuses | `intensityCorrection` expose les gains par tuile et `fieldStrength`; aucun step d'assemblage ne les applique actuellement. | Résultat photométrique de la mosaïque et sérialisation des sorties. |
+| Géométrie des territoires | `TileTerritory` stocke des contours entiers et un `tileIndex`. À valider : référence de tuile canonique, repère, règle d'arrondi et convention des trous/contours. | Alignement des masques de découpe sur les pixels exportés et stabilité si l'ordre des tuiles change. |
+| Représentation et durée de vie des blocs mosaïque | Le contrat courant est `DataNs::CompositeBlockList` en mémoire (`imageRgb`, `provenance`, `mask`, `blockRect`). À valider : quand basculer vers des fichiers temporaires et qui en possède le nettoyage. | Budget mémoire, reprise sur checkpoint et contrat de l'exporteur. |
+| Paramètres et erreurs | Le JSON accepte `string`, `int`, `float`, `bool`; les erreurs de configuration sont des `invalid_argument`, les échecs d'exécution des résultats d'étape transmis au logger. À valider : règles de nommage/rétrocompatibilité et quels échecs de paire sont tolérés plutôt que fatals. | Compatibilité des scripts et interprétation fiable des runs partiels. |
+
+| Échange proposé | Clé / `dataType` | Type partagé proposé | Convention proposée |
+|---|---|---|---|
+| Correspondances par paire | `matches` / `PairMatches` | `std::vector<DataNs::PairMatches>` (existant) | Identifiants `tileIdA`/`tileIdB` égaux à `TileClass::getId()` ; points et translations en pixels de pleine résolution |
+| Transformations et rejets | `alignments` / `PairAlignments` | nouveau `std::vector<DataNs::PairAlignment>` contenant les deux identifiants, `Direction`, une transformation B→A fixe 3×3 en `double` et le masque d'inliers aligné sur `featureMatches` | Même ordre que `matches` ou, de préférence, correspondance explicite par identifiants ; sérialisation numérique explicite plutôt que `cv::Mat` opaque |
+| Positions | `positions` / `Positions` | `std::vector<DataNs::TilePositionData>` (existant) | À terme, identifiant entier `TileClass::getId()` ; origine mosaïque en haut à gauche, coordonnées X droite / Y bas, pixels de pleine résolution, rotation en radians. Ce changement remplacerait le `tileId` texte historique |
+| Corrections lumineuses | `intensityCorrection` / `IntensityCorrection` (actif) | `DataNs::IntensityCorrection` (existant) | Le type contient `tileGains`, `fieldStrength` et `isolatedTileIndices`; valider l'identité par tuile et la formule complète à appliquer lors de l'assemblage. |
+| Territoires | `territories` / `Territories` | `std::vector<DataNs::TileTerritory>` (existant) | Coordonnées entières de pleine résolution dans le repère mosaïque ; remplacer `tileIndex` par l'identifiant canonique si les consommateurs doivent survivre à un changement d'ordre |
+| Blocs de mosaïque | `compositeBlocks` / `CompositeBlocks` (entrée de `export`, sans producteur enregistré) | `DataNs::CompositeBlockList` de `DataNs::CompositeBlock` | Définir le format, la production, la sérialisation et le stockage temporaire avant de pouvoir exécuter l'export. |
+| Tuiles | `tiles` / `Tiles` | `DataNs::TileList` (existant) | Les pixels restent dans les TIFF ; les fiches portent l'identité et la grille. L'identifiant doit être la référence unique des autres échanges |
+
+Cette proposition harmonise les identifiants actuellement hétérogènes
+(`PairMatches` utilise des entiers, `TilePositionData` un nom de grille et
+`TileTerritory` un indice de vecteur). Elle implique une migration des
+consommateurs et des checkpoints `Positions`/`Territories`, ainsi que
+l'enregistrement de sérialiseurs pour les nouveaux types. À l'exception de
+`compositeBlocks` / `CompositeBlocks`, déclaré comme entrée de `export` mais
+sans producteur dans le registre, les clés et types proposés ne sont pas encore
+des contrats actifs du registre.
+
+### Repères, paramètres et erreurs
+
+- Les points de `Matches` sont exprimés en pixels, origine au centre du pixel
+  supérieur gauche, axe X vers la droite et axe Y vers le bas. La translation
+  décrit le coin supérieur gauche de B dans le repère de A ; elle vaut
+  `pointsInA - pointsInB`.
+- `TilePositionData::position` désigne le coin supérieur gauche d'une tuile
+  dans le repère absolu de la mosaïque. `TileTerritory` est également dans ce
+  repère. La convention de rotation et son application aux territoires restent
+  à valider avant d'ajouter un step qui les consomme.
+- Attention à l'identité des tuiles : `import` associe les images par groupes
+  colonne/ligne configurables (par défaut `img_C…_R…`), tandis que
+  `TilePositioner` et `ImagePretreatment` attendent un suffixe `_r…_c…`.
+  Le nom `rLL_cCC` de `TilePositionData::tileId` doit être relié sans ambiguïté
+  aux identifiants entiers de `TileClass` avant d'enchaîner ces algorithmes dans
+  un pipeline ; leur ordre dans deux vecteurs distincts ne suffit pas comme
+  contrat.
+- Les paramètres du script ont un nom `camelCase` et un `valueType` parmi
+  `string`, `int`, `float` et `bool`. Les noms historiques en français du step
+  `phase-correlation` sont conservés pour ne pas casser les scripts existants.
+- La lecture commune est `buildPipelineFromFile()` ; `buildPipeline()` vérifie
+  la structure, les steps, les paramètres et l'enchaînement des entrées avant
+  l'exécution. Une erreur de configuration lève `std::invalid_argument` avec
+  le chemin du champ. Un échec d'exécution renvoie `false` avec sa cause dans
+  `result["error"]`, ensuite transmise au logger du pipeline.
+
+Le pipeline enregistré prend en charge la chaîne `import` → appariement →
+positionnement → `graphcut`. Le test
+`Pipeline2x2CliTest.RunsAndResumesPipelineFromScriptDirectory` lance cette
+chaîne avec l'exécutable CLI sur un jeu 2×2 synthétique et vérifie les
+territoires sauvegardés ainsi que la reprise depuis les checkpoints.
+
+## Reprise des branches existantes
+
+La carte d'architecture (`CARTE_ARCHITECTURE.md`, §8) décrit les branches et PR
+antérieures à la réorganisation. Leurs sources ne sont pas présentes dans cette
+copie ; ces références permettent de cibler les reprises, pas de prétendre
+qu'elles ont déjà été fusionnées ou testées ici.
+
+| Éléments référencés | Traitement compatible avec cette branche |
+|---|---|
+| `sift-step` (#32), `lightglue-step` (#27) | Reprendre les algorithmes utiles, mais adapter chaque step à `StepsNs`, `StepClass`, `StepConfig`, aux clés/types documentés ci-dessus et au CMake actuel. Ne pas importer leurs anciennes déclarations de tests ou leur code commun sans vérifier les dépendances. |
+| `confiance-correlation-phase` (#48) | Examiner séparément l'étude et valider le sens du score avant de modifier `PairMatches::confidenceScores` ou le contrat de `matches`. |
+| `GraphCut_Fixed` (#49) | Le déplacement de `TileTerritory` est déjà présent dans `DataNs::TileTerritory`; ne pas reprendre une seconde définition. |
+| `RansacStep` | La carte signale un ancien `.cpp` hors de `src/backend/`. Reprendre le comportement utile dans un step conforme, avec une sortie de transformation typée et sérialisable à valider. |
+| `fe/pipeline-json-parser` (#47/#41) | Les squelettes fusion/export utilisent une architecture et des types différents (pixels en mémoire). Ne pas les fusionner tels quels ; ne reprendre que des éléments après comparaison avec les contrats et le traitement par blocs de cette branche. |
+| `amo/IntensityCorrectionStep` | La carte la décrit comme vide ; l'algorithme d'égalisation présent dans cette copie est la base réutilisable, mais son type de sortie `DataStoreClass` reste à définir. |
+
+Une reprise effective nécessite les commits ou PR sources et une comparaison
+avec `main`. Dans cette copie, limiter chaque changement à un sujet
+indépendamment compilable et testable ; ne pas annoncer l'intégration complète
+avant qu'un script unique soit exécuté de l'import à l'export sur les tuiles
+2×2.
 
 ## Ajouter un step
 

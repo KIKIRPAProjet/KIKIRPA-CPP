@@ -15,7 +15,7 @@ Ce guide est **la page à lire en premier**. Il explique comment les pièces du 
 | un algorithme précis | [algorithms/](algorithms/) |
 | retrouver un ancien nom de fichier ou de classe | [MIGRATION_REORGANISATION.md](MIGRATION_REORGANISATION.md) |
 
-> L'état décrit ici est celui de `main` au **10/11/2026**. Pour savoir qui travaille sur quoi, voir les issues et les pull requests sur GitHub.
+> État de la branche `pipeline3` au **17/11/2026** : le backend dispose d'une CLI. Le test d'intégration exécute un pipeline 2×2 synthétique jusqu'à `graphcut`. L'assemblage/export n'est pas encore intégré à cette chaîne ; le branchement de l'interface Qt au calcul reste distinct.
 
 ---
 
@@ -25,19 +25,19 @@ Une œuvre est photographiée en **tuiles** : des images qui se recouvrent, rang
 
 Le travail est découpé en **étapes**, exécutées dans l'ordre :
 
-| # | Étape | Question à laquelle elle répond | Step sur main |
+| # | Étape | Question à laquelle elle répond | Step sur `pipeline3` |
 |---|---|---|---|
 | 1 | Import | Quelles tuiles, où dans la grille ? | ✅ `import` |
 | 2 | Recouvrement | De combien les tuiles se chevauchent-elles vraiment ? | ⚙️ intégré aux steps d'appariement ; step dédié dans la PR #90 |
 | 3 | Appariement | De combien B est-elle décalée par rapport à A, pour chaque paire de voisines ? | ✅ `phase-correlation`, `sift`, `lightglue` (un seul au choix) |
 | 4 | Rejet des aberrants | Quels points appariés sont faux ? | ❌ algorithme prêt (vote 2D), **pas branché** |
 | 5 | Positionnement global | Où placer chaque tuile pour respecter au mieux tous les décalages ? | ✅ `absolute-pos` |
-| 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains, ne les applique pas) |
+| 6 | Intensité | Quelle tuile est plus claire ou plus sombre que ses voisines ? | ✅ `intensity-correction` (calcule les gains) |
 | 7 | Seamline | Où passe la couture entre deux tuiles ? | ✅ `graphcut` ou `dynamic-programming-dijkstra` |
-| 8 | Assemblage | Fabriquer l'image finale | ✅ `fusion` (bloc par bloc, sans fondu) |
-| 9 | Export | Écrire le fichier final | ✅ `export` |
+| 8 | Assemblage | Fabriquer l'image finale | ❌ step non enregistré |
+| 9 | Export | Écrire le fichier final | ⚠️ `export` existe, mais aucun step ne produit son entrée |
 
-**Sur `main`, le pipeline va des tuiles jusqu'à l'image finale** : `fusion` écrit la mosaïque sur disque bloc par bloc, `export` la publie (§5). Elle n'a pas encore été produite sur une vraie œuvre.
+**Sur `pipeline3`, la chaîne CLI s'arrête actuellement aux territoires calculés par `graphcut`.** Le test 2×2 est synthétique.
 
 ---
 
@@ -83,42 +83,30 @@ Le travail est découpé en **étapes**, exécutées dans l'ordre :
 
 ## 3. Faire tourner le pipeline aujourd'hui
 
-### En ligne de commande
+### Exécuter un script avec la CLI
 
-Compiler la cible `stitching`, écrire le script ci-dessous (par exemple dans `D:/oeuvre/pipeline.json`), puis :
+Compiler la cible `stitching`, puis lancer le script fourni à la racine :
 
 ```sh
-build/<preset>/stitching --pipeline D:/oeuvre/pipeline.json
+build/<preset>/stitching --pipeline pipeline.json
+build/<preset>/stitching --pipeline pipeline.json --resume
 ```
 
-Après un échec, corriger la cause (un paramètre, un fichier) puis relancer avec `--resume` : les steps déjà faits ne sont pas refaits. Sans argument, `stitching` ouvre l'interface graphique, qui n'appelle pas encore le calcul. Options et codes de sortie : [core/Pipeline.md](core/Pipeline.md#lancer-un-pipeline).
+Le script d'exemple attend des images compatibles dans `images/` et garde les
+checkpoints dans `checkpoints/`. Ces chemins sont relatifs au dossier du script.
+Voir [Pipeline.md](core/Pipeline.md) pour les options, la reprise et les codes
+de sortie détaillés.
 
-### Un script de l'import à l'export
+### Exemple de pipeline
 
-Les chemins relatifs se lisent depuis le dossier du script : ici, les images sont dans `D:/oeuvre/tuiles/`.
+Le fichier [pipeline.json](../pipeline.json) enchaîne `import`,
+`phase-correlation`, `absolute-pos`, `intensity-correction`, `graphcut`,
+jusqu'à `graphcut`. Le test CLI 2×2 utilise ses propres images synthétiques et
+ne dépend pas de fichiers d'images versionnés dans le dépôt.
 
-```json
-{
-  "pipeline": {
-    "steps": [
-      { "name": "import",
-        "parameters": [
-          { "valueType": "string", "name": "path", "value": "tuiles" },
-          { "valueType": "string", "name": "format", "value": "img_C(\\d+)_R(\\d+)\\.tif" }
-        ] },
-      { "name": "phase-correlation",
-        "parameters": [ { "valueType": "int", "name": "niveau", "value": 2 } ] },
-      { "name": "absolute-pos" },
-      { "name": "intensity-correction" },
-      { "name": "graphcut",
-        "parameters": [ { "valueType": "float", "name": "scale", "value": 0.25 } ] },
-      { "name": "fusion" },
-      { "name": "export",
-        "parameters": [ { "valueType": "string", "name": "outputDirectory", "value": "resultat" } ] }
-    ]
-  },
-  "run": { "checkpointDirectory": "checkpoints" }
-}
+```sh
+stitching --pipeline pipeline.json
+stitching --pipeline pipeline.json --resume
 ```
 
 - Un paramètre absent garde sa valeur par défaut. Les paramètres de chaque step sont dans sa fiche ([steps/](steps/)).
@@ -339,7 +327,7 @@ C++ : `DataNs::Seamlines` = `std::vector<DataNs::Seamline>` (`core/data/algorith
 - `imagePath` : RGB 16 bits. `provenancePath` : 16 bits, l'`id` de la tuile d'où vient chaque pixel. `maskPath` : 8 bits, 255 = pixel valide (la provenance n'a pas de sens là où le masque vaut 0).
 - Le repère est celui des territoires : coin le plus petit en (0, 0).
 
-C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`, au même endroit, est le format d'**un** bloc en mémoire, le temps de l'écrire ; il ne passe pas par le DataStore.
+C++ : `DataNs::CompositeBlockList` = `std::vector<DataNs::CompositeBlock>` (`core/data/algorithm_types.h`). Ce type n'est pas encore sérialisé dans les checkpoints. `export` l'attend, mais aucun step du registre ne le produit actuellement.
 
 #### Les deux fichiers du moteur
 
@@ -367,23 +355,15 @@ C++ : `DataNs::Mosaic` (`core/data/algorithm_types.h`). `DataNs::CompositeBlock`
 
 ## 5. Du JSON à l'image reconstruite
 
-Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Pour obtenir l'image, il faut un step d'assemblage, puis un step d'export. Les deux sont sur `main` : `fusion` puis `export`.
+Les JSON ci-dessus **décrivent** la mosaïque, ils ne la contiennent pas. Le
+pipeline CLI et son test 2×2 s'arrêtent aux territoires produits par
+`graphcut`. Le step `export` existe, mais attend `compositeBlocks`, donnée
+qu'aucun step du registre ne produit ; `buildPipeline` rejette donc une chaîne
+qui tente de l'utiliser.
 
-Ce que fait l'assemblage (`fusion`, [FusionStep.md](steps/FusionStep.md)), pour chaque bloc de 512 × 512 de la mosaïque :
-
-1. pour chaque tuile qui touche le bloc, placée à sa `position` après le même décalage que `graphcut` (coin le plus petit vers (0, 0)), dessiner son **territoire** sur le bloc ;
-2. lire dans son TIFF pyramidal **seulement** la partie qui tombe dans le bloc (`readRegion`) ;
-3. corriger sa luminosité : diviser par `tileGains[i] · exp(fieldStrength · r²)` (`BrightnessEqualizationNs::OutputClass::correctRegion`, `algorithms/brightness_equalization/output.h`) ;
-4. copier ses pixels sous le masque du territoire ;
-5. écrire le bloc sur disque, puis passer au suivant : la mosaïque n'est jamais entière en mémoire (§6).
-
-L'assemblage écrit chaque bloc **dès qu'il est calculé**, avec `IONs::TiledTiffWriterClass`, dans trois TIFF tuilés (image, provenance, masque). Il ne range dans le DataStore que leur description, `mosaic` (§4). L'export publie ensuite l'image sous le nom `mosaic.tif`.
-
-Où en est-on :
-
-- **Assemblage** : step `fusion` sur main ([FusionStep.md](steps/FusionStep.md)). Pas de fondu le long de la couture.
-- **Export** : step `export` sur main ([ExportStep.md](steps/ExportStep.md)).
-- **Contrat entre les deux** : l'assemblage fournit la clé `mosaic` (`DataNs::Mosaic`). Son `imagePath` est un TIFF tuilé RGB 16 bits de `canvasSize` pixels ; l'export le contrôle puis le copie (temporaire puis renommage). Il ne publie ni la provenance ni le masque. Aucune image entière ne passe par la mémoire, ni dans l'assemblage, ni dans l'export.
+`graphcut` construit déjà en interne un aperçu 8 bits de la mosaïque
+(`finalMosaic`), sans correction de luminosité, puis le jette. Il pourrait
+servir d'aperçu rapide en attendant un step d'assemblage.
 
 ---
 

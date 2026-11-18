@@ -57,8 +57,8 @@ public:
     QLabel *currentStepLabel() const;
     QProgressBar *progressBar() const;
 
-    QPushButton *cancelRunButton() const { return m_cancelRunButton; }
-    void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
+    QPushButton *pauseRunButton() const { return m_pauseRunButton; }
+    void setPauseRunButton(QPushButton *button) { m_pauseRunButton = button; }
     void appendLog(const QString &message);
     void setActiveStep(int stepNumber);
 
@@ -79,7 +79,7 @@ private:
     LeftToolbar *m_leftToolbar = nullptr;
     RightPanel *m_rightPanel = nullptr;
     TopToolbars *m_topToolbars = nullptr;
-    QPushButton *m_cancelRunButton = nullptr;
+    QPushButton *m_pauseRunButton = nullptr;
 };
 
 #endif // WORKSPACE_UI_H

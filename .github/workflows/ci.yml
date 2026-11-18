@@ -112,9 +112,17 @@ jobs:
               continue
             fi
             echo "::group::clang-tidy $file"
-            if ! clang-tidy -p build/linux-clang-tidy \
-              --warnings-as-errors='*' --header-filter='^$' "$file"; then
+            clang_status=0
+            output=$(clang-tidy -p build/linux-clang-tidy --warnings-as-errors='*' --header-filter='^$' "$file" 2>&1) || clang_status=$?
+            echo "$output"
+            if [[ "$clang_status" -ne 0 ]] || grep -qE "error:|warning:" <<< "$output"; then
               status=1
+              if [[ "$clang_status" -ne 0 ]] && ! grep -qE "error:|warning:" <<< "$output"; then
+                echo "::error file=$file,title=ClangTidy::clang-tidy exited with status $clang_status"
+              fi
+              while IFS= read -r line; do
+                echo "::error file=$file,title=ClangTidy::$line"
+              done < <(grep -E 'error:|warning:' <<< "$output" | head -n 30)
             fi
             echo "::endgroup::"
           done
