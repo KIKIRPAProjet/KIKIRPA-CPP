@@ -44,5 +44,6 @@ if(BUILD_TESTING)
     add_subdirectory(tests/steps)
     add_subdirectory(tests/cli)
     add_subdirectory(tests/frontend)
+    add_subdirectory(tests/cropping)
 
 endif()
