@@ -50,7 +50,7 @@ constexpr int EXCESSIVE_MATCH_COUNT = 1001;
 constexpr double FRACTIONAL_FEATURE_COUNT = 4.5;
 constexpr int BLANK_PIXEL = 100;
 constexpr int MIN_MATCHES_PARAMETER_INDEX = 5;
-constexpr int PARAMETER_COUNT = 6;
+constexpr int PARAMETER_COUNT = 8;
 
 void require(bool ok, const std::string& message) {
     if (!ok) throw std::runtime_error(message);
