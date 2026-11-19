@@ -118,7 +118,11 @@ find_path(ONNXRUNTIME_INCLUDE_DIR
 
 find_library(ONNXRUNTIME_LIB
     NAMES onnxruntime
-    PATHS "${onnxruntime_directory}/lib"
+    PATHS
+        "${onnxruntime_directory}/lib"
+        "${onnxruntime_directory}/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+        "/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}"
+        "/usr/lib"
     NO_DEFAULT_PATH
     REQUIRED
 )
