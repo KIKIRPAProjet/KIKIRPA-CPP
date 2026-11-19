@@ -5,17 +5,21 @@
 #include "core/data/tile.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <gtest/gtest.h>
 #include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -88,6 +92,17 @@ namespace {
                              {"parameters", Json::array({Json{{"valueType", "string"},
                                                                {"name", "outputDirectory"},
                                                                {"value", directory.u8string()}}})}};
+        step.importConfig(config);
+    }
+
+    void configureJpegExport(StepsNs::ExportStepClass& step, const fs::path& directory) {
+        const Json config = {{"name", "export"},
+                             {"parameters", Json::array({Json{{"valueType", "string"},
+                                                               {"name", "outputDirectory"},
+                                                               {"value", directory.u8string()}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "format"},
+                                                               {"value", "jpeg"}}})}};
         step.importConfig(config);
     }
 
@@ -169,6 +184,28 @@ TEST(ExportStepTest, ReportsAMissingMosaicInput) {
 
     EXPECT_FALSE(step.execute());
     EXPECT_NE(step.getResult().value("error", "").find("mosaic"), std::string::npos);
+}
+
+TEST(ExportStepTest, PublishesJpegMosaicAsEightBitImage) {
+    ExportFixture fixture(CV_16UC3);
+    configureJpegExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const StepsNs::ExportOutput& output = fixture.step.getOutput();
+    EXPECT_EQ(output.imagePath, fixture.outputDirectory / "mosaic.jpg");
+    EXPECT_EQ(output.format, "jpeg");
+
+    const cv::Mat published = IONs::readImage(output.imagePath, cv::IMREAD_COLOR);
+    ASSERT_FALSE(published.empty());
+    EXPECT_EQ(published.type(), CV_8UC3);
+    EXPECT_EQ(published.size(), testCanvasSize());
+    
+    // Le pixel (0,0) subit une division par 257.0 pour passer de 16-bit à 8-bit.
+    // L'export JPEG convertit également de RGB (ordre initial) vers BGR (OpenCV)
+    const cv::Vec3b& pixel = published.at<cv::Vec3b>(0, 0);
+    EXPECT_NEAR(pixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / 257.0)), 5); // Canal Bleu (ancien Rouge)
+    EXPECT_NEAR(pixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / 257.0)), 5); // Canal Vert (inchangé)
+    EXPECT_NEAR(pixel[2], static_cast<int>(std::round(LEFT_VALUE / 257.0)), 5);       // Canal Rouge (ancien Bleu)
 }
 
 // L'empreinte suit mosaic.tif : le checkpoint de l'export se périme si le fichier publié disparaît.

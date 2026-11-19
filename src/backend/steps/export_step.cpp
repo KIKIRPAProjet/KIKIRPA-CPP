@@ -10,9 +10,13 @@
 #include "core/data/algorithm_types.h"
 #include "core/io/file_fingerprint.h"
 #include "core/io/file_replacement.h"
+#include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgproc.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -39,6 +43,7 @@ namespace StepsNs {
         // Format attendu de l'image de la mosaïque : RGB, 16 bits par canal, tuilée.
         constexpr std::uint16_t EXPECTED_SAMPLES_PER_PIXEL = 3;
         constexpr std::uint16_t EXPECTED_BITS_PER_SAMPLE = 16;
+        constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
 
         // Ce que l'en-tête du TIFF de la mosaïque dit de l'image, lu sans décoder de pixel.
         struct TiffHeader {
@@ -69,7 +74,15 @@ namespace StepsNs {
             throw std::runtime_error("cannot resolve the current user's Downloads directory");
         }
 
-        fs::path makeImagePath(const fs::path& directory) { return directory / "mosaic.tif"; }
+        std::string configuredFormat(const Json& configJson) {
+            for (const Json& parameter : configJson.at("parameters"))
+                if (parameter.at("name") == "format") return parameter.at("value").get<std::string>();
+            return "tiff";
+        }
+
+        fs::path makeImagePath(const fs::path& directory, const std::string& format) {
+            return directory / (format == "jpeg" ? "mosaic.jpg" : "mosaic.tif");
+        }
 
         fs::path configuredOutputDirectory(const Json& configJson) {
             std::string directory;
@@ -131,6 +144,37 @@ namespace StepsNs {
                 "cannot create output directory '" + IONs::pathToUtf8(directory) + "': " + directoryError.message();
             return false;
         }
+        
+        bool exportJpeg(const DataNs::Mosaic& mosaic, const fs::path& imagePath, ExportOutput& output, Json& result) {
+            cv::Mat image;
+            std::string errorMessage;
+            if (!IONs::PyramidalTiffReaderClass(mosaic.imagePath).readRegion(
+                    0, cv::Rect({0, 0}, mosaic.canvasSize), image, errorMessage)) {
+                result["error"] = "cannot read mosaic image for JPEG export: " + errorMessage;
+                return false;
+            }
+            cv::Mat image8;
+            image.convertTo(image8, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
+            cv::Mat bgrImage;
+            cv::cvtColor(image8, bgrImage, cv::COLOR_RGB2BGR);
+            const fs::path temporaryPath = IONs::makeTemporaryPath(imagePath).concat(".jpg");
+            if (!IONs::writeImage(temporaryPath, bgrImage)) {
+                std::error_code removeError;
+                fs::remove(temporaryPath, removeError);
+                result["error"] = "cannot write JPEG mosaic '" + IONs::pathToUtf8(imagePath) + "'";
+                return false;
+            }
+            if (!IONs::replaceFile(temporaryPath, imagePath, errorMessage)) {
+                std::error_code removeError;
+                fs::remove(temporaryPath, removeError);
+                result["error"] = errorMessage;
+                return false;
+            }
+            output = {imagePath, mosaic.canvasSize, false, "jpeg"};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"format", "jpeg"}};
+            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
+            return true;
+        }
 
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
             TiffHeader header;
@@ -141,13 +185,22 @@ namespace StepsNs {
             }
             fs::path directory;
             if (!prepareOutputDirectory(config, directory, result)) return false;
-            const fs::path imagePath = makeImagePath(directory);
+            const std::string format = configuredFormat(config);
+            if (format != "tiff" && format != "jpeg") {
+                result["error"] = "unsupported export format '" + format + "'";
+                return false;
+            }
+            const fs::path imagePath = makeImagePath(directory, format);
+            if (format == "jpeg") {
+                return exportJpeg(mosaic, imagePath, output, result);
+            }
             if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
-            output = {imagePath, mosaic.canvasSize, header.isBigTiff};
-            result["image"] = {{"path", imagePath.u8string()}, {"bigTiff", output.isBigTiff}};
+            output = {imagePath, mosaic.canvasSize, header.isBigTiff, format};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff},
+                               {"format", format}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
@@ -157,13 +210,15 @@ namespace StepsNs {
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "export";
-        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory}};
+        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory},
+                                 {"string", "format", initialInput.format}};
         stepConfig.inputs = {{"Mosaic", "mosaic"}};
         configJson = stepConfig;
     }
 
     Json ExportStepClass::externalInputsFingerprint() const {
-        return IONs::computeFileFingerprint(makeImagePath(configuredOutputDirectory(configJson)));
+        return IONs::computeFileFingerprint(makeImagePath(configuredOutputDirectory(configJson),
+                                                         configuredFormat(configJson)));
     }
 
     bool ExportStepClass::execute() {
