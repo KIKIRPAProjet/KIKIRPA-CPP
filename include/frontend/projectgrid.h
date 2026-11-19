@@ -77,10 +77,13 @@ signals:
     void tilesImported(const QString &directory, int importedCount);
     void messageRequested(const QString &title, const QString &message, bool warning);
     void statusRequested(const QString &message);
+    void logRequested(const QString &message);
     void comparisonReady(const QString &referencePath, const QString &tilePath,
                          const QImage &referenceImage, const QImage &tileImage);
 
 private:
+    void startBackgroundPyramidGeneration();
+
     State gridState;
 };
 

@@ -15,12 +15,17 @@
 //  gere les tuiles et leur organisation dans la grille
 #include "projectgrid.h"
 
+#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "frontendutils.h"
 
+#include <opencv2/imgcodecs.hpp>
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QPointer>
 #include <QSet>
+#include <QThreadPool>
 #include <QTransform>
 
 #include <utility>
@@ -79,6 +84,7 @@ void ProjectGrid::initializeGridFromPaths()
     gridState.selectedGridCell = 0;
     gridState.gridValidated = false;
     emit gridUpdated();
+    startBackgroundPyramidGeneration();
 }
 
 void ProjectGrid::importTiles(const QString &directoryPath)
@@ -138,6 +144,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     gridState.gridValidated = false;
     emit gridUpdated();
     emit tilesImported(directoryPath, paths.size());
+    startBackgroundPyramidGeneration();
 }
 
 void ProjectGrid::importReferenceImage(const QString &path)
@@ -378,4 +385,94 @@ void ProjectGrid::toggleSelectedCellEmpty()
     gridState.gridTiles[cell].empty = !gridState.gridTiles.at(cell).empty;
     gridState.gridValidated = false;
     emit gridUpdated();
+}
+
+void ProjectGrid::startBackgroundPyramidGeneration()
+{
+    const QString tileDir = gridState.tileDirectory;
+    if (tileDir.isEmpty())
+        return;
+
+    struct GenerationTask {
+        int tileId = 0;
+        QString sourcePath;
+        QString pyramidPath;
+    };
+
+    QVector<GenerationTask> tasks;
+    const QDir pyramidsDir(QDir(tileDir).filePath(QStringLiteral(".cache/pyramids")));
+    if (!pyramidsDir.exists()) {
+        QDir(tileDir).mkpath(QStringLiteral(".cache/pyramids"));
+    }
+
+    int tileId = 0;
+    int alreadyExistingCount = 0;
+    for (int cell = 0; cell < gridState.gridTiles.size(); ++cell) {
+        const auto &tile = gridState.gridTiles.at(cell);
+        if (tile.path.isEmpty() || tile.empty)
+            continue;
+
+        const QFileInfo fileInfo(tile.path);
+        const QString pyramidFileName = QStringLiteral("%1_%2_pyramid.tif")
+            .arg(tileId)
+            .arg(fileInfo.completeBaseName());
+        const QString pyramidPath = pyramidsDir.filePath(pyramidFileName);
+
+        if (!QFile::exists(pyramidPath)) {
+            tasks.append({tileId, tile.path, pyramidPath});
+        } else {
+            ++alreadyExistingCount;
+        }
+        ++tileId;
+    }
+
+    if (tasks.isEmpty()) {
+        if (alreadyExistingCount > 0) {
+            const QString cachedMsg = tr("Vignettes optimisées déjà présentes (%1 tuiles réutilisées).")
+                .arg(alreadyExistingCount);
+            emit statusRequested(cachedMsg);
+            emit logRequested(cachedMsg);
+        }
+        return;
+    }
+
+    const int total = tasks.size();
+    const QString startMsg = tr("Préparation des vignettes optimisées (0/%1)...").arg(total);
+    emit statusRequested(startMsg);
+    emit logRequested(startMsg);
+
+    QPointer<ProjectGrid> weakThis(this);
+    QThreadPool::globalInstance()->start([weakThis, tasks, total]() {
+        int current = 0;
+        for (const auto &task : tasks) {
+            if (!weakThis) return;
+            std::string errorMessage;
+            const cv::Mat image = IONs::readImage(
+                IONs::pathFromUtf8(task.sourcePath.toStdString()),
+                cv::IMREAD_UNCHANGED);
+            if (!image.empty() && weakThis) {
+                IONs::createPyramidalTiledTiff(
+                    image,
+                    IONs::pathFromUtf8(task.pyramidPath.toStdString()),
+                    errorMessage);
+            }
+            ++current;
+            if (weakThis) {
+                QMetaObject::invokeMethod(weakThis.data(), [weakThis, current, total]() {
+                    if (!weakThis) return;
+                    weakThis->gridUpdated();
+                    if (current < total) {
+                        emit weakThis->statusRequested(
+                            QObject::tr("Préparation des vignettes optimisées (%1/%2)...")
+                                .arg(current).arg(total));
+                    } else {
+                        const QString doneMsg = QObject::tr("%1 vignettes optimisées (TIFF pyramidaux prêts).")
+                            .arg(total);
+                        emit weakThis->statusRequested(doneMsg);
+                        emit weakThis->logRequested(doneMsg);
+                    }
+                }, Qt::QueuedConnection);
+            }
+        }
+    });
 }

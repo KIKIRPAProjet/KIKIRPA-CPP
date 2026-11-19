@@ -8,7 +8,10 @@
 #include "core/pipeline/run_state.h"
 #include "core/step/data_store.h"
 #include "core/io/unicode_path.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "frontendutils.h"
 
+#include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
@@ -72,9 +75,33 @@ namespace {
     // Dessine une tuile redimensionnée à sa position absolue relative sur le canvas de prévisualisation.
     void drawTileOnCanvas(QPainter& painter, const DataNs::TileClass& tile,
                           const cv::Point2d& position, const BoundingBox& box, double scale) {
-        const QString sourcePath = QString::fromStdString(IONs::pathToUtf8(tile.getSource()));
-        const QImage tileImage(sourcePath);
-        if (tileImage.isNull()) return;
+        QImage tileImage;
+        const auto& tiffPath = tile.getTiff();
+        if (!tiffPath.empty() && std::filesystem::exists(tiffPath)) {
+            // Utilise le TIFF pyramidal : on sélectionne le niveau réduit le plus approprié
+            IONs::PyramidalTiffReaderClass reader(tiffPath);
+            int chosenLevel = DataNs::LEVEL_COUNT - 1;
+            for (int l = chosenLevel; l >= 0; --l) {
+                if (tile.getLevel(l).width * scale >= 100 || l == 0) {
+                    chosenLevel = l;
+                    break;
+                }
+            }
+            cv::Mat levelMat;
+            std::string err;
+            if (reader.readLevel(chosenLevel, levelMat, err)) {
+                tileImage = FrontendUtils::matToQImage(levelMat);
+            }
+        }
+
+        // Repli sur l'image source si le TIFF pyramidal n'a pas pu être lu
+        if (tileImage.isNull()) {
+            const QString sourcePath = QString::fromStdString(IONs::pathToUtf8(tile.getSource()));
+            const int previewW = qMax(1, static_cast<int>(tile.getLevel(0).width * scale));
+            const int previewH = qMax(1, static_cast<int>(tile.getLevel(0).height * scale));
+            tileImage = readPreviewImage(sourcePath, QSize(previewW, previewH));
+            if (tileImage.isNull()) return;
+        }
 
         const int destX = static_cast<int>((position.x - box.minX) * scale);
         const int destY = static_cast<int>((position.y - box.minY) * scale);
@@ -109,8 +136,19 @@ namespace {
     // Solution de repli si le pipeline s'arrête avant le calcul des positions (affiche la première tuile).
     QImage renderFallbackPreview(const DataNs::TileList& tiles) {
         if (tiles.empty()) return QImage();
-        const QString firstPath = QString::fromStdString(IONs::pathToUtf8(tiles.front()->getSource()));
-        return QImage(firstPath);
+        const auto& firstTile = tiles.front();
+        if (!firstTile->getTiff().empty() && std::filesystem::exists(firstTile->getTiff())) {
+            IONs::PyramidalTiffReaderClass reader(firstTile->getTiff());
+            cv::Mat levelMat;
+            std::string err;
+            const int level = qMin(2, DataNs::LEVEL_COUNT - 1);
+            if (reader.readLevel(level, levelMat, err)) {
+                const QImage img = FrontendUtils::matToQImage(levelMat);
+                if (!img.isNull()) return img;
+            }
+        }
+        const QString firstPath = QString::fromStdString(IONs::pathToUtf8(firstTile->getSource()));
+        return readPreviewImage(firstPath, QSize(PREVIEW_TARGET_WIDTH, PREVIEW_TARGET_WIDTH));
     }
 
 }

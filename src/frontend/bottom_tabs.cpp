@@ -31,9 +31,6 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     setMinimumHeight(80);
 
     m_journalList = new QListWidget(this);
-    m_journalList->addItems({tr("14:12  Assemblage terminé — une paire à vérifier"),
-                             tr("14:10  4 tuiles importées"),
-                             tr("14:02  Projet ouvert")});
     addTab(m_journalList, tr("Journal"));
 
     m_pairsTable = new QTableWidget(0, 10, this);

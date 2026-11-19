@@ -16,6 +16,10 @@ class QLabel;
 class QPushButton;
 class QWidget;
 
+namespace cv {
+    class Mat;
+}
+
 namespace FrontendUtils {
 
 extern const QStringList MODE_NAMES;
@@ -26,6 +30,11 @@ struct PipelineStepInfo {
 };
 
 const std::vector<PipelineStepInfo>& pipelineSteps();
+
+// Détection et lecture d'un TIFF pyramidal pour l'affichage fluide
+QImage matToQImage(const cv::Mat &mat);
+QString findPyramidPathForSource(const QString &sourcePath, int tileIndex = -1);
+QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize);
 
 //définition des 4 états possibles d'une paire de tuiles 
 enum class PairStatus : std::uint8_t {
