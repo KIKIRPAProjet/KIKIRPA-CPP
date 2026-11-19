@@ -15,7 +15,11 @@
         "OpenCV_DIR": "$env{OpenCV_DIR}",
         "CMAKE_PREFIX_PATH": "$env{QT_ROOT}"
       },
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     },
     {
       "name": "linux",
@@ -24,7 +28,11 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
     },
     {
       "name": "macos",
@@ -34,11 +42,16 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-		"CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase;/opt/homebrew/opt/opencv@4;/usr/local/opt/opencv@4"
+        "CMAKE_PREFIX_PATH": "/opt/homebrew/opt/qtbase;/usr/local/opt/qtbase",
+        "OpenCV_DIR": "/opt/homebrew/opt/opencv@4/lib/cmake/opencv4"
       },
-      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
-	},
-	{
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
       "name": "linux-clang-tidy",
       "displayName": "Linux (clang-tidy)",
       "description": "Linux build with Clang and clang-tidy checks enabled. Install both before configuring.",
