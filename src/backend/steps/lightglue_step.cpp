@@ -3,6 +3,7 @@
 
 #include "algorithms/stitching/feature_matcher.h"
 #include "algorithms/stitching/overlap_estimation/overlap_estimator.h"
+#include "algorithms/stitching/phase_correlation/phase_correlation_types.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
@@ -45,13 +46,14 @@ namespace StepsNs {
 
         PairMeasurement measurePair(const NeighborPair& pair, const cv::Mat& imageA,
                                     const cv::Mat& imageB, const PairProcessingContext& context) {
-            const DataNs::PairContext pairContext{pair.direction, context.input.overlap, std::nullopt};
+            const float overlap = overlapForDirection(pair.direction, context.input.overlap, context.input.verticalOverlap);
+            const DataNs::PairContext pairContext{pair.direction, overlap, std::nullopt};
             // Première passe : la mesure de overlap-estimation si elle existe pour cette paire, sinon la nôtre.
             auto translation = findEstimatedTranslation(context.overlapEstimates, pair.tileA->getId(), pair.tileB->getId());
             if (!translation) {
-                const auto overlap = context.estimator.estimate(imageA, imageB, pairContext);
-                if (!overlap) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
-                translation = overlap->translationBInA;
+                const auto firstPass = context.estimator.estimate(imageA, imageB, pairContext);
+                if (!firstPass) return {std::nullopt, "overlap estimation failed: " + context.estimator.getFailureReason()};
+                translation = firstPass->translationBInA;
             }
             const auto regions = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(imageA.size(), imageB.size(), *translation);
             if (regions.first.empty() || regions.second.empty()) return {std::nullopt, "tiles have no common region"};
@@ -112,7 +114,8 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "lightglue";
         stepConfig.parameters = {{"string", "modelPath", input.modelPath}, {"int", "minMatches", input.minMatches},
-                                 {"float", "overlap", input.overlap}};
+                                 {"float", "overlap", input.overlap}, {"float", "verticalOverlap", input.verticalOverlap},
+                                 {"float", "railMargin", input.railMargin}};
         stepConfig.inputs = {{"Tiles", "tiles"}};
         stepConfig.outputs = {{output.type, output.key}};
         configJson = stepConfig;
@@ -127,8 +130,12 @@ namespace StepsNs {
             throw std::invalid_argument("minMatches must be a positive integer within int range");
         input.minMatches = minimumMatchCount.get<int>();
         input.overlap = getParameter("overlap").get<float>();
-        if (!std::isfinite(input.overlap) || !(input.overlap > 0.f && input.overlap < 1.f))
-            throw std::invalid_argument("overlap must be in (0, 1)");
+        input.verticalOverlap = getParameter("verticalOverlap").get<float>();
+        input.railMargin = getParameter("railMargin").get<double>();
+        const std::string overlapError = checkOverlaps(input.overlap, input.verticalOverlap);
+        if (!overlapError.empty()) throw std::invalid_argument(overlapError);
+        if (!std::isfinite(input.railMargin) || input.railMargin < 0.0)
+            throw std::invalid_argument("railMargin must be finite and nonnegative");
         return input;
     }
 
@@ -149,7 +156,9 @@ namespace StepsNs {
             const auto input = readInput();
             const auto pairs = collectPairs(dataStore->get<DataNs::TileList>("tiles"));
             loadMatcher(input.modelPath);
-            OverlapEstimationNs::OverlapEstimatorClass estimator;
+            PhaseCorrelationNs::Parameters firstPassParameters;
+            firstPassParameters.railMargin = input.railMargin;
+            OverlapEstimationNs::OverlapEstimatorClass estimator(firstPassParameters);
             const PairProcessingContext context{input, *matcher, estimator, findOverlapEstimates(*dataStore)};
             measurePairs(pairs, context, output, result);
             result["pairs"] = output.value.size();

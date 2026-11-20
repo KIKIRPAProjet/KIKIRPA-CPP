@@ -48,6 +48,7 @@ namespace OverlapEstimationNs {
     std::optional<DataNs::OverlapEstimate> OverlapEstimatorClass::estimate(const cv::Mat& imageA, const cv::Mat& imageB,
                                                                            const DataNs::PairContext& context) {
         failureReason.clear();
+        outOfMarginPeak.reset();
         const auto pair = PreparationClass::orientPair(imageA, imageB, context);
         if (!pair) {
             failureReason = OutputClass::describePairFailure(imageA, imageB, context);
@@ -60,8 +61,9 @@ namespace OverlapEstimationNs {
         }
         const auto measurement = AlgorithmClass::measureGlobalTranslation(*strips, parameters);
         if (!measurement) {
-            failureReason = OutputClass::describeGlobalFailure(AlgorithmClass::diagnoseGlobalTranslation(*strips, parameters),
-                                                               *pair, *strips, context, parameters);
+            const auto diagnostic = AlgorithmClass::diagnoseGlobalTranslation(*strips, parameters);
+            failureReason = OutputClass::describeGlobalFailure(diagnostic, *pair, *strips, context, parameters);
+            outOfMarginPeak = OutputClass::findOutOfMarginPeak(diagnostic, *pair, *strips, parameters);
             return std::nullopt;
         }
         return toTileFrame(*pair, *measurement);

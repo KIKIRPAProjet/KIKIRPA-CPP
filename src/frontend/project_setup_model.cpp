@@ -149,7 +149,13 @@ void validateSettings(const ProjectSetup &setup,
   if (!std::isfinite(setup.overlap) || setup.overlap <= 0.0 ||
       setup.overlap >= 1.0)
     errors.emplace_back(
-        "Le recouvrement doit être strictement compris entre 0 et 100 %.");
+        "Le recouvrement horizontal doit être strictement compris entre 0 et 100 %.");
+  if (!std::isfinite(setup.verticalOverlap) || setup.verticalOverlap <= 0.0 ||
+      setup.verticalOverlap >= 1.0)
+    errors.emplace_back(
+        "Le recouvrement vertical doit être strictement compris entre 0 et 100 %.");
+  if (!std::isfinite(setup.railMargin) || setup.railMargin < 0.0)
+    errors.emplace_back("La marge d'incertitude doit être positive ou nulle.");
   if (setup.pyramidLevel < 0 || setup.pyramidLevel > MAX_PYRAMID_LEVEL)
     errors.emplace_back(
         "Le niveau de pyramide doit être compris entre 0 et 5.");
@@ -224,11 +230,18 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "tiles", createImportTilesJson(setup));
   } else if (stepName == "phase-correlation") {
     replaceParameter(stepJson, "overlap", setup.overlap);
+    replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);
     replaceParameter(stepJson, "niveau", setup.pyramidLevel);
+    // La marge de ce step est en px du niveau analysé : celle du projet est en px de pleine résolution.
+    replaceParameter(stepJson, "marge", setup.railMargin / static_cast<double>(1 << setup.pyramidLevel));
   } else if (stepName == "overlap-estimation" || stepName == "sift") {
     replaceParameter(stepJson, "overlap", setup.overlap);
+    replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);
+    replaceParameter(stepJson, "railMargin", setup.railMargin);
   } else if (stepName == "lightglue") {
     replaceParameter(stepJson, "overlap", setup.overlap);
+    replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);
+    replaceParameter(stepJson, "railMargin", setup.railMargin);
     replaceParameter(stepJson, "modelPath", IONs::pathToUtf8(setup.lightGlueModelPath));
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
