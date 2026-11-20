@@ -67,6 +67,25 @@ namespace {
             1, cv::Rect(0, 0, REDUCED_WIDTH, REDUCED_HEIGHT), reduced, error)) << error;
         EXPECT_EQ(reduced.size(), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
 
+        // Vérifie getLevelCount, getLevelDimensions et readLevel
+        EXPECT_EQ(reader.getLevelCount(), 4);
+        int w0 = 0;
+        int h0 = 0;
+        ASSERT_TRUE(reader.getLevelDimensions(0, w0, h0, error)) << error;
+        EXPECT_EQ(w0, SOURCE_WIDTH);
+        EXPECT_EQ(h0, SOURCE_HEIGHT);
+
+        int w1 = 0;
+        int h1 = 0;
+        ASSERT_TRUE(reader.getLevelDimensions(1, w1, h1, error)) << error;
+        EXPECT_EQ(w1, REDUCED_WIDTH);
+        EXPECT_EQ(h1, REDUCED_HEIGHT);
+
+        cv::Mat fullLevel1;
+        ASSERT_TRUE(reader.readLevel(1, fullLevel1, error)) << error;
+        EXPECT_EQ(fullLevel1.size(), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
+        EXPECT_EQ(fullLevel1.type(), source.type());
+
         // Supprime le fichier temporaire créé pour le test.
         std::filesystem::remove(PATH);
     }

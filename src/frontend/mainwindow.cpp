@@ -141,6 +141,8 @@ void MainWindow::setupProjectGridConnections()
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
             this, &MainWindow::updateStatus);
+    connect(projectGrid, &ProjectGrid::logRequested,
+            workspaceUI, &WorkspaceUI::appendLog);
     connect(projectGrid, &ProjectGrid::tilesImported,
             this, &MainWindow::handleTilesImported);
     connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
@@ -639,8 +641,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
     setMode(1);
-    updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
-                     .arg(importedCount).arg(QFileInfo(directory).fileName()));
+    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+        .arg(importedCount).arg(QFileInfo(directory).fileName());
+    updateStatus(msg);
+    workspaceUI->appendLog(msg);
 }
 
 void MainWindow::saveProject()

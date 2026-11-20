@@ -15,9 +15,15 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+
 #include <QCoreApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
@@ -179,6 +185,108 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 }
 */
 
+QImage matToQImage(const cv::Mat &mat)
+{
+    if (mat.empty())
+        return {};
+
+    cv::Mat mat8;
+    if (mat.depth() == CV_16U) {
+        mat.convertTo(mat8, CV_8U, 1.0 / 256.0);
+    } else if (mat.depth() == CV_8U) {
+        mat8 = mat;
+    } else {
+        return {};
+    }
+
+    if (mat8.channels() == 1) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_Grayscale8).copy();
+    }
+    if (mat8.channels() == 3) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_BGR888).copy();
+    }
+    if (mat8.channels() == 4) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_ARGB32).copy();
+    }
+    return {};
+}
+
+QString findPyramidPathForSource(const QString &sourcePath, int tileIndex)
+{
+    if (sourcePath.isEmpty())
+        return {};
+
+    const QFileInfo sourceInfo(sourcePath);
+    if (!sourceInfo.exists())
+        return {};
+
+    if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
+        sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
+        return sourcePath;
+    }
+
+    const QDir pyramidsDir(sourceInfo.dir().filePath(QStringLiteral(".cache/pyramids")));
+    if (!pyramidsDir.exists())
+        return {};
+
+    const QString baseName = sourceInfo.completeBaseName();
+
+    if (tileIndex >= 0) {
+        const QString exactName = QStringLiteral("%1_%2_pyramid.tif").arg(tileIndex).arg(baseName);
+        if (pyramidsDir.exists(exactName))
+            return pyramidsDir.filePath(exactName);
+    }
+
+    const QString filter = QStringLiteral("*_%1_pyramid.tif").arg(baseName);
+    const QStringList matches = pyramidsDir.entryList(QStringList{filter}, QDir::Files);
+    if (!matches.isEmpty())
+        return pyramidsDir.filePath(matches.first());
+
+    const QString simpleName = QStringLiteral("%1_pyramid.tif").arg(baseName);
+    if (pyramidsDir.exists(simpleName))
+        return pyramidsDir.filePath(simpleName);
+
+    return {};
+}
+
+QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
+{
+    if (pyramidPath.isEmpty())
+        return {};
+
+    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    const int levelCount = reader.getLevelCount();
+    if (levelCount <= 0)
+        return {};
+
+    int chosenLevel = levelCount - 1;
+    for (int level = levelCount - 1; level >= 0; --level) {
+        int width = 0;
+        int height = 0;
+        std::string err;
+        if (reader.getLevelDimensions(level, width, height, err)) {
+            if (width >= maximumSize.width() && height >= maximumSize.height()) {
+                chosenLevel = level;
+                break;
+            }
+        }
+    }
+
+    cv::Mat levelMat;
+    std::string errorMessage;
+    if (!reader.readLevel(chosenLevel, levelMat, errorMessage))
+        return {};
+
+    QImage image = matToQImage(levelMat);
+    if (!image.isNull() && (image.width() > maximumSize.width() || image.height() > maximumSize.height())) {
+        image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    return image;
+}
+
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order)
@@ -320,6 +428,13 @@ QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
 
 QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
+    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
+    if (!pyramidPath.isEmpty()) {
+        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
+        if (!pyramidPreview.isNull())
+            return pyramidPreview;
+    }
+
     QImageReader reader(path);
     reader.setAutoTransform(true);
     const QSize sourceSize = reader.size();
