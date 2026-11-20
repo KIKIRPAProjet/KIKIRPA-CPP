@@ -200,6 +200,53 @@ TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
   EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(5), "method"), "gain");
 }
 
+// Recouvrements horizontal et vertical, et marge d'incertitude du rail : transmis à l'appariement. La marge de
+// phase-correlation est en px du niveau analysé (ici niveau 1 : divisée par 2).
+TEST_F(ProjectSetupTestClass, PassesBothOverlapsAndRailMarginToPhaseCorrelation) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.overlap = 0.21;
+  setup.verticalOverlap = 0.26;
+  setup.railMargin = 700.0;
+  setup.pyramidLevel = 1;
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  const FrontendNs::Json &phaseStep = script.at("pipeline").at("steps").at(1);
+  ASSERT_EQ(phaseStep.at("name"), "phase-correlation");
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "overlap"), 0.21);
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "verticalOverlap"), 0.26);
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "marge"), 350.0);
+}
+
+TEST_F(ProjectSetupTestClass, PassesBothOverlapsAndRailMarginToOverlapEstimationAndSift) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.verticalOverlap = 0.26;
+  setup.railMargin = 700.0;
+  setup.pipelineChoices.estimateOverlap = true;
+  setup.pipelineChoices.matchingStep = "sift";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  for (const int index : {1, 2}) {
+    const FrontendNs::Json &step = script.at("pipeline").at("steps").at(index);
+    EXPECT_DOUBLE_EQ(parameterValue(step, "overlap"), 0.2) << step.at("name");
+    EXPECT_DOUBLE_EQ(parameterValue(step, "verticalOverlap"), 0.26) << step.at("name");
+    EXPECT_DOUBLE_EQ(parameterValue(step, "railMargin"), 700.0) << step.at("name");
+  }
+}
+
+TEST_F(ProjectSetupTestClass, ReportsInvalidVerticalOverlap) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.verticalOverlap = 0.0;
+  model.setSetup(setup);
+  const auto errors = model.validate();
+  EXPECT_TRUE(std::any_of(errors.begin(), errors.end(), [](const std::string &error) {
+    return error.find("vertical") != std::string::npos;
+  }));
+}
+
 // Le Vote 2D n'est jamais ajouté avec la corrélation de phase.
 TEST_F(ProjectSetupTestClass, PhaseCorrelationNeverGetsVote2D) {
   FrontendNs::ProjectSetup setup = model.getSetup();

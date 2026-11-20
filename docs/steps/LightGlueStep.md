@@ -28,16 +28,21 @@ dans le namespace `StepsNs`.
       {"name": "lightglue", "parameters": [
         {"valueType": "string", "name": "modelPath", "value": "/chemin/modele.onnx"},
         {"valueType": "int", "name": "minMatches", "value": 4},
-        {"valueType": "float", "name": "overlap", "value": 0.2}
+        {"valueType": "float", "name": "overlap", "value": 0.2},
+        {"valueType": "float", "name": "verticalOverlap", "value": 0.0},
+        {"valueType": "float", "name": "railMargin", "value": 0.0}
       ]}
     ]
   }
 }
 ```
 
-Les valeurs absentes gardent les défauts : `modelPath` vide, `minMatches = 4`, `overlap = 0.2`.
+Les valeurs absentes gardent les défauts : `modelPath` vide, `minMatches = 4`, `overlap = 0.2`,
+`verticalOverlap = 0` (paires verticales au même recouvrement que `overlap`), `railMargin = 0` (marge du rail de la
+première passe, en px ; `0` = 5 % de la tuile).
 `StepClass::importConfig()` vérifie les noms, types et doublons. Le step vérifie les contraintes
-métier : chemin non vide, minimum positif dans la plage `int`, recouvrement fini dans `(0, 1)`.
+métier : chemin non vide, minimum positif dans la plage `int`, recouvrement fini dans `(0, 1)`, `verticalOverlap`
+nul ou dans `(0, 1)`, `railMargin` fini et non négatif.
 L'ancien format `options` / `type` / `key` n'est plus accepté ; utiliser `parameters` / `valueType` /
 `name`. Les anciennes clés de script `model_path` et `min_matches` sont refusées. Le paramètre
 interne `model_path` du matcher est traduit par le step.

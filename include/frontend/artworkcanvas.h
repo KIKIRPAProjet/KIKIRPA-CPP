@@ -41,6 +41,7 @@ public:
         m_mosaicPreview = image;
         update(); // Demande à Qt de redessiner le canevas immédiatement
     }
+    const QImage &mosaicPreview() const { return m_mosaicPreview; }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
@@ -56,7 +57,7 @@ private:
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                   int rotation = 0, bool flipped = false);
+                   int rotation = 0, bool flipped = false, int tileIndex = -1);
 
     int gridCellAt(const QPoint &point) const;
 

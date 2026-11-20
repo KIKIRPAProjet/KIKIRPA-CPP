@@ -19,7 +19,8 @@ namespace OverlapEstimationNs {
     // LightGlue y cherchent leurs points.
     //
     // Paramètres : ceux de la corrélation de phase (PhaseCorrelationNs::Parameters). Seuls smoothingSigma,
-    // minimumPeakRatio, railMargin et minimumValidFraction servent ; upsamplingFactor est ignoré (mesure au pixel près).
+    // minimumPeakRatio, railMargin, automaticRailMarginFraction et minimumValidFraction servent ; upsamplingFactor est
+    // ignoré (mesure au pixel près).
     // std::invalid_argument à la construction si une valeur est invalide.
     class OverlapEstimatorClass {
 
@@ -34,6 +35,10 @@ namespace OverlapEstimationNs {
             // Pourquoi le dernier estimate() a échoué, avec la correction à apporter quand elle est connue. Vide sinon.
             const std::string& getFailureReason() const { return failureReason; }
 
+            // Si le dernier estimate() a échoué sur un pic franc mais hors de la marge du rail : le recouvrement réel que
+            // ce pic indique. Vide dans tous les autres cas (réussite comprise).
+            const std::optional<PhaseCorrelationNs::OutOfMarginPeak>& getOutOfMarginPeak() const { return outOfMarginPeak; }
+
             // Rectangles de la zone commune dans A et dans B (même taille), B placée à `translation` arrondie au pixel
             // (coin haut-gauche de B dans le repère de A). Rectangles vides si les tuiles ne se superposent pas.
             static std::pair<cv::Rect, cv::Rect> computeCommonAreas(cv::Size sizeA, cv::Size sizeB, cv::Point2d translation);
@@ -41,6 +46,7 @@ namespace OverlapEstimationNs {
         private:
             PhaseCorrelationNs::Parameters parameters;   // vérifiés une seule fois, dans le constructeur
             std::string failureReason;                   // message du dernier échec de estimate()
+            std::optional<PhaseCorrelationNs::OutOfMarginPeak> outOfMarginPeak;   // pic franc hors marge du dernier échec
 
     };
 

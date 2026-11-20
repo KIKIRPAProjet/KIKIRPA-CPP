@@ -223,11 +223,6 @@ void HomePage::createProject()
     if (selectedTileDirectory.isEmpty())
         return;
 
-    const QString selectedOutputDirectory = QFileDialog::getExistingDirectory(
-        this, tr("Choisir le dossier de sortie"));
-    if (selectedOutputDirectory.isEmpty())
-        return;
-
     const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
         {QStringLiteral("*.tif"), QStringLiteral("*.tiff")},
         QDir::Files, QDir::Name);
@@ -236,7 +231,7 @@ void HomePage::createProject()
         tilePaths.append(tileFile.absoluteFilePath());
 
     emit projectCreationRequested(name, selectedTileDirectory,
-                                  selectedOutputDirectory, tilePaths);
+                                  QString(), tilePaths);
 }
 
 void HomePage::openProject()

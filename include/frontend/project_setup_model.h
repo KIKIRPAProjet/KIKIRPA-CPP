@@ -60,7 +60,11 @@ struct ProjectSetup {
   // Sert seulement à proposer une case à chaque tuile à l'import (importTiles) si
   // les noms la contiennent ; la case retenue est celle de la grille.
   std::string filenameFormat = R"(img_C(\d+)_R(\d+)\.tif)";
-  double overlap = DEFAULT_OVERLAP;
+  double overlap = DEFAULT_OVERLAP;          // recouvrement nominal des paires horizontales (voisine de droite)
+  double verticalOverlap = DEFAULT_OVERLAP;  // recouvrement nominal des paires verticales (voisine du dessous)
+  // Marge d'incertitude du rail (px de pleine résolution) : écart permis entre la translation mesurée et le
+  // recouvrement nominal à la première passe. 0 = automatique (règle de chaque step).
+  double railMargin = 0.0;
   int pyramidLevel = 0;
   std::vector<ProjectTile> tiles;
   PipelineChoices pipelineChoices;

@@ -1,5 +1,7 @@
 #include "artworkcanvas.h"
 
+#include <QDebug>
+#include <QElapsedTimer>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -101,6 +103,9 @@ int ArtworkCanvas::gridCellAt(const QPoint &point) const
 // exemple avant la connection au backend : les positions (x, y) des points sont simulées en attendant la connexion avec Matches::pointsInA / pointsInB du backend.
 void ArtworkCanvas::paintEvent(QPaintEvent *)
 {
+    QElapsedTimer frameTimer;
+    frameTimer.start();
+
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#484848"));
@@ -113,11 +118,24 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
                              target.top() + (target.height() - fitted.height()) / 2);
         p.drawImage(topLeft, fitted);
+
+        // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
+        p.setPen(QColor("#dddddd"));
+        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
+        qDebug() << "[Performance Canevas] Mosaïque export affichée en" << frameTimer.elapsed() << "ms";
         return; // On arrête de dessiner ici
     }
 
     if (modeValue == kModeGrid) {
         drawGrid(p);
+        int activeTileCount = 0;
+        for (const auto &tile : gridTiles) {
+            if (!tile.path.isEmpty() && !tile.empty) ++activeTileCount;
+        }
+        if (activeTileCount > 0) {
+            qDebug() << "[Performance Canevas] Grille (" << activeTileCount << "tuiles) dessinée en" << frameTimer.elapsed() << "ms";
+        }
         return;
     }
 
@@ -147,7 +165,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                            : qMin(1, qMax(0, static_cast<int>(imagePaths.size()) - 1));
 
     if (!imagePaths.isEmpty())
-        drawPhoto(p, firstImageRect, imagePaths.at(indexA));
+        drawPhoto(p, firstImageRect, imagePaths.at(indexA), 0, false, indexA);
     else
         drawPainting(p, firstImageRect);
     if (pair) {
@@ -160,7 +178,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         if (pairOverlayMode)
             p.setOpacity(0.65);
         if (imagePaths.size() > 1)
-            drawPhoto(p, secondImageRect, imagePaths.at(indexB));
+            drawPhoto(p, secondImageRect, imagePaths.at(indexB), 0, false, indexB);
         else
             drawPainting(p, secondImageRect);
         if (pairOverlayMode)
@@ -308,6 +326,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                QString::number(zoomPercent) + QStringLiteral(" %"));
+
+    if (!imagePaths.isEmpty()) {
+        qDebug() << "[Performance Canevas] Vue" << (pair ? "Paire" : "Tuile") << "dessinée en" << frameTimer.elapsed() << "ms";
+    }
 }
 
 void ArtworkCanvas::setSeamVisible(bool visible)
