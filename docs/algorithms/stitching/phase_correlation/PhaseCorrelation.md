@@ -25,7 +25,7 @@ Seule dépendance : **OpenCV** (déjà utilisée par le projet). Pas besoin d'Ei
 Deux tuiles voisines A et B se recouvrent sur une bande (environ 20 % de leur taille). L'algorithme mesure **où se trouve B par rapport à A**, avec une précision inférieure au pixel, en deux passes : une première au pixel près sur les bandes de recouvrement nominal, une deuxième au sous-pixel sur la zone commune réelle (voir l'étape 1). Il renvoie :
 
 1. **une translation globale** `(translationX, translationY)` : la position du coin haut-gauche de B dans le repère de A ;
-2. **des paires de points** `pointsInA[i] ↔ pointsInB[i]` avec un **score de confiance** `confidenceScores[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à RANSAC / MAGSAC++.
+2. **des paires de points** `pointsInA[i] ↔ pointsInB[i]` avec un **score de confiance** `confidenceScores[i]`. C'est le même format que les autres méthodes (SIFT, LightGlue…), ce qui permet de les passer à Vote2D.
 
 ```
           A                              repère de A
@@ -212,7 +212,7 @@ Le calcul de la corrélation est le même dans les deux passes.
 4. On le **normalise** (division par son module) : seule la phase est conservée, c'est-à-dire seulement l'information de position. C'est ce qui rend la méthode insensible aux différences d'éclairage.
 5. On multiplie par une **gaussienne** dans le domaine fréquentiel, ce qui revient à flouter la surface de corrélation (σ = `smoothingSigma`). Cela atténue les faux pics fins dus au grain du capteur.
 6. La FFT inverse donne une **surface de corrélation** : son maximum est situé au décalage cherché. La FFT est périodique : un indice au-delà de la moitié de l'image correspond à un décalage négatif (`signedShift`).
-7. Le pic entier est cherché sur la surface lissée, **seulement dans la marge** (marge du rail en première passe, ±4 px en deuxième passe) (`buildAllowedMask`, `locatePeak`) : les décalages résiduels `|dx|, |dy| ≤ railMargin`. Les bandes étant prises au recouvrement nominal, le décalage résiduel attendu est nul. Un pic plus haut au-delà de la marge ne peut pas être le bon : il vient d'un motif répétitif ou d'un fond uni, et le rail ne peut pas s'être trompé d'autant. Marge par défaut : 5 % de la tuile dans le sens du déplacement, au moins 48 px (même règle que la chaîne Python de référence).
+7. Le pic entier est cherché sur la surface lissée, **seulement dans la marge** (marge du rail en première passe, ±4 px en deuxième passe) (`buildAllowedMask`, `locatePeak`) : les décalages résiduels `|dx|, |dy| ≤ railMargin`. Les bandes étant prises au recouvrement nominal, le décalage résiduel attendu est nul. Un pic plus haut au-delà de la marge ne peut pas être le bon : il vient d'un motif répétitif ou d'un fond uni, et le rail ne peut pas s'être trompé d'autant. Marge par défaut : 5 % de la tuile dans le sens du déplacement, au moins 48 px.
 8. En deuxième passe, la fraction de pixel est calculée par **DFT suréchantillonnée** (Guizar-Sicairos, 2008 ; `refinePeak`) : la surface **brute** est évaluée exactement sur une grille de 150 × 150 points au pas de 1/100 px, sur ±0,75 px autour du pic entier. Il suffit de deux produits matriciels `Ky · croise · Kxᵀ` (`buildDftKernel`), sans suréchantillonner toute l'image. On raffine sur la surface brute, et non sur la surface lissée, parce que le lissage déplace légèrement le sommet du pic. L'ancienne parabole sur trois valeurs entières était, elle, tirée vers l'entier le plus proche.
 
 ```
@@ -229,7 +229,7 @@ Le calcul de la corrélation est le même dans les deux passes.
 
 ### Étapes 2 à 5 : les points de correspondance
 
-La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que RANSAC puisse détecter une rotation ou une déformation et écarter les mauvais points.
+La translation globale ne suffit pas pour le format « points d'intérêt ». Il faut aussi des paires de points **mesurées indépendamment**, pour que le rejector puisse détecter une rotation ou une déformation et écarter les mauvais points.
 
 - **Candidats** : `cv::goodFeaturesToTrack` (Shi-Tomasi) choisit des coins bien texturés dans la zone commune. On en demande 3 × `maximumPointCount`, espacés d'au moins `minimumPointSpacing` px, et assez loin des bords pour que les patchs restent dans l'image.
 - **Mesure locale** : pour chaque candidat, on prend un patch de `patchSize`×`patchSize` px dans A et le patch correspondant dans B, selon la translation arrondie. On relance `correlatePhase` sur ces deux patchs, ce qui donne un petit résidu local, au 1/100 px lui aussi. Ici le pic est cherché **sans marge** : limiter la recherche à ±`maximumLocalDeviation` masquerait tout le voisinage du pic et viderait le test du second pic. L'écart à la translation globale est contrôlé juste après.
@@ -243,20 +243,19 @@ Coordonnées : `pointsInA[i]` est entier (centre du patch dans A) ; `pointsInB[i
 
 ## 4. Correspondance avec le Python
 
-| Python (`correlation_phase.py`) | C++ | Remarque |
-|---|---|---|
-| `charger` | `computeOutsideMask` + `convertToGrey` | Lecture de fichier retirée (rôle d'`ImportStepClass`). Pas de normalisation par percentiles (voir §6). **Amélioration** : en Python, tous les pixels à 0 deviennent NaN ; en C++, seulement ceux qui sont reliés au bord de la tuile. |
-| `stripRectangle` | `stripRectangle` | Renvoie un `cv::Rect` : la bande n'est pas copiée. |
-| `_zone_avec_contenu` | `findContentRectangle` | `PasDeContenu` devient `std::nullopt`. Mêmes seuils (0.1 / 0.5 / 32 px), nommés en constantes. |
-| `_sous_pixel` | remplacé par `refinePeak` | Parabole remplacée par la DFT suréchantillonnée (voir ci-dessous). |
-| `correlation_de_phase` | `correlatePhase` | Même calcul, en double précision comme numpy, découpé en `computeSpectrum`, `normalizeCrossSpectrum`, `buildGaussianFilter`, `inverseRealPart`, `locatePeak` et `refinePeak`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
-| `rapport_pics` | `computePeakRatio` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même ; les pics sont cherchés dans la marge. |
-| `mesurer_decalage` + `decalage_entre_bandes` | `PreparationClass::orientPair` + `PreparationClass::extractNominalStrips` + `AlgorithmClass::measureGlobalTranslation` | L'échange A↔B pour haut/gauche se fait une seule fois (`orientPair`) et s'annule dans `undoOrientation`. |
-| `zone_commune` (partie calcul) | `PreparationClass::extractOverlap` | Sert de zone de recherche des points. |
-| — | `AlgorithmClass::measureLocalPoints` + `OutputClass` | **Nouveau** : génération et mise en forme des points de correspondance. |
-| `profil_couture`, `variation_profil` | non porté | Diagnostics de déformation ; les points locaux + RANSAC jouent ce rôle. |
-| `assembler`, `coller` | non porté | Rôle de `FusionStep`. |
-| `metadonnees_tiff` | non porté | Rôle d'`ExportStep`. |
+| C++ | Remarque |
+|---|---|
+| `computeOutsideMask` + `convertToGrey` | Lecture de fichier retirée (rôle d'`ImportStepClass`). Pas de normalisation par percentiles (voir §6). **Amélioration** : en Python, tous les pixels à 0 deviennent NaN ; en C++, seulement ceux qui sont reliés au bord de la tuile. |
+| `stripRectangle` | Renvoie un `cv::Rect` : la bande n'est pas copiée. |
+| `findContentRectangle` | `PasDeContenu` devient `std::nullopt`. Mêmes seuils (0.1 / 0.5 / 32 px), nommés en constantes. |
+| remplacé par `refinePeak` | Parabole remplacée par la DFT suréchantillonnée (voir ci-dessous). |
+| `correlatePhase` | Même calcul, en double précision comme numpy, découpé en `computeSpectrum`, `normalizeCrossSpectrum`, `buildGaussianFilter`, `inverseRealPart`, `locatePeak` et `refinePeak`. La surface lissée n'est pas recentrée (`fftshift`) : ce n'est pas nécessaire. |
+| `computePeakRatio` | Indices modulo au lieu de `np.roll`. Le voisinage masqué est le même ; les pics sont cherchés dans la marge. |
+| `PreparationClass::orientPair` + `PreparationClass::extractNominalStrips` + `AlgorithmClass::measureGlobalTranslation` | L'échange A↔B pour haut/gauche se fait une seule fois (`orientPair`) et s'annule dans `undoOrientation`. |
+| `PreparationClass::extractOverlap` | Sert de zone de recherche des points. |
+| `AlgorithmClass::measureLocalPoints` + `OutputClass` | **Nouveau** : génération et mise en forme des points de correspondance. |
+
+
 
 Trois éléments viennent de la version révisée du chef de projet (notebook `Stitching_Python/01_correlation_de_phase.ipynb`, classe `CorrelationDePhase`) et non du prototype :
 
@@ -340,18 +339,18 @@ La marge de la deuxième passe (±4 px autour de la position de la première) es
 
 ## 7. Comment vérifier
 
-Les points 2 et 3 sont automatisés dans `tests/phase_correlation/test_phase_correlation.cpp` (GoogleTest, lancé par `ctest`, sur une texture générée) ; le point 1 par `tests/comparer_python.py`. Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
+Les points 1 et 2 sont automatisés dans `tests/phase_correlation/test_phase_correlation.cpp` (GoogleTest, lancé par `ctest`, sur une texture générée). Résultats du 12/10/2026 (OpenCV 4.14, MSVC, Release) en fin de section.
 
-1. **Parité avec le Python** : sur deux vraies tuiles, comparer `(matches.translationY, matches.translationX)` à `mesurer_decalage(A, B, "bas")` (ou `"droite"`, `"haut"`, `"gauche"`). Les deux versions ne font pas le même sous-pixel (parabole sur la surface lissée en Python, DFT sur la surface brute ici) : des écarts de quelques dixièmes de pixel sont normaux, pas des écarts de plusieurs pixels.
-2. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsInA[i] − pointsInB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.
-3. **Cas limites** :
+
+1. **Test synthétique** : découper A et B dans une même image à un décalage connu non entier, puis vérifier `(x, y)` et que `pointsInA[i] − pointsInB[i] ≈ (x, y)` à moins de 0,5 px pour tous les points. **B doit être décalée par la FFT** (théorème du décalage), pas par `cv::warpAffine` : l'interpolation bicubique déforme la phase et fausse la vérité de 0,1 à 0,25 px.
+2. **Cas limites** :
    - bande noire → `match` renvoie `false`, sans exception ;
    - bande surtout saturée (plus de 75 % de pixels au maximum) → `false` ;
    - `Top`/`Left` → résultat de signe opposé à celui de `Bottom`/`Right` sur la paire inversée ;
    - motif périodique de période supérieure à la marge : le pic retenu doit être celui de la marge, même si une copie du motif donne un pic plus haut au-delà ;
    - recouvrement réel de 27 % annoncé à 20 % (70 px hors de la marge de 50 px) → `false`, et `getFailureReason()` dit d'augmenter la marge ; avec `railMargin = 100`, la translation est juste ;
    - **deux passes**, recouvrements réels de 23 % et 17 % annoncés à 20 % : la première passe donne une position entière à moins de 1 px de la vérité et le recouvrement réel au pixel près ; `Top(B, A) = −Bottom(A, B)` ; la zone commune fait toute la hauteur du recouvrement réel (230 ou 170 px, contre 200 px pour la bande nominale) ; `match` est juste au 1/100 px ; avec `context.estimatedTranslation` fournie, le résultat est identique au bit près ; fausse de (+2, −2) px, elle est rattrapée ; fausse de 10 px, ou sans recouvrement → `false`, avec la raison.
-4. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`. **Non fait** : ces jeux ne sont pas dans `KIKIRPA-Research/data/`.
+3. **Données de contrôle à vérité exacte** : les jeux `C01` à `C10` (générés par le notebook `00_donnees_controle.ipynb`, positions exactes dans `verite.json`). Sur ces jeux, le notebook `01_correlation_de_phase.ipynb` annonce une erreur médiane de 0,010 à 0,020 px. Ses 4 erreurs graves (C04 fond uni, C05 reflet, C10 cadre) y sont écartées par le contrôle NCC commun à toutes les méthodes, qui ne fait pas partie de ce module : en C++, ces paires peuvent encore être renvoyées avec `true`. **Non fait** : ces jeux ne sont pas dans `KIKIRPA-Research/data/`.
 
 ### Résultats
 
@@ -365,15 +364,11 @@ Les mesures ci-dessous ont été faites avec `maximumPointCount = 500` (défaut 
 | Points | 67 à 362 par paire ; écart médian 0,004 à 0,014 px, max 0,027 px |
 | Cas limites | tous conformes (bandes noires, saturées, uniformes, tailles différentes, tache noire isolée, Top = −Bottom, motif périodique, paramètres invalides) |
 
-**Paires réelles** (`comparer_python.py`, 7 paires Savery et 4 VanDerVeken du README de la piste Python, tuiles 5176 × 5176) :
 
-| | |
-|---|---|
-| Même pic que le Python | 11 / 11 |
-| Écart C++ / Python | médiane 0,43 px, max 1,32 px (Savery 05 → 06, rapport 5,1) |
-| Points | 136 à 500 par paire, à 1 à 2,7 px (médiane) de la translation globale. Sur le synthétique, cet écart est de 0,01 px : il mesure la déformation réelle le long de la couture, qu'une translation ne décrit pas (voir le README Python, « arche » de 12 px) |
-| Temps de `match()` | 2 à 8 s par paire, contre 0,8 à 2,5 s pour `mesurer_decalage` (Python, translation seule) |
 
-Détail du temps sur Savery 01 → 02 : 8,1 s avec `maximumPointCount = 500`, 2,5 s en translation seule (`maximumPointCount = 0`, autant que le Python), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `upsamplingFactor = 10`, la paire entière prend 2,5 s.
+
+
+
+Détail du temps sur Savery 01 → 02 : 8,1 s avec `maximumPointCount = 500`, 2,5 s en translation seule (`maximumPointCount = 0`), 1,6 s en translation seule au 1/10 px. **Les 500 points locaux coûtent donc environ 5,5 s**, presque entièrement dans le sous-pixel DFT au 1/100 de chaque patch : avec `upsamplingFactor = 10`, la paire entière prend 2,5 s.
 
 **Deux passes** (20/10/2026, build Debug, `maximumPointCount = 10`) : sur Savery 01 → 02, 03 → 04 et 04 → 05, la translation change d'au plus 0,06 px par rapport à la version à une passe, avec le même nombre de points (10, 10 et 2). Le temps de `match()` augmente de 15 à 25 % en Debug (par exemple 17,0 → 19,0 s sur 01 → 02). La cause n'a pas été mesurée. Piste probable : `PreparationClass::orientPair` est appelé deux fois quand `match()` fait aussi la première passe, et `computeOutsideMask` est donc recalculée sur les deux tuiles entières. **Non mesuré en Release.**

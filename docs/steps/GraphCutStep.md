@@ -22,7 +22,7 @@ Calcule les **lignes de raccord** (seamlines) entre les tuiles déjà placées, 
 
 | Nom | Type | Défaut | Rôle |
 |---|---|---|---|
-| `scale` | float | 1 | réduction des images avant la coupe de graphe, dans ]0, 1]. 1 = pleine résolution, le plus lent ; 0.25 = coupe calculée sur des images 4 fois plus petites |
+| `scale` | float | 0.25 (`StepsNs::DEFAULT_GRAPH_CUT_SCALE`, depuis #150 ; 1 avant) | réduction des images avant la coupe de graphe, dans ]0, 1]. 1 = pleine résolution, le plus lent ; 0.25 = coupe calculée sur des images 4 fois plus petites : la frontière entre tuiles est placée à quelques pixels près, la mosaïque garde ses pixels d'origine |
 
 ## Fonctionnement
 

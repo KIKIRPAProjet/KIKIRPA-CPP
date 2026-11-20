@@ -7,6 +7,7 @@
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
 #include "core/io/unicode_path.h"
+#include "steps/matching_step_utils.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -58,6 +59,7 @@ namespace StepsNs {
             PhaseCorrelationOutput& output;
             Json& failures;
             Json& confidences;
+            const DataNs::OverlapEstimates* overlapEstimates = nullptr;   // sortie de overlap-estimation, si présente
         };
 
         std::string formatNumber(double number) {
@@ -194,7 +196,13 @@ namespace StepsNs {
                                    DataNs::PairMatches& pair) {
             const PhaseCorrelationInput& input = context.input;
             PairConfidence confidence;
-            if (context.matcher.match(imageA, imageB, DataNs::PairContext{pair.direction, input.overlap}, pair.featureMatches)) {
+            // Première passe : la translation mesurée par overlap-estimation (pleine résolution), ramenée au niveau analysé.
+            // Absente, l'algorithme part du recouvrement nominal, comme avant.
+            std::optional<cv::Point2d> estimatedTranslation =
+                findEstimatedTranslation(context.overlapEstimates, pair.tileIdA, pair.tileIdB);
+            if (estimatedTranslation) *estimatedTranslation /= static_cast<double>(1 << input.level);
+            if (context.matcher.match(imageA, imageB, DataNs::PairContext{pair.direction, input.overlap, estimatedTranslation},
+                                      pair.featureMatches)) {
                 const ConfidenceContext confidenceContext{pair.direction, input.overlap, input.parameters, input.confiance};
                 confidence = PhaseCorrelationStepClass::checkConfidence(pair.featureMatches, imageA, confidenceContext);
                 PhaseCorrelationStepClass::scaleToFullResolution(pair.featureMatches, input.level);
@@ -428,7 +436,7 @@ namespace StepsNs {
                                                     PhaseCorrelationNs::PhaseCorrelationMatcherClass& matcher) {
         Json failures = Json::array();
         Json confidences = Json::array();
-        const MeasureContext context{input, matcher, output, failures, confidences};
+        const MeasureContext context{input, matcher, output, failures, confidences, findOverlapEstimates(*dataStore)};
         for (const auto& tile : dataStore->get<DataNs::TileList>("tiles")) {
             const std::string error = measureTile(*tile, context);
             if (!error.empty()) {

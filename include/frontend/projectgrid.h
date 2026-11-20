@@ -1,6 +1,8 @@
 #ifndef PROJECTGRID_H
 #define PROJECTGRID_H
 
+#include "project_setup_model.h"
+
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -39,6 +41,7 @@ public:
         double uncertaintyMargin = 0.0;
         bool automaticUncertainty = true;
         bool gridValidated = false;
+        FrontendNs::PipelineChoices pipelineChoices;   // méthodes choisies dans l'onglet Chaîne, enregistrées avec le projet
     };
 
     explicit ProjectGrid(QObject *parent = nullptr);
@@ -64,6 +67,7 @@ public:
     void setScaleMmPerPixel(double scale);
     void setAutomaticUncertainty(bool automatic);
     void setUncertaintyMargin(double margin);
+    void setPipelineChoices(const FrontendNs::PipelineChoices &choices);
     void rotateSelectedTile();
     void flipSelectedTile();
     void toggleSelectedCellEmpty();

@@ -21,6 +21,36 @@ struct ProjectTile {
   int column = 0;
 };
 
+// Méthode choisie pour chaque étape du pipeline (onglet Chaîne). Les noms sont ceux du registre des steps.
+struct PipelineChoices {
+  bool estimateOverlap = false;                    // ajoute overlap-estimation avant l'appariement
+  std::string matchingStep = "phase-correlation";  // "phase-correlation", "sift" ou "lightglue"
+  std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
+  std::string seamStep = "graphcut";               // "graphcut" ou "dynamic-programming-dijkstra" (territoires pour la fusion)
+
+  bool operator==(const PipelineChoices &other) const {
+    return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
+           intensityMethod == other.intensityMethod && seamStep == other.seamStep;
+  }
+};
+
+// Modèle de LightGlue, relatif au dossier de l'exécutable : CMake le télécharge dans le dossier de build, à côté de
+// stitching (seulement si les tests sont activés).
+inline constexpr const char *LIGHTGLUE_MODEL_PATH = "models/raco_aliked_lightglue_pipeline_k1024.onnx";
+
+// Le Vote 2D filtre des points appariés : ajouté d'office après SIFT et LightGlue, jamais après la corrélation de phase,
+// qui donne peu de points par paire.
+inline bool usesVote2D(const PipelineChoices &choices) {
+  return choices.matchingStep != "phase-correlation";
+}
+
+// Noms des steps du script, dans l'ordre, pour ces choix.
+std::vector<std::string> pipelineStepNames(const PipelineChoices &choices);
+
+// Choix lus dans un projet : une valeur inconnue (fichier modifié à la main, version plus récente) reprend sa valeur par
+// défaut, pour que le menu affiché et le script envoyé restent d'accord.
+PipelineChoices validatedChoices(const PipelineChoices &choices);
+
 struct ProjectSetup {
   std::string projectName;
   std::filesystem::path inputDirectory;
@@ -33,6 +63,10 @@ struct ProjectSetup {
   double overlap = DEFAULT_OVERLAP;
   int pyramidLevel = 0;
   std::vector<ProjectTile> tiles;
+  PipelineChoices pipelineChoices;
+  // Chemin du modèle écrit dans le script (paramètre modelPath de lightglue). L'interface y met un chemin absolu, tiré
+  // du dossier de l'exécutable, pour que le script ne dépende pas du dossier courant.
+  std::filesystem::path lightGlueModelPath = LIGHTGLUE_MODEL_PATH;
 };
 
 // Modèle indépendant de l'affichage pour que le parcours puisse être validé
