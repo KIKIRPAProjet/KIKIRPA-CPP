@@ -9,6 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -163,6 +164,110 @@ TEST_F(ProjectSetupTestClass, AcceptsFreeFileNames) {
   const FrontendNs::Json script = model.createBackendScript();
   const FrontendNs::Json &importStep = script.at("pipeline").at("steps").at(0);
   EXPECT_EQ(parameterValue(importStep, "tiles").size(), 4);
+}
+
+// --- Méthodes choisies dans l'onglet Chaîne ---
+
+std::vector<std::string> stepNames(const FrontendNs::Json &script) {
+  std::vector<std::string> names;
+  for (const FrontendNs::Json &step : script.at("pipeline").at("steps"))
+    names.push_back(step.at("name").get<std::string>());
+  return names;
+}
+
+// Les méthodes par défaut donnent le même script qu'avant leur ajout.
+TEST_F(ProjectSetupTestClass, DefaultChoicesKeepThePreviousPipeline) {
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(model.createBackendScript()), expected);
+}
+
+// Recouvrement réel et SIFT (avec son Vote 2D automatique) : les étapes sont ajoutées à leur place, et le backend
+// accepte le script.
+TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.estimateOverlap = true;
+  setup.pipelineChoices.matchingStep = "sift";
+  setup.pipelineChoices.intensityMethod = "gain";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "overlap-estimation", "sift", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  EXPECT_DOUBLE_EQ(parameterValue(script.at("pipeline").at("steps").at(2), "overlap"), 0.2);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(5), "method"), "gain");
+}
+
+// Le Vote 2D n'est jamais ajouté avec la corrélation de phase.
+TEST_F(ProjectSetupTestClass, PhaseCorrelationNeverGetsVote2D) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "phase-correlation";
+  model.setSetup(setup);
+
+  const std::vector<std::string> names = stepNames(model.createBackendScript());
+  EXPECT_EQ(std::find(names.begin(), names.end(), "vote-2d"), names.end());
+}
+
+// LightGlue : Vote 2D automatique, et le modèle téléchargé dans le dossier de build par CMake.
+TEST_F(ProjectSetupTestClass, LightGlueGetsVote2DAndTheBuildModel) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "lightglue", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath"), FrontendNs::LIGHTGLUE_MODEL_PATH);
+}
+
+// Couture par programmation dynamique : remplace graphcut, et le backend accepte le script (territoires pour la fusion).
+TEST_F(ProjectSetupTestClass, DynamicProgrammingReplacesGraphCut) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.seamStep = "dynamic-programming-dijkstra";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "dynamic-programming-dijkstra", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+}
+
+// Le chemin du modèle fixé par l'interface (absolu, tiré du dossier de l'exécutable) est celui du script.
+TEST_F(ProjectSetupTestClass, LightGlueUsesTheModelPathOfTheSetup) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  setup.lightGlueModelPath = root / "bin" / FrontendNs::LIGHTGLUE_MODEL_PATH;
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const fs::path written(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath").get<std::string>());
+  EXPECT_TRUE(written.is_absolute());
+  EXPECT_EQ(written, setup.lightGlueModelPath);
+}
+
+// Une méthode inconnue lue dans un projet reprend sa valeur par défaut ; les méthodes connues sont gardées.
+TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
+  FrontendNs::PipelineChoices read;
+  read.estimateOverlap = true;
+  read.matchingStep = "manual-matches";
+  read.intensityMethod = "gain";
+  read.seamStep = "voronoi";
+
+  const FrontendNs::PipelineChoices valid = FrontendNs::validatedChoices(read);
+  const FrontendNs::PipelineChoices defaults;
+  EXPECT_TRUE(valid.estimateOverlap);
+  EXPECT_EQ(valid.matchingStep, defaults.matchingStep);
+  EXPECT_EQ(valid.intensityMethod, "gain");
+  EXPECT_EQ(valid.seamStep, defaults.seamStep);
+
+  FrontendNs::PipelineChoices known;
+  known.matchingStep = "lightglue";
+  known.seamStep = "dynamic-programming-dijkstra";
+  EXPECT_EQ(FrontendNs::validatedChoices(known), known);
 }
 
 } // namespace

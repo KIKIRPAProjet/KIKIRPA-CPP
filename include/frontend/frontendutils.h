@@ -1,6 +1,8 @@
 #ifndef FRONTENDUTILS_H
 #define FRONTENDUTILS_H
 
+#include "project_setup_model.h"
+
 #include <QImage>
 #include <QSize>
 #include <QString>
@@ -9,6 +11,7 @@
 
 #include <cstdint>
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -29,7 +32,12 @@ struct PipelineStepInfo {
     QString displayName;
 };
 
-const std::vector<PipelineStepInfo>& pipelineSteps();
+// Étapes du script pour ces méthodes, dans l'ordre (liste de l'onglet Chaîne, relance, étape de départ).
+std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &choices);
+
+// Chemin absolu du modèle LightGlue : <dossier de l'exécutable>/LIGHTGLUE_MODEL_PATH. Le fichier peut ne pas exister
+// (modèle non téléchargé, application lancée hors du dossier de build).
+std::filesystem::path lightGlueModelPath();
 
 // Détection et lecture d'un TIFF pyramidal pour l'affichage fluide
 QImage matToQImage(const cv::Mat &mat);

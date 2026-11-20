@@ -28,8 +28,6 @@
 BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     : QTabWidget(parent), m_mainWindow(mainWindow)
 {
-    setMinimumHeight(80);
-
     m_journalList = new QListWidget(this);
     addTab(m_journalList, tr("Journal"));
 
@@ -57,6 +55,9 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
 
     updatePairs(FrontendUtils::defaultPairAlignments());
     setCurrentIndex(m_pairsTabIndex);
+
+    // Le panneau peut être réduit jusqu'à sa seule barre d'onglets : il reste visible, mais ne prend presque plus de place.
+    setMinimumHeight(tabBar()->sizeHint().height());
 
     connect(m_pairsTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
         m_mainWindow->setMode(3);
