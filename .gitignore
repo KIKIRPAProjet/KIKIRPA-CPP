@@ -7,5 +7,3 @@ out/
 CMakeUserPresets.json
 .DS_Store
 .vscode
-_backup_onnx/
-

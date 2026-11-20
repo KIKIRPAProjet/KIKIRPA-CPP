@@ -90,6 +90,22 @@ namespace {
         std::filesystem::remove(PATH);
     }
 
+    // Image à 4 canaux (RGBA) : le canal alpha est déclaré par TIFFTAG_EXTRASAMPLES. Passer la valeur au lieu d'un
+    // tableau faisait planter libtiff.
+    TEST(PyramidalTiffReaderClass, WritesAndReadsFourChannelImage) {
+        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
+        const cv::Mat source(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC4, cv::Scalar(10, 20, 30, 255));
+        std::string error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+
+        cv::Mat region;
+        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(PATH).readRegion(
+            0, cv::Rect(0, 0, BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE), region, error)) << error;
+        ASSERT_EQ(region.type(), CV_8UC4);
+        EXPECT_EQ(region.at<cv::Vec4b>(0, 0), cv::Vec4b(10, 20, 30, 255));
+        std::filesystem::remove(PATH);
+    }
+
     TEST(PyramidalTiffReaderClass, RejectsRegionOutsideLevel) {
         // Crée une petite pyramide pour tester le contrôle des limites.
         const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_bounds_test.tif";

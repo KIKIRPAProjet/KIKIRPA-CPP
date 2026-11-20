@@ -58,8 +58,9 @@ namespace IONs {
             }
 
             // Avec 4 canaux, le dernier est un canal alpha non prémultiplié.
-            if (channels == 4 &&
-                !TIFFSetField(tiffFile, TIFFTAG_EXTRASAMPLES, 1, static_cast<uint16_t>(EXTRASAMPLE_UNASSALPHA))) {
+            // TIFFTAG_EXTRASAMPLES attend un nombre et un tableau (pointeur), pas la valeur elle-même.
+            const uint16_t extraSamples[] = {EXTRASAMPLE_UNASSALPHA};
+            if (channels == 4 && !TIFFSetField(tiffFile, TIFFTAG_EXTRASAMPLES, 1, extraSamples)) {
                 errorMessage = "cannot configure TIFF alpha channel";
                 return false;
             }
