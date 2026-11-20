@@ -84,7 +84,7 @@ if(NOT KIKIRPA_QT_IMAGE_FORMATS_PLUGIN)
         "Qt Image Formats plugin is missing; TIFF support via QImageReader is unavailable. "
         "Ubuntu: sudo apt-get install qt6-image-formats-plugins. "
         "Windows (aqt): python -m aqt install-qt windows desktop "
-        "<version> win64_msvc2022_64 -O C:\\Qt --archives qtbase qtimageformats.")
+        "<version> win64_msvc2022_64 -O C:\\Qt -m qtimageformats --archives qtbase qtimageformats.")
 endif()
 
 # nlohmann_json

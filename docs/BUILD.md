@@ -32,7 +32,7 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 4. **Qt 6 binaire avec aqt**. Installer Python si nécessaire, puis exécuter :
    ```bat
    python -m pip install --user aqtinstall
-   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase qtimageformats
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
    ```
    Cette commande installe Qt Widgets, Concurrent et le plugin Qt Image Formats requis pour les fichiers TIFF.
 5. **Variables d'environnement** utilisateur, une seule fois, puis rouvrir le terminal ou l'IDE :
