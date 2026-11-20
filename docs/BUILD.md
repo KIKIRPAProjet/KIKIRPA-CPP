@@ -58,7 +58,7 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv@4 libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase qtimageformats googletest
 ```
 
 La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore

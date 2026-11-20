@@ -180,18 +180,31 @@ namespace StepsNs {
 
         // Une seule image en mémoire à la fois : lue, convertie en TIFF pyramidal, puis libérée. Seule la fiche reste.
         std::shared_ptr<DataNs::TileClass> createTile(const ImageFile& imageFile, int tileId, const fs::path& outputDirectory) {
-            const cv::Mat image = IONs::readImage(imageFile.filePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
-            if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(imageFile.filePath));
-
-            // Un TIFF par image : <id>_<nom de l'image>_pyramid.tif. L'id rend le nom unique, même pour deux images de
-            // même nom (a.tif et a.tiff, ou deux dossiers de la liste `tiles`) ; le nom de l'image le garde lisible.
             fs::path pyramidFileName = IONs::pathFromUtf8(std::to_string(tileId) + "_");
             pyramidFileName += imageFile.filePath.stem();
             pyramidFileName += "_pyramid.tif";
             const fs::path pyramidPath = outputDirectory / pyramidFileName;
-            std::string errorMessage;
-            if (!IONs::createPyramidalTiledTiff(image, pyramidPath, errorMessage))
-                throw std::runtime_error("cannot create " + IONs::pathToUtf8(pyramidPath) + ": " + errorMessage);
+
+            const cv::Mat image = IONs::readImage(imageFile.filePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+            if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(imageFile.filePath));
+
+            // Vérifier si la pyramide existe déjà et est à jour par rapport à l'image source
+            std::error_code ec;
+            bool isCacheValid = false;
+            if (fs::is_regular_file(pyramidPath, ec) && fs::file_size(pyramidPath, ec) > 0) {
+                const auto sourceTime = fs::last_write_time(imageFile.filePath, ec);
+                const auto pyramidTime = fs::last_write_time(pyramidPath, ec);
+                if (!ec && pyramidTime >= sourceTime) {
+                    isCacheValid = true;
+                }
+            }
+
+            // On ne génère que si le cache n'est pas valide (réutilisation si déjà présent et à jour)
+            if (!isCacheValid) {
+                std::string errorMessage;
+                if (!IONs::createPyramidalTiledTiff(image, pyramidPath, errorMessage))
+                    throw std::runtime_error("cannot create " + IONs::pathToUtf8(pyramidPath) + ": " + errorMessage);
+            }
 
             auto tile = std::make_shared<DataNs::TileClass>(tileId, imageFile.filePath, pyramidPath, image.cols, image.rows, image.type());
             tile->setGridPosition(imageFile.row, imageFile.column);

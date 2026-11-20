@@ -57,7 +57,7 @@ private:
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                   int rotation = 0, bool flipped = false);
+                   int rotation = 0, bool flipped = false, int tileIndex = -1);
 
     int gridCellAt(const QPoint &point) const;
 

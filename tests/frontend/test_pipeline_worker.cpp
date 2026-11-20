@@ -5,6 +5,7 @@
 #include "pipeline_worker.h"
 #include "pipeline_runner.h"
 
+#include "core/io/pyramidal_tiff_writer.h"
 #include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
@@ -14,6 +15,7 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 
 #include <QtCore/QEventLoop>
@@ -24,6 +26,7 @@
 #include <QtGui/QImage>
 #include <QtWidgets/QApplication>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <filesystem>
@@ -31,6 +34,7 @@
 #include <ios>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -67,6 +71,35 @@ namespace {
                          texture16(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT)));
         IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C01_R00.tif"),
                          texture16(cv::Rect(TILE_SHIFT, 0, TILE_WIDTH, TILE_HEIGHT)));
+    }
+
+    // 4 tuiles 16 bits en grille 2x2 (20 % de recouvrement horizontal et vertical).
+    constexpr int TILE_SHIFT_Y = 240;
+
+    void writeTiles2x2(const fs::path& directory, const std::string& prefix = "img_") {
+        fs::create_directories(directory);
+        const int fullWidth = TILE_SHIFT + TILE_WIDTH;
+        const int fullHeight = TILE_SHIFT_Y + TILE_HEIGHT;
+        cv::Mat texture(fullHeight, fullWidth, CV_32F);
+        cv::RNG randomGenerator(TEXTURE_SEED);
+        randomGenerator.fill(texture, cv::RNG::UNIFORM, 0.0, 1.0);
+        cv::GaussianBlur(texture, texture, cv::Size(), TEXTURE_SIGMA);
+        cv::normalize(texture, texture, PIXEL_MINIMUM, PIXEL_MAXIMUM, cv::NORM_MINMAX);
+        cv::Mat texture16;
+        texture.convertTo(texture16, CV_16U);
+
+        // C00_R00 (en haut à gauche)
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C00_R00.tif"),
+                         texture16(cv::Rect(0, 0, TILE_WIDTH, TILE_HEIGHT)));
+        // C01_R00 (en haut à droite)
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C01_R00.tif"),
+                         texture16(cv::Rect(TILE_SHIFT, 0, TILE_WIDTH, TILE_HEIGHT)));
+        // C00_R01 (en bas à gauche)
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C00_R01.tif"),
+                         texture16(cv::Rect(0, TILE_SHIFT_Y, TILE_WIDTH, TILE_HEIGHT)));
+        // C01_R01 (en bas à droite)
+        IONs::writeImage(directory / IONs::pathFromUtf8(prefix + "C01_R01.tif"),
+                         texture16(cv::Rect(TILE_SHIFT, TILE_SHIFT_Y, TILE_WIDTH, TILE_HEIGHT)));
     }
 
     Json parameter(const std::string& name, const std::string& value) {
@@ -386,6 +419,110 @@ TEST_F(PipelineWorkerTestClass, AsyncRunnerExecutesInDedicatedThread) {
     EXPECT_EQ(finalProgress, FULL_PROGRESS_PERCENT);
     EXPECT_FALSE(runner.isRunning());
     EXPECT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
+}
+
+// 6. Concurrence : import et génération d'arrière-plan puis lancement immédiat du pipeline
+TEST_F(PipelineWorkerTestClass, ImportAndImmediatePipelineRunConcurrentExecution) {
+    const Json script = makeScript(tilesDirectory, outputDirectory, checkpointDirectory);
+    const QString scriptText = QString::fromStdString(script.dump());
+
+    // Thread simulant l'interface graphique qui prépare les pyramides en arrière-plan
+    std::atomic<bool> stopBackgroundThread{false};
+    std::thread backgroundPyramidGenerator([&]() {
+        const fs::path pyramidDir = tilesDirectory / ".cache" / "pyramids";
+        fs::create_directories(pyramidDir);
+        for (int i = 0; i < 20 && !stopBackgroundThread.load(); ++i) {
+            for (const auto& entry : fs::directory_iterator(tilesDirectory)) {
+                if (entry.path().extension() == ".tif" && entry.path().filename().string().find("_pyramid") == std::string::npos) {
+                    const cv::Mat img = IONs::readImage(entry.path(), cv::IMREAD_UNCHANGED);
+                    if (!img.empty()) {
+                        const fs::path dest = pyramidDir / (entry.path().stem().string() + "_pyramid.tif");
+                        std::string err;
+                        IONs::createPyramidalTiledTiff(img, dest, err);
+                    }
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    });
+
+    // En même temps, l'utilisateur lance immédiatement le pipeline
+    PipelineWorkerClass worker;
+    bool finishedEmitted = false;
+    bool finishedSuccess = false;
+    QString finishedError;
+    QObject::connect(&worker, &PipelineWorkerClass::pipelineFinished, [&](bool success, const QString& error, const QImage&) {
+        finishedEmitted = true;
+        finishedSuccess = success;
+        finishedError = error;
+    });
+
+    worker.runPipeline(scriptText, QString(), true, false);
+
+    stopBackgroundThread.store(true);
+    if (backgroundPyramidGenerator.joinable()) {
+        backgroundPyramidGenerator.join();
+    }
+
+    EXPECT_TRUE(finishedEmitted);
+    EXPECT_TRUE(finishedSuccess) << finishedError.toStdString();
+    EXPECT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
+}
+
+// 7. Calcul complet 2x2 jusqu'à l'export
+TEST_F(PipelineWorkerTestClass, FullTwoByTwoGridPipelineRunUpToExport) {
+    const fs::path dir2x2 = rootDirectory / "tiles_2x2";
+    const fs::path output2x2 = rootDirectory / "output_2x2";
+    const fs::path checkpoints2x2 = rootDirectory / "checkpoints_2x2";
+    fs::create_directories(dir2x2);
+    fs::create_directories(output2x2);
+    fs::create_directories(checkpoints2x2);
+
+    writeTiles2x2(dir2x2);
+
+    const Json script = makeScript(dir2x2, output2x2, checkpoints2x2);
+    const QString scriptText = QString::fromStdString(script.dump());
+
+    PipelineWorkerClass worker;
+    bool finishedEmitted = false;
+    bool finishedSuccess = false;
+    QString finishedError;
+    QImage generatedPreview;
+
+    QObject::connect(&worker, &PipelineWorkerClass::pipelineFinished, [&](bool success, const QString& error, const QImage& preview) {
+        finishedEmitted = true;
+        finishedSuccess = success;
+        finishedError = error;
+        generatedPreview = preview;
+    });
+
+    worker.runPipeline(scriptText, QString(), true, false);
+
+    EXPECT_TRUE(finishedEmitted);
+    EXPECT_TRUE(finishedSuccess) << finishedError.toStdString();
+    EXPECT_FALSE(generatedPreview.isNull());
+
+    // Vérifie que les 4 tuiles ont bien leurs pyramides dans .cache/pyramids
+    const fs::path pyramidDir = dir2x2 / ".cache" / "pyramids";
+    EXPECT_TRUE(fs::is_directory(pyramidDir));
+    int pyramidCount = 0;
+    for (const auto& entry : fs::directory_iterator(pyramidDir)) {
+        if (entry.path().extension() == ".tif" && entry.path().filename().string().find("_pyramid") != std::string::npos) {
+            EXPECT_GT(fs::file_size(entry.path()), 0U);
+            ++pyramidCount;
+        }
+    }
+    EXPECT_EQ(pyramidCount, 4);
+
+    // Vérifie que la mosaïque finale est exportée et valide
+    const fs::path mosaicFile = output2x2 / "mosaic.tif";
+    ASSERT_TRUE(fs::is_regular_file(mosaicFile));
+    EXPECT_GT(fs::file_size(mosaicFile), 0U);
+
+    const cv::Mat mosaic = IONs::readImage(mosaicFile, cv::IMREAD_UNCHANGED);
+    EXPECT_FALSE(mosaic.empty());
+    EXPECT_GT(mosaic.cols, TILE_WIDTH);
+    EXPECT_GT(mosaic.rows, TILE_HEIGHT);
 }
 
 int main(int argc, char** argv) {

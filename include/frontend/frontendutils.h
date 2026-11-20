@@ -103,6 +103,6 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order);
-QImage readPreviewImage(const QString &path, const QSize &maximumSize);
+QImage readPreviewImage(const QString &path, const QSize &maximumSize, int tileIndex = -1);
 
 #endif

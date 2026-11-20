@@ -218,6 +218,7 @@ QString findPyramidPathForSource(const QString &sourcePath, int tileIndex)
     if (!sourceInfo.exists())
         return {};
 
+    // Si le chemin passé est déjà un TIFF pyramidal
     if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
         sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
         return sourcePath;
@@ -228,23 +229,44 @@ QString findPyramidPathForSource(const QString &sourcePath, int tileIndex)
         return {};
 
     const QString baseName = sourceInfo.completeBaseName();
+    QString candidatePath;
 
+    // 1. Recherche précise via tileIndex (priorité absolue pour éviter toute collision)
     if (tileIndex >= 0) {
         const QString exactName = QStringLiteral("%1_%2_pyramid.tif").arg(tileIndex).arg(baseName);
-        if (pyramidsDir.exists(exactName))
-            return pyramidsDir.filePath(exactName);
+        if (pyramidsDir.exists(exactName)) {
+            candidatePath = pyramidsDir.filePath(exactName);
+        }
     }
 
-    const QString filter = QStringLiteral("*_%1_pyramid.tif").arg(baseName);
-    const QStringList matches = pyramidsDir.entryList(QStringList{filter}, QDir::Files);
-    if (!matches.isEmpty())
-        return pyramidsDir.filePath(matches.first());
+    // 2. Recherche directe sans index
+    if (candidatePath.isEmpty()) {
+        const QString simpleName = QStringLiteral("%1_pyramid.tif").arg(baseName);
+        if (pyramidsDir.exists(simpleName)) {
+            candidatePath = pyramidsDir.filePath(simpleName);
+        } else {
+            // Recherche par motif "*_<baseName>_pyramid.tif"
+            const QString filter = QStringLiteral("*_%1_pyramid.tif").arg(baseName);
+            const QStringList matches = pyramidsDir.entryList(QStringList{filter}, QDir::Files);
+            // Si une seule correspondance existe : aucune ambiguïté (pas de conflit homonyme comme photo.tif vs photo.tiff)
+            if (matches.size() == 1) {
+                candidatePath = pyramidsDir.filePath(matches.first());
+            }
+            // Si plusieurs correspondent (ex: 0_photo_pyramid.tif et 1_photo_pyramid.tif) et qu'aucun tileIndex
+            // n'a été spécifié, on ne devine pas pour éviter d'associer la mauvaise tuile.
+        }
+    }
 
-    const QString simpleName = QStringLiteral("%1_pyramid.tif").arg(baseName);
-    if (pyramidsDir.exists(simpleName))
-        return pyramidsDir.filePath(simpleName);
+    if (candidatePath.isEmpty())
+        return {};
 
-    return {};
+    // 3. Vérification de la validité du cache : si la source a été modifiée après la pyramide, le cache est périmé !
+    const QFileInfo pyramidInfo(candidatePath);
+    if (sourceInfo.lastModified() > pyramidInfo.lastModified() || pyramidInfo.size() == 0) {
+        return {}; // Forcera une nouvelle lecture / régénération
+    }
+
+    return candidatePath;
 }
 
 QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
@@ -336,9 +358,9 @@ QVector<int> captureOrderCells(int rows, int columns, int order)
     return cells;
 }
 
-QImage readPreviewImage(const QString &path, const QSize &maximumSize)
+QImage readPreviewImage(const QString &path, const QSize &maximumSize, int tileIndex)
 {
-    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
+    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path, tileIndex);
     if (!pyramidPath.isEmpty()) {
         const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
         if (!pyramidPreview.isNull())

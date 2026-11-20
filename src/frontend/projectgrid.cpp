@@ -426,11 +426,14 @@ void ProjectGrid::startBackgroundPyramidGeneration()
             .arg(tileId)
             .arg(fileInfo.completeBaseName());
         const QString pyramidPath = pyramidsDir.filePath(pyramidFileName);
+        const QFileInfo pyramidInfo(pyramidPath);
 
-        if (!QFile::exists(pyramidPath)) {
-            tasks.append({tileId, tile.path, pyramidPath});
-        } else {
+        // Vérifier si la pyramide existe, n'est pas vide, ET est à jour par rapport à la source
+        if (pyramidInfo.exists() && pyramidInfo.size() > 0 &&
+            pyramidInfo.lastModified() >= fileInfo.lastModified()) {
             ++alreadyExistingCount;
+        } else {
+            tasks.append({tileId, tile.path, pyramidPath});
         }
         ++tileId;
     }
@@ -452,33 +455,53 @@ void ProjectGrid::startBackgroundPyramidGeneration()
 
     QPointer<ProjectGrid> weakThis(this);
     QThreadPool::globalInstance()->start([weakThis, tasks, total]() {
-        int current = 0;
+        int successCount = 0;
+        int failureCount = 0;
         for (const auto &task : tasks) {
             if (!weakThis) return;
             std::string errorMessage;
             const cv::Mat image = IONs::readImage(
                 IONs::pathFromUtf8(task.sourcePath.toStdString()),
                 cv::IMREAD_UNCHANGED);
+            bool ok = false;
             if (!image.empty() && weakThis) {
-                IONs::createPyramidalTiledTiff(
+                ok = IONs::createPyramidalTiledTiff(
                     image,
                     IONs::pathFromUtf8(task.pyramidPath.toStdString()),
                     errorMessage);
+            } else if (image.empty()) {
+                errorMessage = "Image illisible ou fichier corrompu";
             }
-            ++current;
+            if (ok) {
+                ++successCount;
+            } else {
+                ++failureCount;
+            }
             if (weakThis) {
-                QMetaObject::invokeMethod(weakThis.data(), [weakThis, current, total]() {
+                QMetaObject::invokeMethod(weakThis.data(), [weakThis, successCount, failureCount, total, ok, task, errorMessage]() {
                     if (!weakThis) return;
-                    weakThis->gridUpdated();
-                    if (current < total) {
+                    if (ok) {
+                        weakThis->gridUpdated();
+                    } else {
+                        emit weakThis->logRequested(
+                            QObject::tr("Erreur vignette (%1) : %2")
+                                .arg(QFileInfo(task.sourcePath).fileName())
+                                .arg(QString::fromStdString(errorMessage)));
+                    }
+                    const int processed = successCount + failureCount;
+                    if (processed < total) {
                         emit weakThis->statusRequested(
                             QObject::tr("Préparation des vignettes optimisées (%1/%2)...")
-                                .arg(current).arg(total));
+                                .arg(processed).arg(total));
                     } else {
-                        const QString doneMsg = QObject::tr("%1 vignettes optimisées (TIFF pyramidaux prêts).")
-                            .arg(total);
-                        emit weakThis->statusRequested(doneMsg);
-                        emit weakThis->logRequested(doneMsg);
+                        QString finalMsg;
+                        if (failureCount == 0) {
+                            finalMsg = QObject::tr("%1 vignettes optimisées (TIFF pyramidaux prêts).").arg(successCount);
+                        } else {
+                            finalMsg = QObject::tr("%1 vignettes optimisées, %2 échec(s).").arg(successCount).arg(failureCount);
+                        }
+                        emit weakThis->statusRequested(finalMsg);
+                        emit weakThis->logRequested(finalMsg);
                     }
                 }, Qt::QueuedConnection);
             }

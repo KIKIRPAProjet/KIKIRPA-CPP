@@ -55,9 +55,28 @@ foreach(KIKIRPA_QT_DIR
         get_filename_component(KIKIRPA_QT_PREFIX "${KIKIRPA_QT_DIR}/../../.." ABSOLUTE)
         list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
             "${KIKIRPA_QT_PREFIX}/plugins/imageformats"
+            "${KIKIRPA_QT_PREFIX}/share/qt/plugins/imageformats"
         )
     endif()
 endforeach()
+
+foreach(KIKIRPA_PREFIX IN LISTS CMAKE_PREFIX_PATH)
+    list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+        "${KIKIRPA_PREFIX}/plugins/imageformats"
+        "${KIKIRPA_PREFIX}/share/qt/plugins/imageformats"
+    )
+endforeach()
+
+if(APPLE)
+    list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+        "/opt/homebrew/share/qt/plugins/imageformats"
+        "/opt/homebrew/opt/qtimageformats/share/qt/plugins/imageformats"
+        "/opt/homebrew/opt/qt/share/qt/plugins/imageformats"
+        "/usr/local/share/qt/plugins/imageformats"
+        "/usr/local/opt/qtimageformats/share/qt/plugins/imageformats"
+        "/usr/local/opt/qt/share/qt/plugins/imageformats"
+    )
+endif()
 
 list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
     "/usr/lib/qt6/plugins/imageformats"
@@ -83,6 +102,7 @@ if(NOT KIKIRPA_QT_IMAGE_FORMATS_PLUGIN)
     message(FATAL_ERROR
         "Qt Image Formats plugin is missing; TIFF support via QImageReader is unavailable. "
         "Ubuntu: sudo apt-get install qt6-image-formats-plugins. "
+        "macOS (Homebrew): brew install qtimageformats. "
         "Windows (aqt): python -m aqt install-qt windows desktop "
         "<version> win64_msvc2022_64 -O C:\\Qt -m qtimageformats --archives qtbase qtimageformats.")
 endif()

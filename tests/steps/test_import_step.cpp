@@ -3,6 +3,8 @@
 #include "steps/import_step.h"
 
 #include "core/data/tile.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -208,4 +210,87 @@ TEST(ImportStepTest, FingerprintFollowsListedFiles) {
     cv::imwrite((directory.path / "5_no filter.tif").string(), cv::Mat(TILE_SIZE * 2, TILE_SIZE, CV_8UC1, cv::Scalar(0)));
     tiles[3]["file"] = "5_no filter.tif";
     EXPECT_NE(makeImportStep(directory.path, tiles).externalInputsFingerprint(), before);
+}
+
+// Une pyramide déjà existante et à jour est réutilisée sans être régénérée.
+TEST(ImportStepTest, ReusesExistingValidPyramidWithoutRegeneration) {
+    const TestDirectory directory;
+    writeImage(directory.path / "a.tif");
+    StepsNs::ImportStepClass step1 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step1.execute());
+    const auto pyramidPath = step1.getOutput().tiles[0]->getTiff();
+    ASSERT_TRUE(fs::is_regular_file(pyramidPath));
+    const auto initialTime = fs::last_write_time(pyramidPath);
+
+    // Second import : le cache valide doit être réutilisé
+    StepsNs::ImportStepClass step2 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step2.execute());
+    EXPECT_EQ(fs::last_write_time(pyramidPath), initialTime);
+}
+
+// Si l'image source a été modifiée après la pyramide, celle-ci doit être régénérée.
+TEST(ImportStepTest, RegeneratesPyramidWhenSourceImageIsModified) {
+    const TestDirectory directory;
+    const fs::path sourcePath = directory.path / "a.tif";
+    writeImage(sourcePath);
+    StepsNs::ImportStepClass step1 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step1.execute());
+    const auto pyramidPath = step1.getOutput().tiles[0]->getTiff();
+    ASSERT_TRUE(fs::is_regular_file(pyramidPath));
+
+    // On simule une pyramide ancienne (10 secondes dans le passé)
+    const auto oldPyramidTime = fs::last_write_time(pyramidPath) - std::chrono::seconds(10);
+    fs::last_write_time(pyramidPath, oldPyramidTime);
+
+    // Et une image source plus récente que cette ancienne pyramide
+    const auto newerSourceTime = oldPyramidTime + std::chrono::seconds(5);
+    writeImage(sourcePath);
+    fs::last_write_time(sourcePath, newerSourceTime);
+
+    StepsNs::ImportStepClass step2 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step2.execute());
+    EXPECT_GT(fs::last_write_time(pyramidPath), oldPyramidTime);
+    EXPECT_GE(fs::last_write_time(pyramidPath), newerSourceTime);
+}
+
+// Deux fichiers de même nom sans extension mais d'images différentes (photo.tif et photo.tiff) :
+// ils obtiennent chacun leur propre pyramide sans mélanger leur contenu.
+TEST(ImportStepTest, DistinctContentForSameStemFilesDoesNotMixPyramids) {
+    const TestDirectory directory;
+    const fs::path pathTif = directory.path / "photo.tif";
+    const fs::path pathTiff = directory.path / "photo.tiff";
+
+    // photo.tif : image avec pixels à 42
+    cv::Mat image1(64, 64, CV_8UC1, cv::Scalar(42));
+    ASSERT_TRUE(IONs::writeImage(pathTif, image1));
+
+    // photo.tiff : image différente avec pixels à 142
+    cv::Mat image2(64, 64, CV_8UC1, cv::Scalar(142));
+    ASSERT_TRUE(IONs::writeImage(pathTiff, image2));
+
+    StepsNs::ImportStepClass step =
+        makeImportStep(directory.path, Json::array({listedTile("photo.tif", 0, 0), listedTile("photo.tiff", 0, 1)}));
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const DataNs::TileList& tiles = step.getOutput().tiles;
+    ASSERT_EQ(tiles.size(), 2U);
+
+    EXPECT_EQ(tiles[0]->getTiff().filename(), "0_photo_pyramid.tif");
+    EXPECT_EQ(tiles[1]->getTiff().filename(), "1_photo_pyramid.tif");
+
+    // Vérifie que les pyramides ne sont pas mélangées
+    IONs::PyramidalTiffReaderClass reader0(tiles[0]->getTiff());
+    cv::Mat level0_0;
+    std::string err;
+    ASSERT_TRUE(reader0.readLevel(0, level0_0, err));
+    EXPECT_EQ(level0_0.at<uint8_t>(0, 0), 42);
+
+    IONs::PyramidalTiffReaderClass reader1(tiles[1]->getTiff());
+    cv::Mat level0_1;
+    ASSERT_TRUE(reader1.readLevel(0, level0_1, err));
+    EXPECT_EQ(level0_1.at<uint8_t>(0, 0), 142);
 }

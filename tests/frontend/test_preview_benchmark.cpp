@@ -101,4 +101,43 @@ TEST(PreviewBenchmark, CompareRawTiffVsPyramidalTiff) {
     fs::remove_all(tempDir, ec);
 }
 
+TEST(PreviewBenchmark, FindPyramidPathValidatesCacheAndAvoidsCollision) {
+    const fs::path tempDir = fs::temp_directory_path() / "kikirpa_find_pyramid_test";
+    fs::create_directories(tempDir);
+    const fs::path sourceTif = tempDir / "photo.tif";
+    const fs::path sourceTiff = tempDir / "photo.tiff";
+    const fs::path pyramidDir = tempDir / ".cache" / "pyramids";
+    fs::create_directories(pyramidDir);
+
+    const fs::path pyr0 = pyramidDir / "0_photo_pyramid.tif";
+    const fs::path pyr1 = pyramidDir / "1_photo_pyramid.tif";
+
+    cv::Mat dummy(64, 64, CV_8UC3, cv::Scalar(10, 20, 30));
+    std::string err;
+    ASSERT_TRUE(IONs::writeImage(sourceTif, dummy));
+    ASSERT_TRUE(IONs::writeImage(sourceTiff, dummy));
+    ASSERT_TRUE(IONs::createPyramidalTiledTiff(dummy, pyr0, err));
+    ASSERT_TRUE(IONs::createPyramidalTiledTiff(dummy, pyr1, err));
+
+    const QString pathTifQt = QString::fromStdString(IONs::pathToUtf8(sourceTif));
+    const QString pathTiffQt = QString::fromStdString(IONs::pathToUtf8(sourceTiff));
+
+    // 1. Avec tileIndex exact : chaque source retrouve sa pyramide sans confusion
+    EXPECT_EQ(FrontendUtils::findPyramidPathForSource(pathTifQt, 0),
+              QString::fromStdString(IONs::pathToUtf8(pyr0)));
+    EXPECT_EQ(FrontendUtils::findPyramidPathForSource(pathTiffQt, 1),
+              QString::fromStdString(IONs::pathToUtf8(pyr1)));
+
+    // 2. Sans tileIndex (-1) quand 2 pyramides partagent le même radical : pas d'assignation au hasard !
+    EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(pathTifQt, -1).isEmpty());
+
+    // 3. Invalidation du cache si la source est plus récente que la pyramide
+    const auto newerTime = fs::last_write_time(pyr0) + std::chrono::seconds(10);
+    fs::last_write_time(sourceTif, newerTime);
+    EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(pathTifQt, 0).isEmpty());
+
+    std::error_code ec;
+    fs::remove_all(tempDir, ec);
+}
+
 }

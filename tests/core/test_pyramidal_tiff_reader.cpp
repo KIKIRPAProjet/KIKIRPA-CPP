@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace {
@@ -199,5 +200,30 @@ namespace {
         std::filesystem::remove(PATH);
     }
 
+    TEST(PyramidalTiffWriterClass, WriteFailureCleansUpWithoutLeavingCorruptedOrTemporaryFile) {
+        cv::Mat validImage = cv::Mat::zeros(64, 64, CV_8UC3);
+        std::string errorMessage;
+
+        // Cas 1 : Image vide -> échec immédiat, aucun fichier créé
+        const auto nonExistentPath = std::filesystem::temp_directory_path() / "kikirpa_should_never_exist.tif";
+        std::filesystem::remove(nonExistentPath);
+        cv::Mat emptyImage;
+        EXPECT_FALSE(IONs::createPyramidalTiledTiff(emptyImage, nonExistentPath, errorMessage));
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_FALSE(std::filesystem::exists(nonExistentPath));
+
+        // Cas 2 : Dossier parent impossible (un fichier régulier bloque la création de dossier)
+        const auto blockingFile = std::filesystem::temp_directory_path() / "kikirpa_blocking_file.txt";
+        {
+            std::ofstream out(blockingFile);
+            out << "block";
+        }
+        const auto impossibleDest = blockingFile / "impossible_subfolder" / "pyramid.tif";
+        EXPECT_FALSE(IONs::createPyramidalTiledTiff(validImage, impossibleDest, errorMessage));
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_FALSE(std::filesystem::exists(impossibleDest));
+
+        std::filesystem::remove(blockingFile);
+    }
 
 }

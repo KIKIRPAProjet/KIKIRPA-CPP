@@ -165,7 +165,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                            : qMin(1, qMax(0, static_cast<int>(imagePaths.size()) - 1));
 
     if (!imagePaths.isEmpty())
-        drawPhoto(p, firstImageRect, imagePaths.at(indexA));
+        drawPhoto(p, firstImageRect, imagePaths.at(indexA), 0, false, indexA);
     else
         drawPainting(p, firstImageRect);
     if (pair) {
@@ -178,7 +178,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         if (pairOverlayMode)
             p.setOpacity(0.65);
         if (imagePaths.size() > 1)
-            drawPhoto(p, secondImageRect, imagePaths.at(indexB));
+            drawPhoto(p, secondImageRect, imagePaths.at(indexB), 0, false, indexB);
         else
             drawPainting(p, secondImageRect);
         if (pairOverlayMode)
