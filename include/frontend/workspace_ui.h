@@ -48,6 +48,7 @@ public:
     RightPanel *rightPanel() const { return m_rightPanel; }
     BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
     TopToolbars *topToolbars() const { return m_topToolbars; }
+    LeftToolbar *leftToolbar() const { return m_leftToolbar; }
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;

@@ -205,6 +205,7 @@ void WorkspaceUI::createWorkspace()
 
     m_centerArea = new WorkspaceCenter(m_mainWindow);
     m_leftToolbar = new LeftToolbar;
+    m_leftToolbar->setVisible(false);
     connect(m_leftToolbar, &LeftToolbar::toolSelected, this,
             [this](int index, const QString &name) {
         m_mainWindow->updateStatus(tr("Outil actif : %1").arg(name));
@@ -235,6 +236,7 @@ void WorkspaceUI::createWorkspace()
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
     m_bottomTabs = new BottomTabs(m_mainWindow);
+    m_bottomTabs->setVisible(false);
 
     auto *contentSplitter = new QSplitter(Qt::Vertical);
     contentSplitter->setHandleWidth(kSplitterHandleWidth);

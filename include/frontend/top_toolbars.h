@@ -26,13 +26,13 @@ public:
 signals:
     void previousPairRequested();
     void nextDubiousPairRequested();
+    void togglePanelsRequested();
 
 public slots:
     // Aligne l'intitulé du bouton principal (Lancer / Pause / Reprendre) sur l'état du runner.
     void updateRunButtonState();
 
 private:
-    void createToolbar();
     void createModesBar();
     void createModeButtons(QWidget *stages, QHBoxLayout *stageLayout);
     void createActionButtons(QWidget *stages, QHBoxLayout *stageLayout);
