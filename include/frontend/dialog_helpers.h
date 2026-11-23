@@ -14,6 +14,7 @@ void showReferenceComparisonDialog(QWidget *parent, const QString &referencePath
                                    const QImage &tileImage);
 void showComparisonDialog(QWidget *parent, PipelineRunnerClass *pipelineRunner);
 bool confirmRunRestart(QWidget *parent, int firstStep);
+void showCreditsDialog(QWidget *parent);
 }
 
 #endif

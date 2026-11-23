@@ -276,9 +276,7 @@ void MainWindow::setupMenuConnections()
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
     connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
-        QMessageBox::about(this, tr("Crédits"),
-            tr("KIK-IRPA Assemblage — Crédits du projet.\n"
-               "Liste des contributeurs à compléter."));
+        DialogHelpers::showCreditsDialog(this);
     });
 }
 
