@@ -179,7 +179,9 @@ docs/                COMPRENDRE_LE_PROJET.md (à lire en premier), algorithms/ (
                      steps/ (entrées et sorties de chaque step, AJOUTER_UN_STEP.md), frontend/, building/,
                      BUILD.md, DEMARRER.md, CONVENTIONS.md 🆕, MIGRATION_REORGANISATION.md 🆕, cette carte
 cmake/               un fichier par partie du build
-scripts/             demarrer.py : installation et configuration d'un poste
+scripts/             demarrer.py : installation et configuration d'un poste ; generer_icones.py : PNG et ICO du logo
+Logo/                logo du projet en SVG (source)
+resources/           ressources embarquées dans stitching : logo PNG (Qt), ICO et .rc (icône du .exe Windows)
 ```
 
 **Les includes partent de `include/backend/`** 🆕, jamais de `"../"`. On écrit `#include "core/data/algorithm_types.h"` ou `#include "algorithms/stitching/sift/sift_matcher.h"`.
@@ -220,7 +222,10 @@ scripts/             demarrer.py : installation et configuration d'un poste
 
 | Fichier | Rôle |
 |---|---|
-| [CMakeLists.txt](../CMakeLists.txt) | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (ligne de commande ou interface graphique, nom provisoire), liée à `kikirpa_frontend`. |
+| [CMakeLists.txt](../CMakeLists.txt) | Point d'entrée, commenté ligne à ligne : préfixe Homebrew de Qt sous macOS, inclusion des fichiers de `cmake/` dans l'ordre, cible `stitching` (ligne de commande ou interface graphique, nom provisoire), liée à `kikirpa_frontend`, avec `resources/resources.qrc` (AUTORCC) et, sous Windows, `resources/stitching.rc`. |
+| [Logo/](../Logo/) | Logo du projet en SVG : sans fond, et avec fond gris clair (`logo polyptyque fond.svg`, source des icônes). |
+| [resources/](../resources/) | `logo/logo.png` (256 px, ressource Qt `:/logo/logo.png` : icône des fenêtres, logo en haut à gauche de l'accueil et de l'espace de travail via `FrontendUtils::logoLabel`), `logo/logo.ico` (16 à 256 px) et `stitching.rc` (icône de `stitching.exe` dans l'Explorateur et la barre des tâches). Qt est installé sans le module SVG : d'où des images matricielles. |
+| [scripts/generer_icones.py](../scripts/generer_icones.py) | Régénère `resources/logo/logo.png` et `logo.ico` depuis le SVG (rendu par Edge sans fenêtre, coins arrondis par Pillow). À relancer seulement si le logo change. |
 | [cmake/clang_tidy.cmake](../cmake/clang_tidy.cmake) | Option `ENABLE_CLANG_TIDY` (désactivée par défaut) : passe chaque fichier dans clang-tidy à la compilation. Règles dans [.clang-tidy](../.clang-tidy). |
 | [cmake/dependencies_manager.cmake](../cmake/dependencies_manager.cmake) | OpenCV 4 (version imposée depuis #106), libtiff et **Qt 6 obligatoires** ; nlohmann_json et ONNX Runtime 1.20.1 téléchargés s'ils ne sont pas fournis. |
 | [cmake/backend.cmake](../cmake/backend.cmake) | Cible `kikirpa_backend` (lib statique de tout `src/backend`), liaison à ONNX Runtime et `opencv_dnn`, fonction `kikirpa_copy_onnxruntime_dlls`, option `/utf-8` pour MSVC. |
