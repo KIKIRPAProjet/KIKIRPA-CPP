@@ -20,6 +20,7 @@ namespace PhaseCorrelationNs {
                                              DataNs::Matches& matches) {
         matches = {};
         failureReason.clear();
+        outOfMarginPeak.reset();
 
         // 1. Première passe : position de B au pixel près sur les bandes nominales, sauf si le pipeline l'a faite
         std::optional<cv::Point2d> translation = context.estimatedTranslation;
@@ -27,6 +28,7 @@ namespace PhaseCorrelationNs {
             const auto overlapEstimate = overlapEstimator.estimate(imageA, imageB, context);
             if (!overlapEstimate) {
                 failureReason = overlapEstimator.getFailureReason();
+                outOfMarginPeak = overlapEstimator.getOutOfMarginPeak();
                 return false;
             }
             translation = overlapEstimate->translationBInA;

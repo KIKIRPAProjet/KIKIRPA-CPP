@@ -144,19 +144,49 @@ def configuration_state() -> str:
     """« absente », « deplacee » (configurée depuis un autre emplacement du dépôt), « incomplete » ou « ok ».
 
     Une configuration qui échoue (une bibliothèque manque, par exemple) laisse un CMakeCache.txt mais pas de
-    build.ninja : sans elle, Ninja s'arrête sur « loading 'build.ninja': GetLastError()=2 ».
+    build.ninja (ou un build.ninja sans ses règles) : sans elle, Ninja s'arrête sur « loading 'build.ninja':
+    GetLastError()=2 ».
     """
+    # Les sous-projets de FetchContent ont leur propre cache : il peut rester sur l'ancien chemin alors que le cache
+    # principal a déjà été refait (par une configuration qui a échoué à cause de lui, justement) ou supprimé.
+    for subbuild_cache in (BUILD_DIR / "_deps").glob("*-subbuild/CMakeCache.txt"):
+        location = cache_entry(subbuild_cache, "CMAKE_CACHEFILE_DIR")
+        if location is not None and Path(location).resolve() != subbuild_cache.parent.resolve():
+            return "deplacee"
     cache = BUILD_DIR / "CMakeCache.txt"
     if not cache.exists():
         return "absente"
-    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
-        if line.startswith("CMAKE_HOME_DIRECTORY:INTERNAL="):
-            if Path(line.split("=", 1)[1]).resolve() != REPO_DIR.resolve():
-                return "deplacee"
-            break
-    if not (BUILD_DIR / "build.ninja").exists():
+    source = cache_entry(cache, "CMAKE_HOME_DIRECTORY")
+    if source is not None and Path(source).resolve() != REPO_DIR.resolve():
+        return "deplacee"
+    # build.ninja inclut CMakeFiles/rules.ninja : un build.ninja resté seul (CMakeFiles supprimé, puis configuration
+    # en échec) fait s'arrêter Ninja sur « loading 'CMakeFiles\rules.ninja' ».
+    if not (BUILD_DIR / "build.ninja").exists() or not (BUILD_DIR / "CMakeFiles" / "rules.ninja").exists():
         return "incomplete"
     return "ok"
+
+
+def cache_entry(cache: Path, name: str) -> Optional[str]:
+    """Valeur de l'entrée INTERNAL <name> d'un CMakeCache.txt, ou None si elle n'y est pas."""
+    prefix = f"{name}:INTERNAL="
+    for line in cache.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix):]
+    return None
+
+
+def forget_previous_location() -> None:
+    """Supprime ce qui garde l'ancien chemin du dépôt, pour que CMake reconfigure depuis le nouveau.
+
+    Chaque dépendance téléchargée par FetchContent (nlohmann_json, ONNX Runtime) est configurée dans un sous-projet
+    CMake, _deps/<nom>-subbuild, qui a son propre CMakeCache.txt : s'il reste, CMake s'arrête sur « The current
+    CMakeCache.txt directory … is different than the directory … where CMakeCache.txt was created ». Les sources
+    déjà téléchargées (_deps/<nom>-src) sont gardées.
+    """
+    (BUILD_DIR / "CMakeCache.txt").unlink(missing_ok=True)
+    shutil.rmtree(BUILD_DIR / "CMakeFiles", ignore_errors=True)
+    for subbuild in (BUILD_DIR / "_deps").glob("*-subbuild"):
+        shutil.rmtree(subbuild, ignore_errors=True)
 
 
 def check_opencv_knows_msvc(environment: Dict[str, str]) -> None:
@@ -278,8 +308,7 @@ def main() -> int:
         state = configuration_state()
         if state == "deplacee":
             info("Le dossier de build vient d'un autre emplacement du dépôt : sa configuration est refaite.")
-            (BUILD_DIR / "CMakeCache.txt").unlink()
-            shutil.rmtree(BUILD_DIR / "CMakeFiles", ignore_errors=True)
+            forget_previous_location()
         elif state == "incomplete":
             info("La configuration précédente n'a pas abouti : elle est relancée.")
         if state != "ok":

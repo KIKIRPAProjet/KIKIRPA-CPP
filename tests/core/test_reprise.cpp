@@ -331,9 +331,11 @@ void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
     t0->setNeighbours(nullptr, t1.get(), nullptr, nullptr);
     t1->setNeighbours(t0.get(), nullptr, nullptr, nullptr);
+    t0->setGridPosition(0, 0);
+    t1->setGridPosition(0, 1);
     avant.replace("tiles", DataNs::TileList{t0, t1});
     avant.replace("matches", std::vector<DataNs::PairMatches>{appariementDEssai()});
-    avant.replace("positions", std::vector<DataNs::TilePositionData>{{"r00_c01", {POSITION_X, POSITION_Y}, ROTATION}});
+    avant.replace("positions", std::vector<DataNs::TilePositionData>{{1, {POSITION_X, POSITION_Y}, ROTATION}});
     avant.replace("territories", std::vector<DataNs::TileTerritory>{territoireDEssai()});
     avant.replace("seamlines", DataNs::Seamlines{coutureDEssai()});
     avant.replace("intensityCorrection", DataNs::IntensityCorrection{{GAIN_TUILE_0, GAIN_TUILE_1}, FORCE_CHAMP, {1}});
@@ -347,6 +349,9 @@ void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
                  tuiles[0]->getLevel(0).width == LARGEUR_TUILE && tuiles[0]->getRight() == tuiles[1].get() &&
                  tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
              "Tiles : fiches et voisins");
+    verifier(tuiles[0]->getGridRow() == 0 && tuiles[0]->getGridColumn() == 0 && tuiles[1]->getGridRow() == 0 &&
+                 tuiles[1]->getGridColumn() == 1,
+             "Tiles : case de chaque tuile dans la grille");
     const DataNs::PairMatches attendu = appariementDEssai();
     const auto& m = apres.get<std::vector<DataNs::PairMatches>>("matches");
     verifier(m.size() == 1 && m[0].direction == DataNs::Direction::Bottom && m[0].featureMatches.translationX == attendu.featureMatches.translationX &&
@@ -357,7 +362,7 @@ void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
 
 void verifierPositionsEtTerritoires(const StepNs::DataStoreClass& apres) {
     const auto& pos = apres.get<std::vector<DataNs::TilePositionData>>("positions");
-    verifier(pos.size() == 1 && pos[0].tileId == "r00_c01" && pos[0].position == cv::Point2d(POSITION_X, POSITION_Y) &&
+    verifier(pos.size() == 1 && pos[0].tileId == 1 && pos[0].position == cv::Point2d(POSITION_X, POSITION_Y) &&
                  pos[0].rotationRadians == ROTATION,
              "Positions : valeurs exactes");
     const DataNs::TileTerritory attendu = territoireDEssai();

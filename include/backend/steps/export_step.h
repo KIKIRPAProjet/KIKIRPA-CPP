@@ -15,6 +15,8 @@ namespace StepsNs {
     struct ExportInput {
         // Vide : dossier Téléchargements de l'utilisateur courant.
         std::string outputDirectory;
+        // Nom du fichier de sortie. Vide : "mosaic.tif".
+        std::string filename;
     };
 
     struct ExportOutput {
@@ -23,11 +25,13 @@ namespace StepsNs {
         bool isBigTiff = false;
     };
 
-    // Publie l'image de la mosaïque assemblée sous outputDirectory/mosaic.tif : contrôle de son en-tête (dimensions,
-    // RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas par la mémoire.
+    // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename> (défaut mosaic.tif) : contrôle de son
+    // en-tête (dimensions, RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas
+    // par la mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
+    // " (1)", " (2)"... Le checkpoint du step reste valable tant que ce dernier export est là, inchangé.
     //
-    // Nom : "export". Paramètre : outputDirectory (string, vide = Téléchargements).
-    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif (ni provenance ni masque).
+    // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide = mosaic.tif).
+    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou nom incrémenté (ni provenance ni masque).
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 

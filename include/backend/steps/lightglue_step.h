@@ -18,7 +18,9 @@ namespace StepsNs {
         static constexpr float DEFAULT_OVERLAP = 0.2f;
         std::string modelPath;
         int minMatches = 4;
-        float overlap = DEFAULT_OVERLAP;
+        float overlap = DEFAULT_OVERLAP;   // recouvrement nominal (paires horizontales si verticalOverlap > 0)
+        float verticalOverlap = 0.f;       // recouvrement nominal des paires verticales ; 0 = comme overlap
+        double railMargin = 0.0;           // marge du rail (px) de la première passe ; 0 = automatique (5 % de la tuile)
     };
 
     // Coordonnées dans les repères pleine résolution de chaque tuile.
