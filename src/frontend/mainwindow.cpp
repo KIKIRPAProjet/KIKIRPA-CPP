@@ -680,8 +680,9 @@ void MainWindow::saveProject()
         backendScript = nlohmann::json::parse(generatePipelineScript(1).toStdString());
     } catch (const std::exception &exception) {
         // Un projet en cours de configuration reste enregistrable sans script exécutable.
-        workspaceUI->appendLog(tr("Projet enregistré sans script exécutable : %1")
-                                   .arg(QString::fromUtf8(exception.what())));
+        appendLog(tr("Projet enregistré sans script exécutable : %1")
+                      .arg(QString::fromUtf8(exception.what())),
+                  QStringLiteral("warning"));
     }
     if (!ProjectSerializer::saveToFile(
             path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
