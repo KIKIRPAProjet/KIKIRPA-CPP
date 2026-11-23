@@ -3,6 +3,7 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -13,6 +14,8 @@
 #include <cmath>
 #include <cstddef>
 #include <exception>
+#include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -101,26 +104,69 @@ namespace StepsNs {
             return name;
         }
 
-        // Applique toutes les corrections à `pairs` et renvoie les {idA, idB} corrigés. Lève std::invalid_argument
-        // pour une correction mal formée, une paire absente de `pairs` ou une paire corrigée deux fois.
-        Json applyCorrections(std::vector<DataNs::PairMatches>& pairs, const Json& corrections) {
+        // Tuile d'identifiant `tileId`, ou nullptr si `tiles` ne la contient pas.
+        const DataNs::TileClass* findTile(const DataNs::TileList& tiles, int tileId) {
+            const auto tile = std::find_if(tiles.begin(), tiles.end(), [tileId](const std::shared_ptr<DataNs::TileClass>& candidate) {
+                return candidate != nullptr && candidate->getId() == tileId;
+            });
+            return tile == tiles.end() ? nullptr : tile->get();
+        }
+
+        // Direction de B par rapport à A quand B est la voisine de droite ou du bas de A, seules directions de PairMatches.
+        std::optional<DataNs::Direction> neighbourDirection(const DataNs::TileClass& tileA, const DataNs::TileClass& tileB) {
+            if (tileA.getRight() == &tileB) return DataNs::Direction::Right;
+            if (tileA.getBottom() == &tileB) return DataNs::Direction::Bottom;
+            return std::nullopt;
+        }
+
+        // Met la correction dans le sens des paires de matches (B à droite ou en dessous de A) et renvoie la direction
+        // de B. Une correction saisie dans l'autre sens est retournée : A et B échangés, avec leurs points.
+        DataNs::Direction orientCorrection(PairCorrection& correction, const DataNs::TileList& tiles, const std::string& path) {
+            const std::string pairName = describePair(correction.tileIdA, correction.tileIdB);
+            const DataNs::TileClass* tileA = findTile(tiles, correction.tileIdA);
+            const DataNs::TileClass* tileB = findTile(tiles, correction.tileIdB);
+            if (tileA == nullptr || tileB == nullptr) throw std::invalid_argument(path + ": pair " + pairName + " references an unknown tile id");
+            if (const auto direction = neighbourDirection(*tileA, *tileB)) return *direction;
+            const auto reversedDirection = neighbourDirection(*tileB, *tileA);
+            if (!reversedDirection) throw std::invalid_argument(path + ": tiles of pair " + pairName + " are not neighbours");
+            std::swap(correction.tileIdA, correction.tileIdB);
+            std::swap(correction.pointsInA, correction.pointsInB);
+            return *reversedDirection;
+        }
+
+        // Paire (A, B) de `pairs`. Absente quand l'appariement ou vote-2d l'a écartée : elle est alors ajoutée à la fin,
+        // c'est le cas où la tuile risque de n'être reliée à aucune autre. `added` dit lequel des deux cas s'est produit.
+        DataNs::PairMatches& findOrAddPair(std::vector<DataNs::PairMatches>& pairs, const PairCorrection& correction,
+                                           DataNs::Direction direction, bool& added) {
+            const auto pair = std::find_if(pairs.begin(), pairs.end(), [&correction](const DataNs::PairMatches& candidate) {
+                return candidate.tileIdA == correction.tileIdA && candidate.tileIdB == correction.tileIdB;
+            });
+            added = pair == pairs.end();
+            if (!added) return *pair;
+            DataNs::PairMatches newPair;
+            newPair.tileIdA = correction.tileIdA;
+            newPair.tileIdB = correction.tileIdB;
+            newPair.direction = direction;
+            return pairs.emplace_back(std::move(newPair));
+        }
+
+        // Applique toutes les corrections à `pairs` et renvoie les {idA, idB, added} corrigés. Lève std::invalid_argument
+        // pour une correction mal formée, une tuile inconnue, deux tuiles non voisines ou une paire corrigée deux fois.
+        Json applyCorrections(std::vector<DataNs::PairMatches>& pairs, const DataNs::TileList& tiles, const Json& corrections) {
             if (!corrections.is_array()) throw std::invalid_argument("manual-matches: 'corrections' must be an array");
             Json correctedPairs = Json::array();
-            std::set<std::pair<int, int>> correctedIds;   // pour refuser deux corrections de la même paire
+            std::set<std::pair<int, int>> correctedIds;   // pour refuser deux corrections de la même paire, dans un sens ou l'autre
             for (std::size_t index = 0; index < corrections.size(); ++index) {
                 std::string path = "manual-matches: corrections[";
                 path.append(std::to_string(index)).append("]");
                 PairCorrection correction = readCorrection(corrections.at(index), path);
-                const std::string pairName = describePair(correction.tileIdA, correction.tileIdB);
+                const DataNs::Direction direction = orientCorrection(correction, tiles, path);
                 if (!correctedIds.insert({correction.tileIdA, correction.tileIdB}).second)
-                    throw std::invalid_argument(path.append(": pair ").append(pairName).append(" is corrected twice"));
-                // L'ordre A, B est celui de matches : il fixe le sens de la translation.
-                const auto pair = std::find_if(pairs.begin(), pairs.end(), [&](const DataNs::PairMatches& candidate) {
-                    return candidate.tileIdA == correction.tileIdA && candidate.tileIdB == correction.tileIdB;
-                });
-                if (pair == pairs.end()) throw std::invalid_argument(path.append(": pair ").append(pairName).append(" is not in 'matches'"));
-                correctedPairs.push_back({{"idA", correction.tileIdA}, {"idB", correction.tileIdB}});
-                applyCorrection(*pair, std::move(correction));
+                    throw std::invalid_argument(path + ": pair " + describePair(correction.tileIdA, correction.tileIdB) + " is corrected twice");
+                bool added = false;
+                DataNs::PairMatches& pair = findOrAddPair(pairs, correction, direction, added);
+                correctedPairs.push_back({{"idA", correction.tileIdA}, {"idB", correction.tileIdB}, {"added", added}});
+                applyCorrection(pair, std::move(correction));
             }
             return correctedPairs;
         }
@@ -131,7 +177,7 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "manual-matches";
         stepConfig.parameters = {{"json", "corrections", input.corrections}};
-        stepConfig.inputs = {{"PairMatches", "matches"}};
+        stepConfig.inputs = {{"Tiles", "tiles"}, {"PairMatches", "matches"}};
         stepConfig.outputs = {{"PairMatches", "matches"}};
         configJson = stepConfig;
     }
@@ -143,7 +189,8 @@ namespace StepsNs {
             if (dataStore == nullptr) throw std::invalid_argument("manual-matches: DataStore is not attached");
             // Travail sur une copie : en cas d'erreur, matches reste tel que l'appariement l'a produit.
             std::vector<DataNs::PairMatches> pairs = dataStore->get<std::vector<DataNs::PairMatches>>("matches");
-            result["correctedPairs"] = applyCorrections(pairs, getParameter("corrections"));
+            const auto& tiles = dataStore->get<DataNs::TileList>("tiles");
+            result["correctedPairs"] = applyCorrections(pairs, tiles, getParameter("corrections"));
             output.value = std::move(pairs);
             dataStore->replace(output.key, output.value);
             result["pairs"] = output.value.size();

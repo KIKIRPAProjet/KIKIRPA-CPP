@@ -26,10 +26,13 @@ namespace StepsNs {
 
     // Remplace les points appariés des paires corrigées à la main, puis recalcule leur translation
     // (médiane de pointsInA - pointsInB), seule valeur lue par absolute-pos. Les autres paires ne changent pas.
+    // Une paire absente de matches (écartée par l'appariement ou par vote-2d) est ajoutée à la fin : c'est ainsi
+    // qu'on relie à la main une tuile qu'aucune paire ne reliait plus. Une correction saisie dans le sens inverse
+    // (B à gauche ou au-dessus de A) est retournée pour suivre le sens de matches.
     // Les corrections sont des paramètres du step : en modifier une invalide son checkpoint, donc ce step et
     // les suivants sont refaits à la reprise, sans refaire l'import ni l'appariement.
-    // Échoue (false, raison dans getResult()["error"]) si une correction désigne une paire absente de matches,
-    // corrige deux fois la même paire, ou a des listes de points vides, de tailles différentes ou mal formées.
+    // Échoue (false, raison dans getResult()["error"]) si une correction désigne une tuile inconnue ou deux tuiles
+    // non voisines, corrige deux fois la même paire, ou a des listes de points vides, de tailles différentes ou mal formées.
     class ManualMatchesStepClass : public StepNs::StepClass {
 
         public:
