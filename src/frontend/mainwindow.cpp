@@ -162,7 +162,11 @@ void MainWindow::setupPipelineConnections()
             mosaicFilePath = imagePath;
             if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                 QString errorMessage;
-                canvas->setMosaicTiff(imagePath, &errorMessage);
+                if (!canvas->setMosaicTiff(imagePath, &errorMessage)) {
+                    mosaicFilePath.clear();
+                    updateStatus(tr("Avertissement : lecture TIFF impossible (%1), affichage de l’aperçu.")
+                                     .arg(errorMessage));
+                }
             }
         });
 

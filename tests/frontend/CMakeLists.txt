@@ -14,7 +14,9 @@ add_executable(test_frontend_utils test_frontend_utils.cpp)
 kikirpa_copy_onnxruntime_dlls(test_frontend_utils)
 target_link_libraries(test_frontend_utils PRIVATE kikirpa_frontend GTest::gtest_main)
 target_compile_features(test_frontend_utils PRIVATE cxx_std_17)
-gtest_discover_tests(test_frontend_utils)
+gtest_discover_tests(test_frontend_utils PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
 
 add_executable(test_frontend_pipeline_worker test_pipeline_worker.cpp)
 kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_worker)

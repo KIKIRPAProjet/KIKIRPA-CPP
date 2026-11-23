@@ -36,6 +36,7 @@ public:
     ~ArtworkCanvas() override;
 
     void setMode(int mode);
+    int mode() const { return modeValue; }
     void setZoom(double zoom);
     double zoomPercentValue() const { return zoomPercent; }
     void fitMosaicToView();
@@ -55,6 +56,7 @@ public:
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     void setMosaicPreview(const QImage &image);
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
+    bool isMosaicRegionLoaded() const { return !mosaicRegionImage.isNull(); }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire

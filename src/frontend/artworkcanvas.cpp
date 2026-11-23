@@ -98,7 +98,7 @@ void ArtworkCanvas::setMode(int mode)
         generalPanOffset = {0.0, 0.0};
         if (modeValue == kModeExport) {
             if (!mosaicTiffPath.isEmpty()) {
-                updateZoom(mosaicScale * 100.0, true);
+                fitMosaicToView();
             } else {
                 updateZoom(generalZoomPercent, true);
             }
@@ -216,10 +216,12 @@ void ArtworkCanvas::fitMosaicToView()
 {
     if (modeValue == kModeExport && !mosaicTiffPath.isEmpty() && !mosaicSize.isEmpty()) {
         const QSize contentSize = size();
-        const double scale = qMin(
-            static_cast<double>(contentSize.width()) / mosaicSize.width(),
-            static_cast<double>(contentSize.height()) / mosaicSize.height());
-        mosaicScale = std::clamp(scale, kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
+        if (contentSize.width() > 0 && contentSize.height() > 0) {
+            const double scale = qMin(
+                static_cast<double>(contentSize.width()) / mosaicSize.width(),
+                static_cast<double>(contentSize.height()) / mosaicSize.height());
+            mosaicScale = std::clamp(scale, kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
+        }
         updateZoom(mosaicScale * 100.0, true);
         mosaicOrigin = {};
         requestMosaicRegion();
@@ -541,8 +543,12 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
 void ArtworkCanvas::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    if (mosaicTiffPath.isEmpty() || mosaicSize.isEmpty())
+    if (modeValue != kModeExport || mosaicTiffPath.isEmpty() || mosaicSize.isEmpty())
         return;
+    if (event->oldSize().width() <= 0 || event->oldSize().height() <= 0) {
+        fitMosaicToView();
+        return;
+    }
     mosaicOrigin = clampedMosaicOrigin(mosaicOrigin, mosaicScale);
     requestMosaicRegion();
 }
