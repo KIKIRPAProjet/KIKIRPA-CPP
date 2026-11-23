@@ -29,7 +29,7 @@ class OverlapEstimatorClass {
 };
 ```
 
-- **Paramètres** : ceux de la corrélation de phase. Seuls `smoothingSigma`, `minimumPeakRatio`, `railMargin` (marge du rail) et `minimumValidFraction` servent ; `upsamplingFactor` est forcé à 1. Un paramètre invalide lève `std::invalid_argument` à la construction.
+- **Paramètres** : ceux de la corrélation de phase. Seuls `smoothingSigma`, `minimumPeakRatio`, `railMargin` (marge du rail), `automaticRailMarginFraction` (marge automatique quand `railMargin` = 0) et `minimumValidFraction` servent ; `upsamplingFactor` est forcé à 1. Un paramètre invalide lève `std::invalid_argument` à la construction.
 - **`estimate(imageA, imageB, context)`** : `context.direction` et `context.overlapFraction` (recouvrement nominal) comme pour `match()`. Vide si la mesure est impossible ou peu fiable, dans les mêmes cas que `PhaseCorrelationMatcherClass::match` : tuiles vides ou de tailles différentes, pas de contenu commun, pic hors de la marge du rail ou ambigu. Dans ce cas, `getFailureReason()` donne la raison, avec la marge ou le recouvrement à essayer quand ils sont connus.
 - **`computeCommonAreas(sizeA, sizeB, translation)`** : rectangles de la zone commune dans A et dans B (même taille), B placée à la translation arrondie. Rectangles vides si les tuiles ne se superposent pas.
 

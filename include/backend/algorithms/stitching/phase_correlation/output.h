@@ -6,6 +6,7 @@
 
 #include <opencv2/core.hpp>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -33,6 +34,12 @@ namespace PhaseCorrelationNs {
             // recouvrement à essayer), ou pic ambigu.
             static std::string describeGlobalFailure(const Diagnostic& diagnostic, const OrientedPair& pair, const Strips& strips,
                                                      const DataNs::PairContext& context, const Parameters& parameters);
+
+            // Après un échec de AlgorithmClass::measureGlobalTranslation : le recouvrement réel qu'indique le meilleur
+            // pic, s'il est hors de la marge du rail et franc (rapport >= parameters.minimumPeakRatio). Vide sinon (pic
+            // dans la marge mais ambigu, ou hors marge mais ambigu lui aussi).
+            static std::optional<OutOfMarginPeak> findOutOfMarginPeak(const Diagnostic& diagnostic, const OrientedPair& pair,
+                                                                      const Strips& strips, const Parameters& parameters);
 
             // Échec de PreparationClass::extractCommonArea : pas de zone commune exploitable à la translation de la
             // première passe (coin de B dans A, repère des tuiles d'origine).

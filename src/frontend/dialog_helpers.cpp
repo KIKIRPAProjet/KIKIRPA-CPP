@@ -1,7 +1,7 @@
 #include "dialog_helpers.h"
 
 #include "frontendutils.h"
-#include "simulationrunner.h"
+#include "pipeline_runner.h"
 
 #include <QCoreApplication>
 #include <QComboBox>
@@ -66,7 +66,7 @@ void DialogHelpers::showReferenceComparisonDialog(QWidget *parent,
 }
 
 void DialogHelpers::showComparisonDialog(QWidget *parent,
-                                         SimulationRunner *simulationRunner)
+                                         PipelineRunnerClass *pipelineRunner)
 {
     QDialog dialog(parent);
     dialog.setWindowTitle(translate("Comparer deux exécutions"));
@@ -96,16 +96,16 @@ void DialogHelpers::showComparisonDialog(QWidget *parent,
     auto *keepB = buttons->addButton(translate("Garder B"), QDialogButtonBox::ActionRole);
     buttons->addButton(QDialogButtonBox::Close);
     layout->addWidget(buttons);
-    QObject::connect(show, &QPushButton::clicked, &dialog, [&dialog, simulationRunner]() {
-        simulationRunner->toggleComparison();
+    QObject::connect(show, &QPushButton::clicked, &dialog, [&dialog, pipelineRunner]() {
+        pipelineRunner->toggleComparison();
         dialog.accept();
     });
-    QObject::connect(keepA, &QPushButton::clicked, &dialog, [&dialog, simulationRunner]() {
-        simulationRunner->keepComparisonA();
+    QObject::connect(keepA, &QPushButton::clicked, &dialog, [&dialog, pipelineRunner]() {
+        pipelineRunner->keepComparisonA();
         dialog.accept();
     });
-    QObject::connect(keepB, &QPushButton::clicked, &dialog, [&dialog, simulationRunner]() {
-        simulationRunner->keepComparisonB();
+    QObject::connect(keepB, &QPushButton::clicked, &dialog, [&dialog, pipelineRunner]() {
+        pipelineRunner->keepComparisonB();
         dialog.accept();
     });
     dialog.exec();

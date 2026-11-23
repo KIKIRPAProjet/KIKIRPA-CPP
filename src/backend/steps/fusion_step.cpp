@@ -2,7 +2,6 @@
 #include "steps/fusion_step.h"
 
 #include "algorithms/brightness_equalization/output.h"
-#include "algorithms/seamline/graph_cut/image_pretreatment.h"
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/mosaic_corners.h"
@@ -10,7 +9,6 @@
 #include "core/io/file_fingerprint.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
-#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -82,24 +80,17 @@ namespace StepsNs {
                     canvasSize};
         }
 
-        // Position de chaque tuile, retrouvée par l'identifiant "rLL_cCC" tiré de la fin de son nom de fichier
-        // (_C<colonne>_R<ligne>.tif), comme graphcut.
+        // Position de chaque tuile, dans l'ordre de `tiles`, retrouvée par son identifiant (TileClass::getId()), comme
+        // graphcut.
         std::vector<cv::Point2d> findTilePositions(const FusionInputs& inputs) {
-            std::map<std::string, cv::Point2d> positionByTileId;
+            std::map<int, cv::Point2d> positionByTileId;
             for (const DataNs::TilePositionData& tilePosition : inputs.positions)
                 positionByTileId[tilePosition.tileId] = tilePosition.position;
             std::vector<cv::Point2d> positions;
             for (const auto& tile : inputs.tiles) {
-                const std::string sourcePath = IONs::pathToUtf8(tile->getSource());
-                int row = 0;
-                int column = 0;
-                std::string tileId;
-                if (!GraphCutNs::ImagePretreatmentClass::parseTileName(sourcePath, row, column, tileId))
-                    throw std::runtime_error("fusion: tile file name must end with _C<column>_R<row>.tif or .tiff: " +
-                                             sourcePath);
-                const auto positionEntry = positionByTileId.find(tileId);
+                const auto positionEntry = positionByTileId.find(tile->getId());
                 if (positionEntry == positionByTileId.end())
-                    throw std::runtime_error("fusion: no position for tile '" + tileId + "'");
+                    throw std::runtime_error("fusion: no position for tile " + std::to_string(tile->getId()));
                 positions.push_back(positionEntry->second);
             }
             return positions;

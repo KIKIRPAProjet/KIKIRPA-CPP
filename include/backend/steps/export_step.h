@@ -15,7 +15,9 @@ namespace StepsNs {
     struct ExportInput {
         // Vide : dossier Téléchargements de l'utilisateur courant.
         std::string outputDirectory;
-        // "tiff" publie la mosaïque sans conversion ; "jpeg" produit une image JPEG 8 bits.
+        // Nom du fichier de sortie. Vide : "mosaic.tif" ou "mosaic.jpg" selon format.
+        std::string filename;
+        // "tiff" conserve la mosaïque RGB 16 bits ; "jpeg" produit une image JPEG 8 bits.
         std::string format = "tiff";
     };
 
@@ -26,11 +28,11 @@ namespace StepsNs {
         std::string format = "tiff";
     };
 
-    // Publie l'image de la mosaïque assemblée sous outputDirectory/mosaic.tif ou mosaic.jpg. Le format TIFF contrôle
-    // l'en-tête puis copie le fichier ; le format JPEG convertit la mosaïque RGB 16 bits en RGB 8 bits en mémoire.
+    // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename>, ou son prochain numéro disponible.
+    // Le format TIFF est copié tel quel ; le format JPEG convertit la mosaïque RGB 16 bits en RGB 8 bits.
+    // Nom : "export". Paramètres : outputDirectory, filename, format ("tiff" par défaut ou "jpeg").
+    // Entrée : "Mosaic" ("mosaic"). Sortie : mosaic.tif/mosaic.jpg ou nom incrémenté.
     //
-    // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), format ("tiff" par défaut ou
-    // "jpeg"). Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou mosaic.jpg (ni provenance ni masque).
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 

@@ -43,7 +43,7 @@ Toutes les commandes de ce guide se tapent dans un terminal ordinaire : PowerShe
    python -m pip install --user aqtinstall
    ```
    ```powershell
-   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
    ```
    Vous devez obtenir `C:\Qt\6.10.3\msvc2022_64`. Un Qt déjà installé avec Qt Creator ne convient que s'il contient le dossier `msvc2022_64` ; un Qt `mingw_64` seul ne suffit pas. La commande laisse un fichier `aqtinstall.log` dans le dossier courant : supprimez-le, et ne le commitez pas.
 4. **Les trois variables du build**, nécessaires pour CLion et pour compiler à la main (§ 5). Le script, lui, s'en passe si vous avez gardé les emplacements de ce guide.
@@ -155,7 +155,7 @@ Le script est pour Windows. Sur ces systèmes, trois commandes suffisent, et il 
 
 **Ubuntu 24.04**, la configuration de la CI :
 ```bash
-sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev
+sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev qt6-image-formats-plugins
 ```
 ```bash
 cmake --preset linux && cmake --build --preset linux && ctest --preset linux
@@ -191,6 +191,6 @@ Détails : [BUILD.md](BUILD.md).
 | « Qt6Widgets.dll est introuvable » ou « opencv_world… est introuvable » en lançant `stitching.exe` à la main | les DLL ne sont pas dans le `PATH` | passer par le script, ou suivre le § 5 |
 | la compilation affiche des milliers de lignes `Remarque : inclusion du fichier : …` | MSVC écrit ces notes dans l'encodage de la console, et l'étape AUTOMOC de Qt le change en plein build : Ninja ne les reconnaît plus, et ne recompile plus un `.cpp` quand un `.h` qu'il inclut change | passer par le script, qui le règle ; à la main, `chcp 65001` puis `cmake --preset windows-aqt` (§ 5) |
 | `Found OpenCV Windows Pack but it has no binaries compatible with your configuration`, `OpenCV RUNTIME:` vide, puis `OpenCV_FOUND to FALSE` ; ou `Votre OpenCV … est trop ancien` (script) | OpenCV est plus ancien que le compilateur : la 4.10 ne connaît pas celui de Visual Studio 2026 (MSVC 19.5x) | installer OpenCV 4.14 ou plus récent dans `C:\opencv` (§ 2.1), supprimer `build\windows-aqt`, relancer |
-| `ninja: error: loading 'build.ninja': GetLastError()=2` (ou « The system cannot find the file specified ») | une configuration précédente a échoué, par exemple faute d'une bibliothèque, et n'a pas créé `build.ninja` | corriger ce qui manquait (le script le signale), puis relancer le script, qui refait la configuration ; à la main : `cmake --preset windows-aqt` avant `cmake --build` |
-| CMake refuse le dossier de build après un déplacement du dépôt | le build garde l'ancien chemin en mémoire | le script refait la configuration tout seul ; à la main, supprimer `build\windows-aqt` |
+| `ninja: error: loading 'build.ninja': GetLastError()=2` (ou « The system cannot find the file specified »), ou `loading 'CMakeFiles\rules.ninja'` | une configuration précédente a échoué, par exemple faute d'une bibliothèque, et n'a pas créé `build.ninja` ou ses règles | corriger ce qui manquait (le script le signale), puis relancer le script, qui refait la configuration ; à la main : `cmake --preset windows-aqt` avant `cmake --build` |
+| CMake refuse le dossier de build après un déplacement du dépôt, par exemple `The current CMakeCache.txt directory …/_deps/json-subbuild/CMakeCache.txt is different than the directory k:/… where CMakeCache.txt was created` | le build garde l'ancien chemin en mémoire, y compris dans les sous-projets des dépendances téléchargées (`_deps\*-subbuild`) ; arrive aussi quand le dépôt a été ouvert par un autre lecteur (`subst`, lecteur réseau) | le script refait la configuration tout seul ; à la main, supprimer `build\windows-aqt` |
 | `warning: in the working copy of '…', LF will be replaced by CRLF` | Git signale qu'il convertira les fins de ligne | rien à faire, ce n'est pas une erreur |

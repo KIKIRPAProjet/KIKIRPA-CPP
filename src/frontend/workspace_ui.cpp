@@ -18,7 +18,7 @@
 #include "homepage.h"
 #include "mainwindow.h"
 #include "projectgrid.h"
-#include "simulationrunner.h"
+#include "pipeline_runner.h"
 #include "grid_tab.h"
 #include "bottom_tabs.h"
 #include "workspace_status_bar.h"
@@ -77,11 +77,11 @@ constexpr int kMaskMode = 2;
 }
 
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
-                         ProjectGrid *projectGrid, SimulationRunner *simulationRunner)
+                         ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner)
     : QObject(mainWindow),
       m_mainWindow(mainWindow),
       m_projectGrid(projectGrid),
-      m_simulationRunner(simulationRunner),
+      m_pipelineRunner(pipelineRunner),
       m_homePage(homePage),
       m_pages(new QStackedWidget(mainWindow))
 {
@@ -196,7 +196,7 @@ void WorkspaceUI::createWorkspace()
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    m_topToolbars = new TopToolbars(m_mainWindow, m_projectGrid, m_simulationRunner, m_workspace);
+    m_topToolbars = new TopToolbars(m_mainWindow, m_projectGrid, m_pipelineRunner, m_workspace);
     root->addWidget(m_topToolbars);
 
     auto *body = new QSplitter(Qt::Horizontal);
@@ -215,7 +215,17 @@ void WorkspaceUI::createWorkspace()
     });
     m_rightPanel = new RightPanel(m_mainWindow, m_projectGrid, m_centerArea);
 
-    body->addWidget(m_leftToolbar);
+    // La barre d'outils défile (molette) quand la hauteur manque, au lieu d'imposer la hauteur de ses 9 boutons à toute
+    // la partie haute : sinon le panneau du bas ne peut pas être agrandi au-delà, sur un petit écran.
+    auto *leftToolbarArea = new QScrollArea;
+    leftToolbarArea->setWidget(m_leftToolbar);
+    leftToolbarArea->setWidgetResizable(true);
+    leftToolbarArea->setFrameShape(QFrame::NoFrame);
+    leftToolbarArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftToolbarArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftToolbarArea->setFixedWidth(kLeftToolbarWidth);
+
+    body->addWidget(leftToolbarArea);
     body->addWidget(m_centerArea);
     body->addWidget(m_rightPanel);
 
