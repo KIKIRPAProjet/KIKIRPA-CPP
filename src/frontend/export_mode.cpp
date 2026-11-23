@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 
 #include "core/pipeline/pipeline_report.h"
+#include "core/io/unicode_path.h"
 
 #include <QComboBox>
 #include <QDir>
@@ -16,7 +17,6 @@
 #include <QVBoxLayout>
 
 #include <filesystem>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 
@@ -24,7 +24,7 @@ namespace {
 
 std::filesystem::path toFilesystemPath(const QString &path)
 {
-    return std::filesystem::u8path(path.toUtf8().constData());
+    return IONs::pathFromUtf8(path.toStdString());
 }
 
 }
@@ -46,9 +46,10 @@ void MainWindow::showExportDialog()
     const QFileInfoList runDirectories = runsDirectory.entryInfoList(
         QDir::Dirs | QDir::NoDotAndDotDot, QDir::Time);
     for (const QFileInfo &runDirectory : runDirectories) {
-        const QString jsonPath = QDir(runDirectory.absoluteFilePath())
-                                     .filePath(QStringLiteral("execution.json"));
-        QFile file(jsonPath);
+        const QString jsonPath = QDir(runDirectory.absoluteFilePath()).filePath(QStringLiteral("execution.json"));
+        const QString summaryPath = QDir(runDirectory.absoluteFilePath())
+                                        .filePath(QStringLiteral("execution-summary.json"));
+        QFile file(QFileInfo::exists(summaryPath) ? summaryPath : jsonPath);
         if (!file.open(QIODevice::ReadOnly))
             continue;
         const auto report = nlohmann::json::parse(file.readAll().constData(), nullptr, false);

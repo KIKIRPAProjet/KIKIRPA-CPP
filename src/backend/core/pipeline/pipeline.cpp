@@ -3,6 +3,7 @@
 
 #include "core/checkpoint/checkpoint.h"
 #include "core/config/pipeline_config.h"
+#include "core/io/file_replacement.h"
 #include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline_report.h"
 #include "core/pipeline/run_state.h"
@@ -24,16 +25,9 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#include <system_error>
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace PipelineNs {
 
@@ -56,6 +50,8 @@ namespace PipelineNs {
             size_t stepIndex = 0;
             std::string messagePrefix;
             Json stepInputs;
+            bool reportEnabled = false;
+            bool summaryEnabled = false;
         };
 
         // Nom du step lu dans sa config JSON ; chaîne vide si le step n'a pas de config.
@@ -120,7 +116,6 @@ namespace PipelineNs {
                 {"summary", "Étape non exécutée."},
                 {"reason", nullptr},
                 {"configuration", step.getConfigJson()},
-                {"parameters", step.getConfigJson().value("parameters", Json::array())},
                 {"inputs", Json::array()},
                 {"outputs", Json::array()},
                 {"result", nullptr}
@@ -136,40 +131,49 @@ namespace PipelineNs {
         }
 
         Json createSkippedStepReport(size_t stepIndex, const StepNs::StepClass& step,
-                                     const CheckpointNs::CheckpointClass& checkpoint,
-                                     StepNs::DataStoreClass& reportDataStore) {
-            const Json inputs = createStepInputs(step, reportDataStore);
-            for (const ConfigNs::DataSlot& output : step.getConfigJson().get<ConfigNs::StepConfig>().outputs)
-                checkpoint.load(stepIndex, step, output.key, output.dataType, reportDataStore);
-            Json stepReport = createStepReport(stepIndex, step, reportDataStore, inputs);
-            stepReport["status"] = "skipped";
-            stepReport["summary"] = "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé.";
-            stepReport["result"] = nullptr;
-            stepReport["reason"] = nullptr;
-            return stepReport;
+                                     const StepNs::DataStoreClass& dataStore) {
+            const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
+            Json outputs = Json::array();
+            for (const ConfigNs::DataSlot& output : config.outputs)
+                outputs.push_back({
+                    {"key", output.key},
+                    {"dataType", output.dataType},
+                    {"available", dataStore.has(output.key)}
+                });
+            return {
+                {"index", stepIndex},
+                {"name", config.name},
+                {"status", "skipped"},
+                {"summary", "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé."},
+                {"reason", nullptr},
+                {"configuration", step.getConfigJson()},
+                {"inputs", createStepInputs(step, dataStore)},
+                {"outputs", std::move(outputs)},
+                {"result", nullptr}
+            };
         }
 
         struct RunReportContext {
             size_t startIndex;
             const std::vector<std::unique_ptr<StepNs::StepClass>>& steps;
-            const CheckpointNs::CheckpointClass& checkpoint;
-            const FilesystemNs::path& reportPath;
-            StepNs::DataStoreClass& reportDataStore;
+            const StepNs::DataStoreClass& dataStore;
             Json& reportJson;
             const Json& metadata;
+            bool enabled;
         };
 
         void appendRunStepReport(size_t stepIndex, RunReportContext& context) {
             const StepNs::StepClass& step = *context.steps[stepIndex];
-            if (context.reportPath.empty() || stepIndex >= context.startIndex) {
+            if (!context.enabled || stepIndex >= context.startIndex) {
                 context.reportJson["steps"].push_back(createNotReachedStepReport(stepIndex, step));
                 return;
             }
             context.reportJson["steps"].push_back(
-                createSkippedStepReport(stepIndex, step, context.checkpoint, context.reportDataStore));
+                createSkippedStepReport(stepIndex, step, context.dataStore));
         }
 
         void createRunReport(RunReportContext& context) {
+            if (!context.enabled) return;
             context.reportJson = createInitialReport(context.metadata);
             for (size_t stepIndex = 0; stepIndex < context.steps.size(); ++stepIndex)
                 appendRunStepReport(stepIndex, context);
@@ -182,17 +186,33 @@ namespace PipelineNs {
             }
         }
 
-        void saveReportStatus(Json& reportJson, const std::string& status,
-                              const FilesystemNs::path& reportPath, const PipelineClass::Logger& log) {
-            if (reportPath.empty()) return;
-            reportJson["metadata"]["status"] = status;
-            if (status != "running") reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
-            if (status == "failed" || status == "paused") markUnreachedSteps(reportJson);
+        void writeReportSafely(PipelineRunContext& context, const std::string& action) {
+            if (!context.reportEnabled) return;
             try {
-                writeReport(reportPath, reportJson);
+                writeReport(context.reportPath, context.reportJson);
             } catch (const std::exception& exception) {
-                report(log, std::string("warning: cannot update report: ") + exception.what(), true);
+                report(context.log, "warning: cannot " + action + " execution report: " +
+                                    exception.what(), true);
+                context.reportEnabled = false;
+                context.summaryEnabled = false;
+                return;
             }
+            if (!context.summaryEnabled) return;
+            try {
+                writeReportSummary(context.reportPath, context.reportJson);
+            } catch (const std::exception& exception) {
+                report(context.log, "warning: cannot update execution summary: " +
+                                    std::string(exception.what()), true);
+                context.summaryEnabled = false;
+            }
+        }
+
+        void saveReportStatus(PipelineRunContext& context, const std::string& status) {
+            if (!context.reportEnabled) return;
+            context.reportJson["metadata"]["status"] = status;
+            if (status != "running") context.reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
+            if (status == "failed" || status == "paused") markUnreachedSteps(context.reportJson);
+            writeReportSafely(context, "update");
         }
 
     }
@@ -235,24 +255,25 @@ namespace PipelineNs {
 
         void saveScriptFile(const FilesystemNs::path& scriptPath, const Json& script, const PipelineClass::Logger& log) {
             if (scriptPath.empty()) return;
+            FilesystemNs::path temporaryPath;
             try {
                 if (scriptPath.has_parent_path()) FilesystemNs::create_directories(scriptPath.parent_path());
-                FilesystemNs::path temporaryPath = scriptPath;
-                temporaryPath += ".tmp";
+                temporaryPath = IONs::makeTemporaryPath(scriptPath);
                 {
                     std::ofstream output(temporaryPath, std::ios::binary);
                     output << script.dump(2) << '\n';
-                    if (!output) throw std::runtime_error("write failed");
+                    if (!output) throw std::runtime_error("cannot write " + IONs::pathToUtf8(temporaryPath));
                 }
-#ifdef _WIN32
-                if (!MoveFileExW(temporaryPath.c_str(), scriptPath.c_str(),
-                                 MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-                    throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
-                                            "cannot replace " + IONs::pathToUtf8(scriptPath));
-#else
-                FilesystemNs::rename(temporaryPath, scriptPath);
-#endif
+                std::string errorMessage;
+                if (!IONs::replaceFile(temporaryPath, scriptPath, errorMessage)) {
+                    FilesystemNs::remove(temporaryPath);
+                    throw std::runtime_error(errorMessage);
+                }
             } catch (const std::exception& exception) {
+                if (!temporaryPath.empty()) {
+                    std::error_code cleanupError;
+                    FilesystemNs::remove(temporaryPath, cleanupError);
+                }
                 report(log, "warning: cannot write " + IONs::pathToUtf8(scriptPath) + ": " + exception.what(), true);
             }
         }
@@ -291,15 +312,14 @@ namespace PipelineNs {
             context.dataStore = StepNs::DataStoreClass();
             if (!restoreCompletedOutputs(context)) return false;
             try {
-                StepNs::DataStoreClass reportDataStore;
-                RunReportContext reportContext{context.startIndex, context.steps, context.checkpoint,
-                    context.reportPath, reportDataStore, context.reportJson, context.reportMetadata};
+                RunReportContext reportContext{context.startIndex, context.steps,
+                    context.dataStore, context.reportJson, context.reportMetadata,
+                    context.reportEnabled};
                 createRunReport(reportContext);
             } catch (const std::exception& exception) {
-                report(context.log, std::string("cannot prepare execution report: ") + exception.what(), true);
-                context.runState.status = RunStatus::Failed;
-                context.saveScript();
-                return false;
+                report(context.log, std::string("warning: cannot prepare execution report: ") +
+                                    exception.what(), true);
+                context.reportEnabled = false;
             }
             return true;
         }
@@ -307,40 +327,26 @@ namespace PipelineNs {
         bool handlePause(PipelineRunContext& context) {
             if (!context.pauseRequested->exchange(false)) return false;
             context.runState.status = RunStatus::Paused;
-            saveReportStatus(context.reportJson, "paused", context.reportPath, context.log);
+            saveReportStatus(context, "paused");
             context.saveScript();
             report(context.log, context.messagePrefix + " paused", false);
             return true;
         }
 
         bool writeRunningStepReport(PipelineRunContext& context) {
-            try {
-                writeReport(context.reportPath, context.reportJson);
-            } catch (const std::exception& exception) {
-                report(context.log, context.messagePrefix + " failed to update execution report: " +
-                                    exception.what(), true);
-                context.runState.status = RunStatus::Failed;
-                context.saveScript();
-                return false;
-            }
+            writeReportSafely(context, "update");
             return true;
         }
 
         bool captureStepInputs(PipelineRunContext& context) {
-            if (context.reportPath.empty()) return true;
+            if (!context.reportEnabled) return true;
             try {
                 context.stepInputs = createStepInputs(*context.steps[context.stepIndex], context.dataStore);
             } catch (const std::exception& exception) {
-                Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
-                report(context.log, context.messagePrefix + " failed to capture report inputs: " +
+                report(context.log, context.messagePrefix + " warning: cannot capture report inputs: " +
                                     exception.what(), true);
-                stepReport["status"] = "failed";
-                stepReport["summary"] = "Impossible de documenter les entrées de l'étape.";
-                stepReport["reason"] = exception.what();
-                saveReportStatus(context.reportJson, "failed", context.reportPath, context.log);
-                context.runState.status = RunStatus::Failed;
-                context.saveScript();
-                return false;
+                context.reportEnabled = false;
+                return true;
             }
             Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
             stepReport["status"] = "running";
@@ -364,13 +370,13 @@ namespace PipelineNs {
             failureMessage += " failed: ";
             failureMessage += failureReason;
             report(context.log, failureMessage, true);
-            if (!context.reportPath.empty()) {
+            if (context.reportEnabled) {
                 Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
                 stepReport["status"] = "failed";
                 stepReport["summary"] = "L'étape a échoué.";
                 stepReport["reason"] = failureReason;
                 stepReport["result"] = result;
-                saveReportStatus(context.reportJson, "failed", context.reportPath, context.log);
+                saveReportStatus(context, "failed");
             }
             context.runState.status = RunStatus::Failed;
             context.saveScript();
@@ -389,7 +395,7 @@ namespace PipelineNs {
         }
 
         bool writeSuccessfulStepReport(PipelineRunContext& context) {
-            if (context.reportPath.empty()) return true;
+            if (!context.reportEnabled) return true;
             try {
                 Json& stepReport = context.reportJson["steps"].at(context.stepIndex);
                 stepReport = createStepReport(context.stepIndex, *context.steps[context.stepIndex],
@@ -400,13 +406,11 @@ namespace PipelineNs {
                         {"path", stepReport["result"]["image"].value("path", std::string())},
                         {"dimensions", stepReport["result"].value("canvasSize", Json::array())}
                     };
-                writeReport(context.reportPath, context.reportJson);
+                writeReportSafely(context, "update");
             } catch (const std::exception& exception) {
-                report(context.log, context.messagePrefix + " failed to update execution report: " +
+                report(context.log, context.messagePrefix + " warning: cannot build execution report: " +
                                     exception.what(), true);
-                context.runState.status = RunStatus::Failed;
-                context.saveScript();
-                return false;
+                context.reportEnabled = false;
             }
             return true;
         }
@@ -452,17 +456,10 @@ namespace PipelineNs {
             if (context.startIndex == context.steps.size() && !context.steps.empty())
                 report(context.log, "nothing to do: all steps are already done", false);
             context.runState.status = RunStatus::Completed;
-            try {
-                if (!context.reportPath.empty()) {
-                    context.reportJson["metadata"]["status"] = "completed";
-                    context.reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
-                    writeReport(context.reportPath, context.reportJson);
-                }
-            } catch (const std::exception& exception) {
-                report(context.log, std::string("failed to finalize execution report: ") + exception.what(), true);
-                context.runState.status = RunStatus::Failed;
-                context.saveScript();
-                return false;
+            if (context.reportEnabled) {
+                context.reportJson["metadata"]["status"] = "completed";
+                context.reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
+                writeReportSafely(context, "finalize");
             }
             context.saveScript();
             return true;
@@ -485,6 +482,8 @@ namespace PipelineNs {
         };
         PipelineRunContext context{steps, dataStore, runState, reportPath, reportMetadata,
                                    pauseRequested, checkpoint, log, saveScript};
+        context.reportEnabled = !reportPath.empty();
+        context.summaryEnabled = context.reportEnabled;
         return runPipeline(context);
     }
 

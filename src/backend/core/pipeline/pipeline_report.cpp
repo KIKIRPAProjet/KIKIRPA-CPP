@@ -3,7 +3,10 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/pair_residual.h"
 #include "core/data/tile.h"
+#include "core/io/file_replacement.h"
+#include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline.h"
 #include "core/step/data_store.h"
 #include "core/step/step.h"
@@ -17,16 +20,8 @@
 #include <ios>
 #include <stdexcept>
 #include <string>
-#include <system_error>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace PipelineNs {
 
@@ -76,19 +71,17 @@ namespace PipelineNs {
         Json serializeMatches(const StepNs::DataStoreClass& dataStore, const std::string& key) {
             Json pairs = Json::array();
             for (const DataNs::PairMatches& pair : dataStore.get<std::vector<DataNs::PairMatches>>(key)) {
-                Json pointsInA = Json::array();
-                Json pointsInB = Json::array();
-                for (const cv::Point2f& matchPoint : pair.featureMatches.pointsInA)
-                    pointsInA.push_back(serializePoint(matchPoint));
-                for (const cv::Point2f& matchPoint : pair.featureMatches.pointsInB)
-                    pointsInB.push_back(serializePoint(matchPoint));
+                const auto& confidenceScores = pair.featureMatches.confidenceScores;
+                double confidenceTotal = 0.0;
+                for (const float score : confidenceScores) confidenceTotal += score;
                 pairs.push_back({
                     {"tileIdA", pair.tileIdA},
                     {"tileIdB", pair.tileIdB},
                     {"direction", getDirectionName(pair.direction)},
-                    {"pointsInA", std::move(pointsInA)},
-                    {"pointsInB", std::move(pointsInB)},
-                    {"confidenceScores", pair.featureMatches.confidenceScores},
+                    {"correspondenceCount", pair.featureMatches.pointsInA.size()},
+                    {"confidenceCount", confidenceScores.size()},
+                    {"meanConfidence", confidenceScores.empty() ? Json(nullptr)
+                        : Json(confidenceTotal / static_cast<double>(confidenceScores.size()))},
                     {"translationX", pair.featureMatches.translationX},
                     {"translationY", pair.featureMatches.translationY}
                 });
@@ -107,29 +100,19 @@ namespace PipelineNs {
             return positions;
         }
 
-        Json serializePolygon(const std::vector<cv::Point>& polygon) {
-            Json points = Json::array();
-            for (const cv::Point& vertex : polygon) points.push_back(serializePoint(vertex));
-            return points;
-        }
-
-        Json serializeTerritoryHoles(const std::vector<std::vector<std::vector<cv::Point>>>& territoryHoles) {
-            Json holes = Json::array();
-            for (const auto& polygonHoles : territoryHoles) {
-                Json holesForPolygon = Json::array();
-                for (const auto& hole : polygonHoles) holesForPolygon.push_back(serializePolygon(hole));
-                holes.push_back(std::move(holesForPolygon));
-            }
-            return holes;
-        }
-
         Json serializeTerritory(const DataNs::TileTerritory& territory) {
-            Json polygons = Json::array();
-            for (const auto& polygon : territory.polygons) polygons.push_back(serializePolygon(polygon));
+            size_t holeCount = 0;
+            size_t vertexCount = 0;
+            for (const auto& polygon : territory.polygons) vertexCount += polygon.size();
+            for (const auto& polygonHoles : territory.holes) {
+                holeCount += polygonHoles.size();
+                for (const auto& hole : polygonHoles) vertexCount += hole.size();
+            }
             return {
                 {"tileIndex", territory.tileIndex},
-                {"polygons", std::move(polygons)},
-                {"holes", serializeTerritoryHoles(territory.holes)}
+                {"polygonCount", territory.polygons.size()},
+                {"holeCount", holeCount},
+                {"vertexCount", vertexCount}
             };
         }
 
@@ -143,17 +126,46 @@ namespace PipelineNs {
         Json serializeSeamlines(const StepNs::DataStoreClass& dataStore, const std::string& key) {
             Json seamlines = Json::array();
             for (const DataNs::Seamline& seamline : dataStore.get<DataNs::Seamlines>(key)) {
-                Json points = Json::array();
-                for (const cv::Point2d& seamPoint : seamline.points)
-                    points.push_back(serializePoint(seamPoint));
                 seamlines.push_back({
                     {"tileIdA", seamline.tileIdA},
                     {"tileIdB", seamline.tileIdB},
                     {"direction", getDirectionName(seamline.direction)},
-                    {"points", std::move(points)}
+                    {"pointCount", seamline.points.size()},
+                    {"start", seamline.points.empty() ? Json(nullptr) : serializePoint(seamline.points.front())},
+                    {"end", seamline.points.empty() ? Json(nullptr) : serializePoint(seamline.points.back())}
                 });
             }
             return seamlines;
+        }
+
+        Json serializePairResiduals(const StepNs::DataStoreClass& dataStore, const std::string& key) {
+            Json residuals = Json::array();
+            for (const DataNs::PairResidual& residual : dataStore.get<std::vector<DataNs::PairResidual>>(key))
+                residuals.push_back({
+                    {"tileIdA", residual.tileIdA},
+                    {"tileIdB", residual.tileIdB},
+                    {"residual", serializePoint(residual.residual)},
+                    {"residualNorm", residual.residualNorm}
+                });
+            return residuals;
+        }
+
+        Json serializeOverlapEstimates(const StepNs::DataStoreClass& dataStore, const std::string& key) {
+            Json estimates = Json::array();
+            for (const DataNs::PairOverlapEstimate& estimate : dataStore.get<DataNs::OverlapEstimates>(key))
+                estimates.push_back({
+                    {"tileIdA", estimate.tileIdA},
+                    {"tileIdB", estimate.tileIdB},
+                    {"direction", getDirectionName(estimate.direction)},
+                    {"translation", serializePoint(estimate.estimate.translationBInA)},
+                    {"overlapFraction", estimate.estimate.overlapFraction},
+                    {"confidencePeakRatio", estimate.estimate.peakRatio},
+                    {"commonAreaInA", {estimate.commonAreaInA.x, estimate.commonAreaInA.y,
+                                       estimate.commonAreaInA.width, estimate.commonAreaInA.height}},
+                    {"commonAreaInB", {estimate.commonAreaInB.x, estimate.commonAreaInB.y,
+                                       estimate.commonAreaInB.width, estimate.commonAreaInB.height}}
+                });
+            return estimates;
         }
 
         Json serializeIntensityCorrection(const StepNs::DataStoreClass& dataStore, const std::string& key) {
@@ -186,18 +198,31 @@ namespace PipelineNs {
             if (slot.dataType == "Seamlines") return serializeSeamlines(dataStore, slot.key);
             if (slot.dataType == "IntensityCorrection") return serializeIntensityCorrection(dataStore, slot.key);
             if (slot.dataType == "Mosaic") return serializeMosaic(dataStore, slot.key);
+            if (slot.dataType == "PairResiduals") return serializePairResiduals(dataStore, slot.key);
+            if (slot.dataType == "OverlapEstimates") return serializeOverlapEstimates(dataStore, slot.key);
             throw std::runtime_error("report: unsupported data type '" + slot.dataType + "'");
         }
 
         Json serializeSlots(const std::vector<ConfigNs::DataSlot>& slots,
-                            const StepNs::DataStoreClass& dataStore) {
+                            const StepNs::DataStoreClass& dataStore, bool includeValues) {
             Json serializedSlots = Json::array();
             for (const ConfigNs::DataSlot& slot : slots) {
-                serializedSlots.push_back({
+                Json serializedSlot = {
                     {"key", slot.key},
-                    {"dataType", slot.dataType},
-                    {"value", serializeData(slot, dataStore)}
-                });
+                    {"dataType", slot.dataType}
+                };
+                if (!includeValues) {
+                    serializedSlot["available"] = dataStore.has(slot.key);
+                } else {
+                    try {
+                        serializedSlot["value"] = serializeData(slot, dataStore);
+                    } catch (const std::exception& exception) {
+                        serializedSlot["value"] = nullptr;
+                        serializedSlot["note"] = std::string("Donnée non détaillée dans le rapport : ") +
+                                                 exception.what();
+                    }
+                }
+                serializedSlots.push_back(std::move(serializedSlot));
             }
             return serializedSlots;
         }
@@ -205,7 +230,7 @@ namespace PipelineNs {
         std::string summarizePairMatches(const Json& pairs) {
             size_t correspondenceCount = 0;
             for (const Json& pair : pairs)
-                correspondenceCount += pair.at("pointsInA").size();
+                correspondenceCount += pair.value("correspondenceCount", size_t{0});
             return "Paires mesurées : " + std::to_string(pairs.size()) +
                 " ; correspondances retenues : " + std::to_string(correspondenceCount);
         }
@@ -213,6 +238,7 @@ namespace PipelineNs {
         std::string summarizeOutput(const Json& output) {
             const Json& value = output.at("value");
             const std::string& type = output.at("dataType").get_ref<const std::string&>();
+            if (value.is_null()) return output.value("note", std::string("Sortie non détaillée."));
             if (type == "Tiles") return "Tuiles importées : " + std::to_string(value.size());
             if (type == "PairMatches") return summarizePairMatches(value);
             if (type == "Positions") return "Positions calculées : " + std::to_string(value.size());
@@ -221,6 +247,8 @@ namespace PipelineNs {
                     std::to_string(value.at("tileGains").size()) + " tuile(s).";
             if (type == "Territories") return "Territoires calculés : " + std::to_string(value.size());
             if (type == "Seamlines") return "Coutures calculées : " + std::to_string(value.size());
+            if (type == "PairResiduals") return "Résidus de positionnement : " + std::to_string(value.size());
+            if (type == "OverlapEstimates") return "Recouvrements estimés : " + std::to_string(value.size());
             if (type == "Mosaic")
                 return "Mosaïque assemblée : " + std::to_string(value.at("width").get<int>()) + " × " +
                     std::to_string(value.at("height").get<int>()) + " pixels.";
@@ -331,44 +359,24 @@ namespace PipelineNs {
             return html;
         }
 
-        FilesystemNs::path makeTemporaryPath(const FilesystemNs::path& destination) {
-            FilesystemNs::path temporary = destination;
-            temporary += ".tmp";
-            return temporary;
-        }
-
-        void replaceFile(const FilesystemNs::path& temporary, const FilesystemNs::path& destination) {
-#ifdef _WIN32
-            if (!MoveFileExW(temporary.c_str(), destination.c_str(),
-                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
-                                        "cannot replace " + destination.string());
-#else
-            std::error_code errorCode;
-            FilesystemNs::rename(temporary, destination, errorCode);
-            if (errorCode) throw std::system_error(errorCode, "cannot replace " + destination.string());
-#endif
-        }
-
         void writeAtomically(const FilesystemNs::path& destination, const std::string& content) {
             if (destination.empty()) throw std::invalid_argument("report path must not be empty");
             if (destination.has_parent_path()) FilesystemNs::create_directories(destination.parent_path());
-            const FilesystemNs::path temporary = makeTemporaryPath(destination);
+            const FilesystemNs::path temporary = IONs::makeTemporaryPath(destination);
             {
                 std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-                if (!output) throw std::runtime_error("report: cannot create " + temporary.string());
+                if (!output) throw std::runtime_error("report: cannot create " + IONs::pathToUtf8(temporary));
                 output << content;
                 output.close();
                 if (!output) {
                     FilesystemNs::remove(temporary);
-                    throw std::runtime_error("report: cannot write " + temporary.string());
+                    throw std::runtime_error("report: cannot write " + IONs::pathToUtf8(temporary));
                 }
             }
-            try {
-                replaceFile(temporary, destination);
-            } catch (...) {
+            std::string errorMessage;
+            if (!IONs::replaceFile(temporary, destination, errorMessage)) {
                 FilesystemNs::remove(temporary);
-                throw;
+                throw std::runtime_error(errorMessage);
             }
         }
 
@@ -376,13 +384,13 @@ namespace PipelineNs {
 
     Json createStepInputs(const StepNs::StepClass& step, const StepNs::DataStoreClass& dataStore) {
         const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
-        return serializeSlots(config.inputs, dataStore);
+        return serializeSlots(config.inputs, dataStore, false);
     }
 
     Json createStepReport(size_t stepIndex, const StepNs::StepClass& step,
                           const StepNs::DataStoreClass& dataStore, const Json& inputs) {
         const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
-        Json outputs = serializeSlots(config.outputs, dataStore);
+        Json outputs = serializeSlots(config.outputs, dataStore, true);
         const Json result = step.getResult();
         Json stepReport = {
             {"index", stepIndex},
@@ -390,7 +398,6 @@ namespace PipelineNs {
             {"status", "completed"},
             {"reason", nullptr},
             {"configuration", step.getConfigJson()},
-            {"parameters", step.getConfigJson().value("parameters", Json::array())},
             {"inputs", inputs},
             {"outputs", std::move(outputs)},
             {"result", result}
@@ -417,6 +424,14 @@ namespace PipelineNs {
 
     void writeReport(const FilesystemNs::path& reportPath, const Json& reportJson) {
         writeAtomically(reportPath, reportJson.dump(2) + '\n');
+    }
+
+    void writeReportSummary(const FilesystemNs::path& reportPath, const Json& reportJson) {
+        Json summary = {{"metadata", Json::object()}};
+        const Json metadata = reportJson.value("metadata", Json::object());
+        for (const char* key : {"projectName", "executionId", "startedAt", "status"})
+            if (metadata.contains(key)) summary["metadata"][key] = metadata.at(key);
+        writeAtomically(reportPath.parent_path() / "execution-summary.json", summary.dump(2) + '\n');
     }
 
     void writeHtmlReport(const FilesystemNs::path& reportPath, const Json& reportJson) {

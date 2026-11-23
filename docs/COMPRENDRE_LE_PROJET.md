@@ -473,9 +473,9 @@ Presque rien : `src/frontend/PipelineJson.cpp`, qui sait **écrire** un script J
 
 ### Exécution et rapports dans cette branche
 
-La fenêtre Qt prépare une configuration backend depuis le projet, lance le pipeline réel dans un thread de travail (`QtConcurrent::run`) et archive chaque exécution séparément sous `<dossier-de-sortie>/runs/<identifiant>/`. L'annulation est prise en compte entre les étapes ; le bouton ne prétend pas arrêter une étape en plein calcul.
+La fenêtre Qt prépare une configuration backend depuis le projet, lance le pipeline réel avec `PipelineWorkerClass` dans un thread de travail et archive chaque exécution séparément sous `<dossier-de-sortie>/runs/<identifiant>/`. Ce dossier contient le rapport `execution.json` et son résumé léger `execution-summary.json`; les checkpoints restent dans le dossier configuré pour leur reprise. L'annulation est prise en compte entre les étapes ; le bouton ne prétend pas arrêter une étape en plein calcul.
 
-Le rapport JSON conserve le statut global, les entrées, sorties et résultats réels, ainsi que l'ordre d'import configuré. Depuis l'export Qt, l'opérateur choisit une exécution archivée et génère son HTML sans relancer le calcul. La configuration générée actuellement par le modèle de projet contient `import` et `phase-correlation` ; les autres steps backend disponibles ne sont pas encore proposés par l'interface de configuration.
+Le rapport JSON conserve le statut global, la configuration, les clés des entrées, les sorties résumées et les résultats des étapes, ainsi que l'ordre d'import configuré. Les erreurs d'archivage produisent un avertissement sans interrompre le calcul. Depuis l'export Qt, l'opérateur choisit une exécution archivée et génère son HTML sans relancer le calcul. La configuration générée actuellement par le modèle de projet contient `import` et `phase-correlation` ; les autres steps backend disponibles ne sont pas encore proposés par l'interface de configuration.
 
 Les autres interactions non liées au pipeline, comme Annuler / Rétablir, restent des maquettes.
 
@@ -483,7 +483,7 @@ Les autres interactions non liées au pipeline, comme Annuler / Rétablir, reste
 |---|---|
 | construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::ProjectSetupModelClass`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
-| lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
+| lancer sans geler la fenêtre | `PipelineRunnerClass` pilote `PipelineWorkerClass` dans un thread dédié |
 | afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
 | mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
 | reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |

@@ -6,6 +6,7 @@
 // phase-correlation sur deux tuiles 16 bits générées et découpées à une position entière connue.
 
 #include "core/data/algorithm_types.h"
+#include "core/data/pair_residual.h"
 #include "core/data/tile.h"
 #include "core/pipeline/pipeline.h"
 #include "core/pipeline/pipeline_builder.h"
@@ -54,6 +55,8 @@ constexpr int MOSAIC_REPORT_WIDTH = 640;
 constexpr int MOSAIC_REPORT_HEIGHT = 480;
 
 using Json = nlohmann::json;
+
+Json readJsonFile(const fs::path& path);
 
 constexpr int    LARGEUR_TUILE  = 400;
 constexpr int    HAUTEUR_TUILE  = 300;
@@ -120,6 +123,118 @@ public:
           }) {}
     bool execute() override { return true; }
 };
+
+class ReportDataStepClass : public StepNs::StepClass {
+public:
+    ReportDataStepClass()
+        : StepNs::StepClass(Json{
+              {"name", "report-data"},
+              {"parameters", Json::array()},
+              {"outputs", Json::array({
+                  {{"dataType", "PairResiduals"}, {"key", "pairResiduals"}},
+                  {{"dataType", "OverlapEstimates"}, {"key", "overlapEstimates"}},
+                  {{"dataType", "UnregisteredReportType"}, {"key", "unknown"}}
+              })}
+          }) {}
+
+    bool execute() override {
+        dataStore->add("pairResiduals", std::vector<DataNs::PairResidual>{
+            {1, 2, cv::Point2d(1.5, -2.0), 2.5}
+        });
+        DataNs::PairOverlapEstimate overlap;
+        overlap.tileIdA = 1;
+        overlap.tileIdB = 2;
+        overlap.direction = DataNs::Direction::Right;
+        overlap.estimate.translationBInA = cv::Point2d(120.0, 3.0);
+        overlap.estimate.overlapFraction = 0.2F;
+        overlap.estimate.peakRatio = 3.5;
+        overlap.commonAreaInA = cv::Rect(120, 0, 80, 300);
+        overlap.commonAreaInB = cv::Rect(0, 0, 80, 300);
+        dataStore->add("overlapEstimates", DataNs::OverlapEstimates{overlap});
+        dataStore->add("unknown", std::vector<int>{1, 2, 3});
+        result = {{"status", "completed"}};
+        return true;
+    }
+};
+
+void testerRapportTypesEtResume() {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_report_types";
+    fs::remove_all(directory);
+    fs::create_directories(directory);
+    const fs::path reportPath = directory / "execution.json";
+
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<ReportDataStepClass>());
+    pipeline.setReportPath(reportPath);
+    pipeline.setReportMetadata({{"projectName", "test"}, {"executionId", "report-types"}});
+    ASSERT_TRUE(pipeline.run());
+
+    const Json report = readJsonFile(reportPath);
+    const Json& residual = report.at("steps").at(0).at("outputs").at(0).at("value").at(0);
+    EXPECT_EQ(residual.at("tileIdA"), 1);
+    EXPECT_DOUBLE_EQ(residual.at("residualNorm").get<double>(), 2.5);
+    const Json& overlap = report.at("steps").at(0).at("outputs").at(1).at("value").at(0);
+    EXPECT_DOUBLE_EQ(overlap.at("translation").at(0).get<double>(), 120.0);
+    EXPECT_NEAR(overlap.at("overlapFraction").get<double>(), 0.2, 1.0e-6);
+    const Json& unsupported = report.at("steps").at(0).at("outputs").at(2);
+    EXPECT_TRUE(unsupported.at("value").is_null());
+    EXPECT_NE(unsupported.at("note").get<std::string>().find("unsupported data type"),
+              std::string::npos);
+    const Json summary = readJsonFile(directory / "execution-summary.json");
+    EXPECT_EQ(summary.at("metadata").at("status"), "completed");
+    EXPECT_FALSE(summary.contains("steps"));
+    fs::remove_all(directory);
+}
+
+void testerRapportNonBloquant() {
+    const fs::path blocker = fs::temp_directory_path() / "kikirpa_report_write_blocker";
+    fs::remove_all(blocker);
+    {
+        std::ofstream file(blocker);
+        ASSERT_TRUE(file.good());
+        file << "not a directory";
+    }
+
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<SuccessfulStepClass>());
+    pipeline.setReportPath(blocker / "execution.json");
+    std::string journal;
+    EXPECT_TRUE(pipeline.run([&](const std::string& message) { journal += message + "\n"; }));
+    EXPECT_NE(journal.find("warning: cannot"), std::string::npos);
+    fs::remove(blocker);
+}
+
+void testerRapportArchiveSansResumeListe() {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_summary_write_failure";
+    fs::remove_all(directory);
+    fs::create_directories(directory / "execution-summary.json");
+
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<SuccessfulStepClass>());
+    pipeline.setReportPath(directory / "execution.json");
+    std::string journal;
+    EXPECT_TRUE(pipeline.run([&](const std::string& message) { journal += message + "\n"; }));
+    EXPECT_NE(journal.find("cannot update execution summary"), std::string::npos);
+    EXPECT_EQ(readJsonFile(directory / "execution.json").at("metadata").at("status"), "completed");
+    fs::remove_all(directory);
+}
+
+void testerRapportPause() {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_report_pause";
+    fs::remove_all(directory);
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<SuccessfulStepClass>());
+    pipeline.setReportPath(directory / "execution.json");
+    pipeline.setReportMetadata({{"projectName", "test"}, {"executionId", "paused"}});
+    pipeline.requestPause();
+    EXPECT_FALSE(pipeline.run());
+    const Json report = readJsonFile(directory / "execution.json");
+    EXPECT_EQ(report.at("metadata").at("status"), "paused");
+    EXPECT_EQ(report.at("steps").at(0).at("status"), "notReached");
+    EXPECT_NE(report.at("steps").at(0).at("reason").get<std::string>().find("arrêtée"),
+              std::string::npos);
+    fs::remove_all(directory);
+}
 
 void testerRapportMosaic() {
     StepNs::DataStoreClass dataStore;
@@ -226,7 +341,7 @@ Json runFailingPipeline(const fs::path& reportPath, std::string& message) {
     pipeline.addStep(std::make_unique<SuccessfulStepClass>());
     pipeline.addStep(std::make_unique<StepQuiLeveClass>());
     pipeline.setReportPath(reportPath);
-    pipeline.setReportMetadata({{"projectName", "test"}, {"executionId", "failure-case"}});
+    pipeline.setReportMetadata({{"projectName", "projet <&\""}, {"executionId", "failure-case"}});
     pipeline.addStep(std::make_unique<UnreachedStepClass>());
     const bool succeeded = pipeline.run([&](const std::string& logMessage) { message = logMessage; });
     verifier(!succeeded, "run() renvoie false");
@@ -249,6 +364,8 @@ void verifyFailureReport(const Json& report, const fs::path& htmlPath) {
     const std::string reportHtml = readTextFile(htmlPath);
     verifier(reportHtml.find("Motif : boum") != std::string::npos,
              "l'export HTML présente le motif d'échec");
+    verifier(reportHtml.find("projet &lt;&amp;&quot;") != std::string::npos,
+             "l'export HTML échappe les caractères spéciaux du nom de projet");
 }
 
 void testerExceptionDansUnStep() {
@@ -332,9 +449,15 @@ void verifyRealReportData(const Json& report, float expectedTranslation) {
              "le rapport contient les étapes réellement exécutées");
     verifier(report.at("steps").at(0).at("outputs").at(0).at("value").size() == 2,
              "le rapport contient les tuiles importées");
-    verifier(report.at("steps").at(1).at("outputs").at(0).at("value").at(0)
-                 .at("translationX").get<double>() == expectedTranslation,
-             "le rapport contient les mesures réelles de la sortie");
+    verifier(report.at("steps").at(1).at("inputs").at(0).at("available") == true &&
+                 !report.at("steps").at(1).at("inputs").at(0).contains("value"),
+             "les entrées sont référencées sans recopier la sortie précédente");
+    const Json& match = report.at("steps").at(1).at("outputs").at(0).at("value").at(0);
+    verifier(match.at("translationX").get<double>() == expectedTranslation,
+             "le rapport contient la translation mesurée");
+    verifier(match.contains("correspondenceCount") && match.contains("confidenceCount") &&
+                 !match.contains("pointsInA") && !match.contains("pointsInB"),
+             "le rapport résume les correspondances sans dupliquer tous les points");
 }
 
 void verifyRealReportHtml(const Json& report, const fs::path& htmlPath) {
@@ -371,6 +494,28 @@ void testerPipelineReel() {
     fs::remove_all(dossier);
 }
 
+void testerRapportJusquaAbsolutePos() {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_report_absolute_pos";
+    creerTuiles(directory);
+    const Json pipelineScript = script({
+        etape("import", {{{"valueType", "string"}, {"name", "path"}, {"value", directory.string()}}}),
+        etape("phase-correlation"),
+        etape("absolute-pos")
+    });
+    PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(pipelineScript);
+    const fs::path reportPath = directory / "execution.json";
+    pipeline.setReportPath(reportPath);
+    pipeline.setReportMetadata({{"projectName", "absolute-pos-test"}, {"executionId", "absolute-pos"}});
+    std::string journal;
+    ASSERT_TRUE(pipeline.run([&](const std::string& message) { journal += message + "\n"; })) << journal;
+    const Json report = readJsonFile(reportPath);
+    ASSERT_EQ(report.at("steps").size(), 3);
+    EXPECT_EQ(report.at("steps").at(2).at("status"), "completed");
+    EXPECT_EQ(report.at("steps").at(2).at("outputs").at(1).at("dataType"), "PairResiduals");
+    EXPECT_TRUE(report.at("steps").at(2).at("outputs").at(1).at("value").is_array());
+    fs::remove_all(directory);
+}
+
 void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float dx1) {
     const auto log = [&](const std::string& message) { journal += message + "\n"; };
     journal.clear();
@@ -395,6 +540,8 @@ void testerRepriseReelle() {
     PipelineNs::RunState r;
     r.checkpointDirectory = checkpoints.string();
     p.setRunState(r);
+    p.setReportPath(dossier / "execution.json");
+    p.setReportMetadata({{"projectName", "reprise-test"}, {"executionId", "reprise"}});
     std::string journal;
     const auto log = [&](const std::string& m) { journal += m + "\n"; };
     verifier(p.run(log), "run 1 réussi");
@@ -403,6 +550,10 @@ void testerRepriseReelle() {
     const float dx1 = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches").at(0).featureMatches.translationX;
 
     verifierReprise(p, journal, dx1);
+    const Json resumedReport = readJsonFile(dossier / "execution.json");
+    verifier(resumedReport.at("steps").at(0).at("status") == "skipped" &&
+                 resumedReport.at("steps").at(1).at("status") == "skipped",
+             "les étapes restaurées sont marquées comme réutilisées dans le rapport");
 
     // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
     {
@@ -422,7 +573,12 @@ TEST(PipelineBuilder, Registre) { testerRegistre(); }
 TEST(PipelineBuilder, Validation) { testerValidation(); }
 TEST(PipelineBuilder, ExceptionDansUnStep) { testerExceptionDansUnStep(); }
 TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
+TEST(PipelineBuilder, RapportJusquaAbsolutePos) { testerRapportJusquaAbsolutePos(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
+TEST(PipelineReport, SerialisePairResidualsEtOverlapEstimates) { testerRapportTypesEtResume(); }
+TEST(PipelineReport, EchecEcritureNonBloquant) { testerRapportNonBloquant(); }
+TEST(PipelineReport, ArchiveSansResumeListe) { testerRapportArchiveSansResumeListe(); }
+TEST(PipelineReport, Pause) { testerRapportPause(); }
 TEST(PipelineReport, SerialiseMosaic) { testerRapportMosaic(); }
 
 }

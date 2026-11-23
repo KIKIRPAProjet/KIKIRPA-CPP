@@ -25,6 +25,9 @@ namespace PipelineNs {
     // Écrit l'archive JSON ; lève une exception si le fichier ne peut pas être écrit.
     void writeReport(const std::filesystem::path& reportPath, const nlohmann::json& reportJson);
 
+    // Écrit un fichier léger contenant les métadonnées nécessaires à la liste des exécutions.
+    void writeReportSummary(const std::filesystem::path& reportPath, const nlohmann::json& reportJson);
+
     // Écrit le rapport HTML à partir d'une archive JSON ; lève une exception en cas d'échec d'écriture.
     void writeHtmlReport(const std::filesystem::path& reportPath, const nlohmann::json& reportJson);
 

@@ -5,7 +5,7 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
-La GUI génère le script backend à partir du projet et lance le pipeline réel de façon asynchrone. Chaque exécution reçoit son propre dossier sous `<dossier-de-sortie>/runs/<identifiant>/`, avec sa configuration, son état de reprise, ses checkpoints et son archive de rapport.
+La GUI génère le script backend à partir du projet et lance le pipeline réel de façon asynchrone. Chaque exécution reçoit son propre dossier sous `<dossier-de-sortie>/runs/<identifiant>/`, avec son archive `execution.json` et un petit `execution-summary.json` utilisé pour remplir rapidement la liste d'export. Le script d'état et les checkpoints restent dans le dossier défini par `run.checkpointDirectory`.
 
 ### En ligne de commande
 
@@ -89,11 +89,11 @@ Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE
 
 ### Rapport d'exécution
 
-L'appelant active l'archive avec `setReportPath()` et fournit le nom du projet ainsi que l'identifiant d'exécution avec `setReportMetadata()`. Le pipeline écrit un fichier JSON atomique après chaque transition ; il ne crée plus automatiquement un HTML à côté du script. Un chemin de rapport vide désactive l'archivage.
+L'appelant active l'archive avec `setReportPath()` et fournit le nom du projet ainsi que l'identifiant d'exécution avec `setReportMetadata()`. Le pipeline écrit les fichiers JSON de façon atomique après chaque transition ; il ne crée pas automatiquement le rapport HTML. Un chemin de rapport vide désactive l'archivage. Une erreur d'écriture de l'archive produit un avertissement et désactive l'archivage pour la suite, sans interrompre le calcul. Si seul le petit fichier de résumé ne peut pas être écrit, l'archive principale continue d'être mise à jour et l'interface peut lire son contenu comme solution de repli.
 
-L'archive décrit les étapes dans leur ordre configuré. Elle consigne le statut global, les dates de début et de fin, la configuration, les entrées, les sorties et le résultat de chaque étape. Un arrêt laisse les étapes non exécutées au statut `notReached`; celles déjà réutilisées depuis un checkpoint valide portent `skipped`, et une étape en cours d'exécution porte `running`. Une étape en échec contient le motif disponible. Les tuiles sont documentées par leurs noms, chemins, dimensions et voisinages, sans recopier les pixels ; les autres types sérialisés incluent leurs mesures et géométries.
+L'archive décrit les étapes dans leur ordre configuré. Elle consigne le statut global, les dates de début et de fin, la configuration, les clés et types des entrées, les sorties résumées et le résultat de chaque étape. Un arrêt laisse les étapes non exécutées au statut `notReached`; celles déjà réutilisées depuis un checkpoint valide portent `skipped`, et une étape en cours d'exécution porte `running`. Pour une étape sautée, le rapport conserve son statut et ses clés de sortie sans recharger une seconde fois les données du checkpoint. Une étape en échec contient le motif disponible. Les tuiles sont documentées par leurs noms, chemins, dimensions et voisinages, sans recopier les pixels. Les correspondances, territoires et coutures sont résumés (comptages, mesures et extrémités utiles) afin de limiter les répétitions et la taille des rapports. Un type non pris en charge est signalé dans le rapport sans faire échouer le pipeline.
 
-Depuis le menu d'export Qt, l'opérateur sélectionne une exécution archivée et exporte son rapport HTML. Cette opération lit uniquement le JSON déjà enregistré : elle ne relance aucun calcul. Le rapport détaille aussi les dimensions et le chemin de sortie lorsqu'un step `export` a effectivement produit un fichier. Un type de données sans sérialisation de rapport explicite provoque une erreur visible et le step n'est pas déclaré terminé.
+Depuis le menu d'export Qt, l'opérateur sélectionne une exécution archivée et exporte son rapport HTML. Cette opération lit uniquement le JSON déjà enregistré : elle ne relance aucun calcul. Le rapport détaille aussi les dimensions et le chemin de sortie lorsqu'un step `export` a effectivement produit un fichier.
 
 ## Reprise, pause, checkpoints
 
