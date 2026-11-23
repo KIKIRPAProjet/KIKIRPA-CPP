@@ -487,9 +487,6 @@ void MainWindow::applyLoadedProject(const QString &path)
         updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
         return;
     }
-    // Un calcul en pause appartient au projet précédent : l'annuler avant de changer de contexte.
-    if (pipelineRunner->isPaused())
-        pipelineRunner->cancelRun();
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
@@ -505,6 +502,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
         return;
     const bool resume = opening.clickedButton() == resumeButton;
+    // Un calcul en pause appartient au projet précédent : l'annuler seulement lorsque le changement est confirmé.
+    if (pipelineRunner->isPaused())
+        pipelineRunner->cancelRun();
     mosaicFilePath.clear();
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
