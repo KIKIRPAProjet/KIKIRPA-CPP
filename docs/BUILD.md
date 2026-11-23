@@ -11,7 +11,7 @@ Première installation sur un poste, pas à pas, avec les problèmes courants : 
 | OpenCV 4, avec le module `dnn` | oui | images, algorithmes ; OpenCV 5 n'est pas pris en charge |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
-| ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
+| ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement sous Windows, à fournir sous Linux et macOS (voir [ONNX Runtime](#onnx-runtime-et-modèle-lightglue)) |
 | Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
@@ -122,7 +122,12 @@ modifie par rapport à `main`, et fait échouer le job si un diagnostic est émi
 
 ## ONNX Runtime et modèle LightGlue
 
-Rien à installer : à la première configuration, CMake télécharge l'archive officielle d'ONNX Runtime 1.20.1 dans `build/.../_deps`, en vérifiant son empreinte SHA256. Si les tests sont activés, il télécharge aussi le modèle de test (environ 63 Mo) dans `build/.../models`. Une connexion internet est donc nécessaire la première fois.
+Sous Windows, rien à installer : à la première configuration, CMake télécharge ONNX Runtime 1.20.1 dans `build/.../_deps`, en vérifiant son empreinte. Si les tests sont activés, il télécharge aussi le modèle de test (environ 63 Mo) dans `build/.../models`. Une connexion internet est donc nécessaire la première fois.
+
+> **Depuis le 17/11/2026, les archives d'ONNX Runtime ne sont plus sur GitHub** (404).
+> - Windows : CMake télécharge à la place le paquet NuGet officiel de Microsoft, `Microsoft.ML.OnnxRuntime` 1.20.1 (environ 108 Mo, empreinte SHA512 vérifiée). Rien ne change pour l'utilisateur.
+> - Linux et macOS : la configuration échoue tant qu'on ne fournit pas une installation d'ONNX Runtime avec `-DONNXRUNTIME_ROOT=<dossier>`, un dossier qui contient `include/` et `lib/` (par exemple une archive 1.20.1 déjà extraite).
+> - La CI Linux installe le paquet Debian trixie (`libonnxruntime-dev`, version **1.21.0**) et configure avec `-DONNXRUNTIME_ROOT=/usr`. C'est une autre version que sous Windows : les résultats LightGlue peuvent différer légèrement. À ne pas reproduire sur un poste de développement (dépôt Debian ajouté à Ubuntu).
 
 Pour travailler hors ligne, indiquer des fichiers déjà présents :
 

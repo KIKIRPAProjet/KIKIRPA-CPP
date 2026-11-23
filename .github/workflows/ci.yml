@@ -87,6 +87,10 @@ jobs:
             nlohmann-json3-dev \
             qt6-base-dev
 
+      - name: Install ONNX Runtime from Debian packages
+        if: steps.changed-files.outputs.cpp == 'true'
+        uses: ./.github/actions/install-onnxruntime-debian
+
       - name: Restore LightGlue model
         if: steps.changed-files.outputs.cpp == 'true'
         uses: actions/cache@v4
@@ -96,7 +100,7 @@ jobs:
 
       - name: Configure with clang-tidy
         if: steps.changed-files.outputs.cpp == 'true'
-        run: cmake --preset linux-clang-tidy -DENABLE_CLANG_TIDY=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        run: cmake --preset linux-clang-tidy -DENABLE_CLANG_TIDY=OFF -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DONNXRUNTIME_ROOT=/usr
 
       - name: Run clang-tidy on changed C++ files
         if: steps.changed-files.outputs.cpp == 'true'
