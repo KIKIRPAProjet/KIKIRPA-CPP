@@ -22,8 +22,6 @@
 
 namespace PipelineNs {
 
-    namespace fs = std::filesystem;
-
     namespace {
 
         // Nom du step lu dans sa config JSON ; chaîne vide si le step n'a pas de config.
@@ -101,16 +99,16 @@ namespace PipelineNs {
     void PipelineClass::saveScript(const Logger& log) const {
         if (scriptPath.empty()) return;
         try {
-            if (scriptPath.has_parent_path()) fs::create_directories(scriptPath.parent_path());
+            if (scriptPath.has_parent_path()) std::filesystem::create_directories(scriptPath.parent_path());
             // Fichier temporaire puis renommage : le script n'est jamais écrit à moitié.
-            fs::path temporaryPath = scriptPath;
+            std::filesystem::path temporaryPath = scriptPath;
             temporaryPath += ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
                 output << exportScript().dump(2) << '\n';
                 if (!output) throw std::runtime_error("write failed");
             }
-            fs::rename(temporaryPath, scriptPath);
+            std::filesystem::rename(temporaryPath, scriptPath);
         } catch (const std::exception& exception) {
             report(log, "warning: cannot write " + IONs::pathToUtf8(scriptPath) + ": " + exception.what(), true);
         }
@@ -184,11 +182,19 @@ namespace PipelineNs {
 
             // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
             std::string failureReason;
-            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
-                report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
+            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason)) {
+                std::string warningMessage = messagePrefix;
+                warningMessage += " warning: checkpoint incomplete (";
+                warningMessage += failureReason;
+                warningMessage += "), this step will be redone on resume";
+                report(log, warningMessage, false);
+            }
             runState.completedSteps.push_back(stepName(*step));
             saveScript(log);
-            report(log, messagePrefix + " OK " + step->getResult().dump(), false);
+            std::string successMessage = messagePrefix;
+            successMessage += " OK ";
+            successMessage += step->getResult().dump();
+            report(log, successMessage, false);
         }
         if (startIndex == stepCount && stepCount > 0) report(log, "nothing to do: all steps are already done", false);
         runState.status = RunStatus::Completed;
