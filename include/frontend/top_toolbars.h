@@ -20,6 +20,7 @@ public:
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
+    // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
 
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }

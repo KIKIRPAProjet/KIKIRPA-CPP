@@ -1,9 +1,10 @@
 // src/frontend/top_toolbars.cpp
 #include "top_toolbars.h"
+
 #include "frontendutils.h"
 #include "mainwindow.h"
-#include "projectgrid.h"
 #include "pipeline_runner.h"
+#include "projectgrid.h"
 
 #include <QButtonGroup>
 #include <QComboBox>
@@ -29,9 +30,11 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
         connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
 
+        // Affiche le bouton d'export dès que la mosaïque finale est prête.
         connect(m_pipelineRunner, &PipelineRunnerClass::mosaicReady, this, [this]() {
             setExportVisible(true);
         });
+        // Masque le bouton dès le démarrage d'un nouveau calcul pour éviter d'exporter un résultat obsolète.
         connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
             setExportVisible(false);
         });
@@ -173,7 +176,7 @@ void TopToolbars::createOptionsBar()
 
 void TopToolbars::updateTitle(const QString &/*projectName*/, const QString &/*modality*/)
 {
-    // Le titre est affiché dans la barre de titre de la fenêtre principale.
+    // Conservé vide : le nom du projet est directement affiché dans la barre de titre de la fenêtre.
 }
 
 void TopToolbars::setExportVisible(bool visible)

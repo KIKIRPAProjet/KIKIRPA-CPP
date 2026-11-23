@@ -444,6 +444,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 {
     mosaicFilePath.clear();
     if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
         top->setExportVisible(false);
     }
     projectName = name;
@@ -488,6 +489,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
     if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
         top->setExportVisible(false);
     }
     projectName = projectData.projectName;
