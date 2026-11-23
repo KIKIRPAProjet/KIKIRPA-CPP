@@ -15,6 +15,9 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/unicode_path.h"
+
+#include <QCoreApplication>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
@@ -35,17 +38,40 @@ const QStringList MODE_NAMES = {
     QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
 };
 
-const std::vector<PipelineStepInfo>& pipelineSteps() {
-    static const std::vector<PipelineStepInfo> STEPS = {
-        {"import", QObject::tr("1  Importation des tuiles")},
-        {"phase-correlation", QObject::tr("2  Correspondance (Appariement)")},
-        {"absolute-pos", QObject::tr("3  Positionnement global")},
-        {"intensity-correction", QObject::tr("4  Égalisation de luminosité")},
-        {"graphcut", QObject::tr("5  Ligne de couture (GraphCut)")},
-        {"fusion", QObject::tr("6  Fusion des tuiles")},
-        {"export", QObject::tr("7  Export de la mosaïque")}
-    };
-    return STEPS;
+// Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
+static QString stepDisplayName(const std::string &technicalName)
+{
+    if (technicalName == "import") return QObject::tr("Importation des tuiles");
+    if (technicalName == "overlap-estimation") return QObject::tr("Recouvrement réel (première passe)");
+    if (technicalName == "phase-correlation") return QObject::tr("Appariement (corrélation de phase)");
+    if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
+    if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
+    if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
+    if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
+    if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
+    if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
+    if (technicalName == "dynamic-programming-dijkstra") return QObject::tr("Ligne de couture (programmation dynamique)");
+    if (technicalName == "fusion") return QObject::tr("Fusion des tuiles");
+    if (technicalName == "export") return QObject::tr("Export de la mosaïque");
+    return QString::fromStdString(technicalName);
+}
+
+std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &choices) {
+    std::vector<PipelineStepInfo> steps;
+    for (const std::string &technicalName : FrontendNs::pipelineStepNames(choices)) {
+        const QString number = QString::number(static_cast<int>(steps.size()) + 1);
+        steps.push_back({technicalName, number + QStringLiteral("  ") + stepDisplayName(technicalName)});
+    }
+    return steps;
+}
+
+// Le dossier de l'exécutable, et non le dossier courant : stitching et models/ sont tous deux dans le dossier de build,
+// d'où que l'application soit lancée.
+std::filesystem::path lightGlueModelPath()
+{
+    const std::filesystem::path applicationDirectory =
+        IONs::pathFromUtf8(QCoreApplication::applicationDirPath().toStdString());
+    return (applicationDirectory / FrontendNs::LIGHTGLUE_MODEL_PATH).lexically_normal();
 }
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)

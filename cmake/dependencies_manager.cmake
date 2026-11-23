@@ -75,50 +75,78 @@ endif()
 
 # Moteur d'inférence du modèle LightGlue.
 #
-# Par défaut, l'archive officielle est téléchargée pendant la configuration :
-# rien à installer, et la même version partout. Pour travailler hors ligne ou
-# avec une autre version, indiquer son dossier : -DONNXRUNTIME_ROOT=<chemin>
+# Par défaut, ONNX Runtime 1.20.1 est téléchargé pendant la configuration. Pour
+# travailler hors ligne ou avec une autre version, indiquer son dossier :
+# -DONNXRUNTIME_ROOT=<chemin> (archive extraite avec include/ et lib/, ou
+# installation système, par exemple /usr sous Debian).
+#
+# Depuis le 17/11/2026, les releases GitHub d'ONNX Runtime sont en 404 :
+# - Windows télécharge le paquet NuGet officiel de Microsoft (même version) ;
+# - Linux et macOS doivent fournir ONNXRUNTIME_ROOT (voir docs/BUILD.md).
 set(ONNXRUNTIME_ROOT "" CACHE PATH "ONNX Runtime directory (downloaded if empty)")
+set(onnxruntime_version 1.20.1)
 
 if(ONNXRUNTIME_ROOT)
-    set(onnxruntime_directory "${ONNXRUNTIME_ROOT}")
-else()
-    set(onnxruntime_version 1.20.1)
-
-    if(WIN32)
-        set(onnxruntime_archive onnxruntime-win-x64-${onnxruntime_version}.zip)
-        set(onnxruntime_sha256 78d447051e48bd2e1e778bba378bec4ece11191c9e538cf7b2c4a4565e8f5581)
-    elseif(APPLE)
-        set(onnxruntime_archive onnxruntime-osx-universal2-${onnxruntime_version}.tgz)
-        set(onnxruntime_sha256 da4349e01a7e997f5034563183c7183d069caadc1d95f499b560961787813efd)
-    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
-        set(onnxruntime_archive onnxruntime-linux-x64-${onnxruntime_version}.tgz)
-        set(onnxruntime_sha256 67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105)
-    else()
-        message(FATAL_ERROR "No ONNX Runtime archive for this system: set ONNXRUNTIME_ROOT")
+    set(onnxruntime_include_dirs "${ONNXRUNTIME_ROOT}/include" "${ONNXRUNTIME_ROOT}/include/onnxruntime")
+    set(onnxruntime_library_dirs "${ONNXRUNTIME_ROOT}/lib")
+    if(CMAKE_LIBRARY_ARCHITECTURE)
+        # Installation Debian / Ubuntu : /usr/lib/x86_64-linux-gnu
+        list(APPEND onnxruntime_library_dirs "${ONNXRUNTIME_ROOT}/lib/${CMAKE_LIBRARY_ARCHITECTURE}")
     endif()
-
+else()
     include(FetchContent)
-    FetchContent_Declare(
-        onnxruntime
-        URL https://github.com/microsoft/onnxruntime/releases/download/v${onnxruntime_version}/${onnxruntime_archive}
-        URL_HASH SHA256=${onnxruntime_sha256}
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    FetchContent_MakeAvailable(onnxruntime)
-    set(onnxruntime_directory "${onnxruntime_SOURCE_DIR}")
+    if(WIN32)
+        # Un .nupkg est un zip : DOWNLOAD_NAME lui donne une extension que CMake sait extraire.
+        # Empreinte : SHA512 publiée par le catalogue nuget.org pour ce paquet.
+        FetchContent_Declare(
+            onnxruntime
+            URL https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${onnxruntime_version}/microsoft.ml.onnxruntime.${onnxruntime_version}.nupkg
+            URL_HASH SHA512=fc867bb4ee317aaa613460079fa754f80b5ee649ae826b102b0269976a89040ab8aed9768f68505a5527f8aa3161cc12e13a08c382b35d57731ee84c6b0d478d
+            DOWNLOAD_NAME onnxruntime-${onnxruntime_version}.zip
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        )
+        FetchContent_MakeAvailable(onnxruntime)
+        set(onnxruntime_include_dirs "${onnxruntime_SOURCE_DIR}/build/native/include")
+        set(onnxruntime_library_dirs "${onnxruntime_SOURCE_DIR}/runtimes/win-x64/native")
+    else()
+        # Archives GitHub, indisponibles depuis le 17/11/2026 : gardées pour le jour où elles reviennent.
+        if(APPLE)
+            set(onnxruntime_archive onnxruntime-osx-universal2-${onnxruntime_version}.tgz)
+            set(onnxruntime_sha256 da4349e01a7e997f5034563183c7183d069caadc1d95f499b560961787813efd)
+        elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+            set(onnxruntime_archive onnxruntime-linux-x64-${onnxruntime_version}.tgz)
+            set(onnxruntime_sha256 67db4dc1561f1e3fd42e619575c82c601ef89849afc7ea85a003abbac1a1a105)
+        else()
+            message(FATAL_ERROR "No ONNX Runtime archive for this system: set ONNXRUNTIME_ROOT")
+        endif()
+        FetchContent_Declare(
+            onnxruntime
+            URL https://github.com/microsoft/onnxruntime/releases/download/v${onnxruntime_version}/${onnxruntime_archive}
+            URL_HASH SHA256=${onnxruntime_sha256}
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        )
+        FetchContent_MakeAvailable(onnxruntime)
+        set(onnxruntime_include_dirs "${onnxruntime_SOURCE_DIR}/include")
+        set(onnxruntime_library_dirs "${onnxruntime_SOURCE_DIR}/lib")
+    endif()
 endif()
+
+# Recherche refaite à chaque configuration : un build existant garderait sinon
+# les chemins de l'ancienne archive, qui disparaissent quand FetchContent extrait
+# la nouvelle au même endroit.
+unset(ONNXRUNTIME_INCLUDE_DIR CACHE)
+unset(ONNXRUNTIME_LIB CACHE)
 
 find_path(ONNXRUNTIME_INCLUDE_DIR
     NAMES onnxruntime_cxx_api.h
-    PATHS "${onnxruntime_directory}/include" "${onnxruntime_directory}/include/onnxruntime"
+    PATHS ${onnxruntime_include_dirs}
     NO_DEFAULT_PATH
     REQUIRED
 )
 
 find_library(ONNXRUNTIME_LIB
     NAMES onnxruntime
-    PATHS "${onnxruntime_directory}/lib"
+    PATHS ${onnxruntime_library_dirs}
     NO_DEFAULT_PATH
     REQUIRED
 )
