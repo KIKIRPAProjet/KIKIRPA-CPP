@@ -8,6 +8,7 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/io/file_fingerprint.h"
 #include "core/io/file_replacement.h"
 #include "core/io/pyramidal_tiff_reader.h"
