@@ -1,5 +1,4 @@
-#ifndef MENUBAR_MANAGER_H
-#define MENUBAR_MANAGER_H
+#pragma once
 
 #include <QObject>
 
@@ -33,5 +32,3 @@ signals:
     void comparisonRequested();
     void aboutRequested();
 };
-
-#endif
