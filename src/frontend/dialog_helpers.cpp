@@ -324,9 +324,9 @@ void DialogHelpers::showCreditsDialog(QWidget *parent)
 {
     initCreditsLogosResource();
 
-    QDialog dialog(parent);
+    QDialog dialog(parent, Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
+                           Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
     dialog.setWindowTitle(translate("Crédits"));
-    dialog.resize(720, 520);
     dialog.setStyleSheet(QStringLiteral("QDialog { background:#000000; }"));
 
     auto *layout = new QVBoxLayout(&dialog);
@@ -369,5 +369,6 @@ void DialogHelpers::showCreditsDialog(QWidget *parent)
     logoRow->addWidget(logoBadge, 1);
     layout->addLayout(logoRow);
 
+    dialog.showMaximized();
     dialog.exec();
 }
