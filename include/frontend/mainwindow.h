@@ -41,6 +41,7 @@ private:
     friend class TopToolbars;
     friend class WorkspaceCenter;
     friend class WorkspaceStatusBar;
+    QString mosaicFilePath;
 
     void keyPressEvent(QKeyEvent *event) override;
 
@@ -78,7 +79,7 @@ private:
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
-    // Lit le script backend du projet et affiche dans l'onglet Chaîne les étapes sauvegardées (tâche 16).
+    // Affiche dans l'onglet Chaîne les étapes sauvegardées (tâche 16), lues dans <dossier de checkpoints>/run.json.
     void refreshSavedState();
 
 private slots:

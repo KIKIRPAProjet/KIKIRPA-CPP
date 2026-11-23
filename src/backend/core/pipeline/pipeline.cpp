@@ -5,6 +5,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/io/unicode_path.h"
 #include "core/pipeline/run_state.h"
+#include "core/pipeline/saved_state.h"
 #include "core/step/step.h"
 
 #include <cstddef>
@@ -43,11 +44,8 @@ namespace PipelineNs {
         //    (les données des steps précédents manqueraient).
         size_t resolveStart(const std::vector<std::unique_ptr<StepNs::StepClass>>& steps, const RunState& runState,
                             const CheckpointNs::CheckpointClass& checkpoint, const PipelineClass::Logger& log) {
-            // On avance tant que le step d'index validStepCount est déjà fait ET a un checkpoint valide ; on s'arrête au premier qui ne l'est pas.
-            size_t validStepCount = 0;
-            while (validStepCount < runState.completedSteps.size() && validStepCount < steps.size() &&
-                runState.completedSteps[validStepCount] == stepName(*steps[validStepCount]) && checkpoint.valid(validStepCount, *steps[validStepCount]))
-                ++validStepCount;
+            // Même règle que l'affichage de l'état sauvegardé (saved_state.h).
+            const size_t validStepCount = countSavedSteps(steps, runState, checkpoint);
             if (checkpoint.enabled() && validStepCount < runState.completedSteps.size())
                 report(log, "checkpoint of step " + std::to_string(validStepCount + 1) + " ('" + runState.completedSteps[validStepCount] +
                                 "') is missing or outdated: resuming from there", false);

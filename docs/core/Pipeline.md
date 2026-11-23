@@ -66,6 +66,7 @@ Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE
 | `int` | entier (2.5 refusé) |
 | `float` | nombre (2 accepté) |
 | `bool` | `true` / `false` |
+| `json` | tableau ou objet JSON ; son contenu est vérifié par le step (ex. la liste `tiles` de `import`) |
 
 - **`inputs`** et **`outputs`** (`{ "dataType": "Tiles", "key": "tiles" }`) peuvent figurer dans le JSON, par exemple quand il est écrit par `PipelineClass::exportConfig` ou par la GUI. Ils sont **ignorés** à la lecture : c'est le step qui les fixe.
 
@@ -119,9 +120,9 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 
 | Type | Ce qui est écrit |
 |---|---|
-| `Tiles` | les fiches `TileClass` (`id`, `source`, `tiff`, `width`, `height`, `type`, voisines). **Les pixels ne sont pas recopiés** : à la reprise, le TIFF pyramidal doit toujours exister. |
+| `Tiles` | les fiches `TileClass` (`id`, `source`, `row`, `column`, `tiff`, `width`, `height`, `type`, voisines). **Les pixels ne sont pas recopiés** : à la reprise, le TIFF pyramidal doit toujours exister. |
 | `PairMatches` | `tileIdA`, `tileIdB`, `direction`, `pointsInA`, `pointsInB`, `confidenceScores`, `translationX`, `translationY` |
-| `Positions` | `tileId`, `position`, `rotationRadians` |
+| `Positions` | `tileId` (l'`id` de la tuile), `position`, `rotationRadians` |
 | `Territories` | `tileIndex`, `polygons`, `holes` |
 | `IntensityCorrection` | `tileGains`, `fieldStrength`, `isolatedTileIndices` (enregistré par `registerType`, voir `core/checkpoint/intensity_correction_checkpoint.cpp`) |
 | `VerificationReport` | rapport JSON de dimensions et métadonnées (enregistré par `registerType`, voir `core/checkpoint/final_verification_checkpoint.cpp`) |
@@ -137,7 +138,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - `StepClass::externalInputsFingerprint()` décrit ce que le step lit hors du pipeline. Elle est gardée dans le manifest.
 - `ImportStepClass` y met le nom, la taille et la date de chaque image source. Une image ajoutée, retirée ou modifiée périme donc le checkpoint de l'import, et toute la suite est refaite.
 
-**État sauvegardé** (`core/pipeline/saved_state.h`, test : `tests/core/test_saved_state.cpp`) : `countSavedSteps(pipeline)` renvoie le nombre de steps de tête déjà faits dont le checkpoint est encore valide, avec la même règle que `run()`. Le prochain run reprendra au step de cet index. L'interface s'en sert à l'ouverture d'un projet pour afficher, dans l'onglet « Chaîne », les étapes faites (✓), l'étape de reprise (▶) et les suivantes (○).
+**État sauvegardé** (`core/pipeline/saved_state.h`, test : `tests/core/test_saved_state.cpp`) : `countSavedSteps` renvoie le nombre de steps de tête déjà faits dont le checkpoint est encore valide. C'est la règle de reprise elle-même : `resolveStart` l'appelle, le prochain run reprend donc au step de cet index. L'interface l'utilise avec le script des méthodes choisies et les étapes faites lues dans `<dossier de checkpoints>/run.json` (le fichier que réécrit le lanceur, comme pour la reprise). L'onglet « Chaîne » marque dans sa liste les étapes faites (✓), l'étape de reprise (▶) et les suivantes (○), à l'ouverture d'un projet, après chaque étape, en pause et en fin de run.
 
 **Pause** : `PipelineClass::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
 

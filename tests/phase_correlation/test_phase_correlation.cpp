@@ -321,11 +321,17 @@ void testerCasLimites(const cv::Mat& source) {
     const bool okHorsMarge = cp.match(Ah, Bh, bas, m);
     verifier(!okHorsMarge && cp.getFailureReason().find("Increase the rail margin") != std::string::npos,
              "recouvrement réel 27 % hors marge -> false : " + cp.getFailureReason());
+    // Le pic franc hors marge indique le recouvrement réel (pour le recalage des steps)
+    const auto& picHorsMarge = cp.getOutOfMarginPeak();
+    verifier(picHorsMarge && std::abs(picHorsMarge->overlapFraction - RECOUVREMENT_HORS_MARGE) < 0.005 &&
+                 picHorsMarge->peakRatio >= PhaseCorrelationNs::Parameters{}.minimumPeakRatio,
+             format("getOutOfMarginPeak : recouvrement %.4f (vérité %.2f)",
+                    picHorsMarge ? picHorsMarge->overlapFraction : -1.0, RECOUVREMENT_HORS_MARGE));
     PhaseCorrelationNs::Parameters margeLarge;
     margeLarge.railMargin = MARGE_ELARGIE;
     PhaseCorrelationMatcherClass cpMargeLarge(margeLarge);
     const bool okMargeLarge = cpMargeLarge.match(Ah, Bh, bas, m);
-    verifier(okMargeLarge && cpMargeLarge.getFailureReason().empty() && std::abs(m.translationX - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
+    verifier(okMargeLarge && cpMargeLarge.getFailureReason().empty() && !cpMargeLarge.getOutOfMarginPeak() && std::abs(m.translationX - vraiHorsMarge.x) < TOLERANCE_TRANSLATION &&
                  std::abs(m.translationY - vraiHorsMarge.y) < TOLERANCE_TRANSLATION,
              format("même paire, marge = 100 px : dx = %.3f, dy = %.3f (vérité %.3f, %.3f)", m.translationX, m.translationY,
                     vraiHorsMarge.x, vraiHorsMarge.y));

@@ -11,6 +11,7 @@
 #include <vector>
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace {
@@ -67,7 +68,42 @@ namespace {
             1, cv::Rect(0, 0, REDUCED_WIDTH, REDUCED_HEIGHT), reduced, error)) << error;
         EXPECT_EQ(reduced.size(), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
 
+        // Vérifie getLevelCount, getLevelDimensions et readLevel
+        EXPECT_EQ(reader.getLevelCount(), 4);
+        int w0 = 0;
+        int h0 = 0;
+        ASSERT_TRUE(reader.getLevelDimensions(0, w0, h0, error)) << error;
+        EXPECT_EQ(w0, SOURCE_WIDTH);
+        EXPECT_EQ(h0, SOURCE_HEIGHT);
+
+        int w1 = 0;
+        int h1 = 0;
+        ASSERT_TRUE(reader.getLevelDimensions(1, w1, h1, error)) << error;
+        EXPECT_EQ(w1, REDUCED_WIDTH);
+        EXPECT_EQ(h1, REDUCED_HEIGHT);
+
+        cv::Mat fullLevel1;
+        ASSERT_TRUE(reader.readLevel(1, fullLevel1, error)) << error;
+        EXPECT_EQ(fullLevel1.size(), cv::Size(REDUCED_WIDTH, REDUCED_HEIGHT));
+        EXPECT_EQ(fullLevel1.type(), source.type());
+
         // Supprime le fichier temporaire créé pour le test.
+        std::filesystem::remove(PATH);
+    }
+
+    // Image à 4 canaux (RGBA) : le canal alpha est déclaré par TIFFTAG_EXTRASAMPLES. Passer la valeur au lieu d'un
+    // tableau faisait planter libtiff.
+    TEST(PyramidalTiffReaderClass, WritesAndReadsFourChannelImage) {
+        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
+        const cv::Mat source(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC4, cv::Scalar(10, 20, 30, 255));
+        std::string error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+
+        cv::Mat region;
+        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(PATH).readRegion(
+            0, cv::Rect(0, 0, BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE), region, error)) << error;
+        ASSERT_EQ(region.type(), CV_8UC4);
+        EXPECT_EQ(region.at<cv::Vec4b>(0, 0), cv::Vec4b(10, 20, 30, 255));
         std::filesystem::remove(PATH);
     }
 
@@ -164,5 +200,30 @@ namespace {
         std::filesystem::remove(PATH);
     }
 
+    TEST(PyramidalTiffWriterClass, WriteFailureCleansUpWithoutLeavingCorruptedOrTemporaryFile) {
+        cv::Mat validImage = cv::Mat::zeros(64, 64, CV_8UC3);
+        std::string errorMessage;
+
+        // Cas 1 : Image vide -> échec immédiat, aucun fichier créé
+        const auto nonExistentPath = std::filesystem::temp_directory_path() / "kikirpa_should_never_exist.tif";
+        std::filesystem::remove(nonExistentPath);
+        cv::Mat emptyImage;
+        EXPECT_FALSE(IONs::createPyramidalTiledTiff(emptyImage, nonExistentPath, errorMessage));
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_FALSE(std::filesystem::exists(nonExistentPath));
+
+        // Cas 2 : Dossier parent impossible (un fichier régulier bloque la création de dossier)
+        const auto blockingFile = std::filesystem::temp_directory_path() / "kikirpa_blocking_file.txt";
+        {
+            std::ofstream out(blockingFile);
+            out << "block";
+        }
+        const auto impossibleDest = blockingFile / "impossible_subfolder" / "pyramid.tif";
+        EXPECT_FALSE(IONs::createPyramidalTiledTiff(validImage, impossibleDest, errorMessage));
+        EXPECT_FALSE(errorMessage.empty());
+        EXPECT_FALSE(std::filesystem::exists(impossibleDest));
+
+        std::filesystem::remove(blockingFile);
+    }
 
 }

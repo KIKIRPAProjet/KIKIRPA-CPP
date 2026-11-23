@@ -19,6 +19,24 @@ namespace IONs {
         public:
             explicit PyramidalTiffReaderClass(std::filesystem::path tiffPath);
 
+            // Lit l'intégralité d'un niveau donné de la pyramide (0 = pleine résolution, 1 = 1/2, etc.).
+            bool readLevel(
+                int level,
+                cv::Mat& output,
+                std::string& errorMessage
+            ) const;
+
+            // Récupère les dimensions d'un niveau donné.
+            bool getLevelDimensions(
+                int level,
+                int& width,
+                int& height,
+                std::string& errorMessage
+            ) const;
+
+            // Nombre total de niveaux dans la pyramide (1 si non pyramidal).
+            int getLevelCount() const;
+
             // `region` est exprimée dans le repère du niveau demandé et doit y être entièrement contenue.
             // `output` reçoit exactement ses dimensions et son type.
             bool readRegion(

@@ -4,7 +4,6 @@
 #include "projectgrid.h"
 
 #include <QObject>
-#include <QStringList>
 
 class QComboBox;
 class QLabel;
@@ -63,7 +62,7 @@ public:
     void appendLog(const QString &message);
     void setActiveStep(int stepNumber);
     // Affiche l'état sauvegardé dans l'onglet Chaîne (voir AssemblyTab::showSavedState).
-    void showSavedState(const QStringList &stepNames, int savedStepCount);
+    void showSavedState(int savedStepCount);
 
 private:
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);

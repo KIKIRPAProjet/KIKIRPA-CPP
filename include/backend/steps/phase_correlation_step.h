@@ -68,7 +68,10 @@ namespace StepsNs {
 
     // Valeurs initiales des paramètres du step.
     struct PhaseCorrelationInput {
-        float overlap = DEFAULT_OVERLAP;   // recouvrement nominal entre deux tuiles voisines
+        float overlap = DEFAULT_OVERLAP;   // recouvrement nominal entre deux tuiles voisines (toutes les paires, ou
+                                           // seulement les horizontales si verticalOverlap > 0)
+        float verticalOverlap = 0.f;       // recouvrement nominal des paires verticales ; 0 = comme overlap
+        bool overlapCalibration = true;    // recalage du recouvrement nominal par direction (voir calibrateOverlap)
         int level = 0;          // niveau de la pyramide analysé : 0 = pleine résolution, n = 1/2^n (0 à LEVEL_COUNT - 1)
         PhaseCorrelationNs::Parameters parameters;   // réglages de l'algorithme, en px du niveau analysé
         ConfidenceControl confiance;   // seuils des contrôles de confiance
@@ -84,7 +87,8 @@ namespace StepsNs {
     // (voir docs/steps/PhaseCorrelationStep.md).
     //
     // Nom : "phase-correlation".
-    // Paramètres : overlap (float), niveau (int, champ level) et les champs de PhaseCorrelationNs::Parameters, sous leur
+    // Paramètres : overlap, verticalOverlap (float), overlapCalibration (bool), niveau (int, champ level) et les champs
+    //   de PhaseCorrelationNs::Parameters, sous leur
     //   nom d'origine : lissage, seuilRapport, lissageLocal, ecartMax, espacementMin, marge, fractionValideMin (float) ;
     //   nbPoints, fenetre, facteurDft (int). Correspondance avec les champs : phase_correlation_types.h.
     //   Contrôles de confiance : nccMin, dispersionMax, autosimMax (float).
@@ -105,6 +109,10 @@ namespace StepsNs {
     // Confiance : chaque paire mesurée passe les contrôles actifs (NCC, auto-similarité ; dispersion désactivée par
     //   défaut). Une paire qui en échoue un est rejetée comme une paire non mesurable. Chaque paire, gardée ou non, a ses indicateurs (PairConfidence) dans
     //   getOutput().confidence et dans getResult()["confidence"] (voir toJson).
+    // Recalage (overlapCalibration) : quand des paires d'une direction sont refusées sur un pic franc hors de la marge du
+    //   rail, et que ces pics s'accordent avec les autres paires de la direction (StepsNs::calibrateOverlap), le
+    //   recouvrement nominal de la direction est faux : les paires refusées sont mesurées une seconde fois au
+    //   recouvrement recalé. Détail dans getResult()["overlapCalibration"] ({dir, nominal, calibrated, recoveredPairs}).
     // Échecs : une paire non mesurable est ignorée et listée dans getResult()["failures"] ({idA, idB, reason}). Le
     //   step lui-même échoue (cause dans getResult()["error"]) si aucune paire ne réussit, si un paramètre est invalide,
     //   si le DataStoreClass n'a pas de tuiles, ou si une image est illisible.

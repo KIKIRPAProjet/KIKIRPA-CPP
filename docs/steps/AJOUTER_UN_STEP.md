@@ -46,7 +46,7 @@ Ce que contient chaque donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_
 - Le step produit **une nouvelle donnée** : il lui faut une nouvelle clé, et souvent un nouveau type (§6).
 - Le step **modifie une donnée existante** : il réécrit la même clé. C'est le cas de `match-filter`, parce que les steps suivants lisent des clés fixées dans leur code : `absolute-pos` lit toujours `matches`. `buildPipeline` l'accepte. À la reprise, c'est le checkpoint du dernier step qui a écrit la clé qui est rechargé.
 
-**Les paramètres** : un nom en `camelCase`, un type (`string`, `int`, `float` ou `bool`) et une valeur par défaut. Pour `match-filter`, il y en a un seul : `minPoints` (`int`, 10).
+**Les paramètres** : un nom en `camelCase`, un type (`string`, `int`, `float`, `bool`, ou `json` pour un tableau ou un objet dont le step vérifie lui-même le contenu) et une valeur par défaut. Pour `match-filter`, il y en a un seul : `minPoints` (`int`, 10).
 
 **Où mettre le calcul.** Le step lit ses entrées, appelle le calcul et écrit ses sorties. Au-delà de quelques lignes, le calcul va dans un algorithme, dans `algorithms/<étape>/<nom>/` ([CONVENTIONS.md §8](../CONVENTIONS.md#8-structure-du-code)). L'algorithme ne connaît ni le DataStore ni le JSON du pipeline, et se teste seul. Pour `match-filter`, le calcul tient en deux lignes et reste dans le step.
 
@@ -402,7 +402,7 @@ Remplacer `windows-aqt` par `linux` ou `macos` selon la machine.
 
 Ici, `minPoints` vaut 4, et non 10, la valeur par défaut. En effet, `phase-correlation` renvoie au plus `nbPoints` points par paire, 10 par défaut. Avec `minPoints = 10`, seules les paires qui ont tous leurs points seraient gardées.
 
-Le paramètre `format` de `import` est à régler pour que `absolute-pos` fonctionne : voir [ImportStep.md](ImportStep.md), section « Le format par défaut ne convient pas à la suite du pipeline ». Pour lancer un script depuis le code : [COMPRENDRE_LE_PROJET.md §3](../COMPRENDRE_LE_PROJET.md#3-faire-tourner-le-pipeline-aujourdhui).
+`import` lit ici la case de chaque tuile dans le nom des fichiers (`format` par défaut, `img_C<colonne>_R<ligne>.tif`). Pour des noms libres, lui donner plutôt la liste `tiles` : voir [ImportStep.md](ImportStep.md). Pour lancer un script depuis le code : [COMPRENDRE_LE_PROJET.md §3](../COMPRENDRE_LE_PROJET.md#3-faire-tourner-le-pipeline-aujourdhui).
 
 ## 9. Documenter
 

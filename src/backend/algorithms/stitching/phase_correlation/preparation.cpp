@@ -23,9 +23,8 @@ namespace PhaseCorrelationNs {
         constexpr double MINIMUM_COLUMN_FILL = 0.1;   // en dessous : colonne presque vide, retirée
         constexpr double MINIMUM_LINE_FILL = 0.5;     // en dessous : ligne / colonne à moitié vide, retirée
         constexpr int MINIMUM_CONTENT_SIDE = 32;      // px : zone commune plus petite = mesure peu fiable
-        constexpr double RAIL_MARGIN_TILE_FRACTION = 0.05;   // marge du rail par défaut : part de la tuile dans le sens
-                                                             // du déplacement
         constexpr double MINIMUM_RAIL_MARGIN = 48.0;  // px : marge du rail par défaut minimale
+        constexpr double MAXIMUM_AUTOMATIC_MARGIN_FRACTION = 0.5;   // au-delà, la marge dépasse la moitié de la tuile
         constexpr double SATURATION_FRACTION = 0.998; // gris ≥ cette part du maximum du type : pixel saturé (reflet)
         constexpr int EROSION_RADIUS = 4;             // px rognés autour des pixels vides ou saturés
         constexpr double SECOND_PASS_MARGIN = 4.0;    // px : écart maximal permis à la translation de la première passe
@@ -56,13 +55,14 @@ namespace PhaseCorrelationNs {
         }
 
         // Écart maximal (px) entre la translation globale et le recouvrement nominal : parameters.railMargin si > 0,
-        // sinon RAIL_MARGIN_TILE_FRACTION de la tuile dans le sens du déplacement, au moins MINIMUM_RAIL_MARGIN.
+        // sinon parameters.automaticRailMarginFraction de la tuile dans le sens du déplacement, au moins
+        // MINIMUM_RAIL_MARGIN.
         double computeRailMargin(const OrientedPair& pair, const Parameters& parameters) {
             if (parameters.railMargin > 0) return parameters.railMargin;
             // L'imprécision du rail grandit avec le pas, donc avec la taille de la tuile dans le sens du déplacement.
-            // Même valeur par défaut que la chaîne Python de référence (Stitching_Python).
+            // 5 % par défaut, comme la chaîne Python de référence (Stitching_Python).
             const int tileLength = pair.direction == Direction::Bottom ? pair.imageA.rows : pair.imageA.cols;
-            return std::max(RAIL_MARGIN_TILE_FRACTION * tileLength, MINIMUM_RAIL_MARGIN);
+            return std::max(parameters.automaticRailMarginFraction * tileLength, MINIMUM_RAIL_MARGIN);
         }
 
         // Masque des pixels à 0 (tous les canaux) reliés au bord de la tuile : la zone hors de l'œuvre.
@@ -218,10 +218,12 @@ namespace PhaseCorrelationNs {
         if (parameters.maximumPointCount < 0 || parameters.patchSize < 8 || parameters.smoothingSigma < 0 ||
             parameters.localSmoothingSigma < 0 || parameters.maximumLocalDeviation < 0 || parameters.minimumPointSpacing < 0 ||
             parameters.railMargin < 0 || parameters.minimumValidFraction < 0 || parameters.minimumValidFraction > 1 ||
-            parameters.upsamplingFactor < 1)
+            parameters.upsamplingFactor < 1 || !(parameters.automaticRailMarginFraction > 0) ||
+            parameters.automaticRailMarginFraction > MAXIMUM_AUTOMATIC_MARGIN_FRACTION)
             throw std::invalid_argument("phase-correlation: invalid parameter (nbPoints >= 0, fenetre >= 8, "
                                         "facteurDft >= 1, fractionValideMin in [0, 1], "
-                                        "lissage, lissageLocal, ecartMax, espacementMin, marge >= 0)");
+                                        "lissage, lissageLocal, ecartMax, espacementMin, marge >= 0, "
+                                        "automaticRailMarginFraction in ]0, 0.5])");
     }
 
     std::optional<OrientedPair> PreparationClass::orientPair(const cv::Mat& imageA, const cv::Mat& imageB,
