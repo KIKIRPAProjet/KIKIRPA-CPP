@@ -3,3 +3,10 @@ target_link_libraries(test_frontend_project_setup PRIVATE kikirpa_frontend GTest
 target_compile_features(test_frontend_project_setup PRIVATE cxx_std_17)
 include(GoogleTest)
 gtest_discover_tests(test_frontend_project_setup)
+
+add_executable(test_frontend_tile_contours test_tile_contours.cpp)
+target_link_libraries(test_frontend_tile_contours PRIVATE kikirpa_frontend GTest::gtest)
+target_compile_features(test_frontend_tile_contours PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_tile_contours PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

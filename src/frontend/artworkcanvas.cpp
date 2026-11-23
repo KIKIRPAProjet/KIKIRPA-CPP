@@ -1,5 +1,6 @@
 #include "artworkcanvas.h"
 
+#include <QFileInfo>
 #include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
@@ -438,9 +439,7 @@ QVector<ArtworkCanvas::TileContour> ArtworkCanvas::computeTileContours(
             if (tile.empty || tile.path.trimmed().isEmpty())
                 continue;
 
-            const QString tileId = QStringLiteral("r%1_c%2")
-                .arg(row, 2, 10, QLatin1Char('0'))
-                .arg(column, 2, 10, QLatin1Char('0'));
+            const QString tileId = QFileInfo(tile.path).fileName();
             contours.append({
                 tileId,
                 QRectF(mosaicRect.x() + column * stepX / totalWidth * mosaicRect.width(),
