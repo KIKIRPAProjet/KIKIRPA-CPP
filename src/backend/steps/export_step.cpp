@@ -79,7 +79,7 @@ namespace StepsNs {
                     break;
                 }
             }
-            return directory.empty() ? downloadsDirectory() : fs::u8path(directory);
+            return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
         }
 
         bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
@@ -147,7 +147,7 @@ namespace StepsNs {
                 return false;
             }
             output = {imagePath, mosaic.canvasSize, header.isBigTiff};
-            result["image"] = {{"path", imagePath.u8string()}, {"bigTiff", output.isBigTiff}};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }

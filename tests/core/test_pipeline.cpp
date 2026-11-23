@@ -157,6 +157,44 @@ public:
     }
 };
 
+class ReportCompactResultStepClass : public StepNs::StepClass {
+public:
+    ReportCompactResultStepClass()
+        : StepNs::StepClass(Json{
+              {"name", "phase-correlation"},
+              {"parameters", Json::array({
+                  {{"valueType", "int"}, {"name", "level"}, {"value", 2}}
+              })},
+              {"inputs", Json::array({
+                  {{"dataType", "Tiles"}, {"key", "tiles"}}
+              })},
+              {"outputs", Json::array({
+                  {{"dataType", "PairMatches"}, {"key", "matches"}}
+              })}
+          }) {
+        Json points = Json::array();
+        for (int pointIndex = 0; pointIndex < 1000; ++pointIndex)
+            points.push_back({
+                {"a", {pointIndex, pointIndex + 1}},
+                {"b", {pointIndex + 2, pointIndex + 3}},
+                {"ncc", 0.9}
+            });
+        result = {
+            {"pairs", 1},
+            {"confidence", Json::array({
+                {
+                    {"idA", 4},
+                    {"idB", 9},
+                    {"ncc", 0.92},
+                    {"points", std::move(points)}
+                }
+            })}
+        };
+    }
+
+    bool execute() override { return true; }
+};
+
 class ReportLifecycleStepClass : public StepNs::StepClass {
 public:
     ReportLifecycleStepClass(fs::path reportPath, fs::path summaryPath)
@@ -267,6 +305,8 @@ void testerRapportPause() {
     const Json report = readJsonFile(directory / "execution.json");
     EXPECT_EQ(report.at("metadata").at("status"), "paused");
     EXPECT_EQ(report.at("steps").at(0).at("status"), "notReached");
+    EXPECT_FALSE(report.at("steps").at(0).at("configuration").contains("inputs"));
+    EXPECT_FALSE(report.at("steps").at(0).at("configuration").contains("outputs"));
     EXPECT_NE(report.at("steps").at(0).at("reason").get<std::string>().find("arrêtée"),
               std::string::npos);
     fs::remove_all(directory);
@@ -590,6 +630,9 @@ void testerRepriseReelle() {
     verifier(resumedReport.at("steps").at(0).at("status") == "skipped" &&
                  resumedReport.at("steps").at(1).at("status") == "skipped",
              "les étapes restaurées sont marquées comme réutilisées dans le rapport");
+    verifier(!resumedReport.at("steps").at(0).at("configuration").contains("inputs") &&
+                 !resumedReport.at("steps").at(1).at("configuration").contains("outputs"),
+             "les étapes réutilisées ne répètent pas les descripteurs de données");
 
     // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
     {
@@ -617,5 +660,36 @@ TEST(PipelineReport, EchecEcritureNonBloquant) { testerRapportNonBloquant(); }
 TEST(PipelineReport, ArchiveSansResumeListe) { testerRapportArchiveSansResumeListe(); }
 TEST(PipelineReport, Pause) { testerRapportPause(); }
 TEST(PipelineReport, SerialiseMosaic) { testerRapportMosaic(); }
+TEST(PipelineReport, ResumeLesPointsDeConfianceSansCopierLeursCoordonnees) {
+    StepNs::DataStoreClass dataStore;
+    const ReportCompactResultStepClass step;
+    const Json report = PipelineNs::createStepReport(
+        0, step, dataStore, PipelineNs::createStepInputs(step, dataStore));
+
+    const Json expectedConfiguration = {{"parameters", Json::array({
+        {{"valueType", "int"}, {"name", "level"}, {"value", 2}}
+    })}};
+    EXPECT_EQ(report.at("configuration"), expectedConfiguration);
+    EXPECT_FALSE(report.at("configuration").contains("inputs"));
+    EXPECT_FALSE(report.at("configuration").contains("outputs"));
+    EXPECT_EQ(report.at("inputs").at(0).at("available"), false);
+    EXPECT_EQ(report.at("outputs").at(0).at("key"), "matches");
+
+    const Json& confidence = report.at("result").at("confidence").at(0);
+    EXPECT_EQ(confidence.at("pointCount"), 1000);
+    EXPECT_EQ(confidence.at("ncc"), 0.92);
+    EXPECT_FALSE(confidence.contains("points"));
+
+    const fs::path htmlPath = fs::temp_directory_path() / "kikirpa_compact_report.html";
+    const Json archive = {
+        {"metadata", {{"projectName", "test"}, {"executionId", "compact"}}},
+        {"steps", Json::array({report})}
+    };
+    PipelineNs::writeHtmlReport(htmlPath, archive);
+    const std::string html = readTextFile(htmlPath);
+    EXPECT_NE(html.find("pointCount"), std::string::npos);
+    EXPECT_EQ(html.find("\"points\""), std::string::npos);
+    fs::remove(htmlPath);
+}
 
 }

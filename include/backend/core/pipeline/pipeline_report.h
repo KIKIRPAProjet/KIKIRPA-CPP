@@ -15,7 +15,10 @@ namespace PipelineNs {
     // Sérialise les entrées configurées d'un step à partir des données disponibles.
     nlohmann::json createStepInputs(const StepNs::StepClass& step, const StepNs::DataStoreClass& dataStore);
 
-    // Sérialise la configuration, les entrées, les sorties et le résultat d'un step.
+    // Sérialise les seuls paramètres de configuration d'un step.
+    nlohmann::json createReportConfiguration(const StepNs::StepClass& step);
+
+    // Sérialise les paramètres, entrées, sorties et résultat d'un step.
     nlohmann::json createStepReport(size_t stepIndex, const StepNs::StepClass& step,
                                     const StepNs::DataStoreClass& dataStore, const nlohmann::json& inputs);
 

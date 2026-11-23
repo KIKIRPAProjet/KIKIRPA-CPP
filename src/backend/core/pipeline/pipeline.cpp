@@ -115,7 +115,7 @@ namespace PipelineNs {
                 {"status", "notReached"},
                 {"summary", "Étape non exécutée."},
                 {"reason", nullptr},
-                {"configuration", step.getConfigJson()},
+                {"configuration", createReportConfiguration(step)},
                 {"inputs", Json::array()},
                 {"outputs", Json::array()},
                 {"result", nullptr}
@@ -146,7 +146,7 @@ namespace PipelineNs {
                 {"status", "skipped"},
                 {"summary", "Résultats réutilisés depuis un checkpoint validé ; calcul non relancé."},
                 {"reason", nullptr},
-                {"configuration", step.getConfigJson()},
+                {"configuration", createReportConfiguration(step)},
                 {"inputs", createStepInputs(step, dataStore)},
                 {"outputs", std::move(outputs)},
                 {"result", nullptr}

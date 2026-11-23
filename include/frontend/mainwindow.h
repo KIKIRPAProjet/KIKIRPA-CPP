@@ -76,7 +76,6 @@ private:
 
     void refreshProjectInfo();
     void saveProject();
-    // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
     void showExportDialog();

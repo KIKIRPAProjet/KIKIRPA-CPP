@@ -52,8 +52,8 @@ namespace PipelineNs {
                 };
                 tiles.push_back({
                     {"id", tile->getId()},
-                    {"source", tile->getSource().u8string()},
-                    {"pyramidalTiff", tile->getTiff().u8string()},
+                    {"source", IONs::pathToUtf8(tile->getSource())},
+                    {"pyramidalTiff", IONs::pathToUtf8(tile->getTiff())},
                     {"width", level.width},
                     {"height", level.height},
                     {"openCvType", tile->getType()},
@@ -180,9 +180,9 @@ namespace PipelineNs {
         Json serializeMosaic(const StepNs::DataStoreClass& dataStore, const std::string& key) {
             const DataNs::Mosaic& mosaic = dataStore.get<DataNs::Mosaic>(key);
             return {
-                {"imagePath", mosaic.imagePath.u8string()},
-                {"provenancePath", mosaic.provenancePath.u8string()},
-                {"maskPath", mosaic.maskPath.u8string()},
+                {"imagePath", IONs::pathToUtf8(mosaic.imagePath)},
+                {"provenancePath", IONs::pathToUtf8(mosaic.provenancePath)},
+                {"maskPath", IONs::pathToUtf8(mosaic.maskPath)},
                 {"width", mosaic.canvasSize.width},
                 {"height", mosaic.canvasSize.height}
             };
@@ -261,6 +261,22 @@ namespace PipelineNs {
             return "Fichier exporté : " + image.value("path", std::string()) +
                 (size.size() == 2 ? " ; dimensions : " + std::to_string(size.at(0).get<int>()) + " × " +
                     std::to_string(size.at(1).get<int>()) + " pixels." : "");
+        }
+
+        Json summarizeStepResult(const Json& result) {
+            if (!result.is_object() || !result.contains("confidence") ||
+                !result.at("confidence").is_array())
+                return result;
+
+            Json summary = result;
+            for (Json& pairConfidence : summary["confidence"]) {
+                if (!pairConfidence.is_object() || !pairConfidence.contains("points") ||
+                    !pairConfidence.at("points").is_array())
+                    continue;
+                pairConfidence["pointCount"] = pairConfidence.at("points").size();
+                pairConfidence.erase("points");
+            }
+            return summary;
         }
 
         std::string escapeHtml(const std::string& text) {
@@ -387,17 +403,22 @@ namespace PipelineNs {
         return serializeSlots(config.inputs, dataStore, false);
     }
 
+    Json createReportConfiguration(const StepNs::StepClass& step) {
+        const Json configuration = step.getConfigJson();
+        return {{"parameters", configuration.value("parameters", Json::array())}};
+    }
+
     Json createStepReport(size_t stepIndex, const StepNs::StepClass& step,
                           const StepNs::DataStoreClass& dataStore, const Json& inputs) {
         const ConfigNs::StepConfig config = step.getConfigJson().get<ConfigNs::StepConfig>();
         Json outputs = serializeSlots(config.outputs, dataStore, true);
-        const Json result = step.getResult();
+        const Json result = summarizeStepResult(step.getResult());
         Json stepReport = {
             {"index", stepIndex},
             {"name", config.name},
             {"status", "completed"},
             {"reason", nullptr},
-            {"configuration", step.getConfigJson()},
+            {"configuration", createReportConfiguration(step)},
             {"inputs", inputs},
             {"outputs", std::move(outputs)},
             {"result", result}
