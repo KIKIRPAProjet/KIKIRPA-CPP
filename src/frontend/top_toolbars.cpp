@@ -31,26 +31,6 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
     }
 }
 
-void TopToolbars::createToolbar()
-{
-    QWidget *toolbar = new QWidget(this);
-    auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 5, 8, 5);
-
-    toolbarLayout->addWidget(FrontendUtils::logoLabel(22, toolbar));
-    toolbarLayout->addSpacing(6);
-    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
-    title->setObjectName(QStringLiteral("workspaceTitle"));
-    toolbarLayout->addWidget(title);
-    toolbarLayout->addStretch();
-
-    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), toolbar);
-    toolbarLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
-
-    static_cast<QVBoxLayout *>(layout())->addWidget(toolbar);
-}
-
 void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
 {
     auto *modeGroup = new QButtonGroup(stages);
