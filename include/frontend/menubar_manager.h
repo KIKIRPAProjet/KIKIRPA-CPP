@@ -22,13 +22,10 @@ signals:
     void exportRequested();
     void homeRequested();
     void quitRequested();
-    void undoRequested();
-    void redoRequested();
     void togglePanelsRequested();
     void zoomInRequested();
     void zoomOutRequested();
     void fitToWindowRequested();
-    void modeChangeRequested(int mode);
     void runRequested(int startStep);
     void comparisonRequested();
     void aboutRequested();
