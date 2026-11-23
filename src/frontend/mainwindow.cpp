@@ -206,7 +206,7 @@ void MainWindow::setupPipelineConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Image Finale", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
-                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
+                    // L'export est accessible via le bouton "Exporter…" dans la barre supérieure.
                 }
     });
 }
@@ -436,6 +436,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QStringList &newTilePaths)
 {
     mosaicFilePath.clear();
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
+        top->setExportVisible(false);
+    }
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -477,6 +481,10 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
+        top->setExportVisible(false);
+    }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
