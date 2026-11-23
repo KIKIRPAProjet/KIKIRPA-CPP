@@ -558,8 +558,6 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
-    if (currentMode == 1)
-        ;
     if (currentMode == 3) {
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
