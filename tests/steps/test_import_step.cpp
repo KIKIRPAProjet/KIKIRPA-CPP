@@ -3,6 +3,9 @@
 #include "steps/import_step.h"
 
 #include "core/data/tile.h"
+#include "core/io/pyramid_cache.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
@@ -13,6 +16,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -25,6 +29,7 @@ namespace {
 
     constexpr int TILE_SIZE = 16;
     constexpr int GREY_LEVEL = 100;
+    constexpr std::chrono::hours ONE_DAY{24};   // recul de la date d'une source « plus ancienne »
 
     struct TestDirectory {
         fs::path path;
@@ -155,7 +160,8 @@ TEST(ImportStepTest, AsksForColumnsWhenNamesGiveNoCell) {
     EXPECT_NE(step.getResult()["error"].get<std::string>().find("'columns'"), std::string::npos);
 }
 
-// Deux images de même nom (a.tif et a.tiff) ont chacune leur TIFF pyramidal : son nom commence par l'id de la tuile.
+// Deux images de même nom (a.tif et a.tiff) ont chacune leur TIFF pyramidal : son nom porte l'empreinte du chemin
+// complet de l'image (core/io/pyramid_cache.h).
 TEST(ImportStepTest, GivesEachTileItsOwnPyramidEvenWithTheSameFileName) {
     const TestDirectory directory;
     writeImage(directory.path / "a.tif");
@@ -166,8 +172,10 @@ TEST(ImportStepTest, GivesEachTileItsOwnPyramidEvenWithTheSameFileName) {
     ASSERT_TRUE(step.execute()) << step.getResult().dump();
     const DataNs::TileList& tiles = step.getOutput().tiles;
     ASSERT_EQ(tiles.size(), 2U);
-    EXPECT_EQ(tiles[0]->getTiff().filename(), "0_a_pyramid.tif");
-    EXPECT_EQ(tiles[1]->getTiff().filename(), "1_a_pyramid.tif");
+    const fs::path cacheDirectory = IONs::pyramidCacheDirectory(directory.path);
+    EXPECT_EQ(tiles[0]->getTiff(), IONs::pyramidCachePath(cacheDirectory, directory.path / "a.tif"));
+    EXPECT_EQ(tiles[1]->getTiff(), IONs::pyramidCachePath(cacheDirectory, directory.path / "a.tiff"));
+    EXPECT_NE(tiles[0]->getTiff(), tiles[1]->getTiff());
     EXPECT_TRUE(fs::is_regular_file(tiles[0]->getTiff()));
     EXPECT_TRUE(fs::is_regular_file(tiles[1]->getTiff()));
 }
@@ -208,4 +216,139 @@ TEST(ImportStepTest, FingerprintFollowsListedFiles) {
     cv::imwrite((directory.path / "5_no filter.tif").string(), cv::Mat(TILE_SIZE * 2, TILE_SIZE, CV_8UC1, cv::Scalar(0)));
     tiles[3]["file"] = "5_no filter.tif";
     EXPECT_NE(makeImportStep(directory.path, tiles).externalInputsFingerprint(), before);
+}
+
+// Une pyramide déjà existante et à jour est réutilisée sans être régénérée.
+TEST(ImportStepTest, ReusesExistingValidPyramidWithoutRegeneration) {
+    const TestDirectory directory;
+    writeImage(directory.path / "a.tif");
+    StepsNs::ImportStepClass step1 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step1.execute());
+    const auto pyramidPath = step1.getOutput().tiles[0]->getTiff();
+    ASSERT_TRUE(fs::is_regular_file(pyramidPath));
+    const auto initialTime = fs::last_write_time(pyramidPath);
+
+    // Second import : le cache valide doit être réutilisé
+    StepsNs::ImportStepClass step2 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step2.execute());
+    EXPECT_EQ(fs::last_write_time(pyramidPath), initialTime);
+}
+
+// Si l'image source a été modifiée après la pyramide, celle-ci doit être régénérée.
+TEST(ImportStepTest, RegeneratesPyramidWhenSourceImageIsModified) {
+    const TestDirectory directory;
+    const fs::path sourcePath = directory.path / "a.tif";
+    writeImage(sourcePath);
+    StepsNs::ImportStepClass step1 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step1.execute());
+    const auto pyramidPath = step1.getOutput().tiles[0]->getTiff();
+    ASSERT_TRUE(fs::is_regular_file(pyramidPath));
+
+    // On simule une pyramide ancienne (10 secondes dans le passé)
+    const auto oldPyramidTime = fs::last_write_time(pyramidPath) - std::chrono::seconds(10);
+    fs::last_write_time(pyramidPath, oldPyramidTime);
+
+    // Et une image source plus récente que cette ancienne pyramide
+    const auto newerSourceTime = oldPyramidTime + std::chrono::seconds(5);
+    writeImage(sourcePath);
+    fs::last_write_time(sourcePath, newerSourceTime);
+
+    StepsNs::ImportStepClass step2 =
+        makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(step2.execute());
+    EXPECT_GT(fs::last_write_time(pyramidPath), oldPyramidTime);
+    EXPECT_GE(fs::last_write_time(pyramidPath), newerSourceTime);
+}
+
+namespace {
+
+// Pixel de la pyramide d'une tuile, au coin haut gauche de la pleine résolution.
+std::uint8_t firstPyramidPixel(const DataNs::TileClass& tile) {
+    const IONs::PyramidalTiffReaderClass reader(tile.getTiff());
+    cv::Mat fullResolution;
+    std::string errorMessage;
+    EXPECT_TRUE(reader.readLevel(0, fullResolution, errorMessage)) << errorMessage;
+    return fullResolution.empty() ? std::uint8_t{0} : fullResolution.at<std::uint8_t>(0, 0);
+}
+
+constexpr std::uint8_t FIRST_GREY = 42;
+constexpr std::uint8_t SECOND_GREY = 142;
+
+void writeGreyImage(const fs::path& path, std::uint8_t grey) {
+    ASSERT_TRUE(IONs::writeImage(path, cv::Mat(TILE_SIZE, TILE_SIZE, CV_8UC1, cv::Scalar(grey))));
+}
+
+}
+
+// Deux fichiers de même nom sans extension mais d'images différentes (photo.tif et photo.tiff) :
+// ils obtiennent chacun leur propre pyramide sans mélanger leur contenu.
+TEST(ImportStepTest, DistinctContentForSameStemFilesDoesNotMixPyramids) {
+    const TestDirectory directory;
+    writeGreyImage(directory.path / "photo.tif", FIRST_GREY);
+    writeGreyImage(directory.path / "photo.tiff", SECOND_GREY);
+
+    StepsNs::ImportStepClass step =
+        makeImportStep(directory.path, Json::array({listedTile("photo.tif", 0, 0), listedTile("photo.tiff", 0, 1)}));
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const DataNs::TileList& tiles = step.getOutput().tiles;
+    ASSERT_EQ(tiles.size(), 2U);
+    EXPECT_NE(tiles[0]->getTiff(), tiles[1]->getTiff());
+    EXPECT_EQ(firstPyramidPixel(*tiles[0]), FIRST_GREY);
+    EXPECT_EQ(firstPyramidPixel(*tiles[1]), SECOND_GREY);
+}
+
+// Scénario d'Eva (#159) : photo.tif et photo.tiff importées, puis permutées dans la grille. Chaque case doit
+// recharger les pixels de sa nouvelle source, et non le cache de l'image qui l'occupait avant.
+TEST(ImportStepTest, SwappedSameStemFilesReloadTheirOwnPixels) {
+    const TestDirectory directory;
+    writeGreyImage(directory.path / "photo.tif", FIRST_GREY);
+    writeGreyImage(directory.path / "photo.tiff", SECOND_GREY);
+    StepsNs::ImportStepClass first =
+        makeImportStep(directory.path, Json::array({listedTile("photo.tif", 0, 0), listedTile("photo.tiff", 0, 1)}));
+    ASSERT_TRUE(first.execute()) << first.getResult().dump();
+
+    StepsNs::ImportStepClass swapped =
+        makeImportStep(directory.path, Json::array({listedTile("photo.tiff", 0, 0), listedTile("photo.tif", 0, 1)}));
+    ASSERT_TRUE(swapped.execute()) << swapped.getResult().dump();
+    const DataNs::TileList& tiles = swapped.getOutput().tiles;
+    ASSERT_EQ(tiles.size(), 2U);
+    EXPECT_EQ(firstPyramidPixel(*tiles[0]), SECOND_GREY);   // case (0, 0) : photo.tiff
+    EXPECT_EQ(firstPyramidPixel(*tiles[1]), FIRST_GREY);    // case (0, 1) : photo.tif
+}
+
+// Une source remplacée par un fichier plus ancien que sa pyramide (copie qui garde sa date, restauration d'une
+// sauvegarde) invalide quand même le cache : la date doit être identique, pas seulement antérieure.
+TEST(ImportStepTest, RegeneratesPyramidWhenSourceIsReplacedByAnOlderFile) {
+    const TestDirectory directory;
+    const fs::path sourcePath = directory.path / "a.tif";
+    writeGreyImage(sourcePath, FIRST_GREY);
+    StepsNs::ImportStepClass first = makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(first.execute()) << first.getResult().dump();
+    const fs::path pyramidPath = first.getOutput().tiles[0]->getTiff();
+
+    writeGreyImage(sourcePath, SECOND_GREY);
+    fs::last_write_time(sourcePath, fs::last_write_time(pyramidPath) - ONE_DAY);
+
+    StepsNs::ImportStepClass second = makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(second.execute()) << second.getResult().dump();
+    EXPECT_EQ(second.getOutput().tiles[0]->getTiff(), pyramidPath);
+    EXPECT_EQ(firstPyramidPixel(*second.getOutput().tiles[0]), SECOND_GREY);
+}
+
+// Pyramide réutilisée : la fiche garde les dimensions et le type de l'image, lus dans la pyramide.
+TEST(ImportStepTest, ReusedPyramidKeepsTheImageShape) {
+    const TestDirectory directory;
+    ASSERT_TRUE(IONs::writeImage(directory.path / "a.tif", cv::Mat(TILE_SIZE, 2 * TILE_SIZE, CV_16UC3, cv::Scalar::all(GREY_LEVEL))));
+    StepsNs::ImportStepClass first = makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(first.execute()) << first.getResult().dump();
+    StepsNs::ImportStepClass second = makeImportStep(directory.path, Json::array({listedTile("a.tif", 0, 0)}));
+    ASSERT_TRUE(second.execute()) << second.getResult().dump();
+
+    const DataNs::TileClass& tile = *second.getOutput().tiles[0];
+    EXPECT_EQ(tile.getLevel(0).width, 2 * TILE_SIZE);
+    EXPECT_EQ(tile.getLevel(0).height, TILE_SIZE);
+    EXPECT_EQ(tile.getType(), CV_16UC3);
 }

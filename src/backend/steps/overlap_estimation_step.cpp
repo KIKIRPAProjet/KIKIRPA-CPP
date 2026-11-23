@@ -5,6 +5,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "steps/matching_step_utils.h"
 #include "steps/phase_correlation_step.h"
 
 #include <opencv2/core/mat.hpp>
@@ -12,6 +13,8 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
 #include <exception>
 #include <optional>
 #include <set>
@@ -52,11 +55,18 @@ namespace StepsNs {
             return pairs;
         }
 
-        // Une paire non mesurable ne fait pas échouer le step : la raison part dans `failures` et la paire
-        // est simplement absente du résultat.
-        std::optional<DataNs::PairOverlapEstimate> estimatePair(const NeighbourPair& pair, float overlap,
-                                                                 OverlapEstimationNs::OverlapEstimatorClass& estimator,
-                                                                 Json& failures) {
+        constexpr double JSON_ROUNDING = 1000.0;   // recouvrement recalé arrondi au millième dans le résultat
+
+        // Résultat d'une paire : l'estimation, ou la raison de l'échec ; et le recouvrement vu par la mesure.
+        struct PairResult {
+            std::optional<DataNs::PairOverlapEstimate> estimate;
+            std::string failureReason;
+            std::optional<OverlapObservation> observation;
+        };
+
+        // Une paire non mesurable ne fait pas échouer le step : sa raison est gardée, et la paire est simplement absente
+        // du résultat.
+        PairResult estimatePair(const NeighbourPair& pair, float overlap, OverlapEstimationNs::OverlapEstimatorClass& estimator) {
             const cv::Mat imageA = PhaseCorrelationStepClass::readPixels(*pair.tileA, 0);
             const cv::Mat imageB = PhaseCorrelationStepClass::readPixels(*pair.tileB, 0);
             if (imageA.empty() || imageB.empty())
@@ -65,21 +75,53 @@ namespace StepsNs {
             const DataNs::PairContext context{pair.direction, overlap, std::nullopt};
             const auto estimate = estimator.estimate(imageA, imageB, context);
             if (!estimate) {
-                failures.push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
-                                    {"reason", estimator.getFailureReason()}});
-                return std::nullopt;
+                PairResult failure{std::nullopt, estimator.getFailureReason(), std::nullopt};
+                if (const auto& peak = estimator.getOutOfMarginPeak())
+                    failure.observation = OverlapObservation{pair.direction, peak->overlapFraction, true};
+                return failure;
             }
 
             const auto commonAreas = OverlapEstimationNs::OverlapEstimatorClass::computeCommonAreas(
                 imageA.size(), imageB.size(), estimate->translationBInA);
-            if (commonAreas.first.empty() || commonAreas.second.empty()) {
-                failures.push_back({{"idA", pair.tileA->getId()}, {"idB", pair.tileB->getId()},
-                                    {"reason", "estimated tiles have no common area"}});
-                return std::nullopt;
-            }
+            if (commonAreas.first.empty() || commonAreas.second.empty())
+                return {std::nullopt, "estimated tiles have no common area", std::nullopt};
 
-            return DataNs::PairOverlapEstimate{pair.tileA->getId(), pair.tileB->getId(), pair.direction, *estimate,
-                                               commonAreas.first, commonAreas.second};
+            return {DataNs::PairOverlapEstimate{pair.tileA->getId(), pair.tileB->getId(), pair.direction, *estimate,
+                                                commonAreas.first, commonAreas.second},
+                    {}, OverlapObservation{pair.direction, estimate->overlapFraction, false}};
+        }
+
+        const char* directionName(DataNs::Direction direction) {
+            return direction == DataNs::Direction::Bottom ? "Bottom" : "Right";
+        }
+
+        // Recalage du recouvrement nominal (voir calibrateOverlap) : pour chaque direction recalée, les paires refusées
+        // sont estimées une seconde fois au recouvrement recalé. Le détail va dans result["overlapCalibration"].
+        void retryWithCalibratedOverlaps(const std::vector<NeighbourPair>& pairs, const OverlapEstimationInput& input,
+                                         OverlapEstimationNs::OverlapEstimatorClass& estimator,
+                                         std::vector<PairResult>& results, Json& result) {
+            std::vector<OverlapObservation> observations;
+            for (const PairResult& pairResult : results)
+                if (pairResult.observation) observations.push_back(*pairResult.observation);
+
+            for (const DataNs::Direction direction : {DataNs::Direction::Right, DataNs::Direction::Bottom}) {
+                const std::optional<double> calibrated = calibrateOverlap(observations, direction);
+                if (!calibrated) continue;
+                int recoveredCount = 0;
+                for (std::size_t index = 0; index < pairs.size(); ++index) {
+                    if (pairs[index].direction != direction || results[index].estimate) continue;
+                    PairResult retry = estimatePair(pairs[index], static_cast<float>(*calibrated), estimator);
+                    if (retry.estimate) {
+                        results[index] = std::move(retry);
+                        ++recoveredCount;
+                    }
+                }
+                result["overlapCalibration"].push_back(
+                    {{"dir", directionName(direction)},
+                     {"nominal", std::round(overlapForDirection(direction, input.overlap, input.verticalOverlap) * JSON_ROUNDING) / JSON_ROUNDING},
+                     {"calibrated", std::round(*calibrated * JSON_ROUNDING) / JSON_ROUNDING},
+                     {"recoveredPairs", recoveredCount}});
+            }
         }
 
     }
@@ -88,6 +130,8 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "overlap-estimation";
         stepConfig.parameters = {{"float", "overlap", input.overlap},
+                                 {"float", "verticalOverlap", input.verticalOverlap},
+                                 {"bool", "overlapCalibration", input.overlapCalibration},
                                  {"float", "smoothingSigma", input.parameters.smoothingSigma},
                                  {"float", "minimumPeakRatio", input.parameters.minimumPeakRatio},
                                  {"float", "railMargin", input.parameters.railMargin},
@@ -104,29 +148,46 @@ namespace StepsNs {
             if (!dataStore) throw std::invalid_argument("overlap-estimation: DataStore is not attached");
             dataStore->replace(output.key, DataNs::OverlapEstimates{});
 
-            const float overlap = getParameter("overlap").get<float>();
-            if (overlap <= 0.f || overlap >= 1.f)
-                throw std::invalid_argument("overlap-estimation: overlap must be greater than 0 and less than 1");
+            OverlapEstimationInput input;
+            input.overlap = getParameter("overlap").get<float>();
+            input.verticalOverlap = getParameter("verticalOverlap").get<float>();
+            input.overlapCalibration = getParameter("overlapCalibration").get<bool>();
+            const std::string overlapError = checkOverlaps(input.overlap, input.verticalOverlap);
+            if (!overlapError.empty()) throw std::invalid_argument("overlap-estimation: " + overlapError);
 
-            PhaseCorrelationNs::Parameters parameters;
-            parameters.smoothingSigma = getParameter("smoothingSigma").get<double>();
-            parameters.minimumPeakRatio = getParameter("minimumPeakRatio").get<double>();
-            parameters.railMargin = getParameter("railMargin").get<double>();
-            parameters.minimumValidFraction = getParameter("minimumValidFraction").get<double>();
-            return estimatePairs(overlap, parameters);
+            input.parameters.smoothingSigma = getParameter("smoothingSigma").get<double>();
+            input.parameters.minimumPeakRatio = getParameter("minimumPeakRatio").get<double>();
+            input.parameters.railMargin = getParameter("railMargin").get<double>();
+            input.parameters.minimumValidFraction = getParameter("minimumValidFraction").get<double>();
+            return estimatePairs(input);
         } catch (const std::exception& exception) {
             result["error"] = exception.what();
             return false;
         }
     }
 
-    bool OverlapEstimationStepClass::estimatePairs(float overlap, const PhaseCorrelationNs::Parameters& parameters) {
+    bool OverlapEstimationStepClass::estimatePairs(const OverlapEstimationInput& input) {
+        // Première passe grossière (au pixel près) : une marge automatique plus large que celle de la corrélation de
+        // phase, pour absorber un recouvrement réel éloigné du nominal ; les steps d'appariement affinent ensuite.
+        PhaseCorrelationNs::Parameters parameters = input.parameters;
+        parameters.automaticRailMarginFraction = OVERLAP_ESTIMATION_MARGIN_FRACTION;
         OverlapEstimationNs::OverlapEstimatorClass estimator(parameters);
         const auto pairs = findNeighbourPairs(dataStore->get<DataNs::TileList>("tiles"));
         if (pairs.empty()) throw std::runtime_error("overlap-estimation: no neighboring tile pairs");
-        for (const NeighbourPair& pair : pairs) {
-            const auto estimate = estimatePair(pair, overlap, estimator, result["failures"]);
-            if (estimate) output.value.push_back(*estimate);
+
+        std::vector<PairResult> results;
+        for (const NeighbourPair& pair : pairs)
+            results.push_back(estimatePair(pair, overlapForDirection(pair.direction, input.overlap, input.verticalOverlap),
+                                           estimator));
+        if (input.overlapCalibration) retryWithCalibratedOverlaps(pairs, input, estimator, results, result);
+
+        for (std::size_t index = 0; index < pairs.size(); ++index) {
+            if (results[index].estimate) {
+                output.value.push_back(*results[index].estimate);
+            } else {
+                result["failures"].push_back({{"idA", pairs[index].tileA->getId()}, {"idB", pairs[index].tileB->getId()},
+                                              {"reason", results[index].failureReason}});
+            }
         }
         result["pairs"] = output.value.size();
         if (output.value.empty()) throw std::runtime_error("overlap-estimation: no pair could be estimated");

@@ -1,0 +1,22 @@
+name: Install ONNX Runtime from Debian trixie
+description: >
+  Correctif temporaire tant que les releases GitHub d'ONNX Runtime sont en 404 (depuis le 17/11/2026).
+  Installe ONNX Runtime 1.21.0 (paquet Debian) dans /usr : configurer ensuite avec -DONNXRUNTIME_ROOT=/usr.
+  Windows utilise la 1.20.1 (paquet NuGet). Pour la CI seulement : ne pas reproduire sur un poste de développement.
+runs:
+  using: composite
+  steps:
+    - name: Install libonnxruntime-dev from Debian trixie
+      shell: bash
+      run: |
+        sudo apt-get install --no-install-recommends -y debian-archive-keyring
+        echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main" \
+          | sudo tee /etc/apt/sources.list.d/debian-trixie.list >/dev/null
+        # Seuls les paquets ONNX Runtime prennent la version de trixie ; le reste du système reste celui d'Ubuntu.
+        cat <<'EOF' | sudo tee /etc/apt/preferences.d/onnxruntime >/dev/null
+        Package: libonnxruntime* onnxruntime*
+        Pin: release n=trixie
+        Pin-Priority: 1001
+        EOF
+        sudo apt-get update
+        sudo apt-get install --no-install-recommends -y -t trixie libonnxruntime-dev
