@@ -68,8 +68,8 @@ void MainWindow::showExportDialog()
     });
 
     auto *format = new QComboBox(&dialog);
-    format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits — perte de précision"),
-                      tr("PSB"), tr("JPEG — perte de précision")});
+    format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
+                      tr("PSB"), tr("JPEG, perte de précision")});
     auto *report = new QCheckBox(tr("Générer le rapport d'assemblage (HTML)"), &dialog);
     report->setChecked(true);
     layout.addWidget(new QLabel(tr("Format de sortie"), &dialog));
@@ -160,7 +160,7 @@ void MainWindow::showExportDialog()
                 QSaveFile file(path);
                 const QString html = QStringLiteral(
                     "<!doctype html><meta charset=\"utf-8\"><title>Rapport KIK-IRPA</title>"
-                    "<h1>Rapport d'assemblage — %1</h1><p>Généré le %2.</p><p>Format demandé : %3</p>"
+                    "<h1>Rapport d'assemblage : %1</h1><p>Généré le %2.</p><p>Format demandé : %3</p>"
                     "<p>Fichier image : %4</p><p>Tuiles référencées : %5</p><p>Les mesures présentées sont celles de la maquette.</p>")
                     .arg(projectName.toHtmlEscaped(),
                          QDateTime::currentDateTime().toString(Qt::ISODate).toHtmlEscaped(),
