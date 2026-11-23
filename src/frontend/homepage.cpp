@@ -50,9 +50,15 @@ HomePage::HomePage(QWidget *parent)
     side->setStyleSheet(QStringLiteral("background:#202020;"));
     auto *sideLayout = new QVBoxLayout(side);
     sideLayout->setContentsMargins(20, 24, 20, 20);
+    // En haut à gauche : le logo du projet suivi du nom de l'application.
+    auto *brandRow = new QHBoxLayout;
+    brandRow->setSpacing(10);
+    brandRow->addWidget(FrontendUtils::logoLabel(40, side));
     auto *brand = new QLabel(tr("KIK-IRPA Assemblage"), side);
     brand->setStyleSheet(QStringLiteral("font-size:18px;font-weight:600;color:#d5d5d5;"));
-    sideLayout->addWidget(brand);
+    brand->setWordWrap(true); // la colonne fait 245 px : à côté du logo, le nom passe sur deux lignes
+    brandRow->addWidget(brand, 1);
+    sideLayout->addLayout(brandRow);
     sideLayout->addSpacing(14);
     sideLayout->addWidget(FrontendUtils::mutedLabel(
         tr("Assemblage de tuiles haute résolution\n"
@@ -64,7 +70,7 @@ HomePage::HomePage(QWidget *parent)
     sideLayout->addWidget(open);
     sideLayout->addStretch();
     sideLayout->addWidget(FrontendUtils::mutedLabel(
-        tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
+        tr("À propos"), side));
     layout->addWidget(side);
 
     auto *recentArea = new QWidget(this);
@@ -78,7 +84,11 @@ HomePage::HomePage(QWidget *parent)
     recentCardsLayout->setContentsMargins(0, 0, 0, 0);
     recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
     recentLayout->addWidget(cardsContainer);
-    recentLayout->addStretch();
+    // Au milieu de l'espace libre : le logo en grand, gris et sans fond (resources/logo/logo_home.png).
+    recentLayout->addStretch(1);
+    recentLayout->addWidget(FrontendUtils::logoLabel(400, recentArea, QStringLiteral(":/logo/logo_home.png")),
+                            0, Qt::AlignHCenter);
+    recentLayout->addStretch(1);
     layout->addWidget(recentArea, 1);
 
     connect(newProject, &QPushButton::clicked, this, &HomePage::createProject);

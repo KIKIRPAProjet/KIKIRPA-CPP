@@ -238,10 +238,6 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::undoRequested,
-            this, [this]() { updateStatus(tr("Dernière action annulée.")); });
-    connect(menuBarManager, &MenuBarManager::redoRequested,
-            this, [this]() { updateStatus(tr("Action rétablie.")); });
     connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
@@ -262,15 +258,7 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
-    connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
-        setMode(mode);
-        if (mode == 1) {
-            updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
-        } else if (mode == 2) {
-            static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
-        }
-    });
+   
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,

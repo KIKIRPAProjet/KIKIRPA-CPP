@@ -1,6 +1,4 @@
-// include/frontend/artworkcanvas.h
-#ifndef ARTWORKCANVAS_H
-#define ARTWORKCANVAS_H
+#pragma once
 
 #include "projectgrid.h"
 #include "frontendutils.h"
@@ -142,5 +140,3 @@ private:
     QPoint m_cropDragStart;
     QRect m_cropRectAtDragStart;
 };
-
-#endif // ARTWORKCANVAS_H

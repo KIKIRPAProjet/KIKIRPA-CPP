@@ -1,6 +1,4 @@
-// include/frontend/left_toolbar.h
-#ifndef LEFT_TOOLBAR_H
-#define LEFT_TOOLBAR_H
+#pragma once
 
 #include <QStringList>
 #include <QVector>
@@ -31,6 +29,4 @@ private:
     QVector<QToolButton *> m_toolButtons;
     QStringList m_toolNames;
 };
-
-#endif // LEFT_TOOLBAR_H
 

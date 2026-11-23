@@ -25,9 +25,11 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
+#include <QPixmap>
 #include <QPushButton>
 #include <QtMath>
 
@@ -86,6 +88,24 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
 {
     auto *label = new QLabel(text, parent);
     label->setProperty("muted", true);
+    return label;
+}
+
+QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath)
+{
+    auto *label = new QLabel(parent);
+    const QPixmap source(resourcePath);
+    if (source.isNull()) {
+        label->hide();
+        return label;
+    }
+    // Le PNG est plus grand que l'affichage : on le réduit à la densité de l'écran pour éviter un logo flou sur un écran 150 % ou 200 %.
+    const qreal pixelRatio = qGuiApp != nullptr ? qGuiApp->devicePixelRatio() : 1.0;
+    const int physicalSide = qRound(sideInPixels * pixelRatio);
+    QPixmap scaled = source.scaled(physicalSide, physicalSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(pixelRatio);
+    label->setPixmap(scaled);
+    label->setFixedSize(sideInPixels, sideInPixels);
     return label;
 }
 
