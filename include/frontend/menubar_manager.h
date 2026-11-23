@@ -32,6 +32,7 @@ signals:
     void runRequested(int startStep);
     void comparisonRequested();
     void aboutRequested();
+    void creditsRequested();
 };
 
 #endif
