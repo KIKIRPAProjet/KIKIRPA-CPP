@@ -40,17 +40,7 @@ jobs:
             qt6-base-dev
 
       - name: Install ONNX Runtime from Debian packages
-        run: |
-          sudo apt-get install --no-install-recommends -y debian-archive-keyring
-          echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian trixie main" \
-            | sudo tee /etc/apt/sources.list.d/debian-trixie.list >/dev/null
-          cat <<'EOF' | sudo tee /etc/apt/preferences.d/onnxruntime >/dev/null
-          Package: libonnxruntime* onnxruntime*
-          Pin: release n=trixie
-          Pin-Priority: 1001
-          EOF
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y -t trixie libonnxruntime-dev
+        uses: ./.github/actions/install-onnxruntime-debian
 
       - name: Restore LightGlue model
         uses: actions/cache@v4

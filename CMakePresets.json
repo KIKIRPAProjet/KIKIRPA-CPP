@@ -23,7 +23,7 @@
       "description": "Ubuntu : build-essential cmake ninja-build libopencv-dev (version 4.x) libtiff-dev nlohmann-json3-dev qt6-base-dev libgtest-dev.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
-	  "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
     },
     {
