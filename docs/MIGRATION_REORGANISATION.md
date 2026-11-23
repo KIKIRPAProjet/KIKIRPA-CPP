@@ -1,6 +1,6 @@
 # Migration : réorganisation du code (nov. 2026)
 
-Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions), et les changements apportés depuis par les PR mergées du 04 au 06/11 au [§13](#13-depuis-la-migration-04-au-06112026). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
+Ce document décrit tout ce qui a changé dans la branche `reformat-v3` par rapport à l'ancien `main`, et comment adapter une branche existante une fois que `reformat-v3` sera fusionnée dans `main`. La migration des algorithmes, faite ensuite, est décrite au [§12](#12-migration-des-algorithmes-branche-refactoralgorithms-conventions), les changements apportés depuis par les PR mergées du 04 au 06/11 au [§13](#13-depuis-la-migration-04-au-06112026), ceux du 09 au 15/11 au [§14](#14-du-09-au-15112026), et ceux du 17 et du 18/11 au [§15](#15-les-17-et-18112026). Les règles à suivre pour le nouveau code sont dans `docs/CONVENTIONS.md`.
 
 ## Résumé
 
@@ -365,7 +365,7 @@ Les PR mergées après #76 n'ont pas fait de réorganisation d'ensemble, mais ce
 
 ### Steps et types ajoutés (#27, #32, #77, #80)
 
-- Registre : `sift`, `lightglue`, `absolute-pos` et `intensity-correction` s'ajoutent à `import`, `phase-correlation` et `graphcut`. Un nouveau step doit aussi augmenter `REGISTERED_STEP_COUNT` dans `tests/core/test_pipeline.cpp` (7 au 07/11).
+- Registre : `sift`, `lightglue`, `absolute-pos` et `intensity-correction` s'ajoutent à `import`, `phase-correlation` et `graphcut`. ~~Un nouveau step doit aussi augmenter `REGISTERED_STEP_COUNT` dans `tests/core/test_pipeline.cpp` (7 au 07/11).~~ Depuis le 15/11, ce compteur est remplacé par une liste de noms (voir §14).
 - Code commun aux steps d'appariement : `steps/matching_step_utils.h` (`collectPairs`, `readImage`, `restoreCoordinates`…).
 - ~~`DataNs::IntensityCorrection` est dans `core/data/intensity_correction.h`~~ : depuis la PR #72, qui remplace la version de #80, il est de nouveau dans **`algorithm_types.h`**, et sa sérialisation est dans `pipelineTypes()` (`checkpoint_types.cpp`). `core/data/intensity_correction.h` et `core/checkpoint/intensity_correction_checkpoint.{h,cpp}` sont supprimés : une branche qui les inclut doit inclure `core/data/algorithm_types.h`. La PR #72 ajoute aussi le step `dynamic-programming-dijkstra` et le type `Seamlines` ; `REGISTERED_STEP_COUNT` passe à 8.
 
@@ -387,3 +387,138 @@ Nouveau dossier `core/memory/` (`MemoryNs::MemoryScopeClass`). Il n'écrit plus 
 - ONNX Runtime est maintenant **téléchargé à la configuration** s'il n'est pas fourni (`-DONNXRUNTIME_ROOT`) : LightGlue est toujours compilé, y compris par la CI. Le modèle du test `lightglue_model` est aussi téléchargé (`-DLIGHTGLUE_TEST_MODEL` pour en fournir un).
 - Sous Windows, tout nouvel exécutable de test lié à `kikirpa_backend` appelle `kikirpa_copy_onnxruntime_dlls(<cible>)` dans son `CMakeLists.txt`.
 - La CI compile aussi sous Windows (MSVC, `build-test-windows.yml`).
+
+## 14. Du 09 au 15/11/2026
+
+Une vingtaine de PR mergées, dont cinq changent des noms, des fichiers ou des contrats. Une branche partie de `main` avant le 15/11 doit en tenir compte, et **sa CI doit être relancée après mise à jour** : une CI verte antérieure au 15/11 ne dit rien de l'état actuel.
+
+### Fichiers supprimés ou déplacés
+
+| Avant | Après |
+|---|---|
+| `include/backend/core/data/intensity_correction.h` | **supprimé** (#72) : `DataNs::IntensityCorrection` est dans `core/data/algorithm_types.h` |
+| `core/checkpoint/intensity_correction_checkpoint.{h,cpp}` | **supprimés** (#72) : la sérialisation est dans `pipelineTypes()` (`checkpoint_types.cpp`) |
+| calcul des coins de la mosaïque dans `image_pretreatment.cpp` (`toMosaicCorners`, origine `floor(min)`) | `DataNs::computeMosaicCorners` dans `core/data/mosaic_corners.h` (#119), partagé par `graphcut` et `fusion`. L'origine n'est plus arrondie vers le bas : la tuile la plus à gauche tombe en 0, plus de colonne 0 vide |
+
+### Nouveaux fichiers de `core/` à connaître
+
+| Fichier | PR | À utiliser pour… |
+|---|---|---|
+| `core/io/tiled_tiff_writer.h` (`IONs::TiledTiffWriterClass`) | #118 | écrire une grande image bloc par bloc, sans l'avoir entière en mémoire |
+| `core/io/file_fingerprint.h` (`IONs::computeFileFingerprint`) | #118 | l'empreinte d'un fichier produit, dans `externalInputsFingerprint()` |
+| `core/io/file_replacement.h` (`IONs::replaceFile`, `copyFileReplacing`) | #118 | écrire sous un nom temporaire puis remplacer |
+| `core/io/unicode_path.h` (`IONs::pathFromUtf8`, `pathToUtf8`, `openTiff`, `readImage`, `writeImage`) | #103 | **tout** chemin de fichier (voir plus bas) |
+| `core/data/pair_residual.h` (`DataNs::PairResidual`) | #100 | les résidus par paire d'`absolute-pos` |
+| `core/data/verification_report.h`, `core/checkpoint/final_verification_checkpoint.h` | #116 | le rapport de `final-verification` |
+| `core/data/mosaic_corners.h` | #119 | le repère de la mosaïque |
+
+### Nommage des tuiles (#86)
+
+| Avant | Après |
+|---|---|
+| fichiers `..._rLL_cCC.tif` exigés par `absolute-pos` et `graphcut` | fichiers `..._C<colonne>_R<ligne>.tif` (ou `.tiff`), le format par défaut d'`import` (`img_C(\d+)_R(\d+)\.tif`) |
+| `ImagePretreatmentClass::parseTileName` lisait `_rLL_cCC` | il lit `_C<colonne>_R<ligne>` ; l'**identifiant interne reste `rLL_cCC`** (`TilePositionData::tileId`) |
+
+Les tests qui fabriquent des tuiles `tile_r00_c01.tif` doivent passer au format `_C_R`. Depuis #149 (§15), l'identifiant `rLL_cCC` a disparu du pipeline et le nom des fichiers n'est plus exigé.
+
+### Assemblage et export (#102, #118, #119)
+
+| Avant | Après |
+|---|---|
+| `export` lisait `compositeBlocks` (`DataNs::CompositeBlockList`, blocs en mémoire dans le DataStore) | `export` lit `mosaic` (`DataNs::Mosaic` : chemins de trois TIFF tuilés et `canvasSize`) et copie `mosaic_image.tif` vers `<outputDirectory>/mosaic.tif` (#118) |
+| `CompositeBlockList` dans le DataStore | **supprimé** : `DataNs::CompositeBlock` reste, mais seulement comme bloc en mémoire le temps de l'écrire (`fusion`) |
+| aucun producteur de mosaïque | step `fusion` (#119), sortie `mosaic`, fichiers dans `<dossier des images>/.cache/mosaic/` par défaut |
+
+Une branche qui produit ou lit des `CompositeBlocks` (par exemple l'ancienne #133, ou #69) doit repartir de `main`.
+
+### Steps ajoutés
+
+| Step | PR | Entrées → sorties |
+|---|---|---|
+| `dynamic-programming-dijkstra` | #72 | `tiles`, `positions`, `intensityCorrection` → `seamlines` (et `territories` depuis #137, §15) |
+| `export` | #102, puis #118 | `mosaic` → `mosaic.tif` |
+| `vote-2d` | #111 | `matches` → `matches` |
+| `final-verification` | #116 | chemins → `verificationReport` |
+| `overlap-estimation` | #127 (le step s'appelait `recouvrement` dans la PR) | `tiles` → `overlapEstimates` |
+| `fusion` | #119 | `tiles`, `positions`, `territories` (+ `intensityCorrection`) → `mosaic` |
+
+`absolute-pos` publie en plus `pairResiduals` (#100).
+
+### Liste des steps attendus (15/11)
+
+| Avant | Après |
+|---|---|
+| `constexpr std::size_t REGISTERED_STEP_COUNT = …;` dans `tests/core/test_pipeline.cpp`, à augmenter pour chaque nouveau step | liste `attendus` de `testerRegistre()` : y **écrire le nom** du nouveau step. Le test affiche le step en trop ou manquant |
+
+Raison : deux PR qui ajoutaient chacune un step faisaient passer le compteur à la même valeur, sans conflit git, et `main` cassait avec deux CI vertes. Avec la liste, elles touchent la même ligne : le conflit est visible.
+
+### Chemins de fichiers (#103)
+
+Règle : [CONVENTIONS.md §8](CONVENTIONS.md#8-structure-du-code), « Chemins ». Toute chaîne de chemin est en UTF-8 ; un chemin non ASCII (« œuvre_été ») casse sinon sous Windows.
+
+| Avant | Après |
+|---|---|
+| `fs::path p = someString;` / `fs::u8path(s)` | `IONs::pathFromUtf8(s)` |
+| `path.string()` dans un message ou un JSON | `IONs::pathToUtf8(path)` |
+| `TIFFOpen(path.string().c_str(), mode)` | `IONs::openTiff(path, mode)` |
+| `cv::imread(path.string(), flags)` / `cv::imwrite` | `IONs::readImage(path, flags)` / `IONs::writeImage(path, image)` |
+| Qt : `fs::path(qString.toStdString())` | `IONs::pathFromUtf8(qString.toStdString())` (`toStdString` donne de l'UTF-8) |
+
+### Ligne de commande (#103)
+
+`src/main.cpp` n'ouvre plus seulement la fenêtre : `stitching --pipeline <script.json> [--resume]` exécute un script (codes de sortie 0 à 3, voir `docs/core/Pipeline.md`). Le format du script n'a pas changé.
+
+### Frontend (#91, #104, #109, #114, #131, puis #132 le 17/11)
+
+Les maquettes des branches `fr-rahim`, `Valerie`, `frontendMathias` ont été reprises dans `src/frontend/` et `include/frontend/`, compilées dans `kikirpa_frontend`. #132 remplace `SimulationRunner` (`simulationrunner.{h,cpp}`, **supprimés**) par `PipelineRunnerClass` (`pipeline_runner.h`) et `PipelineWorkerClass` (`pipeline_worker.h`), qui exécutent le vrai pipeline dans un `QThread`. Une branche frontend partie de l'une de ces anciennes branches doit repartir de `main` : `mainwindow.*`, `assembly_tab.*` et `artworkcanvas.*` ont beaucoup changé.
+
+### Build (#106, #113, #130, et le 15/11)
+
+- OpenCV 4 est imposé par `find_package` (#106).
+- `scripts/demarrer.py` et `docs/DEMARRER.md` installent et configurent un poste (#113, #130).
+- Le doublon de `tests/seamline/CMakeLists.txt` qui empêchait la configuration avec CMake 4.4 (celui de CLion) est retiré (15/11, `c647057`). Effacer son dossier de build si la configuration échouait avant.
+
+## 15. Les 17 et 18/11/2026
+
+PR mergées : #149 et #151 (17/11), #152, #145, #137 et #150 (18/11). Une branche partie d'avant #149 doit surtout reprendre le changement d'identifiant de tuile.
+
+### Identifiant et case des tuiles (#149)
+
+| Avant | Après |
+|---|---|
+| `TilePositionData::tileId` : texte `"rLL_cCC"` | `int tileId` = `TileClass::getId()`, comme `PairMatches` et `Seamline` |
+| trois identifiants (`getId()`, `rLL_cCC`, indice dans `tiles`) | un seul identifiant, `TileClass::getId()` = rang de la tuile ligne par ligne, puis colonne par colonne, calculé par `import`. L'**indice** dans `tiles` reste utilisé par `TileTerritory::tileIndex` et `IntensityCorrection::tileGains` |
+| ligne et colonne relues dans le nom du fichier par `absolute-pos`, `graphcut` et `fusion` (`parseTileName`) | `TileClass::getGridRow()` / `getGridColumn()`, fixées par `import` (`setGridPosition`). `parseTileName` ne sert plus qu'au code mort `computeTilePositions` |
+| fichiers `..._C<colonne>_R<ligne>.tif` exigés (#86) | noms libres : liste `tiles` d'`import` (`{ file, row, column }`, sans `id`), ou `format` |
+| TIFF pyramidal `<nom>_pyramid.tif` | `<id>_<nom>_pyramid.tif` : deux images de même nom (`a.tif`, `a.tiff`) ne s'écrasent plus |
+
+Un test qui fabriquait des positions avec `tileId = "r00_c01"` doit passer à l'entier de la tuile ; un test qui comptait sur le nom `_C_R` pour placer les tuiles peut garder ce nom (`format` reste le défaut d'`import`) ou donner la liste `tiles`.
+
+### Placement sans nom de fichier (#151)
+
+| Avant | Après |
+|---|---|
+| sans liste `tiles`, au moins un nom devait correspondre à `format`, sinon `no file matching` | si aucun nom ne correspond, les TIFF du dossier, triés par nom, remplissent la grille ligne par ligne sur `columns` colonnes (nouveau paramètre `int` d'`import`, 0 = non donné) |
+| — | `import` indique d'où viennent les cases : `getResult()["placement"]` = `list`, `fileName` ou `nameOrder` |
+
+### Territoires de `dynamic-programming-dijkstra` (#137)
+
+| Avant | Après |
+|---|---|
+| sortie `seamlines` seulement, lue par aucun step | sorties `seamlines` **et** `territories` (`vector<DataNs::TileTerritory>`) : `dynamic-programming-dijkstra` peut remplacer `graphcut` devant `fusion` |
+| positions supposées dans l'ordre de `tiles` | positions rangées par `tileId` (`DynamicProgrammingDijkstraNs::orderTilePositions`) ; une position manquante ou en double fait échouer le step |
+| — | nouveau module `algorithms/seamline/dynamic_programming_dijkstra/territory_builder.{h,cpp}` (`buildTerritories`) et test `tests/seamline/test_territory_builder.cpp` |
+
+Les territoires de ce step sont découpés par blocs de `BLOCK_SIZE` : un territoire y compte plusieurs polygones adjacents. Dans le coin commun à quatre tuiles, l'attribution dépend de l'ordre des tuiles ; le réseau global (`junctions.h`) n'est pas encore branché.
+
+### GraphCut et interface (#150, #152)
+
+| Avant | Après |
+|---|---|
+| `GraphCutInput::scale = 1` (défaut du paramètre `scale` de `graphcut`) | `scale = StepsNs::DEFAULT_GRAPH_CUT_SCALE` (0,25). Un script qui veut la pleine résolution doit écrire `scale` = 1 |
+| aperçu de l'export étiré au rectangle de la vue, pourcentage de zoom affiché | aperçu réduit à son ratio et centré (`ArtworkCanvas::paintEvent`), sans pourcentage de zoom |
+| panneaux du bas et de droite bloqués par leur taille minimale sur petit écran | redimensionnables (#152 : `kMinimumHeight` de `artworkcanvas.cpp` passe de 260 à 120, `right_panel`, `bottom_tabs`, `workspace_ui`) |
+
+### Build (18/11)
+
+- La CI Windows installe une version figée d'aqt (`build-test-windows.yml`, `b9d1839`).

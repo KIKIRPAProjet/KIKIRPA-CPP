@@ -252,6 +252,95 @@ namespace IONs {
     PyramidalTiffReaderClass::PyramidalTiffReaderClass(std::filesystem::path path)
         : tiffPath(std::move(path)) {}
 
+    bool PyramidalTiffReaderClass::readLevel(
+        int level,
+        cv::Mat& output,
+        std::string& errorMessage
+    ) const {
+        errorMessage.clear();
+        output.release();
+        if (level < 0) {
+            errorMessage = "pyramid level must be non-negative";
+            return false;
+        }
+
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
+        if (tiffFile == nullptr) {
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
+            return false;
+        }
+
+        if (!selectLevel(tiffFile, level, errorMessage)) {
+            TIFFClose(tiffFile);
+            return false;
+        }
+
+        ImageMetadata image;
+        if (!getImageMetadata(tiffFile, image, errorMessage)) {
+            TIFFClose(tiffFile);
+            return false;
+        }
+
+        const ReadRequest request{level, cv::Rect(0, 0, image.width, image.height)};
+        const bool success = readOpenedRegion(tiffFile, request, output, errorMessage);
+        TIFFClose(tiffFile);
+        if (!success) output.release();
+        return success;
+    }
+
+    bool PyramidalTiffReaderClass::getLevelDimensions(
+        int level,
+        int& width,
+        int& height,
+        std::string& errorMessage
+    ) const {
+        errorMessage.clear();
+        width = 0;
+        height = 0;
+        if (level < 0) {
+            errorMessage = "pyramid level must be non-negative";
+            return false;
+        }
+
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
+        if (tiffFile == nullptr) {
+            errorMessage = "cannot open TIFF: " + IONs::pathToUtf8(tiffPath);
+            return false;
+        }
+
+        if (!selectLevel(tiffFile, level, errorMessage)) {
+            TIFFClose(tiffFile);
+            return false;
+        }
+
+        ImageMetadata image;
+        const bool success = getImageMetadata(tiffFile, image, errorMessage);
+        TIFFClose(tiffFile);
+        if (success) {
+            width = image.width;
+            height = image.height;
+        }
+        return success;
+    }
+
+    int PyramidalTiffReaderClass::getLevelCount() const {
+        TIFF* tiffFile = IONs::openTiff(tiffPath, "r");
+        if (tiffFile == nullptr) return 0;
+        if (!TIFFSetDirectory(tiffFile, 0)) {
+            TIFFClose(tiffFile);
+            return 0;
+        }
+
+        uint16_t subIfdCount = 0;
+        toff_t* subIfdOffsets = nullptr;
+        if (TIFFGetField(tiffFile, TIFFTAG_SUBIFD, &subIfdCount, &subIfdOffsets)) {
+            TIFFClose(tiffFile);
+            return 1 + static_cast<int>(subIfdCount);
+        }
+        TIFFClose(tiffFile);
+        return 1;
+    }
+
     bool PyramidalTiffReaderClass::readRegion(
         int level,
         const cv::Rect& region,

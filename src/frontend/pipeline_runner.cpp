@@ -84,6 +84,8 @@ void PipelineRunnerClass::setupProgressConnections() {
 
 // Branche les signaux de fin ou d'interruption du worker (mise en pause, annulation, succès final avec la mosaïque ou erreur) pour actualiser l'état global et libérer le thread.
 void PipelineRunnerClass::setupStateConnections() {
+    connect(worker, &PipelineWorkerClass::mosaicFileReady, this, &PipelineRunnerClass::mosaicFileReady);
+    connect(worker, &PipelineWorkerClass::tilePositionsReady, this, &PipelineRunnerClass::tilePositionsReady);
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
     connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
         running = false;
@@ -199,7 +201,7 @@ void PipelineRunnerClass::toggleComparison() {
     comparisonVisible = !comparisonVisible;
     emit comparisonVisibilityChanged(comparisonVisible);
     emit statusChanged(comparisonVisible
-        ? tr("Comparaison affichée — curseur de séparation actif.")
+        ? tr("Comparaison affichée : curseur de séparation actif.")
         : tr("Comparaison côte à côte affichée."));
 }
 

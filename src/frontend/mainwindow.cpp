@@ -55,6 +55,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
 
@@ -107,6 +108,10 @@ void MainWindow::applyStyleSheet()
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
+        // Flèches de défilement des onglets (panneau étroit) : sans ces règles, le padding des QToolButton ne laisse
+        // plus de place pour dessiner la flèche.
+        "QTabBar::scroller { width:40px; }"
+        "QTabBar QToolButton { padding:0px; border-radius:0px; }"
         "QTableWidget,QListWidget { background:#303030; alternate-background-color:#363636;"
         " gridline-color:#484848; selection-background-color:#36536d; }"
         "QHeaderView::section { background:#303030; color:#bdbdbd; border:0;"
@@ -116,7 +121,12 @@ void MainWindow::applyStyleSheet()
         "QSplitter::handle { background:#202020; }"
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
-        "QCheckBox { spacing:7px; }"));
+        "QCheckBox { spacing:7px; }"
+        // Un élément désactivé doit se voir : texte et bordure atténués, entrées de menu grisées.
+        "QWidget:disabled { color:#6f6f6f; }"
+        "QPushButton:disabled,QToolButton:disabled,QComboBox:disabled,QSpinBox:disabled,QLineEdit:disabled {"
+        " background:#333; border-color:#3d3d3d; }"
+        "QComboBox QAbstractItemView::item:disabled { color:#6f6f6f; }"));
 }
 
 void MainWindow::setupProjectGridConnections()
@@ -131,6 +141,8 @@ void MainWindow::setupProjectGridConnections()
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
             this, &MainWindow::updateStatus);
+    connect(projectGrid, &ProjectGrid::logRequested,
+            workspaceUI, &WorkspaceUI::appendLog);
     connect(projectGrid, &ProjectGrid::tilesImported,
             this, &MainWindow::handleTilesImported);
     connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
@@ -145,6 +157,20 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
+        this, [this](const QString& imagePath) {
+            mosaicFilePath = imagePath;
+        });
+
+    // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
+    // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                mosaicFilePath.clear();
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+                    canvas->setTilePositions({});
+                projectGrid->cancelBackgroundPyramidGeneration();
+            });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
@@ -177,7 +203,13 @@ void MainWindow::setupPipelineConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
+                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::tilePositionsReady,
+            this, [this](const QVector<ArtworkCanvas::TilePosition>& positions) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+            canvas->setTilePositions(positions);
     });
 }
 
@@ -238,7 +270,7 @@ void MainWindow::setupMenuConnections()
             updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
         } else if (mode == 2) {
             static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
+            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
         }
     });
     connect(menuBarManager, &MenuBarManager::runRequested,
@@ -247,7 +279,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage — prototype d'interface.\n"
+            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
 }
@@ -275,10 +307,6 @@ void MainWindow::setupPairAlignmentConnections()
     //         i, tileNameA, tileNameB, backendPairs[i]));
     // }
     */
-
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        connect(bottom, &BottomTabs::pairSelected, this, &MainWindow::selectPair);
-    }
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
@@ -318,7 +346,7 @@ void MainWindow::selectPair(int pairIndex)
     const auto &pair = m_pairs.at(m_currentPairIndex);
     updateStatus(tr("Paire sélectionnée : %1 (%2)")
                      .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse — %1").arg(pair.statusReason) : tr("fiable")));
+                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
 }
 
 void MainWindow::selectPreviousPair()
@@ -391,11 +419,6 @@ void MainWindow::refreshPairViews()
             ++failedCount;
     }
 
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        bottom->updatePairs(m_pairs);
-        bottom->selectPairRow(m_currentPairIndex);
-    }
-
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             alignTab->setPairs(m_pairs, m_currentPairIndex);
@@ -416,7 +439,7 @@ void MainWindow::refreshPairViews()
 
     if (currentMode == 3) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
-            label->setText(tr("Vue Paire — %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
+            label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
         }
     }
@@ -426,6 +449,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    mosaicFilePath.clear();
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -447,13 +471,26 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
+        return;
+    }
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
-
+    const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
+    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
+                        QMessageBox::Open | QMessageBox::Cancel, this);
+    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
+    resumeButton->setEnabled(summary.canResume);
+    opening.exec();
+    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+        return;
+    const bool resume = opening.clickedButton() == resumeButton;
+    mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -464,11 +501,16 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(0);
+    setMode(projectData.mode);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    if (resume) {
+        pipelineRunner->setScriptJson(QString::fromStdString(projectData.backendScript.dump()));
+        pipelineRunner->setStartFromStepName(QString());
+        pipelineRunner->startRun(1, true);
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -498,10 +540,10 @@ void MainWindow::setMode(int mode)
         button->setChecked(true);
 
     const QStringList descriptions = {
-        tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
-        tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire — points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export — TIFF 16 bits, profil ICC conservé")
+        tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
+        tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
+        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Export : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
@@ -589,12 +631,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     if (outputDirectory.isEmpty()) {
-        outputDirectory = QFileDialog::getExistingDirectory(
-            this, tr("Choisir le dossier de sortie"));
-        if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
-            return;
-        }
+        outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
@@ -623,8 +660,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
     setMode(1);
-    updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
-                     .arg(importedCount).arg(QFileInfo(directory).fileName()));
+    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+        .arg(importedCount).arg(QFileInfo(directory).fileName());
+    updateStatus(msg);
+    workspaceUI->appendLog(msg);
 }
 
 void MainWindow::saveProject()
@@ -637,8 +676,16 @@ void MainWindow::saveProject()
     if (path.isEmpty())
         return;
     QString errorMessage;
+    nlohmann::json backendScript;
+    try {
+        backendScript = nlohmann::json::parse(generatePipelineScript(1).toStdString());
+    } catch (const std::exception &exception) {
+        // Un projet en cours de configuration reste enregistrable sans script exécutable.
+        workspaceUI->appendLog(tr("Projet enregistré sans script exécutable : %1")
+                                   .arg(QString::fromUtf8(exception.what())));
+    }
     if (!ProjectSerializer::saveToFile(
-            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
@@ -665,6 +712,11 @@ FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
     setup.gridRows = gridState.gridRows;
     setup.gridColumns = gridState.gridColumns;
     setup.overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
+    setup.verticalOverlap = qBound(0.01, static_cast<double>(gridState.verticalOverlap) / 100.0, 0.99);
+    // « Automatique » coché : 0, chaque step applique sa propre règle (5 % de la tuile, 10 % pour overlap-estimation)
+    setup.railMargin = gridState.automaticUncertainty ? 0.0 : qMax(0.0, gridState.uncertaintyMargin);
+    setup.pipelineChoices = gridState.pipelineChoices;   // méthodes de l'onglet Chaîne
+    setup.lightGlueModelPath = FrontendUtils::lightGlueModelPath();   // absolu : le script ne dépend pas du dossier courant
 
     for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
         if (index >= gridState.gridTiles.size()) continue;
@@ -684,7 +736,7 @@ QString MainWindow::generatePipelineScript(int firstStep) const
 
     nlohmann::json script = model.createBackendScript();
 
-    const auto& steps = FrontendUtils::pipelineSteps();
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
     if (firstStep > 1 && firstStep <= static_cast<int>(steps.size())) {
         nlohmann::json completedStepsArray = nlohmann::json::array();
         for (int i = 0; i < firstStep - 1; ++i) {
@@ -724,7 +776,7 @@ void MainWindow::requestRun(int firstStep)
     }
     if (scriptJson.isEmpty()) return;
 
-    const auto& steps = FrontendUtils::pipelineSteps();
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
     const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(steps.size()))
         ? QString::fromStdString(steps[static_cast<std::size_t>(firstStep - 1)].technicalName)
         : QString();

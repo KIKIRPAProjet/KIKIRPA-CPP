@@ -180,7 +180,7 @@ void TopToolbars::createOptionsBar()
 void TopToolbars::updateTitle(const QString &projectName, const QString &modality)
 {
     if (auto *title = findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
-        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
+        title->setText(tr("%1 : %2, KIK-IRPA Assemblage").arg(projectName, modality));
     }
 }
 

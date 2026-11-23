@@ -40,6 +40,7 @@ target_include_directories(kikirpa_frontend PUBLIC
 # - kikirpa_backend : fonctionnalités métier et traitements du backend.
 # - Qt6::Widgets : composants graphiques de l'interface utilisateur.
 # - Qt6::Concurrent : prise en charge des traitements concurrents et asynchrones.
+# - Qt6::Gui : lecture des images via QImageReader et les plugins Qt imageformats.
 #
 # PUBLIC signifie que ces dépendances sont également propagées aux cibles
 # qui utilisent kikirpa_frontend.
@@ -47,4 +48,5 @@ target_link_libraries(kikirpa_frontend PUBLIC
     kikirpa_backend
     Qt6::Widgets
     Qt6::Concurrent
+    Qt6::Gui
 )

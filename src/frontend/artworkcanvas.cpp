@@ -10,7 +10,7 @@
 
 namespace {
 constexpr int kMinimumWidth = 360;
-constexpr int kMinimumHeight = 260;
+constexpr int kMinimumHeight = 120;   // assez bas pour laisser grandir le panneau du bas ; le dessin est recadré
 constexpr int kPairGutter = 22;
 constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
@@ -109,26 +109,15 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
     if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
         const QRect target = rect().adjusted(24, 24, -24, -24);
-        const QSize previewSize = m_mosaicPreview.size().scaled(target.size(), Qt::KeepAspectRatio);
-        const int px = target.left() + (target.width() - previewSize.width()) / 2;
-        const int py = target.top() + (target.height() - previewSize.height()) / 2;
-        const QRect actualMosaicRect(px, py, previewSize.width(), previewSize.height());
-        p.drawImage(actualMosaicRect, m_mosaicPreview);
+        // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
+        // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
+        const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
+                             target.top() + (target.height() - fitted.height()) / 2);
+        p.drawImage(topLeft, fitted);
 
-        if (seamVisible) {
-            p.setPen(QPen(QColor("#df4038"), 2));
-            QPainterPath seam;
-            seam.moveTo(actualMosaicRect.left() + actualMosaicRect.width() * 0.72, actualMosaicRect.top());
-            seam.cubicTo(actualMosaicRect.left() + actualMosaicRect.width() * 0.68, actualMosaicRect.top() + actualMosaicRect.height() * .20,
-                         actualMosaicRect.left() + actualMosaicRect.width() * 0.83, actualMosaicRect.top() + actualMosaicRect.height() * .29,
-                         actualMosaicRect.left() + actualMosaicRect.width() * 0.65, actualMosaicRect.top() + actualMosaicRect.height() * .44);
-            seam.cubicTo(actualMosaicRect.left() + actualMosaicRect.width() * .58, actualMosaicRect.top() + actualMosaicRect.height() * .70,
-                         actualMosaicRect.left() + actualMosaicRect.width() * .76, actualMosaicRect.top() + actualMosaicRect.height() * .76,
-                         actualMosaicRect.left() + actualMosaicRect.width() * .69, actualMosaicRect.bottom());
-            p.drawPath(seam);
-        }
-
-        if (tileContoursVisible)
+        const QRect actualMosaicRect(topLeft, fitted.size());
+        if (tileContoursVisible && !tilePositions.isEmpty())
             drawTileContours(p, actualMosaicRect);
 
         // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
@@ -293,7 +282,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawPath(maskPath);
         p.setPen(QColor("#eeeeee"));
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
-                   tr("Masque d'exclusion — proposition"));
+                   tr("Masque d'exclusion : proposition"));
     } else if (modeValue == kModeAssembly || modeValue == kModeExport) {
         if(seamVisible){
             p.setPen(QPen(QColor("#df4038"), 2));
@@ -333,8 +322,6 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                            .arg(currentPair.pairLabel(),
                                 QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));
         }
-        if (tileContoursVisible)
-            drawTileContours(p, renderedRect);
     }
 
     p.setPen(QColor("#dddddd"));

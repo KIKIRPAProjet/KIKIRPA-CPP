@@ -12,15 +12,20 @@
 #include "core/io/file_replacement.h"
 #include "core/io/unicode_path.h"
 
+#include <nlohmann/json.hpp>
 #include <opencv2/core/types.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -69,17 +74,99 @@ namespace StepsNs {
             throw std::runtime_error("cannot resolve the current user's Downloads directory");
         }
 
-        fs::path makeImagePath(const fs::path& directory) { return directory / "mosaic.tif"; }
-
         fs::path configuredOutputDirectory(const Json& configJson) {
-            std::string directory;
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return downloadsDirectory();
+            }
             for (const Json& parameter : configJson.at("parameters")) {
-                if (parameter.at("name") == "outputDirectory") {
-                    directory = parameter.at("value").get<std::string>();
-                    break;
+                if (parameter.value("name", "") == "outputDirectory" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    const std::string directory = parameter["value"].get<std::string>();
+                    return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
                 }
             }
-            return directory.empty() ? downloadsDirectory() : fs::u8path(directory);
+            return downloadsDirectory();
+        }
+
+        std::string sanitizeFilename(const std::string& filename) {
+            if (filename.empty()) {
+                return "mosaic.tif";
+            }
+            const fs::path filenamePath = IONs::pathFromUtf8(filename).filename();
+            std::string cleanName = IONs::pathToUtf8(filenamePath);
+            if (filenamePath.extension().empty()) {
+                cleanName += ".tif";
+            }
+            return cleanName.empty() ? "mosaic.tif" : cleanName;
+        }
+
+        std::string configuredFilename(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return "mosaic.tif";
+            }
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    return sanitizeFilename(parameter["value"].get<std::string>());
+                }
+            }
+            return "mosaic.tif";
+        }
+
+        // Copies numérotées d'un même export : <nom><ext> est le rang 0, « <nom> (1)<ext> » le rang 1, etc. Un nouvel
+        // export prend le rang qui suit le plus élevé présent : le dernier export est toujours celui de rang maximal,
+        // même si l'utilisateur a supprimé des copies intermédiaires.
+        struct ExportName {
+            fs::path directory;
+            std::string stem;
+            std::string extension;
+        };
+
+        constexpr std::size_t MAXIMUM_RANK_DIGITS = 18;   // tient dans un std::uint64_t
+
+        ExportName splitExportName(const fs::path& directory, const std::string& filename) {
+            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            return {directory, IONs::pathToUtf8(target.stem()), IONs::pathToUtf8(target.extension())};
+        }
+
+        fs::path exportPath(const ExportName& name, std::uint64_t rank) {
+            if (rank == 0) return name.directory / IONs::pathFromUtf8(name.stem + name.extension);
+            return name.directory / IONs::pathFromUtf8(name.stem + " (" + std::to_string(rank) + ")" + name.extension);
+        }
+
+        // Rang d'une copie numérotée « <nom> (<rang>)<ext> », ou rien si le fichier n'en est pas une.
+        std::optional<std::uint64_t> parseRank(const std::string& fileName, const ExportName& name) {
+            const std::string prefix = name.stem + " (";
+            const std::string suffix = ")" + name.extension;
+            if (fileName.size() <= prefix.size() + suffix.size() || fileName.compare(0, prefix.size(), prefix) != 0 ||
+                fileName.compare(fileName.size() - suffix.size(), suffix.size(), suffix) != 0)
+                return std::nullopt;
+            const std::string digits = fileName.substr(prefix.size(), fileName.size() - prefix.size() - suffix.size());
+            const bool isNumber = std::all_of(digits.begin(), digits.end(), [](char character) {
+                return std::isdigit(static_cast<unsigned char>(character)) != 0;
+            });
+            if (!isNumber || digits.size() > MAXIMUM_RANK_DIGITS) return std::nullopt;
+            return std::stoull(digits);
+        }
+
+        // Rang le plus élevé déjà présent dans le dossier, ou rien si aucun export de ce nom n'existe.
+        std::optional<std::uint64_t> latestExportRank(const ExportName& name) {
+            std::optional<std::uint64_t> latest;
+            std::error_code errorCode;
+            if (fs::exists(exportPath(name, 0), errorCode)) latest = 0;
+            if (!fs::is_directory(name.directory, errorCode)) return latest;
+            for (const fs::directory_entry& entry : fs::directory_iterator(name.directory)) {
+                const auto rank = parseRank(IONs::pathToUtf8(entry.path().filename()), name);
+                if (rank && (!latest || *rank > *latest)) latest = rank;
+            }
+            return latest;
+        }
+
+        // Fichier du prochain export : <nom><ext> s'il n'existe aucun export de ce nom, sinon le rang suivant.
+        fs::path nextExportPath(const fs::path& directory, const std::string& filename) {
+            const ExportName name = splitExportName(directory, filename);
+            const auto latest = latestExportRank(name);
+            return exportPath(name, latest ? *latest + 1 : 0);
         }
 
         bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
@@ -141,13 +228,14 @@ namespace StepsNs {
             }
             fs::path directory;
             if (!prepareOutputDirectory(config, directory, result)) return false;
-            const fs::path imagePath = makeImagePath(directory);
+            const std::string filename = configuredFilename(config);
+            const fs::path imagePath = nextExportPath(directory, filename);
             if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
             output = {imagePath, mosaic.canvasSize, header.isBigTiff};
-            result["image"] = {{"path", imagePath.u8string()}, {"bigTiff", output.isBigTiff}};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
@@ -157,13 +245,25 @@ namespace StepsNs {
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "export";
-        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory}};
+        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory},
+                                 {"string", "filename", initialInput.filename}};
         stepConfig.inputs = {{"Mosaic", "mosaic"}};
         configJson = stepConfig;
     }
 
+    // Le checkpoint de l'export reste valable tant que le dernier fichier exporté (celui de rang maximal, voir
+    // nextExportPath) est là, inchangé. Après execute(), c'est le fichier qui vient d'être écrit ; avant (reprise d'un
+    // run), on le retrouve sur le disque d'après les paramètres. Les deux coïncident tant que personne ne touche au
+    // dossier : la reprise ne refait pas une copie de plus. Fichier supprimé ou modifié : l'export est refait.
     Json ExportStepClass::externalInputsFingerprint() const {
-        return IONs::computeFileFingerprint(makeImagePath(configuredOutputDirectory(configJson)));
+        try {
+            if (!output.imagePath.empty()) return IONs::computeFileFingerprint(output.imagePath);
+            const ExportName name = splitExportName(configuredOutputDirectory(configJson), configuredFilename(configJson));
+            const auto latest = latestExportRank(name);
+            return latest ? IONs::computeFileFingerprint(exportPath(name, *latest)) : Json();
+        } catch (const std::exception&) {
+            return Json();   // dossier introuvable ou illisible : checkpoint périmé, execute() dira pourquoi
+        }
     }
 
     bool ExportStepClass::execute() {

@@ -253,12 +253,13 @@ namespace PositioningNs {
             }
         }
 
-        // Solution globale, angle de rotation compris.
+        // Solution globale, angle de rotation compris. L'identifiant d'une tuile est son rang dans l'ordre ligne par
+        // ligne, puis colonne par colonne, comme dans le step import.
         void collectPositions(const std::vector<TileInfo>& tiles, const PositionSolution& solved,
                               std::vector<DataNs::TilePositionData>& positions, std::ostream& log) {
             for (std::size_t tileIndex = 0; tileIndex < tiles.size(); ++tileIndex) {
                 if (solved.connected[tileIndex]) {
-                    positions.push_back({tiles[tileIndex].tileId, solved.positions[tileIndex], solved.rotations[tileIndex]});
+                    positions.push_back({static_cast<int>(tileIndex), solved.positions[tileIndex], solved.rotations[tileIndex]});
                 } else {
                     log << "WARNING: tile " << tiles[tileIndex].tileId << " is not linked to the reference tile by any valid pair\n";
                 }
@@ -324,7 +325,7 @@ namespace PositioningNs {
 
         if (!indexTiles(grid.tiles, grid.index, log)) return false;
         if (grid.tiles.size() == 1) {
-            positions.push_back({grid.tiles[0].tileId, cv::Point2d(0.0, 0.0), 0.0});
+            positions.push_back({0, cv::Point2d(0.0, 0.0), 0.0});
             return true;
         }
 

@@ -1,6 +1,8 @@
 // include/frontend/pipeline_worker.h
 #pragma once
 
+#include "artworkcanvas.h"
+
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -41,6 +43,8 @@ class PipelineWorkerClass : public QObject {
         void pipelinePaused(int lastCompletedStepIndex, const QString& lastCompletedStepName);
         void pipelineFinished(bool success, const QString& errorMessage, const QImage& previewImage);
         void pipelineCancelled();
+        void mosaicFileReady(const QString& imagePath);
+        void tilePositionsReady(const QVector<ArtworkCanvas::TilePosition>& positions);
 
     private:
         // Parse et valide la configuration avant exécution.

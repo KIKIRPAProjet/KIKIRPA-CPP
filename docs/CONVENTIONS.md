@@ -60,6 +60,8 @@ La casse donne déjà une information : `TileClass` est un type, `tileCount` une
 
 Accesseurs : `getX()` / `setX()`. Un nom dit ce que la chose contient ou fait, avec son unité si elle est utile (`rotationRadians`, `overlapFraction`).
 
+**Identifier une tuile.** Une tuile a **un seul identifiant** : l'entier `TileClass::getId()`, fixé par `import`. Toutes les données qui parlent d'une tuile utilisent cet identifiant (`tileIdA` / `tileIdB`, `tileId`…) ; aucun step ne relit le nom d'un fichier. Sa case dans la grille s'écrit **toujours ligne puis colonne** (`row`, `column` en JSON ; `getGridRow()`, `getGridColumn()` en C++), à partir de 0. L'identifiant est le rang de la tuile dans l'ordre ligne par ligne, puis colonne par colonne. L'étiquette `rLL_cCC` (ex. `r01_c02`) ne sert qu'à l'affichage. Seule exception, gardée pour ne pas casser les scripts : le `format` des noms de `import` lit la colonne dans le groupe 1 et la ligne dans le groupe 2.
+
 ### 3.3 Bien nommer
 
 - **Il dit ce que c'est**, sans commentaire : `elapsedDays`, pas `d`.
