@@ -1,4 +1,4 @@
-// tests/core/test_pipeline.cpp
+// test_pipeline.cpp
 // Construction et exécution d'un pipeline à partir du script JSON (core/PipelineBuilder, Step::importConfig).
 //
 // GoogleTest, ctest -L unit : registre des steps, validation du JSON (options, types, enchaînement des entrées),
