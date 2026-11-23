@@ -6,7 +6,6 @@
 #include "frontendutils.h"
 
 class MainWindow;
-class QListWidget;
 class QTableWidget;
 class QListWidget;
 
