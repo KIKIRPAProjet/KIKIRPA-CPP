@@ -473,7 +473,7 @@ Presque rien : `src/frontend/PipelineJson.cpp`, qui sait **écrire** un script J
 
 ### Exécution et rapports dans cette branche
 
-La fenêtre Qt prépare une configuration backend depuis le projet, lance le pipeline réel avec `PipelineWorkerClass` dans un thread de travail et archive chaque exécution séparément sous `<dossier-de-sortie>/runs/<identifiant>/`. Ce dossier contient le rapport `execution.json` et son résumé léger `execution-summary.json`; les checkpoints restent dans le dossier configuré pour leur reprise. L'annulation est prise en compte entre les étapes ; le bouton ne prétend pas arrêter une étape en plein calcul.
+La fenêtre Qt prépare une configuration backend depuis le projet, lance le pipeline réel avec `PipelineWorkerClass` dans un thread de travail et archive chaque exécution séparément sous `<dossier-de-sortie>/runs/<identifiant>/`. Le résumé léger `execution-summary.json` suit la progression ; l'archive complète `execution.json` n'est écrite qu'à la fin du run. Les checkpoints restent dans le dossier configuré pour leur reprise. L'annulation est prise en compte entre les étapes ; le bouton ne prétend pas arrêter une étape en plein calcul.
 
 Le rapport JSON conserve le statut global, la configuration, les clés des entrées, les sorties résumées et les résultats des étapes, ainsi que l'ordre d'import configuré. Les erreurs d'archivage produisent un avertissement sans interrompre le calcul. Depuis l'export Qt, l'opérateur choisit une exécution archivée et génère son HTML sans relancer le calcul. La configuration générée actuellement par le modèle de projet contient `import` et `phase-correlation` ; les autres steps backend disponibles ne sont pas encore proposés par l'interface de configuration.
 

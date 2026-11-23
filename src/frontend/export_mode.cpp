@@ -45,15 +45,43 @@ void MainWindow::showExportDialog()
     const QDir runsDirectory(QDir(outputDirectory).filePath(QStringLiteral("runs")));
     const QFileInfoList runDirectories = runsDirectory.entryInfoList(
         QDir::Dirs | QDir::NoDotAndDotDot, QDir::Time);
+    QString summaryCacheWarning;
     for (const QFileInfo &runDirectory : runDirectories) {
         const QString jsonPath = QDir(runDirectory.absoluteFilePath()).filePath(QStringLiteral("execution.json"));
         const QString summaryPath = QDir(runDirectory.absoluteFilePath())
                                         .filePath(QStringLiteral("execution-summary.json"));
-        QFile file(QFileInfo::exists(summaryPath) ? summaryPath : jsonPath);
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-        const auto report = nlohmann::json::parse(file.readAll().constData(), nullptr, false);
-        if (report.is_discarded() || !report.is_object() || !report.contains("metadata"))
+        if (!QFileInfo::exists(jsonPath)) continue;
+
+        nlohmann::json report;
+        if (QFileInfo::exists(summaryPath)) {
+            QFile summaryFile(summaryPath);
+            if (summaryFile.open(QIODevice::ReadOnly))
+                report = nlohmann::json::parse(summaryFile.readAll().constData(), nullptr, false);
+        }
+        const bool validSummary = !report.is_discarded() && report.is_object() &&
+                                 report.contains("metadata") && report["metadata"].is_object() &&
+                                 report.contains("progress") && report["progress"].is_object();
+        if (!validSummary) {
+            QFile archiveFile(jsonPath);
+            if (!archiveFile.open(QIODevice::ReadOnly)) continue;
+            report = nlohmann::json::parse(archiveFile.readAll().constData(), nullptr, false);
+            if (!report.is_discarded() && report.is_object() &&
+                report.contains("metadata") && report["metadata"].is_object() &&
+                report.contains("steps") && report["steps"].is_array()) {
+                try {
+                    PipelineNs::writeReportSummary(toFilesystemPath(jsonPath), report);
+                } catch (const std::exception &exception) {
+                    if (summaryCacheWarning.isEmpty())
+                        summaryCacheWarning = QString::fromUtf8(exception.what());
+                }
+            }
+        }
+        const bool hasSummary = report.is_object() && report.contains("progress") &&
+                                report["progress"].is_object();
+        const bool hasArchivedSteps = report.is_object() && report.contains("steps") &&
+                                      report["steps"].is_array();
+        if (report.is_discarded() || !report.is_object() || !report.contains("metadata") ||
+            !report["metadata"].is_object() || (!hasSummary && !hasArchivedSteps))
             continue;
 
         const auto &metadata = report["metadata"];
@@ -72,6 +100,10 @@ void MainWindow::showExportDialog()
 
     layout.addWidget(new QLabel(tr("Exécution à exporter"), &dialog));
     layout.addWidget(executions);
+    if (!summaryCacheWarning.isEmpty())
+        layout.addWidget(new QLabel(
+            tr("Certaines anciennes archives n'ont pas pu être mises en cache : %1")
+                .arg(summaryCacheWarning), &dialog));
     if (executions->count() == 0) {
         executions->setEnabled(false);
         layout.addWidget(new QLabel(

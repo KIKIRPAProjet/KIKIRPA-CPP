@@ -186,7 +186,24 @@ namespace PipelineNs {
             }
         }
 
-        void writeReportSafely(PipelineRunContext& context, const std::string& action) {
+        void writeSummarySafely(PipelineRunContext& context) {
+            if (!context.reportEnabled || !context.summaryEnabled) return;
+            try {
+                writeReportSummary(context.reportPath, context.reportJson);
+            } catch (const std::exception& exception) {
+                report(context.log, "warning: cannot update execution summary: " +
+                                    std::string(exception.what()), true);
+                std::error_code cleanupError;
+                FilesystemNs::remove(context.reportPath.parent_path() / "execution-summary.json",
+                                     cleanupError);
+                if (cleanupError)
+                    report(context.log, "warning: cannot remove stale execution summary: " +
+                                        cleanupError.message(), true);
+                context.summaryEnabled = false;
+            }
+        }
+
+        void writeFinalReportSafely(PipelineRunContext& context, const std::string& action) {
             if (!context.reportEnabled) return;
             try {
                 writeReport(context.reportPath, context.reportJson);
@@ -197,14 +214,7 @@ namespace PipelineNs {
                 context.summaryEnabled = false;
                 return;
             }
-            if (!context.summaryEnabled) return;
-            try {
-                writeReportSummary(context.reportPath, context.reportJson);
-            } catch (const std::exception& exception) {
-                report(context.log, "warning: cannot update execution summary: " +
-                                    std::string(exception.what()), true);
-                context.summaryEnabled = false;
-            }
+            writeSummarySafely(context);
         }
 
         void saveReportStatus(PipelineRunContext& context, const std::string& status) {
@@ -212,7 +222,7 @@ namespace PipelineNs {
             context.reportJson["metadata"]["status"] = status;
             if (status != "running") context.reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
             if (status == "failed" || status == "paused") markUnreachedSteps(context.reportJson);
-            writeReportSafely(context, "update");
+            writeFinalReportSafely(context, "finalize");
         }
 
     }
@@ -316,6 +326,7 @@ namespace PipelineNs {
                     context.dataStore, context.reportJson, context.reportMetadata,
                     context.reportEnabled};
                 createRunReport(reportContext);
+                writeSummarySafely(context);
             } catch (const std::exception& exception) {
                 report(context.log, std::string("warning: cannot prepare execution report: ") +
                                     exception.what(), true);
@@ -334,7 +345,7 @@ namespace PipelineNs {
         }
 
         bool writeRunningStepReport(PipelineRunContext& context) {
-            writeReportSafely(context, "update");
+            writeSummarySafely(context);
             return true;
         }
 
@@ -406,7 +417,7 @@ namespace PipelineNs {
                         {"path", stepReport["result"]["image"].value("path", std::string())},
                         {"dimensions", stepReport["result"].value("canvasSize", Json::array())}
                     };
-                writeReportSafely(context, "update");
+                writeSummarySafely(context);
             } catch (const std::exception& exception) {
                 report(context.log, context.messagePrefix + " warning: cannot build execution report: " +
                                     exception.what(), true);
@@ -459,7 +470,7 @@ namespace PipelineNs {
             if (context.reportEnabled) {
                 context.reportJson["metadata"]["status"] = "completed";
                 context.reportJson["metadata"]["finishedAt"] = getCurrentTimestamp();
-                writeReportSafely(context, "finalize");
+                writeFinalReportSafely(context, "finalize");
             }
             context.saveScript();
             return true;

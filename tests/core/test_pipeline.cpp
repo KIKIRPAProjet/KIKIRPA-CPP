@@ -157,6 +157,24 @@ public:
     }
 };
 
+class ReportLifecycleStepClass : public StepNs::StepClass {
+public:
+    ReportLifecycleStepClass(fs::path reportPath, fs::path summaryPath)
+        : StepNs::StepClass(Json{{"name", "report-lifecycle"}, {"parameters", Json::array()}}),
+          reportPath(std::move(reportPath)), summaryPath(std::move(summaryPath)) {}
+
+    bool execute() override {
+        if (fs::exists(reportPath) || !fs::exists(summaryPath)) return false;
+        const Json summary = readJsonFile(summaryPath);
+        return summary.at("metadata").at("status") == "running" &&
+               summary.at("progress").at("totalSteps") == 1;
+    }
+
+private:
+    fs::path reportPath;
+    fs::path summaryPath;
+};
+
 void testerRapportTypesEtResume() {
     const fs::path directory = fs::temp_directory_path() / "kikirpa_test_report_types";
     fs::remove_all(directory);
@@ -182,7 +200,25 @@ void testerRapportTypesEtResume() {
               std::string::npos);
     const Json summary = readJsonFile(directory / "execution-summary.json");
     EXPECT_EQ(summary.at("metadata").at("status"), "completed");
+    EXPECT_EQ(summary.at("progress").at("completedSteps"), 1);
+    EXPECT_EQ(summary.at("progress").at("totalSteps"), 1);
     EXPECT_FALSE(summary.contains("steps"));
+    fs::remove_all(directory);
+}
+
+void testerRapportCompletSeulementALaFin() {
+    const fs::path directory = fs::temp_directory_path() / "kikirpa_test_report_lifecycle";
+    fs::remove_all(directory);
+    const fs::path reportPath = directory / "execution.json";
+    const fs::path summaryPath = directory / "execution-summary.json";
+
+    PipelineNs::PipelineClass pipeline;
+    pipeline.addStep(std::make_unique<ReportLifecycleStepClass>(reportPath, summaryPath));
+    pipeline.setReportPath(reportPath);
+    pipeline.setReportMetadata({{"projectName", "test"}, {"executionId", "lifecycle"}});
+    ASSERT_TRUE(pipeline.run());
+    EXPECT_TRUE(fs::exists(reportPath));
+    EXPECT_EQ(readJsonFile(summaryPath).at("metadata").at("status"), "completed");
     fs::remove_all(directory);
 }
 
@@ -576,6 +612,7 @@ TEST(PipelineBuilder, PipelineReel) { testerPipelineReel(); }
 TEST(PipelineBuilder, RapportJusquaAbsolutePos) { testerRapportJusquaAbsolutePos(); }
 TEST(PipelineBuilder, RepriseReelle) { testerRepriseReelle(); }
 TEST(PipelineReport, SerialisePairResidualsEtOverlapEstimates) { testerRapportTypesEtResume(); }
+TEST(PipelineReport, EcritArchiveCompleteSeulementALaFin) { testerRapportCompletSeulementALaFin(); }
 TEST(PipelineReport, EchecEcritureNonBloquant) { testerRapportNonBloquant(); }
 TEST(PipelineReport, ArchiveSansResumeListe) { testerRapportArchiveSansResumeListe(); }
 TEST(PipelineReport, Pause) { testerRapportPause(); }

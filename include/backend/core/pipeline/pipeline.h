@@ -62,7 +62,7 @@ namespace PipelineNs {
             // Fichier où le script complet (exportScript) est réécrit après chaque step ; vide : pas d'écriture.
             void setScriptPath(std::filesystem::path newScriptPath) { scriptPath = std::move(newScriptPath); }
 
-            // Fichier JSON de l'exécution, réécrit après chaque transition ; vide : pas d'archive.
+            // Fichier JSON complet écrit en fin d'exécution ; vide : pas d'archive.
             void setReportPath(std::filesystem::path newReportPath) { reportPath = std::move(newReportPath); }
 
             // Métadonnées copiées dans l'archive JSON, par exemple le nom du projet et l'identifiant d'exécution.

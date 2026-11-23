@@ -427,10 +427,24 @@ namespace PipelineNs {
     }
 
     void writeReportSummary(const FilesystemNs::path& reportPath, const Json& reportJson) {
-        Json summary = {{"metadata", Json::object()}};
+        Json summary = {{"metadata", Json::object()}, {"progress", Json::object()}};
         const Json metadata = reportJson.value("metadata", Json::object());
         for (const char* key : {"projectName", "executionId", "startedAt", "status"})
             if (metadata.contains(key)) summary["metadata"][key] = metadata.at(key);
+        const Json steps = reportJson.contains("steps") && reportJson.at("steps").is_array()
+            ? reportJson.at("steps") : Json::array();
+        size_t completedSteps = 0;
+        for (const Json& step : steps) {
+            const std::string status = step.value("status", std::string());
+            if (status == "completed" || status == "skipped") ++completedSteps;
+            if (status == "running")
+                summary["progress"]["currentStep"] = {
+                    {"index", step.value("index", size_t{0})},
+                    {"name", step.value("name", std::string())}
+                };
+        }
+        summary["progress"]["completedSteps"] = completedSteps;
+        summary["progress"]["totalSteps"] = steps.size();
         writeAtomically(reportPath.parent_path() / "execution-summary.json", summary.dump(2) + '\n');
     }
 
