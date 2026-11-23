@@ -119,7 +119,10 @@ namespace {
                                                                {"value", "mosaic.jpg"}},
                                                           Json{{"valueType", "string"},
                                                                {"name", "format"},
-                                                               {"value", "jpeg"}}})}};
+                                                               {"value", "jpeg"}},
+                                                          Json{{"valueType", "int"},
+                                                               {"name", "previewMaxSide"},
+                                                               {"value", 300}}})}};
         step.importConfig(config);
     }
 
@@ -273,7 +276,7 @@ TEST(ExportStepTest, ReportsAMissingMosaicInput) {
     EXPECT_NE(step.getResult().value("error", "").find("mosaic"), std::string::npos);
 }
 
-TEST(ExportStepTest, PublishesJpegMosaicAsEightBitImage) {
+TEST(ExportStepTest, PublishesJpegPreviewAsEightBitImage) {
     ExportFixture fixture(CV_16UC3);
     configureJpegExport(fixture.step, fixture.outputDirectory);
 
@@ -285,7 +288,8 @@ TEST(ExportStepTest, PublishesJpegMosaicAsEightBitImage) {
     const cv::Mat published = IONs::readImage(output.imagePath, cv::IMREAD_COLOR);
     ASSERT_FALSE(published.empty());
     EXPECT_EQ(published.type(), CV_8UC3);
-    EXPECT_EQ(published.size(), testCanvasSize());
+    EXPECT_LE(published.cols, 300);
+    EXPECT_LE(published.rows, 300);
     
     // Le pixel (0,0) subit une division par 257.0 pour passer de 16-bit à 8-bit.
     // L'export JPEG convertit également de RGB (ordre initial) vers BGR (OpenCV)

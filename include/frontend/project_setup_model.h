@@ -27,10 +27,12 @@ struct PipelineChoices {
   std::string matchingStep = "phase-correlation";  // "phase-correlation", "sift" ou "lightglue"
   std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
   std::string seamStep = "graphcut";               // "graphcut" ou "dynamic-programming-dijkstra" (territoires pour la fusion)
+  std::string exportFormat = "both";               // "tiff", "jpeg" ou "both"
 
   bool operator==(const PipelineChoices &other) const {
     return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
-           intensityMethod == other.intensityMethod && seamStep == other.seamStep;
+           intensityMethod == other.intensityMethod && seamStep == other.seamStep &&
+           exportFormat == other.exportFormat;
   }
 };
 

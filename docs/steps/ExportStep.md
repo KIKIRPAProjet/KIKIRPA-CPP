@@ -2,7 +2,7 @@
 
 Code : [export_step.h](../../include/backend/steps/export_step.h) / [export_step.cpp](../../src/backend/steps/export_step.cpp), namespace `StepsNs`.
 
-Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite sur disque par l'assemblage, sous un nom configuré dans le dossier choisi. Le format peut être TIFF 16 bits ou JPEG 8 bits. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé. Si un fichier du même nom existe déjà, il n'est pas écrasé : le nouvel export prend le numéro qui suit le plus élevé présent (` (1)`, ` (2)`...).
+Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite sur disque par l'assemblage, sous un nom configuré dans le dossier choisi. Le mode par défaut `both` conserve le TIFF pleine résolution et produit en plus un aperçu JPEG réduit. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé. Si un fichier du même nom existe déjà, il n'est pas écrasé : le nouvel export prend le numéro qui suit le plus élevé présent (` (1)`, ` (2)`...).
 
 ## Entrées et sorties
 
@@ -26,13 +26,15 @@ Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite 
 |---|---|---|---|
 | `outputDirectory` | string | vide | dossier où publier l'image ; vide = dossier Téléchargements de l'utilisateur courant. Créé s'il n'existe pas |
 | `filename` | string | selon le format | nom du fichier de sortie (`mosaic.tif` pour TIFF ou `mosaic.jpg` pour JPEG). L'extension correcte est imposée selon le format |
-| `format` | string | `tiff` | `tiff` conserve la mosaïque RGB 16 bits ; `jpeg` publie une image RGB 8 bits avec perte |
+| `format` | string | `both` | `tiff` conserve la mosaïque pleine résolution ; `jpeg` produit seulement l'aperçu réduit ; `both` produit les deux |
+| `previewMaxSide` | int | `6000` | plus grand côté maximal de l'aperçu JPEG, limité à 65535 px |
 
 ## Fonctionnement
 
 1. **Contrôle** : l'en-tête de `imagePath` est lu sans décoder de pixel. Le fichier doit être un TIFF tuilé, à 3 canaux de 16 bits, aux dimensions de `canvasSize`.
-2. **Nom unique** : si le nom choisi ou une de ses copies numérotées existe déjà dans le dossier de sortie, le step prend le numéro qui suit le plus élevé présent. Le dernier export est ainsi toujours celui de rang maximal.
-3. **Publication** : en TIFF, `IONs::copyFileReplacing` copie le fichier sous un nom temporaire puis le renomme vers le chemin unique. En JPEG, la mosaïque est lue, convertie en 8 bits, encodée puis remplacée atomiquement.
+2. **Nom unique** : si le nom choisi ou une de ses copies numérotées existe déjà, le step prend le prochain rang disponible sans écraser.
+3. **Publication TIFF** : `copyFileReplacing` copie le fichier pleine résolution sous un nom temporaire puis le renomme.
+4. **Aperçu JPEG** : l'image est lue bloc par bloc par `readRegion`, convertie en 8 bits par bloc, redimensionnée dans un tampon limité et encodée en JPEG. Aucun `readRegion` ne charge toute la mosaïque en mémoire.
 
 Le format TIFF (blocs de 512 × 512, LZW, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
 
@@ -66,7 +68,7 @@ L'entrée `Mosaic` a sa sérialisation dans `pipelineTypes()` (`core/checkpoint/
 
 ## Mémoire
 
-En mode TIFF, aucune image n'est chargée : l'en-tête est lu par libtiff et la copie passe par le système de fichiers. En mode JPEG, une image pleine résolution est nécessaire pour l'encodage JPEG.
+En mode TIFF, aucune image n'est chargée : l'en-tête est lu par libtiff et la copie passe par le système de fichiers. En mode JPEG, l'image est lue par petites régions tuilées et seule l'aperçu redimensionné reste en mémoire.
 
 ## État de l'enchaînement
 

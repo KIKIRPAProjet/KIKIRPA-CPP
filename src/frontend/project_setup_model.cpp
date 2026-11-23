@@ -249,6 +249,8 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(
         stepJson, "outputDirectory",
         IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
+    replaceParameter(stepJson, "format", setup.pipelineChoices.exportFormat);
+    replaceParameter(stepJson, "previewMaxSide", 6000);
   }
   return stepJson;
 }
@@ -292,6 +294,7 @@ PipelineChoices validatedChoices(const PipelineChoices &choices) {
   valid.matchingStep = oneOf(choices.matchingStep, {"phase-correlation", "sift", "lightglue"}, defaults.matchingStep);
   valid.intensityMethod = oneOf(choices.intensityMethod, {"gain-and-field", "gain"}, defaults.intensityMethod);
   valid.seamStep = oneOf(choices.seamStep, {"graphcut", "dynamic-programming-dijkstra"}, defaults.seamStep);
+  valid.exportFormat = oneOf(choices.exportFormat, {"tiff", "jpeg", "both"}, defaults.exportFormat);
   return valid;
 }
 

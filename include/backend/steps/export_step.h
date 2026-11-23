@@ -17,8 +17,9 @@ namespace StepsNs {
         std::string outputDirectory;
         // Nom du fichier de sortie. Vide : "mosaic.tif" ou "mosaic.jpg" selon format.
         std::string filename;
-        // "tiff" conserve la mosaïque RGB 16 bits ; "jpeg" produit une image JPEG 8 bits.
+        // "tiff" conserve la mosaïque RGB 16 bits ; "jpeg" produit un aperçu RGB 8 bits réduit ; "both" produit les deux.
         std::string format = "tiff";
+        int previewMaxSide = 6000;
     };
 
     struct ExportOutput {

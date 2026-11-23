@@ -142,15 +142,20 @@ void AssemblyTab::setupMethodControls(QVBoxLayout *layout)
     addUnavailableMethod(m_verificationCombo, tr("Image de référence"), QStringLiteral("final-verification"),
                          tr("Demande une image de référence, pas encore réglable ici."));
 
+    m_exportCombo = addStage(tr("Export"));
+    addMethod(m_exportCombo, tr("TIFF pleine résolution"), QStringLiteral("tiff"));
+    addMethod(m_exportCombo, tr("JPEG aperçu réduit"), QStringLiteral("jpeg"));
+    addMethod(m_exportCombo, tr("TIFF + JPEG aperçu"), QStringLiteral("both"));
+
     // Le menu ouvert montre les entrées en entier, même si le menu fermé est étroit.
-    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo, m_verificationCombo}) {
+    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo, m_verificationCombo, m_exportCombo}) {
         int widest = 0;
         for (int row = 0; row < combo->count(); ++row)
             widest = std::max(widest, combo->fontMetrics().horizontalAdvance(combo->itemText(row)));
         combo->view()->parentWidget()->setMinimumWidth(widest + 40);   // conteneur du menu ouvert
     }
     // Connectés une fois tous les menus remplis : ajouter une entrée change l'index courant.
-    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo})
+    for (QComboBox *combo : {m_overlapCombo, m_matchingCombo, m_intensityCombo, m_seamCombo, m_exportCombo})
         connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
                 &AssemblyTab::applyChoices);
 }
@@ -185,6 +190,7 @@ void AssemblyTab::applyChoices()
     choices.matchingStep = selectedData(m_matchingCombo);
     choices.intensityMethod = selectedData(m_intensityCombo);
     choices.seamStep = selectedData(m_seamCombo);
+    choices.exportFormat = selectedData(m_exportCombo);
     if (choices == m_projectGrid->state().pipelineChoices)
         return;
     m_projectGrid->setPipelineChoices(choices);   // le projet prévient l'interface, qui rappelle updateChoices
@@ -205,10 +211,12 @@ void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &requestedChoi
     const QSignalBlocker matchingBlocker(m_matchingCombo);
     const QSignalBlocker intensityBlocker(m_intensityCombo);
     const QSignalBlocker seamBlocker(m_seamCombo);
+    const QSignalBlocker exportBlocker(m_exportCombo);
     selectData(m_overlapCombo, choices.estimateOverlap ? "overlap-estimation" : "");
     selectData(m_matchingCombo, choices.matchingStep);
     selectData(m_intensityCombo, choices.intensityMethod);
     selectData(m_seamCombo, choices.seamStep);
+    selectData(m_exportCombo, choices.exportFormat);
     refreshVoteNote(choices);
     refreshStepList(choices);
     // La note du Vote 2D ou une étape a pu apparaître : la zone de défilement du panneau (RightPanel) recalcule la

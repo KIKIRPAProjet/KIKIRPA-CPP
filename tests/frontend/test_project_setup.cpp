@@ -303,6 +303,7 @@ TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
   read.matchingStep = "manual-matches";
   read.intensityMethod = "gain";
   read.seamStep = "voronoi";
+  read.exportFormat = "psb";
 
   const FrontendNs::PipelineChoices valid = FrontendNs::validatedChoices(read);
   const FrontendNs::PipelineChoices defaults;
@@ -310,6 +311,7 @@ TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
   EXPECT_EQ(valid.matchingStep, defaults.matchingStep);
   EXPECT_EQ(valid.intensityMethod, "gain");
   EXPECT_EQ(valid.seamStep, defaults.seamStep);
+  EXPECT_EQ(valid.exportFormat, defaults.exportFormat);
 
   FrontendNs::PipelineChoices known;
   known.matchingStep = "lightglue";
