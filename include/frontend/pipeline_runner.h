@@ -1,6 +1,8 @@
 // include/frontend/pipeline_runner.h
 #pragma once
 
+#include "artworkcanvas.h"
+
 #include <QImage>
 #include <QObject>
 #include <QString>
