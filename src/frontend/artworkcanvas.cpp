@@ -16,6 +16,10 @@ constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
 constexpr double kPairAspect = 0.78;
 constexpr double kSingleAspect = 0.70;
+constexpr int kMinZoomPercent = 5;
+constexpr int kMaxZoomPercent = 1600;
+constexpr double kZoomWheelFactor = 1.15;
+constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour le cache d'aperçus
 
 // Modes de l'espace de travail (voir FrontendUtils::MODE_NAMES).
 constexpr int kModeGrid = 1;
@@ -29,6 +33,7 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
 {
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
+    m_imageCache.setMaxCost(kImageCacheMaxBytes);
 }
 
 //enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
@@ -38,7 +43,8 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     update();
 }
 
-void ArtworkCanvas::resetView(){
+void ArtworkCanvas::resetView()
+{
     zoomPercent = 100;
     m_panOffset = QPointF(0.0, 0.0);
     update();
@@ -102,7 +108,7 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
-    if(event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton){
+    if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
         m_panning = true;
         m_lastPanPos = event->pos();
         setCursor(Qt::ClosedHandCursor);
@@ -112,7 +118,8 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     QWidget::mousePressEvent(event);
 }
 
-void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event){
+void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
+{
     if (!hasActiveImages()) {
         const bool hovered = emptyImportCardRect().contains(event->pos());
         if (hovered != m_emptyCardHovered) {
@@ -135,8 +142,8 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event){
         event->accept();
         return;
     }
-    if(m_panning){
-        m_panOffset += event->pos()-m_lastPanPos;
+    if (m_panning) {
+        m_panOffset += event->pos() - m_lastPanPos;
         m_lastPanPos = event->pos();
         update();
         event->accept();
@@ -169,7 +176,7 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
         event->accept();
         return;
     }
-    if(m_panning){
+    if (m_panning) {
         m_panning = false;
         unsetCursor();
         event->accept();
@@ -178,21 +185,22 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
     QWidget::mouseReleaseEvent(event);
 }
 
-void ArtworkCanvas::wheelEvent(QWheelEvent *event){
+void ArtworkCanvas::wheelEvent(QWheelEvent *event)
+{
     const int delta = event->angleDelta().y();
-    if(delta == 0){
+    if (delta == 0) {
         QWidget::wheelEvent(event);
         return;
     }
 
-    const qreal factor = (delta > 0) ? 1.15 : (1.0/1.15);
-    const int newZoom = qBound(5,qRound(zoomPercent * factor),1600);
-    if(newZoom != zoomPercent){
-        const qreal oldScale = zoomPercent/100.0;
-        const qreal newScale = newZoom/100.0;
-        const QPointF center(width()/2.0,height()/2.0);
+    const qreal factor = (delta > 0) ? kZoomWheelFactor : (1.0 / kZoomWheelFactor);
+    const int newZoom = qBound(kMinZoomPercent, qRound(zoomPercent * factor), kMaxZoomPercent);
+    if (newZoom != zoomPercent) {
+        const qreal oldScale = zoomPercent / 100.0;
+        const qreal newScale = newZoom / 100.0;
+        const QPointF center(width() / 2.0, height() / 2.0);
         const QPointF mousePos = event->position();
-        m_panOffset = mousePos - center - (mousePos - center - m_panOffset)*(newScale/oldScale);
+        m_panOffset = mousePos - center - (mousePos - center - m_panOffset) * (newScale / oldScale);
         zoomPercent = newZoom;
         emit zoomChanged(zoomPercent);
         update();
@@ -217,12 +225,12 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     p.fillRect(rect(), QColor("#484848"));
     p.setRenderHint(QPainter::SmoothPixmapTransform);
 
-    const qreal scale = zoomPercent/100.0;
-    const QPointF viewCenter(width()/2.0,height()/2.0);
-    auto beginViewTransform = [&](){
+    const qreal scale = zoomPercent / 100.0;
+    const QPointF viewCenter(width() / 2.0, height() / 2.0);
+    auto beginViewTransform = [&]() {
         p.save();
         p.translate(viewCenter + m_panOffset);
-        p.scale(scale,scale);
+        p.scale(scale, scale);
         p.translate(-viewCenter);
     };
 
@@ -405,7 +413,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
                    tr("Masque d'exclusion : proposition"));
     } else if (modeValue == kModeAssembly || modeValue == kModeExport) {
-        if(seamVisible){
+        if (seamVisible) {
             p.setPen(QPen(QColor("#df4038"), 2));
             QPainterPath seam;
             seam.moveTo(x0 + imageW * 0.72, y0);
@@ -446,7 +454,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
 void ArtworkCanvas::setSeamVisible(bool visible)
 {
-    if(seamVisible != visible){
+    if (seamVisible != visible) {
         seamVisible = visible;
         update();
     }

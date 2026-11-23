@@ -12,6 +12,8 @@
 #include <QTransform>
 #include <QtMath>
 
+#include <algorithm>
+
 namespace {
 constexpr int kGridGapX = 18;
 constexpr int kGridGapY = 20;
@@ -20,6 +22,7 @@ constexpr int kBadgeSize = 24;
 constexpr int kMinCellWidthForFileName = 145;
 constexpr qreal kArrowLength = 16.0;
 constexpr qreal kArrowAngleDegrees = 28.0;
+constexpr int kPreviewMaxDimension = 2048;
 }
 
 void ArtworkCanvas::drawEmptyState(QPainter &p)
@@ -263,14 +266,17 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
-    QImage image = m_imageCache.value(path);
-    if(image.isNull()){
-        image = readPreviewImage(path,QSize(2048,2048));
-        if(!image.isNull()){
-            m_imageCache.insert(path,image);
+    QImage image;
+    if (const QImage *cached = m_imageCache.object(path)) {
+        image = *cached;
+    } else {
+        image = readPreviewImage(path, QSize(kPreviewMaxDimension, kPreviewMaxDimension));
+        if (!image.isNull()) {
+            const qsizetype cost = std::max<qsizetype>(1, image.sizeInBytes());
+            m_imageCache.insert(path, new QImage(image), cost);
         }
     }
-    if(image.isNull()){
+    if (image.isNull()) {
         p.fillRect(r, QColor("#262626"));
         p.setPen(QColor("#d35b55"));
         p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
@@ -280,9 +286,11 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         image = image.mirrored(true, false);
     if (rotation != 0)
         image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
-    
-    const QSize targetSize = image.size().scaled(r.size(),Qt::KeepAspectRatio);
-    const QRect targetRect(r.left()+(r.width()-targetSize.width())/2,r.top()+(r.height()-targetSize.height())/2,targetSize.width(),targetSize.height());
+
+    const QSize targetSize = image.size().scaled(r.size(), Qt::KeepAspectRatio);
+    const QRect targetRect(r.left() + (r.width() - targetSize.width()) / 2,
+                           r.top() + (r.height() - targetSize.height()) / 2,
+                           targetSize.width(), targetSize.height());
 
     p.save();
     p.setClipRect(r);

@@ -9,7 +9,7 @@
 #include <QVector>
 #include <QWidget>
 #include <QImage>
-#include <QHash>
+#include <QCache>
 #include <QPoint>
 #include <QPointF>
 
@@ -104,7 +104,7 @@ private:
     QPoint m_lastPanPos;
     bool m_panning = false;
     bool m_emptyCardHovered = false;
-    QHash<QString, QImage> m_imageCache;
+    QCache<QString, QImage> m_imageCache;
 };
 
 #endif // ARTWORKCANVAS_H
