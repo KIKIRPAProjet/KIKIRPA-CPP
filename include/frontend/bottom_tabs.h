@@ -1,4 +1,5 @@
-#pragma once
+#ifndef BOTTOM_TABS_H
+#define BOTTOM_TABS_H
 
 #include <QTabWidget>
 #include <QVector>
@@ -27,3 +28,5 @@ private:
     QListWidget *m_journalList = nullptr;
     int m_pairsTabIndex = -1;
 };
+
+#endif

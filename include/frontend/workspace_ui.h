@@ -1,4 +1,5 @@
-#pragma once
+#ifndef WORKSPACE_UI_H
+#define WORKSPACE_UI_H
 
 #include "projectgrid.h"
 
@@ -81,3 +82,5 @@ private:
     TopToolbars *m_topToolbars = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
 };
+
+#endif // WORKSPACE_UI_H

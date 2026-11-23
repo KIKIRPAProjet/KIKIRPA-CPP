@@ -1,4 +1,5 @@
-#pragma once
+#ifndef WORKSPACE_STATUS_BAR_H
+#define WORKSPACE_STATUS_BAR_H
 
 #include <QWidget>
 
@@ -27,3 +28,5 @@ private:
     QLabel *m_currentStepLabel = nullptr;
     QProgressBar *m_progressBar = nullptr;
 };
+
+#endif // WORKSPACE_STATUS_BAR_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef WORKSPACE_CENTER_H
+#define WORKSPACE_CENTER_H
 
 #include <QWidget>
 #include "projectgrid.h"
@@ -33,3 +34,5 @@ private:
     QLabel *m_projectFormatLabel = nullptr;
     QLabel *m_zoomLabel = nullptr;
 };
+
+#endif // WORKSPACE_CENTER_H

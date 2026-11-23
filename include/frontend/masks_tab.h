@@ -1,4 +1,6 @@
-#pragma once
+// include/frontend/masks_tab.h
+#ifndef MASKS_TAB_H
+#define MASKS_TAB_H
 
 #include <QWidget>
 
@@ -28,3 +30,5 @@ private:
     QSlider *layerOpacitySlider = nullptr;
     QCheckBox *layerVisibilityCheck = nullptr;
 };
+
+#endif // MASKS_TAB_H

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef DIALOG_HELPERS_H
+#define DIALOG_HELPERS_H
 
 #include <QString>
 
@@ -14,3 +15,5 @@ void showReferenceComparisonDialog(QWidget *parent, const QString &referencePath
 void showComparisonDialog(QWidget *parent, PipelineRunnerClass *pipelineRunner);
 bool confirmRunRestart(QWidget *parent, int firstStep);
 }
+
+#endif

@@ -1,4 +1,5 @@
-#pragma once
+#ifndef RIGHT_PANEL_H
+#define RIGHT_PANEL_H
 
 #include <QTabWidget>
 #include <QVector>
@@ -39,3 +40,5 @@ private:
     AssemblyTab *m_assemblyTab = nullptr;
     int m_alignmentTabIndex = -1;   // index de l'onglet Paire (sa page est une zone de défilement)
 };
+
+#endif // RIGHT_PANEL_H

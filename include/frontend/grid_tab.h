@@ -1,4 +1,5 @@
-#pragma once
+#ifndef GRID_TAB_H
+#define GRID_TAB_H
 
 #include <QScrollArea>
 #include "projectgrid.h"
@@ -63,3 +64,5 @@ private:
     QPushButton *m_compareReferenceButton = nullptr;
     QPushButton *m_validateGridButton = nullptr;
 };
+
+#endif // GRID_TAB_H

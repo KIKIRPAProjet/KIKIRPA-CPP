@@ -2,7 +2,8 @@
  * @class LogPanel
  * @brief Panneau de journalisation pour afficher les messages du backend
  */
-#pragma once
+#ifndef LOGPANEL_H
+#define LOGPANEL_H
 
 #include <QDockWidget>
 #include <QString>
@@ -44,3 +45,5 @@ private:
     QTextBrowser *textBrowser = nullptr;
     QVector<LogEntry> entries;
 };
+
+#endif

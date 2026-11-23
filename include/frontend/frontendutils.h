@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FRONTENDUTILS_H
+#define FRONTENDUTILS_H
 
 #include "project_setup_model.h"
 
@@ -107,3 +108,5 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 
 QVector<int> captureOrderCells(int rows, int columns, int order);
 QImage readPreviewImage(const QString &path, const QSize &maximumSize);
+
+#endif
