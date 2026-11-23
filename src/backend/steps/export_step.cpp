@@ -8,30 +8,27 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
-#include "core/data/tile.h"
+#include "core/io/file_fingerprint.h"
+#include "core/io/file_replacement.h"
+#include "core/io/unicode_path.h"
 
-#include <opencv2/core/hal/interface.h>
-#include <opencv2/core/mat.hpp>
+#include <nlohmann/json.hpp>
 #include <opencv2/core/types.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
 #include <algorithm>
-#include <atomic>
-#include <chrono>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <limits>
-#include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <utility>
-#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -44,32 +41,18 @@ namespace StepsNs {
 
     namespace {
 
-        using BlockIndex = std::map<std::pair<int, int>, const DataNs::CompositeBlock*>;
+        // Format attendu de l'image de la mosaïque : RGB, 16 bits par canal, tuilée.
+        constexpr std::uint16_t EXPECTED_SAMPLES_PER_PIXEL = 3;
+        constexpr std::uint16_t EXPECTED_BITS_PER_SAMPLE = 16;
 
-        struct BlockGridBuilder {
-            BlockIndex blocks;
-            int width = 0;
-            int height = 0;
-        };
-
-        struct BlockGridShape {
-            cv::Size canvasSize;
-            int columnCount = 0;
-            int rowCount = 0;
-        };
-
-        struct TiffWriteStatus {
+        // Ce que l'en-tête du TIFF de la mosaïque dit de l'image, lu sans décoder de pixel.
+        struct TiffHeader {
+            std::uint32_t width = 0;
+            std::uint32_t height = 0;
+            std::uint16_t samplesPerPixel = 0;
+            std::uint16_t bitsPerSample = 0;
+            bool isTiled = false;
             bool isBigTiff = false;
-            std::string errorMessage;
-        };
-
-        struct OutputPaths {
-            fs::path image;
-        };
-
-        struct PendingFile {
-            fs::path temporaryPath;
-            fs::path destinationPath;
         };
 
         fs::path downloadsDirectory() {
@@ -91,251 +74,138 @@ namespace StepsNs {
             throw std::runtime_error("cannot resolve the current user's Downloads directory");
         }
 
-        OutputPaths makeOutputPaths(const fs::path& directory) {
-            return {directory / "mosaic.tif"};
-        }
-
-        fs::path temporaryPath(const fs::path& path) {
-            static std::atomic<std::uint64_t> sequence{0};
-            const auto timeValue = std::chrono::steady_clock::now().time_since_epoch().count();
-            fs::path result = path;
-            result += "." + std::to_string(timeValue) + "." + std::to_string(sequence.fetch_add(1)) + ".tmp";
-            return result;
-        }
-
-        bool validateBlock(const DataNs::CompositeBlock& block, std::string& errorMessage) {
-            const cv::Rect& rectangle = block.blockRect;
-            if (rectangle.x < 0 || rectangle.y < 0 || rectangle.width <= 0 || rectangle.height <= 0 ||
-                rectangle.width > DataNs::BLOCK_SIZE || rectangle.height > DataNs::BLOCK_SIZE ||
-                rectangle.x % DataNs::BLOCK_SIZE != 0 || rectangle.y % DataNs::BLOCK_SIZE != 0) {
-                errorMessage = "composite block rectangle must be positive and aligned to the block grid";
-                return false;
+        fs::path configuredOutputDirectory(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return downloadsDirectory();
             }
-            if (block.imageRgb.dims != 2 || block.imageRgb.type() != CV_16UC3 ||
-                block.imageRgb.size() != rectangle.size()) {
-                errorMessage = "composite block image has an unexpected type or size";
-                return false;
-            }
-            return true;
-        }
-
-        bool addBlockToIndex(const DataNs::CompositeBlock& block, BlockGridBuilder& grid, std::string& errorMessage) {
-            if (!validateBlock(block, errorMessage)) return false;
-            const cv::Rect& rectangle = block.blockRect;
-            const std::int64_t right = static_cast<std::int64_t>(rectangle.x) + rectangle.width;
-            const std::int64_t bottom = static_cast<std::int64_t>(rectangle.y) + rectangle.height;
-            if (right > std::numeric_limits<int>::max() || bottom > std::numeric_limits<int>::max()) {
-                errorMessage = "composite canvas dimensions exceed the supported range";
-                return false;
-            }
-            const auto gridPosition = std::make_pair(rectangle.x / DataNs::BLOCK_SIZE, rectangle.y / DataNs::BLOCK_SIZE);
-            if (!grid.blocks.emplace(gridPosition, &block).second) {
-                errorMessage = "multiple composite blocks occupy the same grid position";
-                return false;
-            }
-            grid.width = std::max(grid.width, static_cast<int>(right));
-            grid.height = std::max(grid.height, static_cast<int>(bottom));
-            return true;
-        }
-
-        bool validateBlockDimensions(const DataNs::CompositeBlock& block, cv::Size canvasSize,
-                                     std::string& errorMessage) {
-            const cv::Rect& rectangle = block.blockRect;
-            if (rectangle.width != std::min(DataNs::BLOCK_SIZE, canvasSize.width - rectangle.x) ||
-                rectangle.height != std::min(DataNs::BLOCK_SIZE, canvasSize.height - rectangle.y)) {
-                errorMessage = "composite block dimensions do not match its position in the output grid";
-                return false;
-            }
-            return true;
-        }
-
-        bool validateBlockRow(const BlockIndex& blocks, int rowIndex, const BlockGridShape& shape,
-                              std::string& errorMessage) {
-            for (int columnIndex = 0; columnIndex < shape.columnCount; ++columnIndex) {
-                const auto blockEntry = blocks.find({columnIndex, rowIndex});
-                if (blockEntry == blocks.end()) {
-                    errorMessage = "composite blocks do not cover the complete output grid";
-                    return false;
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "outputDirectory" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    const std::string directory = parameter["value"].get<std::string>();
+                    return directory.empty() ? downloadsDirectory() : IONs::pathFromUtf8(directory);
                 }
-                if (!validateBlockDimensions(*blockEntry->second, shape.canvasSize, errorMessage)) return false;
             }
-            return true;
+            return downloadsDirectory();
         }
 
-        bool validateBlockGrid(const BlockIndex& blocks, cv::Size canvasSize, std::string& errorMessage) {
-            const BlockGridShape shape{canvasSize,
-                                       1 + (canvasSize.width - 1) / DataNs::BLOCK_SIZE,
-                                       1 + (canvasSize.height - 1) / DataNs::BLOCK_SIZE};
-            const std::size_t expectedBlockCount =
-                static_cast<std::size_t>(shape.columnCount) * static_cast<std::size_t>(shape.rowCount);
-            if (blocks.size() != expectedBlockCount) {
-                errorMessage = "composite blocks do not cover the complete output grid";
-                return false;
+        std::string sanitizeFilename(const std::string& filename) {
+            if (filename.empty()) {
+                return "mosaic.tif";
             }
-            for (int rowIndex = 0; rowIndex < shape.rowCount; ++rowIndex)
-                if (!validateBlockRow(blocks, rowIndex, shape, errorMessage)) return false;
-            return true;
-        }
-
-        bool indexBlocks(const DataNs::CompositeBlockList& blocks, BlockIndex& blockByGridPosition,
-                         cv::Size& canvasSize, std::string& errorMessage) {
-            if (blocks.empty()) {
-                errorMessage = "no composite blocks were provided";
-                return false;
+            const fs::path filenamePath = IONs::pathFromUtf8(filename).filename();
+            std::string cleanName = IONs::pathToUtf8(filenamePath);
+            if (filenamePath.extension().empty()) {
+                cleanName += ".tif";
             }
-            BlockGridBuilder grid;
-            for (const DataNs::CompositeBlock& block : blocks)
-                if (!addBlockToIndex(block, grid, errorMessage)) return false;
-            canvasSize = {grid.width, grid.height};
-            blockByGridPosition = std::move(grid.blocks);
-            return validateBlockGrid(blockByGridPosition, canvasSize, errorMessage);
+            return cleanName.empty() ? "mosaic.tif" : cleanName;
         }
 
-        bool configureTiff(TIFF* tiffFile, cv::Size canvasSize, const cv::Mat& sampleImage, std::string& errorMessage) {
-            const std::uint16_t channelCount = static_cast<std::uint16_t>(sampleImage.channels());
-            const std::uint16_t bitsPerSample = static_cast<std::uint16_t>(sampleImage.elemSize1() * 8);
-            const std::uint16_t photometric = channelCount == 1 ? PHOTOMETRIC_MINISBLACK : PHOTOMETRIC_RGB;
-            if (!TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, static_cast<std::uint32_t>(canvasSize.width)) ||
-                !TIFFSetField(tiffFile, TIFFTAG_IMAGELENGTH, static_cast<std::uint32_t>(canvasSize.height)) ||
-                !TIFFSetField(tiffFile, TIFFTAG_SAMPLESPERPIXEL, channelCount) ||
-                !TIFFSetField(tiffFile, TIFFTAG_BITSPERSAMPLE, bitsPerSample) ||
-                !TIFFSetField(tiffFile, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT) ||
-                !TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT) ||
-                !TIFFSetField(tiffFile, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) ||
-                !TIFFSetField(tiffFile, TIFFTAG_PHOTOMETRIC, photometric) ||
-                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_LZW) ||
-                !TIFFSetField(tiffFile, TIFFTAG_TILEWIDTH, static_cast<std::uint32_t>(DataNs::BLOCK_SIZE)) ||
-                !TIFFSetField(tiffFile, TIFFTAG_TILELENGTH, static_cast<std::uint32_t>(DataNs::BLOCK_SIZE))) {
-                errorMessage = "cannot configure TIFF image";
-                return false;
+        std::string configuredFilename(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
+                return "mosaic.tif";
             }
-            return true;
-        }
-
-        bool shouldUseBigTiff(cv::Size canvasSize, const cv::Mat& sampleImage) {
-            const long double pixelCount = static_cast<long double>(canvasSize.width) * canvasSize.height;
-            const long double bytesPerPixel = sampleImage.elemSize();
-            const int columnCount = 1 + (canvasSize.width - 1) / DataNs::BLOCK_SIZE;
-            const int rowCount = 1 + (canvasSize.height - 1) / DataNs::BLOCK_SIZE;
-            const long double tileCount = static_cast<long double>(columnCount) * rowCount;
-            const long double conservativeFileSize = pixelCount * bytesPerPixel * 1.5L + tileCount * 256 + 1024 * 1024;
-            return conservativeFileSize >= std::numeric_limits<std::uint32_t>::max();
-        }
-
-        struct TiffTileWriter {
-            TIFF* file;
-            cv::Size canvasSize;
-            std::size_t tileBytes;
-            cv::Mat buffer;
-
-            bool write(const DataNs::CompositeBlock& block, std::string& errorMessage) {
-                const cv::Mat& image = block.imageRgb;
-                buffer.setTo(cv::Scalar::all(0));
-                image.copyTo(buffer(cv::Rect{0, 0, image.cols, image.rows}));
-                const ttile_t tileIndex =
-                    TIFFComputeTile(file, static_cast<std::uint32_t>(block.blockRect.x),
-                                    static_cast<std::uint32_t>(block.blockRect.y), 0, 0);
-                if (TIFFWriteEncodedTile(file, tileIndex, buffer.data, static_cast<tmsize_t>(tileBytes)) == -1) {
-                    errorMessage = "cannot write TIFF tile";
-                    return false;
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
+                    parameter["value"].is_string()) {
+                    return sanitizeFilename(parameter["value"].get<std::string>());
                 }
-                return true;
             }
+            return "mosaic.tif";
+        }
 
-            bool writeGrid(const BlockIndex& blocks, std::string& errorMessage) {
-                const int columnCount = 1 + (canvasSize.width - 1) / DataNs::BLOCK_SIZE;
-                const int rowCount = 1 + (canvasSize.height - 1) / DataNs::BLOCK_SIZE;
-                for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
-                    for (int columnIndex = 0; columnIndex < columnCount; ++columnIndex)
-                        if (!write(*blocks.at({columnIndex, rowIndex}), errorMessage)) return false;
-                return true;
-            }
+        // Copies numérotées d'un même export : <nom><ext> est le rang 0, « <nom> (1)<ext> » le rang 1, etc. Un nouvel
+        // export prend le rang qui suit le plus élevé présent : le dernier export est toujours celui de rang maximal,
+        // même si l'utilisateur a supprimé des copies intermédiaires.
+        struct ExportName {
+            fs::path directory;
+            std::string stem;
+            std::string extension;
         };
 
-        bool writeImageTiff(const BlockIndex& blockByGridPosition, cv::Size canvasSize,
-                            const fs::path& outputPath, TiffWriteStatus& status) {
-            const cv::Mat& sampleImage = blockByGridPosition.begin()->second->imageRgb;
-            status.isBigTiff = shouldUseBigTiff(canvasSize, sampleImage);
-            TIFF* rawTiffFile = TIFFOpen(outputPath.string().c_str(), status.isBigTiff ? "w8" : "w");
+        constexpr std::size_t MAXIMUM_RANK_DIGITS = 18;   // tient dans un std::uint64_t
+
+        ExportName splitExportName(const fs::path& directory, const std::string& filename) {
+            const fs::path target = directory / IONs::pathFromUtf8(filename);
+            return {directory, IONs::pathToUtf8(target.stem()), IONs::pathToUtf8(target.extension())};
+        }
+
+        fs::path exportPath(const ExportName& name, std::uint64_t rank) {
+            if (rank == 0) return name.directory / IONs::pathFromUtf8(name.stem + name.extension);
+            return name.directory / IONs::pathFromUtf8(name.stem + " (" + std::to_string(rank) + ")" + name.extension);
+        }
+
+        // Rang d'une copie numérotée « <nom> (<rang>)<ext> », ou rien si le fichier n'en est pas une.
+        std::optional<std::uint64_t> parseRank(const std::string& fileName, const ExportName& name) {
+            const std::string prefix = name.stem + " (";
+            const std::string suffix = ")" + name.extension;
+            if (fileName.size() <= prefix.size() + suffix.size() || fileName.compare(0, prefix.size(), prefix) != 0 ||
+                fileName.compare(fileName.size() - suffix.size(), suffix.size(), suffix) != 0)
+                return std::nullopt;
+            const std::string digits = fileName.substr(prefix.size(), fileName.size() - prefix.size() - suffix.size());
+            const bool isNumber = std::all_of(digits.begin(), digits.end(), [](char character) {
+                return std::isdigit(static_cast<unsigned char>(character)) != 0;
+            });
+            if (!isNumber || digits.size() > MAXIMUM_RANK_DIGITS) return std::nullopt;
+            return std::stoull(digits);
+        }
+
+        // Rang le plus élevé déjà présent dans le dossier, ou rien si aucun export de ce nom n'existe.
+        std::optional<std::uint64_t> latestExportRank(const ExportName& name) {
+            std::optional<std::uint64_t> latest;
+            std::error_code errorCode;
+            if (fs::exists(exportPath(name, 0), errorCode)) latest = 0;
+            if (!fs::is_directory(name.directory, errorCode)) return latest;
+            for (const fs::directory_entry& entry : fs::directory_iterator(name.directory)) {
+                const auto rank = parseRank(IONs::pathToUtf8(entry.path().filename()), name);
+                if (rank && (!latest || *rank > *latest)) latest = rank;
+            }
+            return latest;
+        }
+
+        // Fichier du prochain export : <nom><ext> s'il n'existe aucun export de ce nom, sinon le rang suivant.
+        fs::path nextExportPath(const fs::path& directory, const std::string& filename) {
+            const ExportName name = splitExportName(directory, filename);
+            const auto latest = latestExportRank(name);
+            return exportPath(name, latest ? *latest + 1 : 0);
+        }
+
+        bool readTiffHeader(const fs::path& path, TiffHeader& header, std::string& errorMessage) {
+            TIFF* rawTiffFile = IONs::openTiff(path, "r");
             if (!rawTiffFile) {
-                status.errorMessage = "cannot open output TIFF '" + outputPath.string() + "'";
+                errorMessage = "cannot open mosaic image '" + IONs::pathToUtf8(path) + "'";
                 return false;
             }
             const std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile(rawTiffFile, &TIFFClose);
-
-            if (!configureTiff(tiffFile.get(), canvasSize, sampleImage, status.errorMessage)) return false;
-            const std::size_t tileBytes = static_cast<std::size_t>(DataNs::BLOCK_SIZE) * DataNs::BLOCK_SIZE *
-                                          sampleImage.elemSize();
-            TiffTileWriter writer{tiffFile.get(), canvasSize, tileBytes,
-                                  cv::Mat::zeros(DataNs::BLOCK_SIZE, DataNs::BLOCK_SIZE, sampleImage.type())};
-            if (!writer.writeGrid(blockByGridPosition, status.errorMessage)) return false;
-            if (!TIFFWriteDirectory(tiffFile.get())) {
-                status.errorMessage = "cannot finalize TIFF directory";
+            if (!TIFFGetField(tiffFile.get(), TIFFTAG_IMAGEWIDTH, &header.width) ||
+                !TIFFGetField(tiffFile.get(), TIFFTAG_IMAGELENGTH, &header.height) ||
+                !TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_SAMPLESPERPIXEL, &header.samplesPerPixel) ||
+                !TIFFGetFieldDefaulted(tiffFile.get(), TIFFTAG_BITSPERSAMPLE, &header.bitsPerSample)) {
+                errorMessage = "cannot read the header of mosaic image '" + IONs::pathToUtf8(path) + "'";
                 return false;
             }
+            header.isTiled = TIFFIsTiled(tiffFile.get()) != 0;
+            header.isBigTiff = TIFFIsBigTIFF(tiffFile.get()) != 0;
             return true;
         }
 
-        void publishFile(const PendingFile& file) {
-#ifdef _WIN32
-            if (!MoveFileExW(file.temporaryPath.c_str(), file.destinationPath.c_str(),
-                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-                throw std::system_error(static_cast<int>(GetLastError()), std::system_category(),
-                                        "cannot replace output '" + file.destinationPath.string() + "'");
+        // Contrôle que le fichier annoncé par l'assemblage est bien l'image décrite (dimensions et format), avant
+        // de le publier.
+        bool validateMosaicImage(const DataNs::Mosaic& mosaic, TiffHeader& header, std::string& errorMessage) {
+            if (mosaic.canvasSize.width <= 0 || mosaic.canvasSize.height <= 0) {
+                errorMessage = "mosaic canvas size must be positive";
+                return false;
             }
-#else
-            std::error_code errorCode;
-            fs::rename(file.temporaryPath, file.destinationPath, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot replace output", file.temporaryPath, file.destinationPath, errorCode);
-#endif
-        }
-
-        struct TemporaryFileCleanup {
-            std::vector<fs::path> paths;
-            ~TemporaryFileCleanup() {
-                for (const fs::path& path : paths) {
-                    std::error_code ignored;
-                    fs::remove(path, ignored);
-                }
+            if (!readTiffHeader(mosaic.imagePath, header, errorMessage)) return false;
+            if (header.width != static_cast<std::uint32_t>(mosaic.canvasSize.width) ||
+                header.height != static_cast<std::uint32_t>(mosaic.canvasSize.height)) {
+                errorMessage = "mosaic image dimensions do not match the mosaic canvas size";
+                return false;
             }
-        };
-
-        Json outputFingerprint(const OutputPaths& paths) {
-            const fs::path& path = paths.image;
-            std::error_code errorCode;
-            const bool exists = fs::exists(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot inspect export output", path, errorCode);
-            if (!exists) {
-                return {{"path", path.u8string()}, {"exists", false}};
+            if (header.samplesPerPixel != EXPECTED_SAMPLES_PER_PIXEL ||
+                header.bitsPerSample != EXPECTED_BITS_PER_SAMPLE || !header.isTiled) {
+                errorMessage = "mosaic image must be a tiled 16-bit RGB TIFF";
+                return false;
             }
-            const std::uintmax_t fileSize = fs::file_size(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output size", path, errorCode);
-            const auto modifiedTime = fs::last_write_time(path, errorCode);
-            if (errorCode) throw fs::filesystem_error("cannot read export output time", path, errorCode);
-            return {{"path", path.u8string()},
-                    {"exists", true},
-                    {"size", fileSize},
-                    {"modified", modifiedTime.time_since_epoch().count()}};
-        }
-
-        fs::path configuredOutputDirectory(const Json& configJson) {
-            std::string directory;
-            for (const Json& parameter : configJson.at("parameters")) {
-                if (parameter.at("name") == "outputDirectory") {
-                    directory = parameter.at("value").get<std::string>();
-                    break;
-                }
-            }
-            return directory.empty() ? downloadsDirectory() : fs::u8path(directory);
-        }
-
-        bool writeOutputFile(const BlockIndex& blocks, cv::Size canvasSize, const fs::path& destination,
-                             TiffWriteStatus& status) {
-            const PendingFile pendingFile{temporaryPath(destination), destination};
-            TemporaryFileCleanup cleanup;
-            cleanup.paths.push_back(pendingFile.temporaryPath);
-            if (!writeImageTiff(blocks, canvasSize, pendingFile.temporaryPath, status)) return false;
-            publishFile(pendingFile);
             return true;
         }
 
@@ -345,37 +215,28 @@ namespace StepsNs {
             fs::create_directories(directory, directoryError);
             if (!directoryError) return true;
             result["error"] =
-                "cannot create output directory '" + directory.string() + "': " + directoryError.message();
+                "cannot create output directory '" + IONs::pathToUtf8(directory) + "': " + directoryError.message();
             return false;
         }
 
-        void recordExportSuccess(const OutputPaths& paths, const DataNs::CompositeBlockList& blocks,
-                                 ExportOutput& output, Json& result) {
-            output.imagePath = paths.image;
-            result["image"] = {{"path", paths.image.u8string()}, {"bigTiff", output.isBigTiff}};
-            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
-            output.blockCount = blocks.size();
-            result["blockCount"] = output.blockCount;
-        }
-
-        bool exportBlocks(const DataNs::CompositeBlockList& blocks, const Json& config, ExportOutput& output,
-                          Json& result) {
-            BlockIndex blockByGridPosition;
+        bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
+            TiffHeader header;
             std::string errorMessage;
-            if (!indexBlocks(blocks, blockByGridPosition, output.canvasSize, errorMessage)) {
+            if (!validateMosaicImage(mosaic, header, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
             fs::path directory;
             if (!prepareOutputDirectory(config, directory, result)) return false;
-            const OutputPaths paths = makeOutputPaths(directory);
-            TiffWriteStatus writeStatus;
-            if (!writeOutputFile(blockByGridPosition, output.canvasSize, paths.image, writeStatus)) {
-                result["error"] = writeStatus.errorMessage;
+            const std::string filename = configuredFilename(config);
+            const fs::path imagePath = nextExportPath(directory, filename);
+            if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
+                result["error"] = errorMessage;
                 return false;
             }
-            output.isBigTiff = writeStatus.isBigTiff;
-            recordExportSuccess(paths, blocks, output, result);
+            output = {imagePath, mosaic.canvasSize, header.isBigTiff};
+            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
+            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
 
@@ -384,13 +245,25 @@ namespace StepsNs {
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "export";
-        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory}};
-        stepConfig.inputs = {{"CompositeBlocks", "compositeBlocks"}};
+        stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory},
+                                 {"string", "filename", initialInput.filename}};
+        stepConfig.inputs = {{"Mosaic", "mosaic"}};
         configJson = stepConfig;
     }
 
+    // Le checkpoint de l'export reste valable tant que le dernier fichier exporté (celui de rang maximal, voir
+    // nextExportPath) est là, inchangé. Après execute(), c'est le fichier qui vient d'être écrit ; avant (reprise d'un
+    // run), on le retrouve sur le disque d'après les paramètres. Les deux coïncident tant que personne ne touche au
+    // dossier : la reprise ne refait pas une copie de plus. Fichier supprimé ou modifié : l'export est refait.
     Json ExportStepClass::externalInputsFingerprint() const {
-        return outputFingerprint(makeOutputPaths(configuredOutputDirectory(configJson)));
+        try {
+            if (!output.imagePath.empty()) return IONs::computeFileFingerprint(output.imagePath);
+            const ExportName name = splitExportName(configuredOutputDirectory(configJson), configuredFilename(configJson));
+            const auto latest = latestExportRank(name);
+            return latest ? IONs::computeFileFingerprint(exportPath(name, *latest)) : Json();
+        } catch (const std::exception&) {
+            return Json();   // dossier introuvable ou illisible : checkpoint périmé, execute() dira pourquoi
+        }
     }
 
     bool ExportStepClass::execute() {
@@ -399,9 +272,8 @@ namespace StepsNs {
 
         try {
             if (!dataStore) throw std::runtime_error("data store is not available");
-            const DataNs::CompositeBlockList& blocks = dataStore->get<DataNs::CompositeBlockList>("compositeBlocks");
-            if (!exportBlocks(blocks, configJson, output, result)) return false;
-            return true;
+            const auto& mosaic = dataStore->get<DataNs::Mosaic>("mosaic");
+            return exportMosaic(mosaic, configJson, output, result);
         } catch (const std::exception& exception) {
             result["error"] = exception.what();
             return false;

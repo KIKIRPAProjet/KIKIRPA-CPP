@@ -289,7 +289,7 @@ bool ArtworkCanvas::drawImageLayers(QPainter &p, const QRect &area)
             layer.worldRect.height() * scale
         );
 
-        p.setOpacity(qBound(0.0, layer.opacity, 1.0));
+        p.setOpacity(globalImageLayerOpacity * qBound(qreal(0), layer.opacity, qreal(1)));
         p.drawImage(targetRect, layer.image);
     }
 

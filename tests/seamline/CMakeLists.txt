@@ -7,6 +7,8 @@ add_executable(seam_tests
     test_dijkstra.cpp
     test_solver.cpp
     test_junctions.cpp
+    test_graph_cut.cpp
+    test_territory_builder.cpp
 )
 
 kikirpa_copy_onnxruntime_dlls(seam_tests)

@@ -27,6 +27,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <set>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -43,8 +44,6 @@ constexpr int VALEUR_A = 10;
 constexpr int VALEUR_B = 5;
 constexpr int VALEUR_A_MODIFIEE = 20;
 
-// Valeurs de l'aller-retour des types du pipeline : des fractions binaires exactes, pour comparer avec ==.
-constexpr std::size_t NOMBRE_TYPES_PIPELINE = 6;
 constexpr int LARGEUR_TUILE = 400;
 constexpr int HAUTEUR_TUILE = 300;
 constexpr float POINT_A_X = 1.25F;
@@ -61,6 +60,12 @@ constexpr int COTE_POLYGONE = 10;
 constexpr double GAIN_TUILE_0 = 0.75;
 constexpr double GAIN_TUILE_1 = 1.25;
 constexpr double FORCE_CHAMP = -0.03125;
+constexpr double ESTIMATION_TRANSLATION_X = 319.875;
+constexpr double ESTIMATION_TRANSLATION_Y = -0.03125;
+constexpr float ESTIMATION_RECOUVREMENT = 0.1875F;
+constexpr double ESTIMATION_RAPPORT_PIC = 2.5;
+constexpr int ESTIMATION_LARGEUR_COMMUNE = 80;
+constexpr int ESTIMATION_ORIGINE_EN_A = 320;
 
 // Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
@@ -292,17 +297,39 @@ DataNs::Seamline coutureDEssai() {
     return {0, 1, DataNs::Direction::Right, {{POSITION_X, POSITION_Y}, {POSITION_X, 1.0}}};
 }
 
+DataNs::Mosaic mosaiqueDEssai() {
+    return {fs::u8path("fusion/mosaic_image.tif"), fs::u8path("fusion/mosaic_provenance.tif"),
+            fs::u8path("fusion/mosaic_mask.tif"), cv::Size(LARGEUR_TUILE, HAUTEUR_TUILE)};
+}
+
+DataNs::PairOverlapEstimate estimationDEssai() {
+    DataNs::PairOverlapEstimate estimation;
+    estimation.tileIdA = 0;
+    estimation.tileIdB = 1;
+    estimation.direction = DataNs::Direction::Right;
+    estimation.estimate.translationBInA = {ESTIMATION_TRANSLATION_X, ESTIMATION_TRANSLATION_Y};
+    estimation.estimate.overlapFraction = ESTIMATION_RECOUVREMENT;
+    estimation.estimate.peakRatio = ESTIMATION_RAPPORT_PIC;
+    estimation.commonAreaInA = {ESTIMATION_ORIGINE_EN_A, 0, ESTIMATION_LARGEUR_COMMUNE, HAUTEUR_TUILE};
+    estimation.commonAreaInB = {0, 0, ESTIMATION_LARGEUR_COMMUNE, HAUTEUR_TUILE};
+    return estimation;
+}
+
 void remplirDonneesDEssai(StepNs::DataStoreClass& avant) {
     auto t0 = std::make_shared<DataNs::TileClass>(0, "a.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
     auto t1 = std::make_shared<DataNs::TileClass>(1, "b.tif", "", LARGEUR_TUILE, HAUTEUR_TUILE, CV_16UC3);
     t0->setNeighbours(nullptr, t1.get(), nullptr, nullptr);
     t1->setNeighbours(t0.get(), nullptr, nullptr, nullptr);
+    t0->setGridPosition(0, 0);
+    t1->setGridPosition(0, 1);
     avant.replace("tiles", DataNs::TileList{t0, t1});
     avant.replace("matches", std::vector<DataNs::PairMatches>{appariementDEssai()});
-    avant.replace("positions", std::vector<DataNs::TilePositionData>{{"r00_c01", {POSITION_X, POSITION_Y}, ROTATION}});
+    avant.replace("positions", std::vector<DataNs::TilePositionData>{{1, {POSITION_X, POSITION_Y}, ROTATION}});
     avant.replace("territories", std::vector<DataNs::TileTerritory>{territoireDEssai()});
     avant.replace("seamlines", DataNs::Seamlines{coutureDEssai()});
     avant.replace("intensityCorrection", DataNs::IntensityCorrection{{GAIN_TUILE_0, GAIN_TUILE_1}, FORCE_CHAMP, {1}});
+    avant.replace("mosaic", mosaiqueDEssai());
+    avant.replace("overlapEstimates", DataNs::OverlapEstimates{estimationDEssai()});
 }
 
 void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
@@ -311,6 +338,9 @@ void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
                  tuiles[0]->getLevel(0).width == LARGEUR_TUILE && tuiles[0]->getRight() == tuiles[1].get() &&
                  tuiles[1]->getLeft() == tuiles[0].get() && tuiles[0]->getLeft() == nullptr,
              "Tiles : fiches et voisins");
+    verifier(tuiles[0]->getGridRow() == 0 && tuiles[0]->getGridColumn() == 0 && tuiles[1]->getGridRow() == 0 &&
+                 tuiles[1]->getGridColumn() == 1,
+             "Tiles : case de chaque tuile dans la grille");
     const DataNs::PairMatches attendu = appariementDEssai();
     const auto& m = apres.get<std::vector<DataNs::PairMatches>>("matches");
     verifier(m.size() == 1 && m[0].direction == DataNs::Direction::Bottom && m[0].featureMatches.translationX == attendu.featureMatches.translationX &&
@@ -321,7 +351,7 @@ void verifierTuilesEtAppariements(const StepNs::DataStoreClass& apres) {
 
 void verifierPositionsEtTerritoires(const StepNs::DataStoreClass& apres) {
     const auto& pos = apres.get<std::vector<DataNs::TilePositionData>>("positions");
-    verifier(pos.size() == 1 && pos[0].tileId == "r00_c01" && pos[0].position == cv::Point2d(POSITION_X, POSITION_Y) &&
+    verifier(pos.size() == 1 && pos[0].tileId == 1 && pos[0].position == cv::Point2d(POSITION_X, POSITION_Y) &&
                  pos[0].rotationRadians == ROTATION,
              "Positions : valeurs exactes");
     const DataNs::TileTerritory attendu = territoireDEssai();
@@ -340,6 +370,45 @@ void verifierCouturesEtCorrection(const StepNs::DataStoreClass& apres) {
     verifier(correction.tileGains == std::vector<double>{GAIN_TUILE_0, GAIN_TUILE_1} && correction.fieldStrength == FORCE_CHAMP &&
                  correction.isolatedTileIndices == std::vector<int>{1},
              "IntensityCorrection : gains, champ et tuiles isolées");
+    const DataNs::Mosaic mosaiqueAttendue = mosaiqueDEssai();
+    const auto& mosaique = apres.get<DataNs::Mosaic>("mosaic");
+    verifier(mosaique.imagePath == mosaiqueAttendue.imagePath && mosaique.provenancePath == mosaiqueAttendue.provenancePath &&
+                 mosaique.maskPath == mosaiqueAttendue.maskPath && mosaique.canvasSize == mosaiqueAttendue.canvasSize,
+             "Mosaic : chemins et dimensions");
+}
+
+void verifierEstimationsDeRecouvrement(const StepNs::DataStoreClass& apres) {
+    const DataNs::PairOverlapEstimate attendue = estimationDEssai();
+    const auto& estimations = apres.get<DataNs::OverlapEstimates>("overlapEstimates");
+    verifier(estimations.size() == 1 && estimations[0].tileIdA == attendue.tileIdA &&
+                 estimations[0].tileIdB == attendue.tileIdB && estimations[0].direction == attendue.direction &&
+                 estimations[0].estimate.translationBInA == attendue.estimate.translationBInA &&
+                 estimations[0].estimate.overlapFraction == attendue.estimate.overlapFraction &&
+                 estimations[0].estimate.peakRatio == attendue.estimate.peakRatio &&
+                 estimations[0].commonAreaInA == attendue.commonAreaInA &&
+                 estimations[0].commonAreaInB == attendue.commonAreaInB,
+             "OverlapEstimates : translation, recouvrement et zones communes");
+}
+
+// Chaque type déclaré d'office, avec la clé du DataStoreClass qui lui sert d'exemple. Cette liste est la
+// source de vérité de testerTypesDuPipeline : elle dit quels types doivent exister et lesquels voient leur
+// aller-retour éprouvé. Un type ajouté à pipelineTypes() sans l'être ici fait échouer le test, en le nommant.
+constexpr std::pair<const char*, const char*> CLES_DES_TYPES[] = {
+    {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
+    {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}, {"Mosaic", "mosaic"},
+    {"OverlapEstimates", "overlapEstimates"}};
+
+// Les deux listes ne peuvent pas diverger : l'échec nomme le type fautif.
+void verifierTypesDeclares() {
+    std::set<std::string> attendus;
+    for (const auto& entree : CLES_DES_TYPES) attendus.insert(entree.first);
+    std::set<std::string> declares;
+    for (const auto& entree : CheckpointNs::pipelineTypes()) declares.insert(entree.first);
+
+    for (const auto& type : declares)
+        verifier(attendus.count(type) == 1, "type '" + type + "' déclaré mais son aller-retour n'est pas vérifié");
+    for (const auto& type : attendus)
+        verifier(declares.count(type) == 1, "type '" + type + "' attendu mais absent de pipelineTypes()");
 }
 
 // Aller-retour save → load des types du pipeline (core/CheckpointTypes) sans passer par un step
@@ -348,15 +417,12 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     fs::remove_all(dossier);
     fs::create_directories(dossier);
     const auto types = CheckpointNs::pipelineTypes();
-    verifier(types.size() == NOMBRE_TYPES_PIPELINE, "6 types déclarés d'office");
+    verifierTypesDeclares();
 
     StepNs::DataStoreClass avant;
     StepNs::DataStoreClass apres;
     remplirDonneesDEssai(avant);
-    const std::pair<const char*, const char*> cles[] = {
-        {"Tiles", "tiles"}, {"PairMatches", "matches"}, {"Positions", "positions"}, {"Territories", "territories"},
-        {"Seamlines", "seamlines"}, {"IntensityCorrection", "intensityCorrection"}};
-    for (const auto& [type, cle] : cles) {
+    for (const auto& [type, cle] : CLES_DES_TYPES) {
         verifier(CheckpointNs::CheckpointClass::hasType(type), std::string(type) + " déclaré");
         types.at(type).first(avant, cle, dossier);
         types.at(type).second(apres, cle, dossier);
@@ -364,6 +430,7 @@ void testerTypesDuPipeline(const fs::path& dossier) {
     verifierTuilesEtAppariements(apres);
     verifierPositionsEtTerritoires(apres);
     verifierCouturesEtCorrection(apres);
+    verifierEstimationsDeRecouvrement(apres);
 }
 
 // Chaque test a son dossier de checkpoints (ctest lance chaque test dans un processus à part, parfois en

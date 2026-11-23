@@ -3,25 +3,25 @@ target_link_libraries(test_frontend_project_setup PRIVATE kikirpa_frontend GTest
 target_compile_features(test_frontend_project_setup PRIVATE cxx_std_17)
 include(GoogleTest)
 gtest_discover_tests(test_frontend_project_setup)
-# Démonstration manuelle de la superposition des couches
-add_executable(demo_image_layers
-    demo_image_layers.cpp
+
+add_executable(test_frontend_pipeline_worker test_pipeline_worker.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_worker)
+target_link_libraries(test_frontend_pipeline_worker PRIVATE kikirpa_frontend GTest::gtest)
+target_compile_features(test_frontend_pipeline_worker PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_pipeline_worker PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
-target_include_directories(demo_image_layers PRIVATE
-    "${PROJECT_SOURCE_DIR}/include/frontend"
+add_executable(test_frontend_preview_benchmark test_preview_benchmark.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_preview_benchmark)
+target_link_libraries(test_frontend_preview_benchmark PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_preview_benchmark PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_preview_benchmark PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
-target_link_libraries(demo_image_layers PRIVATE
-    kikirpa_frontend
-    Qt6::Widgets
-)
-# Demonstration de superposition avec TIFF pyramidaux reels
-add_executable(demo_real_image_layers
-    demo_real_image_layers.cpp
-)
-
-target_link_libraries(demo_real_image_layers PRIVATE
-    kikirpa_frontend
-    Qt6::Widgets
-)
+add_executable(test_frontend_image_layer_loader test_image_layer_loader.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_image_layer_loader)
+target_link_libraries(test_frontend_image_layer_loader PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_image_layer_loader PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_image_layer_loader PROPERTIES LABELS unit)

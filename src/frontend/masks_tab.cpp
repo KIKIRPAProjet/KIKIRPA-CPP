@@ -1,12 +1,24 @@
+// src/frontend/masks_tab.cpp
 #include "masks_tab.h"
-#include "mainwindow.h"
-#include "artworkcanvas.h"
 
-#include <QVBoxLayout>
-#include <QLabel>
+#include "artworkcanvas.h"
+#include "mainwindow.h"
+
 #include <QCheckBox>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QLabel>
+#include <QSignalBlocker>
 #include <QSlider>
-#include <QtMath>
+#include <QVBoxLayout>
+
+namespace {
+
+    constexpr int MAX_OPACITY_PERCENT = 100;
+
+}
+
 MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *parent)
     : QWidget(parent), m_mainWindow(mainWindow), m_canvas(canvas)
 {
@@ -27,64 +39,79 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
             else if(name == tr("Lignes de couture")){
                 m_canvas->setSeamVisible(checked);
             }
+            else if (name == tr("Erreur d'alignement")) {
+                m_canvas->setAlignmentErrorVisible(checked);
+            }
         });
     }
-    layersLayout->addWidget(
-    new QLabel(tr("Images superposées"), this)
-);
+    imageLayerControls = new QGroupBox(tr("Images superposées"), this);
+    auto *opacityForm = new QFormLayout(imageLayerControls);
+    globalOpacitySlider = new QSlider(Qt::Horizontal, imageLayerControls);
+    globalOpacitySlider->setRange(0, MAX_OPACITY_PERCENT);
+    globalOpacitySlider->setValue(MAX_OPACITY_PERCENT);
+    layerSelector = new QComboBox(imageLayerControls);
+    layerSelector->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    layerSelector->setPlaceholderText(tr("Aucune tuile"));
+    layerOpacitySlider = new QSlider(Qt::Horizontal, imageLayerControls);
+    layerOpacitySlider->setRange(0, MAX_OPACITY_PERCENT);
+    layerVisibilityCheck = new QCheckBox(tr("Afficher la tuile"), imageLayerControls);
 
-    auto *imageControls = new QWidget(this);
-    m_imageLayersLayout = new QVBoxLayout(imageControls);
-    m_imageLayersLayout->setContentsMargins(0, 0, 0, 0);
-
-    layersLayout->addWidget(imageControls);
+    opacityForm->addRow(tr("Opacité globale"), globalOpacitySlider);
+    opacityForm->addRow(tr("Tuile"), layerSelector);
+    opacityForm->addRow(tr("Opacité de la tuile"), layerOpacitySlider);
+    opacityForm->addRow(layerVisibilityCheck);
+    layersLayout->addWidget(imageLayerControls);
     layersLayout->addStretch();
-}
+    imageLayerControls->setEnabled(false);
+    syncSelectedLayerControls();
 
+    connect(globalOpacitySlider, &QSlider::valueChanged, this, [this](int percent) {
+        m_canvas->setGlobalImageLayerOpacity(static_cast<qreal>(percent) / MAX_OPACITY_PERCENT);
+    });
+    connect(layerSelector, &QComboBox::currentIndexChanged, this, &MasksTab::syncSelectedLayerControls);
+    connect(layerOpacitySlider, &QSlider::valueChanged, this, [this](int percent) {
+        if (layerSelector->currentIndex() >= 0) {
+            m_canvas->setImageLayerOpacity(layerSelector->currentData().toString(),
+                                          static_cast<qreal>(percent) / MAX_OPACITY_PERCENT);
+        }
+    });
+    connect(layerVisibilityCheck, &QCheckBox::toggled, this, [this](bool visible) {
+        if (layerSelector->currentIndex() >= 0) {
+            m_canvas->setImageLayerVisible(layerSelector->currentData().toString(), visible);
+            layerOpacitySlider->setEnabled(visible);
+        }
+    });
+}
 
 void MasksTab::setImageLayers(const QVector<ImageLayer> &layers)
 {
-    // Transmettre les couches au canvas
     m_canvas->setImageLayers(layers);
 
-    // Supprimer les anciens contrôles
-    while (QLayoutItem *item = m_imageLayersLayout->takeAt(0)) {
-        delete item->widget();
-        delete item;
-    }
-
-    // Créer les contrôles de chaque couche
+    const QSignalBlocker blockSelection(layerSelector);
+    const QSignalBlocker blockGlobalOpacity(globalOpacitySlider);
+    layerSelector->clear();
     for (const ImageLayer &layer : layers) {
-        auto *check = new QCheckBox(layer.name, this);
-        check->setChecked(layer.visible);
-
-        auto *slider = new QSlider(Qt::Horizontal, this);
-        slider->setRange(0, 100);
-        slider->setValue(
-            qRound(qBound(qreal(0), layer.opacity, qreal(1)) * 100)
-        );
-        slider->setEnabled(layer.visible);
-
-        m_imageLayersLayout->addWidget(check);
-        m_imageLayersLayout->addWidget(slider);
-
-        // Identifier la couche concernée
-        const QString id = layer.id;
-
-        // Afficher ou masquer la couche
-        connect(check, &QCheckBox::toggled,
-                m_canvas, [canvas = m_canvas, id](bool visible) {
-                    canvas->setImageLayerVisible(id, visible);
-                });
-
-        // Modifier son opacité
-        connect(slider, &QSlider::valueChanged,
-                m_canvas, [canvas = m_canvas, id](int value) {
-                    canvas->setImageLayerOpacity(id, value / 100.0);
-                });
-
-        // Désactiver le curseur si la couche est masquée
-        connect(check, &QCheckBox::toggled,
-                slider, &QWidget::setEnabled);
+        layerSelector->addItem(layer.name, layer.id);
     }
+
+    globalOpacitySlider->setValue(MAX_OPACITY_PERCENT);
+    layerSelector->setCurrentIndex(layers.isEmpty() ? -1 : 0);
+    imageLayerControls->setEnabled(!layers.isEmpty());
+    syncSelectedLayerControls();
+}
+
+void MasksTab::syncSelectedLayerControls()
+{
+    // Une nouvelle sélection relit les valeurs du canvas sans les réécrire.
+    const ImageLayer *layer = layerSelector->currentIndex() >= 0
+        ? m_canvas->findImageLayer(layerSelector->currentData().toString())
+        : nullptr;
+    const QSignalBlocker blockOpacity(layerOpacitySlider);
+    const QSignalBlocker blockVisibility(layerVisibilityCheck);
+    const bool visible = layer && layer->visible;
+    layerVisibilityCheck->setEnabled(layer != nullptr);
+    layerVisibilityCheck->setChecked(visible);
+    layerOpacitySlider->setEnabled(visible);
+    const qreal opacity = layer ? qBound(qreal(0), layer->opacity, qreal(1)) : 1.0;
+    layerOpacitySlider->setValue(qRound(opacity * MAX_OPACITY_PERCENT));
 }

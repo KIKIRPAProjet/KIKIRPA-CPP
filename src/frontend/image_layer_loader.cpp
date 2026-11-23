@@ -1,177 +1,109 @@
-
+// src/frontend/image_layer_loader.cpp
 #include "image_layer_loader.h"
 
-#include "backend/core/io/pyramidal_tiff_reader.h"
-#include <opencv2/core.hpp>
+#include "core/data/algorithm_types.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
+#include "frontendutils.h"
+
+#include <QDebug>
+#include <opencv2/core/mat.hpp>
 
 #include <cmath>
-#include <stdexcept>
-#include <string>
-#include "algorithms/seamline/graph_cut/image_pretreatment.h"
-
 #include <map>
 #include <set>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
 ImageLayer loadLowResolutionLayer(
-    const DataNs::TileClass &tile,
-    const DataNs::TilePositionData &position,
+    const DataNs::TileClass& tile,
+    const DataNs::TilePositionData& position,
     int level)
 {
-    // 1. Vérifier le niveau demandé.
+    const int tileId = tile.getId();
+    const std::string context = "Tile ID " + std::to_string(tileId) +
+                                ", TIFF level " + std::to_string(level);
     if (level < 0 || level >= DataNs::LEVEL_COUNT) {
-        throw std::invalid_argument("Niveau TIFF invalide");
+        throw std::invalid_argument(context + ": invalid pyramid level");
+    }
+    if (position.tileId != tileId) {
+        throw std::invalid_argument(context + ": position belongs to tile ID " +
+                                    std::to_string(position.tileId));
     }
 
-    // Première version : rotations non encore prises en charge.
-    if (std::abs(position.rotationRadians) > 1e-9) {
-        throw std::runtime_error(
-            "La rotation des couches n'est pas encore geree"
-        );
+    // Le rectangle de la couche ne représente qu'une translation.
+    if (position.rotationRadians != 0.0) {
+        qWarning().noquote() << "Skipping image layer for tile ID" << tileId
+                             << "because its rotation is unsupported (radians):"
+                             << position.rotationRadians;
+        return {};
     }
 
-    // 2. Obtenir les dimensions de l'image réduite.
-    const DataNs::Level &info = tile.getLevel(level);
-
-    if (info.width <= 0 || info.height <= 0) {
-        throw std::runtime_error("Dimensions TIFF invalides");
-    }
-
-    // 3. Lire les pixels du niveau demandé.
-    IONs::PyramidalTiffReaderClass reader(tile.getTiff());
-
+    const IONs::PyramidalTiffReaderClass reader(tile.getTiff());
     cv::Mat pixels;
     std::string errorMessage;
-
-    const cv::Rect region(
-        0, 0,
-        info.width,
-        info.height
-    );
-
-    if (!reader.readRegion(level, region, pixels, errorMessage)) {
-        throw std::runtime_error(
-            "Echec lecture TIFF : " + errorMessage
-        );
+    if (!reader.readLevel(level, pixels, errorMessage)) {
+        throw std::runtime_error(context + ": cannot read '" +
+                                 IONs::pathToUtf8(tile.getTiff()) + "': " + errorMessage);
     }
 
-    // 4. Convertir cv::Mat vers QImage.
-    QImage preview;
-
-    if (pixels.type() == CV_8UC1) {
-        preview = QImage(
-            pixels.data,
-            pixels.cols,
-            pixels.rows,
-            static_cast<qsizetype>(pixels.step),
-            QImage::Format_Grayscale8
-        ).copy();
-    }
-    else if (pixels.type() == CV_16UC1) {
-        preview = QImage(
-            pixels.data,
-            pixels.cols,
-            pixels.rows,
-            static_cast<qsizetype>(pixels.step),
-            QImage::Format_Grayscale16
-        ).copy();
-    }
-    else {
-        throw std::runtime_error(
-            "Format de pixels non pris en charge"
-        );
+    const QImage preview = FrontendUtils::matToQImage(pixels);
+    if (preview.isNull()) {
+        throw std::runtime_error(context + ": cannot convert TIFF pixels to a preview");
     }
 
-    // 5. Convertir les positions pleine résolution
-    // vers les coordonnées du niveau TIFF.
+    // La position absolue est exprimée en pixels de pleine résolution.
     const double scale = std::ldexp(1.0, level);
-
-    // 6. Construire la couche.
     ImageLayer layer;
-
-    layer.id = QString::fromStdString(position.tileId);
-    layer.name = layer.id;
+    layer.id = QString::number(tileId);
+    layer.name = QString::fromStdString(IONs::pathToUtf8(tile.getSource().filename()));
     layer.image = preview;
-
-    layer.worldRect = QRectF(
-        position.position.x / scale,
-        position.position.y / scale,
-        info.width,
-        info.height
-    );
-
-    layer.opacity = 1.0;
-    layer.visible = true;
-
+    layer.worldRect = QRectF(position.position.x / scale, position.position.y / scale,
+                             preview.width(), preview.height());
     return layer;
 }
+
 QVector<ImageLayer> buildImageLayers(
-    const DataNs::TileList &tiles,
-    const std::vector<DataNs::TilePositionData> &positions,
+    const DataNs::TileList& tiles,
+    const std::vector<DataNs::TilePositionData>& positions,
     int level)
 {
-    // 1. Associer chaque identifiant à sa position.
-    std::map<std::string, const DataNs::TilePositionData*> positionsById;
-
-    for (const auto &position : positions) {
+    std::map<int, const DataNs::TilePositionData*> positionsById;
+    for (const auto& position : positions) {
         if (!positionsById.emplace(position.tileId, &position).second) {
-            throw std::invalid_argument(
-                "Position dupliquee : " + position.tileId
-            );
+            throw std::invalid_argument("Duplicate position for tile ID " +
+                                        std::to_string(position.tileId));
         }
     }
 
-    // 2. Construire les couches.
-    QVector<ImageLayer> layers;
-    std::set<std::string> loadedIds;
-
-    for (const auto &tile : tiles) {
-
+    std::set<int> tileIds;
+    for (const auto& tile : tiles) {
         if (!tile) {
-            throw std::invalid_argument("Tuile nulle");
+            throw std::invalid_argument("Tile list contains a null tile");
         }
-
-        // Extraire l'identifiant depuis le nom du TIFF source.
-        int row = 0;
-        int column = 0;
-        std::string tileName;
-
-        if (!GraphCutNs::ImagePretreatmentClass::parseTileName(
-                tile->getSource().string(),
-                row,
-                column,
-                tileName)) {
-            throw std::invalid_argument(
-                "Nom de tuile invalide : " + tile->getSource().string()
-            );
+        const int tileId = tile->getId();
+        if (!tileIds.insert(tileId).second) {
+            throw std::invalid_argument("Duplicate tile ID " + std::to_string(tileId));
         }
-
-        // Empêcher les identifiants dupliqués.
-        if (!loadedIds.insert(tileName).second) {
-            throw std::invalid_argument(
-                "Tuile dupliquee : " + tileName
-            );
+        if (positionsById.count(tileId) == 0) {
+            throw std::invalid_argument("Missing position for tile ID " + std::to_string(tileId));
         }
-
-        // Retrouver sa position absolue.
-        auto it = positionsById.find(tileName);
-
-        if (it == positionsById.end()) {
-            throw std::runtime_error(
-                "Position introuvable : " + tileName
-            );
-        }
-
-        // Charger l'aperçu basse résolution.
-        layers.push_back(
-            loadLowResolutionLayer(*tile, *it->second, level)
-        );
     }
 
-    // Vérifier qu'aucune position ne reste sans tuile.
-    if (loadedIds.size() != positionsById.size()) {
-        throw std::runtime_error(
-            "Certaines positions ne correspondent a aucune tuile"
-        );
+    for (const auto& position : positions) {
+        if (tileIds.count(position.tileId) == 0) {
+            throw std::invalid_argument("Position has no matching tile for ID " +
+                                        std::to_string(position.tileId));
+        }
     }
 
+    QVector<ImageLayer> layers;
+    for (const auto& tile : tiles) {
+        ImageLayer layer = loadLowResolutionLayer(*tile, *positionsById.at(tile->getId()), level);
+        if (!layer.image.isNull()) {
+            layers.push_back(std::move(layer));
+        }
+    }
     return layers;
 }

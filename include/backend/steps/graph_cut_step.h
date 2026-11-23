@@ -9,12 +9,13 @@
 
 namespace StepsNs {
 
+    constexpr double DEFAULT_GRAPH_CUT_SCALE = 0.25;
     // Entrées pour un appel direct, hors pipeline. Dans un pipeline, tuiles et positions viennent du DataStoreClass
     // et seule `scale` est lue (dans la configuration du step).
     struct GraphCutInput {
         std::vector<std::string> tilePaths;   // chemins des images des tuiles
         std::vector<DataNs::TilePositionData> positions;   // une entrée par tuile, dans le même ordre que tilePaths
-        double scale = 1;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
+        double scale = DEFAULT_GRAPH_CUT_SCALE;   // facteur de réduction appliqué avant la coupe de graphe, dans ]0, 1] (1 = pleine résolution)
     };
 
     // Sortie du step.
@@ -31,7 +32,7 @@ namespace StepsNs {
     //
     // Étapes de execute() : lecture des entrées, contrôles, prétraitement des images (tailles, coins, masques réduits),
     // coupe de graphe, extraction des polygones. Au premier problème, execute() renvoie false avec la cause dans
-    // getResult()["error"] (et sur std::cerr).
+    // getResult()["error"].
     class GraphCutStepClass : public StepNs::StepClass {
 
         public:
@@ -42,6 +43,11 @@ namespace StepsNs {
             }
 
         private:
+            // Résout les entrées de execute() : celles de `input` par défaut, remplacées par les données du DataStoreClass
+            // quand il les fournit ; `scale` est toujours relu dans la configuration, pour tenir compte d'un JSON chargé
+            // après la construction. Renvoie false si une lecture échoue (cause dans result["error"]).
+            bool readInputs(GraphCutInput& resolvedInput);
+
             GraphCutInput input;   // sert de repli quand le DataStoreClass est absent ou n'a pas la donnée
             GraphCutOutput output;
 

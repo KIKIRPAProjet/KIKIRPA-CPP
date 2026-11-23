@@ -15,16 +15,20 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/pyramid_cache.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
+
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
 #include <QPushButton>
 #include <QtMath>
-
-#ifdef Q_OS_WIN
-#include <wincodec.h>
-#include <windows.h>
-#endif
 
 namespace FrontendUtils {
 
@@ -32,6 +36,42 @@ const QStringList MODE_NAMES = {
     QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
     QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
 };
+
+// Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
+static QString stepDisplayName(const std::string &technicalName)
+{
+    if (technicalName == "import") return QObject::tr("Importation des tuiles");
+    if (technicalName == "overlap-estimation") return QObject::tr("Recouvrement réel (première passe)");
+    if (technicalName == "phase-correlation") return QObject::tr("Appariement (corrélation de phase)");
+    if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
+    if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
+    if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
+    if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
+    if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
+    if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
+    if (technicalName == "dynamic-programming-dijkstra") return QObject::tr("Ligne de couture (programmation dynamique)");
+    if (technicalName == "fusion") return QObject::tr("Fusion des tuiles");
+    if (technicalName == "export") return QObject::tr("Export de la mosaïque");
+    return QString::fromStdString(technicalName);
+}
+
+std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &choices) {
+    std::vector<PipelineStepInfo> steps;
+    for (const std::string &technicalName : FrontendNs::pipelineStepNames(choices)) {
+        const QString number = QString::number(static_cast<int>(steps.size()) + 1);
+        steps.push_back({technicalName, number + QStringLiteral("  ") + stepDisplayName(technicalName)});
+    }
+    return steps;
+}
+
+// Le dossier de l'exécutable, et non le dossier courant : stitching et models/ sont tous deux dans le dossier de build,
+// d'où que l'application soit lancée.
+std::filesystem::path lightGlueModelPath()
+{
+    const std::filesystem::path applicationDirectory =
+        IONs::pathFromUtf8(QCoreApplication::applicationDirPath().toStdString());
+    return (applicationDirectory / FrontendNs::LIGHTGLUE_MODEL_PATH).lexically_normal();
+}
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)
 {
@@ -46,6 +86,184 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     auto *label = new QLabel(text, parent);
     label->setProperty("muted", true);
     return label;
+}
+
+//paires d'exemple de la maquette - à supprimé lors de la connection au backend
+QVector<PairAlignmentInfo> defaultPairAlignments()
+{
+    return {
+        {0, 0, 1, QStringLiteral("r00_c00"), QStringLiteral("r00_c01"),
+         QObject::tr("horizontal"), PairStatus::Dubious,
+         QObject::tr("contrôle NCC faible (0,37)"),
+         0.91, 0.37, 4065.5, -20.7, 263, 1401, 14, 3, 3.95, QObject::tr("aucune")},
+        {1, 0, 2, QStringLiteral("r00_c00"), QStringLiteral("r01_c00"),
+         QObject::tr("vertical"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.99, 0.76, 23.5, 4086.7, 678, 1232, 16, 1, 0.04, QObject::tr("aucune")},
+        {2, 1, 3, QStringLiteral("r00_c01"), QStringLiteral("r01_c01"),
+         QObject::tr("vertical"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.99, 0.92, 23.8, 4133.7, 1105, 1429, 18, 1, 0.04, QObject::tr("aucune")},
+        {3, 2, 3, QStringLiteral("r01_c00"), QStringLiteral("r01_c01"),
+         QObject::tr("horizontal"), PairStatus::Reliable,
+         QObject::tr("corrélation et géométrie cohérentes"),
+         0.98, 0.65, 4064.7, 29.9, 421, 1492, 15, 2, 0.02, QObject::tr("aucune")}
+    };
+}
+
+/* À décommenter lors de la connexion au backend (convertit DataNs::PairMatches en PairAlignmentInfo) ---
+PairAlignmentInfo pairInfoFromBackend(int pairIndex,
+                                      const QString &tileAName,
+                                      const QString &tileBName,
+                                      const DataNs::PairMatches &pairMatches,
+                                      const DataNs::Alignment *alignment,
+                                      double nccScore,
+                                      double optimizationErrorPx)
+{
+    PairAlignmentInfo info;
+    info.pairIndex = pairIndex;
+    info.tileA = tileAName;
+    info.tileB = tileBName;
+    info.direction = (pairMatches.direction == DataNs::Direction::Bottom ||
+                      pairMatches.direction == DataNs::Direction::Top)
+                         ? QObject::tr("vertical")
+                         : QObject::tr("horizontal");
+
+    const auto &matches = pairMatches.featureMatches;
+    info.dx = matches.translationX;
+    info.dy = matches.translationY;
+    info.totalMatches = static_cast<int>(matches.pointsInA.size());
+    info.nccScore = nccScore;
+    info.optimizationErrorPx = optimizationErrorPx;
+    info.intervention = QObject::tr("aucune");
+
+    double sumConfidence = 0.0;
+    int inliers = 0;
+
+    for (std::size_t i = 0; i < matches.pointsInA.size(); ++i) {
+        const bool inlier = (alignment == nullptr ||
+                             i >= alignment->inlierMask.size() ||
+                             alignment->inlierMask[i] != 0);
+        info.pointsInA.append(QPointF(matches.pointsInA[i].x, matches.pointsInA[i].y));
+        info.pointsInB.append(QPointF(matches.pointsInB[i].x, matches.pointsInB[i].y));
+        info.isInlier.append(inlier);
+
+        if (inlier) {
+            if (i < matches.confidenceScores.size())
+                sumConfidence += matches.confidenceScores[i];
+            ++inliers;
+        }
+    }
+
+    info.inlierCount = inliers;
+    info.shownInliers = inliers;
+    info.shownOutliers = info.totalMatches - inliers;
+    info.meanConfidence = inliers > 0 ? (sumConfidence / inliers) : 0.0;
+
+    // Détection automatique de paire douteuse à partir des scores de confiance et du NCC
+    if (info.totalMatches == 0 || info.inlierCount < 4) {
+        info.status = PairStatus::Failed;
+        info.statusReason = QObject::tr("nombre de points insuffisant (%1)").arg(info.inlierCount);
+    } else if (info.nccScore < 0.50) {
+        info.status = PairStatus::Dubious;
+        info.statusReason = QObject::tr("contrôle NCC faible (%1)")
+                                .arg(QString::number(info.nccScore, 'f', 2).replace('.', ','));
+    } else if (info.meanConfidence < 0.75) {
+        info.status = PairStatus::Dubious;
+        info.statusReason = QObject::tr("score de confiance faible (%1)")
+                                .arg(QString::number(info.meanConfidence, 'f', 2).replace('.', ','));
+    } else {
+        info.status = PairStatus::Reliable;
+        info.statusReason = QObject::tr("corrélation et géométrie cohérentes");
+    }
+    return info;
+}
+*/
+
+QImage matToQImage(const cv::Mat &mat)
+{
+    if (mat.empty())
+        return {};
+
+    cv::Mat mat8;
+    if (mat.depth() == CV_16U) {
+        mat.convertTo(mat8, CV_8U, 1.0 / 256.0);
+    } else if (mat.depth() == CV_8U) {
+        mat8 = mat;
+    } else {
+        return {};
+    }
+
+    if (mat8.channels() == 1) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_Grayscale8).copy();
+    }
+    if (mat8.channels() == 3) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_BGR888).copy();
+    }
+    if (mat8.channels() == 4) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_ARGB32).copy();
+    }
+    return {};
+}
+
+// Pyramide de `sourcePath` dans le cache partagé avec le backend (core/io/pyramid_cache.h), à côté de l'image.
+// Chemin vide si elle n'existe pas encore ou si elle a été produite à partir d'une autre version de l'image : l'aperçu
+// relit alors la source.
+QString findPyramidPathForSource(const QString &sourcePath)
+{
+    if (sourcePath.isEmpty())
+        return {};
+
+    // Le chemin passé est déjà un TIFF pyramidal
+    if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
+        sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
+        return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+    }
+
+    const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());
+    const std::filesystem::path pyramid =
+        IONs::pyramidCachePath(IONs::pyramidCacheDirectory(source.parent_path()), source);
+    if (!IONs::isPyramidCacheValid(source, pyramid))
+        return {};
+    return QString::fromStdString(IONs::pathToUtf8(pyramid));
+}
+
+QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
+{
+    if (pyramidPath.isEmpty())
+        return {};
+
+    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    const int levelCount = reader.getLevelCount();
+    if (levelCount <= 0)
+        return {};
+
+    int chosenLevel = levelCount - 1;
+    for (int level = levelCount - 1; level >= 0; --level) {
+        int width = 0;
+        int height = 0;
+        std::string err;
+        if (reader.getLevelDimensions(level, width, height, err)) {
+            if (width >= maximumSize.width() && height >= maximumSize.height()) {
+                chosenLevel = level;
+                break;
+            }
+        }
+    }
+
+    cv::Mat levelMat;
+    std::string errorMessage;
+    if (!reader.readLevel(chosenLevel, levelMat, errorMessage))
+        return {};
+
+    QImage image = matToQImage(levelMat);
+    if (!image.isNull() && (image.width() > maximumSize.width() || image.height() > maximumSize.height())) {
+        image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    return image;
 }
 
 }
@@ -102,93 +320,15 @@ QVector<int> captureOrderCells(int rows, int columns, int order)
     return cells;
 }
 
-#ifdef Q_OS_WIN
-QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
-{
-    HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    const bool uninitialize = SUCCEEDED(result);
-    if (FAILED(result) && result != RPC_E_CHANGED_MODE)
-        return {};
-
-    IWICImagingFactory *factory = nullptr;
-    IWICBitmapDecoder *decoder = nullptr;
-    IWICBitmapFrameDecode *frame = nullptr;
-    IWICBitmapScaler *scaler = nullptr;
-    IWICFormatConverter *converter = nullptr;
-    QImage image;
-
-    do {
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                     IID_PPV_ARGS(&factory)))) {
-            break;
-        }
-        if (FAILED(factory->CreateDecoderFromFilename(
-                reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, GENERIC_READ,
-                WICDecodeMetadataCacheOnLoad, &decoder))) {
-            break;
-        }
-        if (FAILED(decoder->GetFrame(0, &frame)))
-            break;
-
-        UINT sourceWidth = 0;
-        UINT sourceHeight = 0;
-        if (FAILED(frame->GetSize(&sourceWidth, &sourceHeight)) ||
-            sourceWidth == 0 || sourceHeight == 0)
-            break;
-
-        const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceWidth,
-                                  static_cast<double>(maximumSize.height()) / sourceHeight);
-        const UINT previewWidth = qMax<UINT>(1, qRound(sourceWidth * qMin(1.0, scale)));
-        const UINT previewHeight = qMax<UINT>(1, qRound(sourceHeight * qMin(1.0, scale)));
-        IWICBitmapSource *source = frame;
-        if (previewWidth != sourceWidth || previewHeight != sourceHeight) {
-            if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
-                FAILED(scaler->Initialize(frame, previewWidth, previewHeight,
-                                          WICBitmapInterpolationModeFant))) {
-                break;
-            }
-            source = scaler;
-        }
-
-        if (FAILED(factory->CreateFormatConverter(&converter)) ||
-            FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA,
-                                         WICBitmapDitherTypeNone, nullptr, 0.0,
-                                         WICBitmapPaletteTypeCustom))) {
-            break;
-        }
-
-        UINT width = 0;
-        UINT height = 0;
-        if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0)
-            break;
-
-        image = QImage(static_cast<int>(width), static_cast<int>(height), QImage::Format_ARGB32);
-        if (image.isNull() ||
-            FAILED(converter->CopyPixels(nullptr, static_cast<UINT>(image.bytesPerLine()),
-                                         static_cast<UINT>(image.sizeInBytes()),
-                                         image.bits()))) {
-            image = {};
-        }
-    } while (false);
-
-    if (converter)
-        converter->Release();
-    if (scaler)
-        scaler->Release();
-    if (frame)
-        frame->Release();
-    if (decoder)
-        decoder->Release();
-    if (factory)
-        factory->Release();
-    if (uninitialize)
-        CoUninitialize();
-    return image;
-}
-#endif
-
 QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
+    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
+    if (!pyramidPath.isEmpty()) {
+        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
+        if (!pyramidPreview.isNull())
+            return pyramidPreview;
+    }
+
     QImageReader reader(path);
     reader.setAutoTransform(true);
     const QSize sourceSize = reader.size();
@@ -200,10 +340,6 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
                                        qMax(1, qRound(sourceSize.height() * scale))));
     }
     QImage image = reader.read();
-#ifdef Q_OS_WIN
-    if (image.isNull())
-        image = readWindowsTiff(path, maximumSize);
-#endif
     if (!image.isNull())
         image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     return image;

@@ -6,6 +6,8 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/unicode_path.h"
+#include "steps/matching_step_utils.h"
 
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -50,14 +52,26 @@ namespace StepsNs {
         constexpr double JSON_ROUNDING = 1000.0;       // valeurs du JSON arrondies au millième
         constexpr std::size_t NUMBER_TEXT_SIZE = 32;
 
-        // Ce qu'il faut pour mesurer les paires et noter leurs résultats.
+        // Ce qu'il faut pour mesurer les paires.
         struct MeasureContext {
             const PhaseCorrelationInput& input;
             PhaseCorrelationNs::PhaseCorrelationMatcherClass& matcher;
-            PhaseCorrelationOutput& output;
-            Json& failures;
-            Json& confidences;
+            const DataNs::OverlapEstimates* overlapEstimates = nullptr;   // sortie de overlap-estimation, si présente
         };
+
+        // Une paire voisine et son résultat. Les paires sont gardées dans l'ordre de parcours (tuile par tuile, voisine
+        // de droite puis du dessous) : un recalage remplace le résultat d'une paire sans changer cet ordre.
+        struct PairRecord {
+            const DataNs::TileClass* tileA = nullptr;
+            const DataNs::TileClass* tileB = nullptr;
+            DataNs::PairMatches pair;
+            PairConfidence confidence;                          // reason vide : paire gardée
+            std::optional<OverlapObservation> observation;      // recouvrement vu par la première passe, s'il est connu
+        };
+
+        const char* directionName(DataNs::Direction direction) {
+            return direction == DataNs::Direction::Bottom ? "Bottom" : "Right";
+        }
 
         std::string formatNumber(double number) {
             std::array<char, NUMBER_TEXT_SIZE> text{};
@@ -179,23 +193,38 @@ namespace StepsNs {
         }
 
         std::string checkInput(const PhaseCorrelationInput& input) {
-            if (!(input.overlap > 0.f && input.overlap < 1.f)) {
-                return "overlap must be in ]0, 1[, got " + std::to_string(input.overlap);
-            }
+            const std::string overlapError = checkOverlaps(input.overlap, input.verticalOverlap);
+            if (!overlapError.empty()) return overlapError;
             if (input.level < 0 || input.level >= DataNs::LEVEL_COUNT) {
                 return "niveau must be in [0, " + std::to_string(DataNs::LEVEL_COUNT - 1) + "], got " + std::to_string(input.level);
             }
             return {};
         }
 
-        // Mesure sur les images du niveau analysé, contrôles de confiance, puis conversion en pleine résolution.
-        PairConfidence measurePair(const MeasureContext& context, const cv::Mat& imageA, const cv::Mat& imageB,
-                                   DataNs::PairMatches& pair) {
+        // Mesure sur les images du niveau analysé, au recouvrement nominal `overlap`, contrôles de confiance, puis
+        // conversion en pleine résolution. Remplit record.pair.featureMatches, record.confidence et record.observation.
+        void measurePair(const MeasureContext& context, const cv::Mat& imageA, const cv::Mat& imageB, float overlap,
+                         PairRecord& record) {
             const PhaseCorrelationInput& input = context.input;
+            DataNs::PairMatches& pair = record.pair;
+            pair.featureMatches = {};
+            record.observation.reset();
             PairConfidence confidence;
-            if (context.matcher.match(imageA, imageB, DataNs::PairContext{pair.direction, input.overlap}, pair.featureMatches)) {
-                const ConfidenceContext confidenceContext{pair.direction, input.overlap, input.parameters, input.confiance};
+            // Première passe : la translation mesurée par overlap-estimation (pleine résolution), ramenée au niveau analysé.
+            // Absente, l'algorithme part du recouvrement nominal, comme avant.
+            std::optional<cv::Point2d> estimatedTranslation =
+                findEstimatedTranslation(context.overlapEstimates, pair.tileIdA, pair.tileIdB);
+            if (estimatedTranslation) *estimatedTranslation /= static_cast<double>(1 << input.level);
+            if (context.matcher.match(imageA, imageB, DataNs::PairContext{pair.direction, overlap, estimatedTranslation},
+                                      pair.featureMatches)) {
+                const ConfidenceContext confidenceContext{pair.direction, overlap, input.parameters, input.confiance};
                 confidence = PhaseCorrelationStepClass::checkConfidence(pair.featureMatches, imageA, confidenceContext);
+                // Seule une paire gardée témoigne du recouvrement réel (une paire ambiguë peut être fausse d'une période)
+                if (confidence.reason.empty()) {
+                    const cv::Point2d translation(pair.featureMatches.translationX, pair.featureMatches.translationY);
+                    record.observation = OverlapObservation{
+                        pair.direction, measuredOverlapFraction(pair.direction, imageA.size(), translation), false};
+                }
                 PhaseCorrelationStepClass::scaleToFullResolution(pair.featureMatches, input.level);
                 if (confidence.dispersion) *confidence.dispersion *= static_cast<double>(1 << input.level);
                 const DataNs::Matches& matches = pair.featureMatches;
@@ -205,53 +234,86 @@ namespace StepsNs {
             } else {
                 confidence.state = ConfidenceState::Rejected;
                 confidence.reason = context.matcher.getFailureReason();
+                if (const auto& peak = context.matcher.getOutOfMarginPeak())
+                    record.observation = OverlapObservation{pair.direction, peak->overlapFraction, true};
             }
             confidence.tileIdA = pair.tileIdA;
             confidence.tileIdB = pair.tileIdB;
             confidence.direction = pair.direction;
-            return confidence;
-        }
-
-        // Une paire qui échoue (mesure impossible ou contrôle) est notée avec sa raison, sans arrêter le step.
-        void recordPair(const MeasureContext& context, DataNs::PairMatches& pair, PairConfidence& confidence) {
-            context.confidences.push_back(PhaseCorrelationStepClass::toJson(confidence));
-            if (confidence.reason.empty()) {
-                context.output.pairs.push_back(std::move(pair));
-            } else {
-                context.failures.push_back({{"idA", pair.tileIdA}, {"idB", pair.tileIdB}, {"reason", confidence.reason}});
-            }
-            context.output.confidence.push_back(std::move(confidence));
+            record.confidence = std::move(confidence);
         }
 
         // Mesure une tuile avec ses voisines de droite et du dessous. Au plus deux images en mémoire : la tuile (lue une
-        // seule fois) et sa voisine. Renvoie l'erreur qui arrête le step, vide sinon.
-        std::string measureTile(const DataNs::TileClass& tile, const MeasureContext& context) {
+        // seule fois) et sa voisine. Une paire qui échoue (mesure impossible ou contrôle) garde sa raison, sans arrêter
+        // le step. Renvoie l'erreur qui arrête le step, vide sinon.
+        std::string measureTile(const DataNs::TileClass& tile, const MeasureContext& context, std::vector<PairRecord>& records) {
             const std::array<std::pair<DataNs::TileClass*, DataNs::Direction>, 2> neighbours = {
                 std::pair{tile.getRight(), DataNs::Direction::Right}, std::pair{tile.getBottom(), DataNs::Direction::Bottom}};
             cv::Mat tileImage;
             for (const auto& [neighbour, direction] : neighbours) {
                 if (neighbour == nullptr) continue;
                 if (tileImage.empty()) tileImage = PhaseCorrelationStepClass::readPixels(tile, context.input.level);
-                if (tileImage.empty()) return "cannot read " + tile.getSource().string();
+                if (tileImage.empty()) return "cannot read " + IONs::pathToUtf8(tile.getSource());
                 const cv::Mat neighbourImage = PhaseCorrelationStepClass::readPixels(*neighbour, context.input.level);
-                if (neighbourImage.empty()) return "cannot read " + neighbour->getSource().string();
+                if (neighbourImage.empty()) return "cannot read " + IONs::pathToUtf8(neighbour->getSource());
 
-                DataNs::PairMatches pair{tile.getId(), neighbour->getId(), direction, {}};
-                PairConfidence confidence = measurePair(context, tileImage, neighbourImage, pair);
-                recordPair(context, pair, confidence);
+                PairRecord record;
+                record.tileA = &tile;
+                record.tileB = neighbour;
+                record.pair = DataNs::PairMatches{tile.getId(), neighbour->getId(), direction, {}};
+                const float overlap = overlapForDirection(direction, context.input.overlap, context.input.verticalOverlap);
+                measurePair(context, tileImage, neighbourImage, overlap, record);
+                records.push_back(std::move(record));
+            }
+            return {};
+        }
+
+        // Recalage du recouvrement nominal (voir calibrateOverlap) : pour chaque direction recalée, les paires refusées
+        // sont mesurées une seconde fois au recouvrement recalé. Une paire qui échoue encore garde sa première raison.
+        // Le détail va dans result["overlapCalibration"]. Renvoie l'erreur qui arrête le step, vide sinon.
+        std::string retryWithCalibratedOverlaps(const MeasureContext& context, std::vector<PairRecord>& records, Json& result) {
+            std::vector<OverlapObservation> observations;
+            for (const PairRecord& record : records)
+                if (record.observation) observations.push_back(*record.observation);
+
+            const PhaseCorrelationInput& input = context.input;
+            for (const DataNs::Direction direction : {DataNs::Direction::Right, DataNs::Direction::Bottom}) {
+                const std::optional<double> calibrated = calibrateOverlap(observations, direction);
+                if (!calibrated) continue;
+                int recoveredCount = 0;
+                for (PairRecord& record : records) {
+                    if (record.pair.direction != direction || record.confidence.reason.empty()) continue;
+                    const cv::Mat imageA = PhaseCorrelationStepClass::readPixels(*record.tileA, input.level);
+                    if (imageA.empty()) return "cannot read " + IONs::pathToUtf8(record.tileA->getSource());
+                    const cv::Mat imageB = PhaseCorrelationStepClass::readPixels(*record.tileB, input.level);
+                    if (imageB.empty()) return "cannot read " + IONs::pathToUtf8(record.tileB->getSource());
+                    PairRecord retry = record;
+                    measurePair(context, imageA, imageB, static_cast<float>(*calibrated), retry);
+                    if (retry.confidence.reason.empty()) {
+                        record = std::move(retry);
+                        ++recoveredCount;
+                    }
+                }
+                result["overlapCalibration"].push_back(
+                    {{"dir", directionName(direction)},
+                     {"nominal", std::round(overlapForDirection(direction, input.overlap, input.verticalOverlap) * JSON_ROUNDING) / JSON_ROUNDING},
+                     {"calibrated", std::round(*calibrated * JSON_ROUNDING) / JSON_ROUNDING},
+                     {"recoveredPairs", recoveredCount}});
             }
             return {};
         }
 
     }
 
-    // Déclare l'identité du step : son nom, ses 15 paramètres (valeurs par défaut = celles de l'entrée), la donnée
+    // Déclare l'identité du step : son nom, ses 17 paramètres (valeurs par défaut = celles de l'entrée), la donnée
     // qu'il lit (tuiles) et celle qu'il produit (appariements). Le pipeline s'en sert pour vérifier l'enchaînement.
     PhaseCorrelationStepClass::PhaseCorrelationStepClass(const PhaseCorrelationInput& initialInput) {
         const auto& correlationParameters = initialInput.parameters;
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "phase-correlation";
         stepConfig.parameters = {{"float", "overlap", initialInput.overlap},
+                                 {"float", "verticalOverlap", initialInput.verticalOverlap},
+                                 {"bool", "overlapCalibration", initialInput.overlapCalibration},
                                  {"int", "niveau", initialInput.level},
                                  {"float", "lissage", correlationParameters.smoothingSigma},
                                  {"float", "seuilRapport", correlationParameters.minimumPeakRatio},
@@ -272,7 +334,7 @@ namespace StepsNs {
     }
 
     cv::Mat PhaseCorrelationStepClass::readPixels(const DataNs::TileClass& tile, int level) {
-        cv::Mat image = cv::imread(tile.getSource().string(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+        cv::Mat image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
         // Mêmes réductions successives que createPyramidalTiledTiff : le résultat sera celui du niveau du TIFF.
         for (int levelIndex = 0; levelIndex < level && !image.empty(); ++levelIndex) {
             cv::resize(image, image, cv::Size(), PYRAMID_REDUCTION, PYRAMID_REDUCTION, cv::INTER_AREA);
@@ -366,6 +428,8 @@ namespace StepsNs {
         };
         auto& correlationParameters = input.parameters;
         readParameter("overlap", input.overlap);
+        readParameter("verticalOverlap", input.verticalOverlap);
+        readParameter("overlapCalibration", input.overlapCalibration);
         readParameter("niveau", input.level);
         readParameter("lissage", correlationParameters.smoothingSigma);
         readParameter("seuilRapport", correlationParameters.minimumPeakRatio);
@@ -425,15 +489,33 @@ namespace StepsNs {
 
     bool PhaseCorrelationStepClass::measureAllTiles(const PhaseCorrelationInput& input,
                                                     PhaseCorrelationNs::PhaseCorrelationMatcherClass& matcher) {
-        Json failures = Json::array();
-        Json confidences = Json::array();
-        const MeasureContext context{input, matcher, output, failures, confidences};
+        const MeasureContext context{input, matcher, findOverlapEstimates(*dataStore)};
+        std::vector<PairRecord> records;
         for (const auto& tile : dataStore->get<DataNs::TileList>("tiles")) {
-            const std::string error = measureTile(*tile, context);
+            const std::string error = measureTile(*tile, context, records);
             if (!error.empty()) {
                 result["error"] = error;
                 return false;
             }
+        }
+        if (input.overlapCalibration) {
+            const std::string error = retryWithCalibratedOverlaps(context, records, result);
+            if (!error.empty()) {
+                result["error"] = error;
+                return false;
+            }
+        }
+
+        Json failures = Json::array();
+        Json confidences = Json::array();
+        for (PairRecord& record : records) {
+            confidences.push_back(toJson(record.confidence));
+            if (record.confidence.reason.empty()) {
+                output.pairs.push_back(std::move(record.pair));
+            } else {
+                failures.push_back({{"idA", record.pair.tileIdA}, {"idB", record.pair.tileIdB}, {"reason", record.confidence.reason}});
+            }
+            output.confidence.push_back(std::move(record.confidence));
         }
 
         result["niveau"] = input.level;

@@ -2,6 +2,7 @@
 #include "algorithms/stitching/lightglue/lightglue_matcher.h"
 
 #include "core/data/algorithm_types.h"
+#include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
 #include <onnxruntime_c_api.h>
@@ -144,7 +145,7 @@ namespace LightGlueNs {
         // Essaie le chemin configuré en premier pour que les chemins absolus et les chemins relatifs au répertoire de
         // travail de l'appelant continuent de fonctionner.
         std::filesystem::path resolveModelPath(const std::string& configuredPath) {
-            std::filesystem::path modelPath = configuredPath;
+            std::filesystem::path modelPath = IONs::pathFromUtf8(configuredPath);
             if (!modelPath.is_absolute() && !std::filesystem::is_regular_file(modelPath)) {
                 const auto workingDirectory = std::filesystem::current_path();
                 const std::array<std::filesystem::path, 3> candidatePaths = {
@@ -163,7 +164,7 @@ namespace LightGlueNs {
             // Erreur explicite si le modèle n'est pas trouvé, pour éviter des erreurs plus tard
             if (!std::filesystem::is_regular_file(modelPath)) {
                 throw std::invalid_argument("LightGlue model not found: " + configuredPath + " (working directory: " +
-                                            std::filesystem::current_path().string() + ")");
+                                            IONs::pathToUtf8(std::filesystem::current_path()) + ")");
             }
             return modelPath;
         }
@@ -428,7 +429,7 @@ namespace LightGlueNs {
         }
 
         const std::filesystem::path modelPath = resolveModelPath(configuredPath);
-        state->parameters["model_path"] = modelPath.string();
+        state->parameters["model_path"] = IONs::pathToUtf8(modelPath);
 
         // La session est gardée dans le pointeur intelligent, pour la méthode match() : sa mémoire est libérée
         // automatiquement quand l'objet LightGlueMatcherClass est détruit.

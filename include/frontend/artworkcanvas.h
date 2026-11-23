@@ -3,11 +3,13 @@
 
 #include "projectgrid.h"
 #include "image_layer.h"
+#include "frontendutils.h"
 
 #include <QRect>
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
+#include <QImage>
 
 #include <functional>
 
@@ -31,8 +33,26 @@ public:
     void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setImageLayers(const QVector<ImageLayer> &layers)
     {
-    imageLayers = layers;
-    update();
+        imageLayers = layers;
+        globalImageLayerOpacity = 1.0;
+        update();
+    }
+
+    // Facteur de rendu commun aux couches TIFF en mode Assemblage.
+    void setGlobalImageLayerOpacity(qreal opacity)
+    {
+        globalImageLayerOpacity = qBound(qreal(0), opacity, qreal(1));
+        update();
+    }
+
+    // Renvoie les réglages courants de la couche ou nullptr si elle n'existe plus.
+    const ImageLayer *findImageLayer(const QString &id) const
+    {
+        for (const ImageLayer &layer : imageLayers) {
+            if (layer.id == id)
+                return &layer;
+        }
+        return nullptr;
     }
 
     void setImageLayerOpacity(const QString &id, qreal opacity)
@@ -65,7 +85,15 @@ public:
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
+    void setMosaicPreview(const QImage &image) {
+        m_mosaicPreview = image;
+        update(); // Demande à Qt de redessiner le canevas immédiatement
+    }
+    const QImage &mosaicPreview() const { return m_mosaicPreview; }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
+    void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
+    void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
+    void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -85,6 +113,7 @@ private:
     int zoomPercent = 12;
     QStringList imagePaths;
     QVector<ImageLayer> imageLayers;
+    qreal globalImageLayerOpacity = 1.0;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
     std::function<void(int)> selectionChangedCallback;
@@ -96,7 +125,11 @@ private:
     int dragStartCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    QImage m_mosaicPreview;
     bool seamVisible = true;
+    bool alignmentErrorVisible = true;
+    bool pairOverlayMode = false;
+    FrontendUtils::PairAlignmentInfo currentPair;
 };
 
 #endif // ARTWORKCANVAS_H

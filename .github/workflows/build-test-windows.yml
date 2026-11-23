@@ -50,13 +50,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: C:\Qt
-          key: qt-6.8.3-win64_msvc2022_64
+          key: qt-6.8.3-win64_msvc2022_64-imageformats-v2
 
       - name: Install Qt
         if: steps.qt.outputs.cache-hit != 'true'
         run: |
-          python -m pip install aqtinstall
-          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+          python -m pip install aqtinstall==3.3.0
+          python -m aqt install-qt windows desktop 6.8.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
 
       - name: vcpkg version
         id: vcpkg
@@ -99,6 +99,8 @@ jobs:
           Copy-Item build/windows-aqt/stitching.exe, build/windows-aqt/*.dll release
           Copy-Item "$env:OpenCV_DIR/x64/vc16/bin/opencv_world4100.dll" release
           Copy-Item "$env:VCToolsRedistDir/x64/Microsoft.VC143.CRT/*.dll" release
+          New-Item -ItemType Directory release/imageformats -Force | Out-Null
+          Copy-Item "$env:QT_ROOT/plugins/imageformats/*.dll" release/imageformats
           ./release/stitching.exe
           Compress-Archive -Path release/* -DestinationPath "stitching-$env:GITHUB_REF_NAME-windows-x86_64.zip"
 
