@@ -263,7 +263,7 @@ void MainWindow::setupMenuConnections()
             updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
         } else if (mode == 2) {
             static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
+            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
         }
     });
     connect(menuBarManager, &MenuBarManager::runRequested,
@@ -272,7 +272,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage — prototype d'interface.\n"
+            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
 }
@@ -339,7 +339,7 @@ void MainWindow::selectPair(int pairIndex)
     const auto &pair = m_pairs.at(m_currentPairIndex);
     updateStatus(tr("Paire sélectionnée : %1 (%2)")
                      .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse — %1").arg(pair.statusReason) : tr("fiable")));
+                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
 }
 
 void MainWindow::selectPreviousPair()
@@ -432,7 +432,7 @@ void MainWindow::refreshPairViews()
 
     if (currentMode == 3) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
-            label->setText(tr("Vue Paire — %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
+            label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
         }
     }
@@ -515,10 +515,10 @@ void MainWindow::setMode(int mode)
         button->setChecked(true);
 
     const QStringList descriptions = {
-        tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
-        tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire — points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export — TIFF 16 bits, profil ICC conservé")
+        tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
+        tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
+        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Export : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
