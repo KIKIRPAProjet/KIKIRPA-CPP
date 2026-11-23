@@ -1,6 +1,6 @@
 # Le calage local : raisonnement
 
-> **Brouillon.** Cette page pose le raisonnement du calage local : ce que c'est, pourquoi ce sont des distorsions, comment les classer et les détecter, et où le placer dans le pipeline. La correction, les contraintes détaillées et le plan de mise en œuvre restent à écrire (voir [§5](#5-ce-qui-reste-à-écrire)). Aucun step ni algorithme de calage local n'existe encore sur `main`.
+>  Cette page pose le raisonnement du calage local : ce que c'est, pourquoi ce sont des distorsions, comment les classer et les détecter, et où le placer dans le pipeline. La correction, les contraintes détaillées et le plan de mise en œuvre restent à écrire (voir [§5](#5-ce-qui-reste-à-écrire)). Aucun step ni algorithme de calage local n'existe sur `main`.
 >
 > Les mesures citées viennent de tuiles **IRR** (réflectographie infrarouge). Elles ne disent rien des tuiles Hasselblad en lumière visible.
 
