@@ -124,11 +124,12 @@ private:
         const int margin = logicalWidth / 8;
         const int textWidth = logicalWidth - 2 * margin;
 
-        const QString episodeTitle = translate("Nom in working");
+        const QString episodeTitle = translate("POLYPTIK");
+        //Je désaprouve ce nom
         const QString subtitle = translate("CRÉDITS DU PROJET");
         const QString body = translate(
             "Projet d'assemblage d'images haute résolution\n"
-            "par les étudiants de la faculté polytchnique de Mons\n"
+            "par les étudiants de la faculté polytechnique de Mons\n"
             "Master 1 IG 2026\n\n"
             "Équipe du projet\n\n"
             "Abdellah Boumaiza\n"
