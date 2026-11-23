@@ -255,6 +255,7 @@ void testerPause(const fs::path& dossier) {
     verifier(suite.y() == VALEUR_A + VALEUR_B, "sortie finale correcte");
     std::ifstream completedInput(scriptPath, std::ios::binary);
     const Json completedScript = Json::parse(completedInput, nullptr, false);
+    completedInput.close();
     verifier(!completedScript.is_discarded() && completedScript.at("run").at("status") == "completed" &&
                  completedScript.at("run").at("completedSteps").size() == 2,
              "script terminé sauvegardé après la reprise");
