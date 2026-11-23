@@ -118,6 +118,7 @@ namespace PipelineNs {
 
     // Quatre phases : 1. choisir le step de départ ; 2. remettre l'état à zéro ; 3. restaurer les sorties des steps sautés ;
     // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
+    // NOLINTNEXTLINE(readability-function-size) : les quatre phases se lisent d'un bloc, dans l'ordre (voir ci-dessus)
     bool PipelineClass::run(const Logger& log) {
         const size_t stepCount = steps.size();
         const CheckpointNs::CheckpointClass checkpoint(IONs::pathFromUtf8(runState.checkpointDirectory));
@@ -172,7 +173,10 @@ namespace PipelineNs {
                 errorMessage = exception.what();
             }
             if (!succeeded) {
-                report(log, messagePrefix + " failed: " + (errorMessage.empty() ? step->getResult().dump() : errorMessage), true);
+                std::string failureMessage = messagePrefix;
+                failureMessage += " failed: ";
+                failureMessage += errorMessage.empty() ? step->getResult().dump() : errorMessage;
+                report(log, failureMessage, true);
                 runState.status = RunStatus::Failed;
                 saveScript(log);
                 return false;   // reprise possible : completedSteps et checkpoints sont à jour

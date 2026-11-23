@@ -1,9 +1,16 @@
 // src/backend/core/pipeline/saved_state.cpp
 #include "core/pipeline/saved_state.h"
 
+#include "core/checkpoint/checkpoint.h"
 #include "core/io/unicode_path.h"
+#include "core/pipeline/pipeline.h"
+#include "core/pipeline/run_state.h"
+#include "core/step/step.h"
 
+#include <cstddef>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace PipelineNs {
 
