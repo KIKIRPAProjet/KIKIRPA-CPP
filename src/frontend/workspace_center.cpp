@@ -1,3 +1,4 @@
+// src/frontend/workspace_center.cpp
 #include "workspace_center.h"
 #include "mainwindow.h"
 #include "frontendutils.h"
@@ -104,6 +105,22 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addWidget(oneToOne);
     canvasControlsLayout->addWidget(overlayDiff);
     canvasControlsLayout->addStretch();
+
+    auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le recadrage"), canvasControls);
+    applyCropButton->setObjectName(QStringLiteral("applyCropButton"));
+    applyCropButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    canvasControlsLayout->addWidget(applyCropButton);
+
+    auto *resetCropButton = FrontendUtils::makeButton(tr("Annuler le recadrage"), canvasControls);
+    resetCropButton->setObjectName(QStringLiteral("resetCropButton"));
+    resetCropButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    canvasControlsLayout->addWidget(resetCropButton);
+
+    auto *exportButton = FrontendUtils::makeButton(tr("Exporter l'image…"), canvasControls, true);
+    exportButton->setObjectName(QStringLiteral("exportImageButton"));
+    exportButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    canvasControlsLayout->addWidget(exportButton);
+
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
     connect(minus, &QPushButton::clicked, this, [this]() {
@@ -130,6 +147,21 @@ void WorkspaceCenter::createCanvasAndControls()
         m_mainWindow->updateStatus(checked
             ? tr("Vue Paire : superposition (différence) activée.")
             : tr("Vue Paire : examen des 2 tuiles côte à côte."));
+    });
+    connect(applyCropButton, &QPushButton::clicked, this, [this]() {
+        if (m_canvas->hasActiveCropSelection()) {
+            m_canvas->applyCrop();
+            m_mainWindow->updateStatus(tr("Recadrage validé et appliqué à l'image."));
+        } else {
+            m_mainWindow->updateStatus(tr("Tracez d'abord une zone sur l'image avec l'outil Recadrer."));
+        }
+    });
+    connect(resetCropButton, &QPushButton::clicked, this, [this]() {
+        m_canvas->resetCrop();
+        m_mainWindow->updateStatus(tr("Recadrage réinitialisé : image complète restaurée."));
+    });
+    connect(exportButton, &QPushButton::clicked, this, [this]() {
+        m_mainWindow->showExportDialog();
     });
 }
 
