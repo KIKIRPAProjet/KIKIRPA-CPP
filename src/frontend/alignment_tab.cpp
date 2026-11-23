@@ -213,13 +213,10 @@ void AlignmentTab::rebuildPairSelector()
             continue;
 
         const bool failed = pair.status == FrontendUtils::PairStatus::Failed;
-        const QString prefix = failed ? QStringLiteral("✕ ")
-            : (pair.isDubious() ? QStringLiteral("⚠ ") : QStringLiteral("✓ "));
         const QString statusText = failed ? tr("échec")
             : (pair.isDubious() ? tr("douteuse")
                                 : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable")));
-        const QString itemLabel = QStringLiteral("%1%2 (%3)")
-                                      .arg(prefix, pair.pairLabel(), statusText);
+        const QString itemLabel = QStringLiteral("%1 (%2)").arg(pair.pairLabel(), statusText);
         m_pairCombo->addItem(itemLabel, pair.pairIndex);
         if (pair.pairIndex == m_currentPairIndex) {
             comboIndexToSelect = m_pairCombo->count() - 1;

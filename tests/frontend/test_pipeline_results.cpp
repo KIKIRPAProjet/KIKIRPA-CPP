@@ -12,8 +12,9 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/types.hpp>
 
-#include <QColor>
-#include <QImage>
+#include <QPointF>
+#include <QPolygonF>
+#include <QRectF>
 #include <QObject>
 #include <QRect>
 #include <QSize>
@@ -83,6 +84,7 @@ TEST(PipelineResultsTest, MissingNccAndResidualStayUnmeasured) {
     ASSERT_EQ(pairs.size(), 1);
     EXPECT_FALSE(pairs.at(0).nccScore.has_value());
     EXPECT_FALSE(pairs.at(0).optimizationErrorPx.has_value());
+    EXPECT_TRUE(pairs.at(0).statusReason.contains(QStringLiteral("non mesuré"))) << "pas de corrélation annoncée";
     EXPECT_EQ(FrontendUtils::formatMeasure(pairs.at(0).optimizationErrorPx, 2, QStringLiteral(" px")),
               QObject::tr("non disponible"));
 }
@@ -158,16 +160,21 @@ TEST(PipelineResultsTest, FewPointsWithoutVerdictIsDubiousNotFailed) {
 }
 
 // Deux territoires côte à côte (0 : x < 100, 1 : x >= 100), aperçu réduit de moitié : la couture tombe vers x = 50.
-TEST(PipelineResultsTest, SeamOverlayMarksOnlyTheBoundaryBetweenTiles) {
+TEST(PipelineResultsTest, SeamLinesFollowOnlyTheBoundaryBetweenTiles) {
     const std::vector<DataNs::TileTerritory> territories = {
         {0, {{{0, 0}, {99, 0}, {99, 99}, {0, 99}}}, {{}}},
         {1, {{{100, 0}, {199, 0}, {199, 99}, {100, 99}}}, {{}}}};
-    const QImage overlay = FrontendNs::buildSeamOverlay(territories, QSize(100, 50), 0.5);
-    ASSERT_FALSE(overlay.isNull());
-    EXPECT_EQ(overlay.size(), QSize(100, 50));
-    EXPECT_GT(overlay.pixelColor(50, 25).alpha(), 0) << "couture entre les deux tuiles";
-    EXPECT_EQ(overlay.pixelColor(10, 25).alpha(), 0) << "intérieur d'une tuile";
-    EXPECT_EQ(overlay.pixelColor(0, 25).alpha(), 0) << "bord extérieur de la mosaïque";
+    const SeamLines seams = FrontendNs::buildSeamLines(territories, QSize(100, 50), 0.5);
+    ASSERT_FALSE(seams.isEmpty());
+    EXPECT_EQ(seams.frame, QSize(100, 50));
+    QRectF extent;
+    for (const QPolygonF &line : seams.lines) {
+        extent |= line.boundingRect();
+        for (const QPointF &point : line)
+            EXPECT_NEAR(point.x(), 50.0, 1.0) << "ni à l'intérieur d'une tuile, ni au bord extérieur de la mosaïque";
+    }
+    EXPECT_LT(extent.top(), 2.0) << "la couture traverse toute la hauteur";
+    EXPECT_GT(extent.bottom(), 47.0);
 }
 
 // Toutes les tuiles, avec leur case de grille : la vue Alignement les place toutes.
@@ -201,7 +208,7 @@ TEST(PipelineResultsTest, OverlapEstimateIsAttachedToItsPair) {
 }
 
 TEST(PipelineResultsTest, NoTerritoryGivesNoOverlay) {
-    EXPECT_TRUE(FrontendNs::buildSeamOverlay({}, QSize(100, 50), 0.5).isNull());
+    EXPECT_TRUE(FrontendNs::buildSeamLines({}, QSize(100, 50), 0.5).isEmpty());
 }
 
 }   // namespace

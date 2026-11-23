@@ -443,7 +443,7 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
-        canvasView->setSeamOverlay(results.seamOverlay);
+        canvasView->setSeamLines(results.seams);
         canvasView->setAlignmentOverview(results.tiles, results.pairs);
     }
     refreshPairViews();

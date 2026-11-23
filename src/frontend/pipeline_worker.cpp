@@ -417,7 +417,7 @@ PipelineResults PipelineWorkerClass::collectResults(const QSize& previewSize) {
         // Même réduction que l'aperçu : les coutures tombent sur l'image affichée.
         const double mosaicWidth = previewReferenceWidth(dataStore);
         if (!previewSize.isEmpty() && dataStore.has("territories") && mosaicWidth > 0.0)
-            results.seamOverlay = FrontendNs::buildSeamOverlay(
+            results.seams = FrontendNs::buildSeamLines(
                 dataStore.get<std::vector<DataNs::TileTerritory>>("territories"), previewSize,
                 static_cast<double>(previewSize.width()) / mosaicWidth);
     } catch (const std::exception& exception) {

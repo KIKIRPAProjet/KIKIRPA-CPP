@@ -173,7 +173,9 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
                                 .arg(QString::number(info.meanConfidence, 'f', 2).replace('.', ','));
     } else {
         info.status = PairStatus::Reliable;
-        info.statusReason = QObject::tr("corrélation et géométrie cohérentes");
+        // Sans NCC, seule la confiance des points a été contrôlée : ne pas annoncer une corrélation vérifiée.
+        info.statusReason = info.nccScore ? QObject::tr("corrélation et géométrie cohérentes")
+                                          : QObject::tr("points cohérents (NCC non mesuré)");
     }
     return info;
 }

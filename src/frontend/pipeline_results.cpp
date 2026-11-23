@@ -7,7 +7,6 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
-#include <QColor>
 #include <QFileInfo>
 #include <QObject>
 #include <QPointF>
@@ -33,8 +32,9 @@ namespace FrontendNs {
         using FrontendUtils::PairAlignmentInfo;
         using FrontendUtils::PairStatus;
 
-        constexpr int SEAM_ALPHA = 235;
-        const QColor SEAM_COLOR(255, 59, 48, SEAM_ALPHA);
+        // Tolérance de simplification des coutures, en pixels de l'aperçu : efface les marches d'escalier du tracé
+        // au pixel sans déplacer la ligne de façon visible.
+        constexpr double SEAM_SIMPLIFICATION_PX = 0.75;
 
         // Verdict de l'appariement pour une paire, lu dans le résultat d'un step.
         struct PairVerdict {
@@ -81,15 +81,15 @@ namespace FrontendNs {
                 if (hasPairIds(entry)) findings.correctedPairs.insert(pairKey(entry));
         }
 
-        StepFindings readStepFindings(const std::vector<nlohmann::json> &stepResults) {
-            StepFindings findings;
+        // Rempli en place plutôt que renvoyé : déplacer des std::map peut lever selon la bibliothèque standard (MSVC),
+        // ce que bugprone-exception-escape signale.
+        void readStepFindings(const std::vector<nlohmann::json> &stepResults, StepFindings &findings) {
             for (const nlohmann::json &result : stepResults) {
                 if (!result.is_object()) continue;
                 readVerdicts(result, findings);
                 readFailures(result, findings);
                 readCorrectedPairs(result, findings);
             }
-            return findings;
         }
 
         const DataNs::TileClass *findTile(const DataNs::TileList &tiles, int tileId) {
@@ -235,7 +235,8 @@ namespace FrontendNs {
                                                              const std::vector<DataNs::PairMatches> &matches,
                                                              const std::vector<nlohmann::json> &stepResults,
                                                              const std::vector<DataNs::PairResidual> &residuals) {
-        const StepFindings findings = readStepFindings(stepResults);
+        StepFindings findings;
+        readStepFindings(stepResults, findings);
         const std::map<PairKey, double> norms = residualNorms(residuals);
         QVector<PairAlignmentInfo> pairs;
         for (const DataNs::PairMatches &pairMatches : matches) {
@@ -285,22 +286,25 @@ namespace FrontendNs {
         return corrections;
     }
 
-    QImage buildSeamOverlay(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,
-                            double previewScale) {
+    // Le masque des coutures fait un pixel de large : son contour en fait l'aller-retour, qui se trace comme une ligne.
+    SeamLines buildSeamLines(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,
+                             double previewScale) {
         if (territories.empty() || previewSize.isEmpty() || !(previewScale > 0.0)) return {};
         cv::Mat labels(previewSize.height(), previewSize.width(), CV_32SC1, cv::Scalar(-1));
         for (const DataNs::TileTerritory &territory : territories)
             for (std::size_t polygonIndex = 0; polygonIndex < territory.polygons.size(); ++polygonIndex)
                 cv::fillPoly(labels, scaledContours(territory, polygonIndex, previewScale), cv::Scalar(territory.tileIndex));
-        cv::Mat mask = seamMask(labels);
-        cv::dilate(mask, mask, cv::Mat());   // 3 × 3 : la couture reste visible une fois l'aperçu réduit à l'écran
-        if (cv::countNonZero(mask) == 0) return {};
-        QImage overlay(previewSize, QImage::Format_ARGB32);
-        overlay.fill(Qt::transparent);
-        for (int row = 0; row < mask.rows; ++row)
-            for (int column = 0; column < mask.cols; ++column)
-                if (mask.at<std::uint8_t>(row, column) != 0) overlay.setPixelColor(column, row, SEAM_COLOR);
-        return overlay;
+        std::vector<std::vector<cv::Point>> contours;
+        cv::findContours(seamMask(labels), contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
+        SeamLines seams{previewSize, {}};
+        for (const std::vector<cv::Point> &contour : contours) {
+            std::vector<cv::Point> simplified;
+            cv::approxPolyDP(contour, simplified, SEAM_SIMPLIFICATION_PX, false);
+            QPolygonF line;
+            for (const cv::Point &point : simplified) line << QPointF(point.x + 0.5, point.y + 0.5);   // centre du pixel
+            seams.lines.append(line);
+        }
+        return seams;
     }
 
 }

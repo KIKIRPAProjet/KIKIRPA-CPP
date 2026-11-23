@@ -10,8 +10,8 @@
 
 #include <nlohmann/json_fwd.hpp>
 
-#include <QImage>
 #include <QMetaType>
+#include <QPolygonF>
 #include <QSize>
 #include <QVector>
 
@@ -27,12 +27,20 @@ struct ResultTile {
     int column = 0;
 };
 
+// Lignes de couture dans le repère de l'aperçu de la mosaïque (pixels de `frame`). Le canevas les trace en vecteur,
+// mises à l'échelle de l'image affichée : leur épaisseur reste la même quelle que soit la taille de la vue.
+struct SeamLines {
+    QSize frame;
+    QVector<QPolygonF> lines;
+    bool isEmpty() const { return lines.isEmpty(); }
+};
+
 // Résultats d'un calcul affichés par l'interface : les tuiles et leurs paires (vue Alignement) et les lignes de
 // couture (vue Ligne de couture). Construits par le worker une fois le pipeline arrêté (fin, échec ou pause).
 struct PipelineResults {
     QVector<ResultTile> tiles;
     QVector<FrontendUtils::PairAlignmentInfo> pairs;   // paires appariées, puis paires en échec
-    QImage seamOverlay;   // même taille que l'aperçu de la mosaïque : transparent, coutures en rouge ; nul sans couture
+    SeamLines seams;   // vide sans couture
 };
 Q_DECLARE_METATYPE(PipelineResults)
 
@@ -62,10 +70,10 @@ namespace FrontendNs {
     // `corrections` avec `correction` à la place de celle de la même paire (dans un sens ou l'autre), ou ajoutée.
     std::vector<ManualCorrection> withCorrection(std::vector<ManualCorrection> corrections, const ManualCorrection &correction);
 
-    // Calque des lignes de couture : frontières entre les territoires de deux tuiles différentes (les bords extérieurs
-    // de la mosaïque n'en sont pas). Les territoires sont dans le repère de la mosaïque (DataNs::computeMosaicCorners),
-    // l'aperçu en est une réduction de facteur `previewScale`. Image nulle si rien n'est à dessiner.
-    QImage buildSeamOverlay(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,
-                            double previewScale);
+    // Lignes de couture : frontières entre les territoires de deux tuiles différentes (les bords extérieurs de la
+    // mosaïque n'en sont pas). Les territoires sont dans le repère de la mosaïque (DataNs::computeMosaicCorners),
+    // l'aperçu (`previewSize`) en est une réduction de facteur `previewScale`. Vide si rien n'est à dessiner.
+    SeamLines buildSeamLines(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,
+                             double previewScale);
 
 }

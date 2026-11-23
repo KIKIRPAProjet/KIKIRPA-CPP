@@ -45,7 +45,7 @@ public:
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
     // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
-    void setSeamOverlay(const QImage &overlay) { m_seamOverlay = overlay; update(); }
+    void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
     void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
     {
@@ -140,7 +140,7 @@ private:
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
-    QImage m_seamOverlay;
+    SeamLines m_seamLines;
     QVector<ResultTile> m_resultTiles;
     QVector<FrontendUtils::PairAlignmentInfo> m_allPairs;
     bool seamVisible = true;

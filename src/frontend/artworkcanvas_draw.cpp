@@ -2,6 +2,7 @@
 #include "frontendutils.h"
 
 #include <QFileInfo>
+#include <QFont>
 #include <QFontMetrics>
 #include <QImage>
 #include <QLineF>
@@ -26,25 +27,46 @@ constexpr qreal kArrowAngleDegrees = 28.0;
 
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
-constexpr qreal POINT_RADIUS = 2.0;
-constexpr qreal SELECTED_POINT_RADIUS = 3.0;
 constexpr int LABEL_BAND = 20;   // bande au-dessus de chaque tuile pour son nom : le nom ne cache pas l'image
 constexpr int LABEL_PADDING = 4;
-constexpr int FAILURE_MARK_RADIUS = 9;
-constexpr int DIMMED_ALPHA = 150;   // paires non sélectionnées : traits plus discrets
 constexpr double TILE_GAP_FRACTION = 0.04;   // espace entre deux tuiles voisines, en fraction de la plus grande tuile
 constexpr double MIN_SCALE = 1e-3;
 constexpr qreal OVERLAY_OPACITY = 0.65;
-constexpr qreal FAILURE_PEN_WIDTH = 2.0;
-constexpr qreal LINE_PEN_WIDTH = 1.0;
-constexpr qreal OVERLAP_PEN_WIDTH = 1.0;
-constexpr qreal SELECTED_OVERLAP_PEN_WIDTH = 1.5;
-const QColor INLIER_COLOR("#4ec978");
-const QColor OUTLIER_COLOR("#e05a52");
-const QColor OVERLAP_COLOR("#e8963a");
-const QColor OVERLAP_FILL(232, 150, 58, 26);
-const QColor SELECTED_OVERLAP_FILL(232, 150, 58, 55);
-const QColor LABEL_COLOR("#d8d8d8");
+
+// Langage visuel commun aux vues Alignement et Ligne de couture : des traits fins, une couleur par information, choisie
+// pour ressortir sur des images en niveaux de gris sans crier. Les limites (coutures, jonction en échec) sont un peu
+// plus épaisses que les liens et les zones. Toutes les paires sont dessinées de la même façon ; la paire sélectionnée
+// se reconnaît au nom de ses tuiles.
+constexpr qreal LINE_WIDTH = 1.0;       // liens entre points, bord des zones de recouvrement
+constexpr qreal BOUNDARY_WIDTH = 1.5;   // coutures, jonction d'une paire en échec
+constexpr qreal POINT_RADIUS = 2.5;
+const QColor POINT_COLOR(56, 189, 248);              // bleu ciel : points appariés et leurs liens
+const QColor LINK_COLOR(56, 189, 248, 190);
+const QColor BOUNDARY_COLOR(251, 113, 133);          // rose corail : couture, point rejeté, jonction en échec
+const QColor OVERLAP_COLOR(251, 191, 36, 200);       // ambre : bord de la zone de recouvrement
+const QColor OVERLAP_FILL(251, 191, 36, 22);
+const QColor POINT_RING(0, 0, 0, 110);               // fin cerne sombre : le point reste visible sur fond clair
+const QColor LABEL_COLOR(168, 168, 168);
+const QColor SELECTED_LABEL_COLOR(255, 255, 255);
+
+void strokePath(QPainter &p, const QPainterPath &path, const QColor &color, qreal width,
+                Qt::PenStyle style = Qt::SolidLine)
+{
+    p.setBrush(Qt::NoBrush);
+    p.setPen(QPen(color, width, style, Qt::RoundCap, Qt::RoundJoin));
+    p.drawPath(path);
+}
+
+// Coutures en vecteur, mises à l'échelle de l'image affichée.
+void drawSeamLines(QPainter &p, const QRectF &imageRect, const SeamLines &seams)
+{
+    if (seams.isEmpty() || seams.frame.isEmpty()) return;
+    QTransform toScreen = QTransform::fromTranslate(imageRect.left(), imageRect.top());
+    toScreen.scale(imageRect.width() / seams.frame.width(), imageRect.height() / seams.frame.height());
+    QPainterPath path;
+    for (const QPolygonF &line : seams.lines) path.addPolygon(toScreen.map(line));
+    strokePath(p, path, BOUNDARY_COLOR, BOUNDARY_WIDTH);
+}
 
 // Placement d'une tuile dans la vue : rectangle dessiné et facteur pleine résolution -> écran.
 struct TilePlacement {
@@ -107,70 +129,81 @@ std::pair<QRectF, QRectF> overlapAreas(const FrontendUtils::PairAlignmentInfo &p
     return {inA, inA.translated(-pair.dx, -pair.dy)};
 }
 
+// Zone commune de la paire dans A et dans B (dans A seulement en vue superposée) : remplissage très léger, bord fin.
 void drawPairOverlap(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
-                     const TilePlacement &placementB, bool overlay, bool selected)
+                     const TilePlacement &placementB, bool overlay)
 {
     const auto [inA, inB] = overlapAreas(pair);
     if (inA.isEmpty()) return;
-    QColor border = OVERLAP_COLOR;
-    if (!selected) border.setAlpha(DIMMED_ALPHA);
-    p.setPen(QPen(border, selected ? SELECTED_OVERLAP_PEN_WIDTH : OVERLAP_PEN_WIDTH, Qt::DashLine));
-    p.setBrush(selected ? SELECTED_OVERLAP_FILL : OVERLAP_FILL);
-    p.drawRect(placementA.map(inA));
-    if (!overlay) p.drawRect(placementB.map(inB));
-    p.setBrush(Qt::NoBrush);
+    QPainterPath zones;
+    zones.addRect(placementA.map(inA));
+    if (!overlay) zones.addRect(placementB.map(inB));
+    p.fillPath(zones, OVERLAP_FILL);
+    strokePath(p, zones, OVERLAP_COLOR, LINE_WIDTH);
 }
 
-// Tous les points appariés de la paire (vert : retenus, rouge : rejetés), reliés d'une tuile à l'autre.
+// Tous les points appariés de la paire (bleu : retenus, rose : rejetés), reliés d'une tuile à l'autre.
 void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
-                    const TilePlacement &placementB, bool overlay, bool selected)
+                    const TilePlacement &placementB, bool overlay)
 {
     const int count = static_cast<int>(qMin(pair.pointsInA.size(), pair.pointsInB.size()));
     const int stride = qMax(1, count / MAX_DRAWN_POINTS);
-    const qreal radius = selected ? SELECTED_POINT_RADIUS : POINT_RADIUS;
+    QPainterPath retainedLinks;
+    QPainterPath rejectedLinks;
+    QVector<std::pair<QPointF, bool>> dots;
     for (int index = 0; index < count; index += stride) {
         const bool inlier = index >= pair.isInlier.size() || pair.isInlier.at(index);
-        QColor color = inlier ? INLIER_COLOR : OUTLIER_COLOR;
-        if (!selected) color.setAlpha(DIMMED_ALPHA);
         const QPointF pointA = placementA.map(pair.pointsInA.at(index));
         const QPointF pointB = placementB.map(pair.pointsInB.at(index));
-        if (!overlay) {
-            p.setPen(QPen(color, LINE_PEN_WIDTH, inlier ? Qt::SolidLine : Qt::DashLine));
-            p.drawLine(pointA, pointB);
-        }
-        p.setPen(Qt::NoPen);
-        p.setBrush(color);
-        p.drawEllipse(pointA, radius, radius);
-        p.drawEllipse(pointB, radius, radius);
+        QPainterPath &links = inlier ? retainedLinks : rejectedLinks;
+        links.moveTo(pointA);
+        links.lineTo(pointB);
+        dots.append({pointA, inlier});
+        dots.append({pointB, inlier});
+    }
+    if (!overlay) {
+        strokePath(p, retainedLinks, LINK_COLOR, LINE_WIDTH);
+        strokePath(p, rejectedLinks, BOUNDARY_COLOR, LINE_WIDTH, Qt::DashLine);
+    }
+    p.setPen(QPen(POINT_RING, LINE_WIDTH));
+    for (const auto &[point, inlier] : dots) {
+        p.setBrush(inlier ? POINT_COLOR : BOUNDARY_COLOR);
+        p.drawEllipse(point, POINT_RADIUS, POINT_RADIUS);
     }
     p.setBrush(Qt::NoBrush);
 }
 
-// Paire sans point (échec) : une croix rouge entre les deux tuiles.
-void drawFailureMark(QPainter &p, const TilePlacement &placementA, const TilePlacement &placementB)
+// Paire en échec : la jonction entre les deux tuiles est soulignée d'un trait rose, au milieu de l'espace qui
+// les sépare (au-dessus de la bande du nom de la tuile du dessous), sur toute la longueur du bord commun.
+void drawFailedJunction(QPainter &p, const QRectF &rectA, const QRectF &rectB)
 {
-    const QPointF middle = (placementA.rect.center() + placementB.rect.center()) / 2.0;
-    p.setPen(QPen(OUTLIER_COLOR, FAILURE_PEN_WIDTH));
-    p.setBrush(QColor(28, 28, 28, 220));
-    p.drawEllipse(middle, FAILURE_MARK_RADIUS, FAILURE_MARK_RADIUS);
-    const qreal half = FAILURE_MARK_RADIUS / 2.0;
-    p.drawLine(middle + QPointF(-half, -half), middle + QPointF(half, half));
-    p.drawLine(middle + QPointF(-half, half), middle + QPointF(half, -half));
-    p.setBrush(Qt::NoBrush);
+    QPainterPath junction;
+    if (rectB.left() >= rectA.right()) {   // B à droite de A
+        const qreal x = (rectA.right() + rectB.left()) / 2.0;
+        junction.moveTo(x, qMax(rectA.top(), rectB.top()));
+        junction.lineTo(x, qMin(rectA.bottom(), rectB.bottom()));
+    } else {                               // B sous A
+        const qreal y = (rectA.bottom() + rectB.top() - LABEL_BAND) / 2.0;
+        junction.moveTo(qMax(rectA.left(), rectB.left()), y);
+        junction.lineTo(qMin(rectA.right(), rectB.right()), y);
+    }
+    strokePath(p, junction, BOUNDARY_COLOR, BOUNDARY_WIDTH);
 }
 
-// Nom au-dessus de la tuile, dans la bande réservée : rien n'est dessiné sur l'image.
-void drawTileLabel(QPainter &p, const QRectF &tileRect, const QString &name)
+// Nom au-dessus de la tuile, dans la bande réservée : rien n'est dessiné sur l'image. En blanc et en gras pour les
+// deux tuiles de la paire sélectionnée. Dessiné avant les tracés, sans fond : les liens qui traversent la bande restent
+// entiers.
+void drawTileLabel(QPainter &p, const QRectF &tileRect, const QString &name, bool highlighted)
 {
     const QRect label(qRound(tileRect.left()) + LABEL_PADDING, qRound(tileRect.top()) - LABEL_BAND,
                       qRound(tileRect.width()) - 2 * LABEL_PADDING, LABEL_BAND);
-    p.setPen(LABEL_COLOR);
+    p.save();
+    QFont font = p.font();
+    font.setBold(highlighted);
+    p.setFont(font);
+    p.setPen(highlighted ? SELECTED_LABEL_COLOR : LABEL_COLOR);
     p.drawText(label, Qt::AlignLeft | Qt::AlignVCenter, p.fontMetrics().elidedText(name, Qt::ElideMiddle, label.width()));
-}
-
-bool isSelectedPair(const FrontendUtils::PairAlignmentInfo &pair, const FrontendUtils::PairAlignmentInfo &current)
-{
-    return pair.tileIndexA == current.tileIndexA && pair.tileIndexB == current.tileIndexB;
+    p.restore();
 }
 }
 
@@ -185,10 +218,7 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
     const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
                          target.top() + (target.height() - fitted.height()) / 2);
     p.drawImage(topLeft, fitted);
-    if (withSeams && !m_seamOverlay.isNull()) {
-        p.setRenderHint(QPainter::SmoothPixmapTransform);
-        p.drawImage(QRect(topLeft, fitted.size()), m_seamOverlay);
-    }
+    if (withSeams) drawSeamLines(p, QRectF(topLeft, fitted.size()), m_seamLines);
     // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft, QString::number(zoomPercent) + QStringLiteral(" %"));
@@ -219,21 +249,21 @@ void ArtworkCanvas::drawTilesOverview(QPainter &p)
 {
     const QRectF area = QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
     const std::map<int, TilePlacement> placements = layoutTiles(m_resultTiles, area);
+    const bool hasSelection = !m_allPairs.isEmpty();
     for (const ResultTile &tile : m_resultTiles) {
         drawPhoto(p, placements.at(tile.id).rect.toRect(), tile.imagePath);
-        drawTileLabel(p, placements.at(tile.id).rect, tile.name);
+        const bool inSelectedPair = hasSelection && (tile.id == currentPair.tileIndexA || tile.id == currentPair.tileIndexB);
+        drawTileLabel(p, placements.at(tile.id).rect, tile.name, inSelectedPair);
     }
-    // Recouvrements d'abord, points ensuite, la paire sélectionnée (onglet Paire, « Paire suivante ») en dernier.
+    // Recouvrements d'abord, puis points et liens par-dessus, puis les jonctions des paires en échec.
     for (const int pass : {0, 1, 2}) {
         for (const FrontendUtils::PairAlignmentInfo &pair : m_allPairs) {
             const auto placementA = placements.find(pair.tileIndexA);
             const auto placementB = placements.find(pair.tileIndexB);
             if (placementA == placements.end() || placementB == placements.end()) continue;
-            const bool selected = isSelectedPair(pair, currentPair);
-            if (pass == 0) drawPairOverlap(p, pair, placementA->second, placementB->second, false, selected);
-            else if (pass == 1 && pair.totalMatches == 0) drawFailureMark(p, placementA->second, placementB->second);
-            else if (pass == 1 && !selected) drawPairPoints(p, pair, placementA->second, placementB->second, false, false);
-            else if (pass == 2 && selected) drawPairPoints(p, pair, placementA->second, placementB->second, false, true);
+            if (pass == 0) drawPairOverlap(p, pair, placementA->second, placementB->second, false);
+            else if (pass == 1) drawPairPoints(p, pair, placementA->second, placementB->second, false);
+            else if (pair.totalMatches == 0) drawFailedJunction(p, placementA->second.rect, placementB->second.rect);
         }
     }
 }
@@ -254,9 +284,9 @@ void ArtworkCanvas::drawSuperposedPair(QPainter &p)
     p.setOpacity(OVERLAY_OPACITY);
     drawPhoto(p, placementB.rect.toRect(), currentPair.imagePathB);
     p.setOpacity(1.0);
-    drawPairOverlap(p, currentPair, placementA, placementB, true, true);
-    drawPairPoints(p, currentPair, placementA, placementB, true, true);
-    drawTileLabel(p, placementA.rect | placementB.rect, currentPair.pairLabel());
+    drawPairOverlap(p, currentPair, placementA, placementB, true);
+    drawPairPoints(p, currentPair, placementA, placementB, true);
+    drawTileLabel(p, placementA.rect | placementB.rect, currentPair.pairLabel(), true);
 }
 
 void ArtworkCanvas::drawGrid(QPainter &p)
