@@ -22,6 +22,7 @@
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
+#include "logpanel.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -30,7 +31,6 @@
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
-#include "bottom_tabs.h"
 #include "right_panel.h"
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
@@ -80,6 +80,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     projectGrid = new ProjectGrid(this);
     pipelineRunner = new PipelineRunnerClass(this);
     workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, pipelineRunner);
+    logPanel = new LogPanel(this);
+    logPanel->hide();
     menuBarManager = new MenuBarManager(this);
     menuBarManager->setupMenus(menuBar());
     refreshGrid();
@@ -142,7 +144,11 @@ void MainWindow::setupProjectGridConnections()
     connect(projectGrid, &ProjectGrid::statusRequested,
             this, &MainWindow::updateStatus);
     connect(projectGrid, &ProjectGrid::logRequested,
-            workspaceUI, &WorkspaceUI::appendLog);
+            this, [this](const QString &message) {
+                appendLog(message, message.contains(QStringLiteral("Erreur"), Qt::CaseInsensitive)
+                                           ? QStringLiteral("error")
+                                           : QStringLiteral("info"));
+            });
     connect(projectGrid, &ProjectGrid::tilesImported,
             this, &MainWindow::handleTilesImported);
     connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
@@ -193,8 +199,8 @@ void MainWindow::setupPipelineConnections()
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
-    connect(pipelineRunner, &PipelineRunnerClass::logMessage,
-            workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::logMessageWithSeverity,
+            this, &MainWindow::appendLog);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
@@ -240,7 +246,6 @@ void MainWindow::setupMenuConnections()
     connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -275,6 +280,8 @@ void MainWindow::setupMenuConnections()
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
+    connect(menuBarManager, &MenuBarManager::showLogRequested,
+            this, &MainWindow::showLog);
 }
 
 void MainWindow::setupPageConnections()
@@ -552,9 +559,8 @@ void MainWindow::setMode(int mode)
     }
     workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(0);
+        ;
     if (currentMode == 3) {
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
@@ -656,7 +662,7 @@ void MainWindow::handleTilesImported(const QString &directory, int importedCount
     const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());
     updateStatus(msg);
-    workspaceUI->appendLog(msg);
+    appendLog(msg);
 }
 
 void MainWindow::saveProject()
@@ -820,13 +826,28 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
     workspaceUI->progressBar()->setValue(qBound(0, percentage, 100));
 }
 
+void MainWindow::appendLog(const QString &message, const QString &level)
+{
+    if (logPanel)
+        logPanel->appendLog(message, level);
+}
+
+void MainWindow::showLog()
+{
+    if (!logPanel)
+        return;
+    logPanel->setFloating(true);
+    logPanel->show();
+    logPanel->raise();
+    logPanel->activateWindow();
+}
+
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
         event->accept();
         return;
     }

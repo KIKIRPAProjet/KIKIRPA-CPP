@@ -54,7 +54,6 @@ class PipelineRunnerClass : public QObject {
         void statusChanged(const QString& message);
         void comparisonRequested();
         void comparisonVisibilityChanged(bool visible);
-        void logMessage(const QString& message);
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
         void mosaicFileReady(const QString& imagePath);

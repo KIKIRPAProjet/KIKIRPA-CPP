@@ -75,9 +75,8 @@ void PipelineRunnerClass::setupProgressConnections() {
         emit progressAdvanced(percentage);
     });
 
-    // Transmission des messages du Logger backend vers BottomTabs et LogPanel.
+    // Transmission centralisée des messages du Logger backend vers le journal.
     connect(worker, &PipelineWorkerClass::logMessageReceived, this, [this](const QString& msg, const QString& sev) {
-        emit logMessage(msg);
         emit logMessageWithSeverity(msg, sev);
     });
 }

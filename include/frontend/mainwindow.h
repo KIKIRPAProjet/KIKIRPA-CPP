@@ -17,6 +17,7 @@ class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
+class LogPanel;
 
 class MainWindow : public QMainWindow
 {
@@ -28,6 +29,8 @@ public:
 
 public slots:
     void updateProgress(const QString &stepName, int percentage);
+    void appendLog(const QString &message, const QString &level = QStringLiteral("info"));
+    void showLog();
 
 private:
     friend class WorkspaceUI;
@@ -35,7 +38,6 @@ private:
     friend class AssemblyTab;
     friend class AlignmentTab;
     friend class MasksTab;
-    friend class BottomTabs;
     friend class LeftToolbar;
     friend class RightPanel;
     friend class TopToolbars;
@@ -98,6 +100,7 @@ private:
     PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
+    LogPanel *logPanel = nullptr;
     QString projectName = QStringLiteral("VanDerVeken");
     QString projectPath;
     QString outputDirectory;

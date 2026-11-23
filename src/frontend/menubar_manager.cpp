@@ -89,6 +89,8 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
             &QAction::triggered, this, &MenuBarManager::comparisonRequested);
 
     auto *helpMenu = menuBar->addMenu(tr("Aide"));
+    connect(helpMenu->addAction(tr("Journal")),
+            &QAction::triggered, this, &MenuBarManager::showLogRequested);
     connect(helpMenu->addAction(tr("À propos")),
             &QAction::triggered, this, &MenuBarManager::aboutRequested);
 }

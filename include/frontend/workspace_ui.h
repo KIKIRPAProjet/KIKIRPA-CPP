@@ -16,7 +16,6 @@ class HomePage;
 class MainWindow;
 class PipelineRunnerClass;
 class ArtworkCanvas;
-class BottomTabs;
 class GridTab;
 class WorkspaceStatusBar;
 class WorkspaceCenter;
@@ -44,9 +43,7 @@ public:
     QWidget *projectInfoPanel() const;
     QLabel *zoomLabel() const;
     QTabWidget *rightTabs() const;
-    QTabWidget *bottomTabs() const;
     RightPanel *rightPanel() const { return m_rightPanel; }
-    BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
     TopToolbars *topToolbars() const { return m_topToolbars; }
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
@@ -59,7 +56,6 @@ public:
 
     QPushButton *cancelRunButton() const { return m_cancelRunButton; }
     void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
-    void appendLog(const QString &message);
     void setActiveStep(int stepNumber);
 
 private:
@@ -73,7 +69,6 @@ private:
     HomePage *m_homePage = nullptr;
     QStackedWidget *m_pages = nullptr;
     QWidget *m_workspace = nullptr;
-    BottomTabs *m_bottomTabs = nullptr;
     WorkspaceStatusBar *m_statusBar = nullptr;
     WorkspaceCenter *m_centerArea = nullptr;
     LeftToolbar *m_leftToolbar = nullptr;

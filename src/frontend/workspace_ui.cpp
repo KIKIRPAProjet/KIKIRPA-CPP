@@ -20,7 +20,6 @@
 #include "projectgrid.h"
 #include "pipeline_runner.h"
 #include "grid_tab.h"
-#include "bottom_tabs.h"
 #include "workspace_status_bar.h"
 #include "workspace_center.h"
 #include "left_toolbar.h"
@@ -69,8 +68,6 @@ constexpr int kSplitterHandleWidth = 5;
 constexpr int kLeftToolbarWidth = 42;
 constexpr int kCenterWidth = 760;
 constexpr int kRightPanelWidth = 280;
-constexpr int kBodyHeight = 560;
-constexpr int kBottomTabsHeight = 165;
 constexpr int kPaintToolFirst = 3;   // Pinceau
 constexpr int kPaintToolLast = 6;    // Rectangle
 constexpr int kMaskMode = 2;
@@ -106,8 +103,6 @@ QLabel *WorkspaceUI::zoomLabel() const
 }
 
 QTabWidget *WorkspaceUI::rightTabs() const { return m_rightPanel; }
-
-QTabWidget *WorkspaceUI::bottomTabs() const { return m_bottomTabs; }
 
 GridTab *WorkspaceUI::gridtab() const
 {
@@ -234,31 +229,12 @@ void WorkspaceUI::createWorkspace()
     body->setStretchFactor(2, 0);
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
-    m_bottomTabs = new BottomTabs(m_mainWindow);
-
-    auto *contentSplitter = new QSplitter(Qt::Vertical);
-    contentSplitter->setHandleWidth(kSplitterHandleWidth);
-    contentSplitter->setChildrenCollapsible(false);
-    contentSplitter->addWidget(body);
-    contentSplitter->addWidget(m_bottomTabs);
-
-    contentSplitter->setStretchFactor(0, 1);
-    contentSplitter->setStretchFactor(1, 0);
-    contentSplitter->setSizes({kBodyHeight, kBottomTabsHeight});
-
-    root->addWidget(contentSplitter, 1);
+    root->addWidget(body, 1);
 
     m_statusBar = new WorkspaceStatusBar(m_mainWindow);
     root->addWidget(m_statusBar);
 
     m_pages->addWidget(m_workspace);
-}
-
-void WorkspaceUI::appendLog(const QString &message)
-{
-    if (m_bottomTabs) {
-        m_bottomTabs->appendLog(message);
-    }
 }
 
 void WorkspaceUI::setActiveStep(int stepNumber)
