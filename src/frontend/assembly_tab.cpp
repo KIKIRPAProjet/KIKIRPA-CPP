@@ -188,7 +188,7 @@ void AssemblyTab::applyChoices()
     if (choices == m_projectGrid->state().pipelineChoices)
         return;
     m_projectGrid->setPipelineChoices(choices);   // le projet prévient l'interface, qui rappelle updateChoices
-    m_mainWindow->updateStatus(tr("Méthodes modifiées — les étapes suivantes sont à refaire."));
+    m_mainWindow->updateStatus(tr("Méthodes modifiées, les étapes suivantes sont à refaire."));
 }
 
 void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &requestedChoices)
