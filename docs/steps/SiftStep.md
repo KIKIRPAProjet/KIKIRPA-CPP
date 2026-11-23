@@ -26,6 +26,8 @@ Appariement SIFT des voisines droite et inférieure, enregistré sous `sift` dan
       {"name": "import", "parameters": [{"valueType": "string", "name": "path", "value": "images/"}]},
       {"name": "sift", "parameters": [
         {"valueType": "float", "name": "overlap", "value": 0.2},
+        {"valueType": "float", "name": "verticalOverlap", "value": 0.0},
+        {"valueType": "float", "name": "railMargin", "value": 0.0},
         {"valueType": "int", "name": "maxFeatures", "value": 500},
         {"valueType": "float", "name": "loweRatio", "value": 0.75},
         {"valueType": "float", "name": "contrastThreshold", "value": 0.01},
@@ -39,7 +41,8 @@ Appariement SIFT des voisines droite et inférieure, enregistré sous `sift` dan
 
 Les valeurs montrées sont les défauts. Les paramètres absents gardent leur valeur par défaut.
 `StepClass::importConfig()` vérifie les noms, types et doublons. Le step contrôle les contraintes
-métier : `overlap` et `loweRatio` finis dans `(0, 1)`, `maxFeatures` et `minMatches` entiers dans
+métier : `overlap` et `loweRatio` finis dans `(0, 1)`, `verticalOverlap` nul (comme `overlap`) ou dans `(0, 1)`,
+`railMargin` (marge du rail de la première passe, en px ; `0` = 5 % de la tuile) fini et non négatif, `maxFeatures` et `minMatches` entiers dans
 `[4, INT_MAX]`, `minMatches <= maxFeatures`, `contrastThreshold` fini et positif,
 `claheClipLimit` fini et non négatif. Zéro désactive CLAHE.
 

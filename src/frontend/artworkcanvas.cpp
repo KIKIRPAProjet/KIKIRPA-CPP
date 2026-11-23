@@ -113,6 +113,11 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
                              target.top() + (target.height() - fitted.height()) / 2);
         p.drawImage(topLeft, fitted);
+
+        // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
+        p.setPen(QColor("#dddddd"));
+        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
         return; // On arrête de dessiner ici
     }
 

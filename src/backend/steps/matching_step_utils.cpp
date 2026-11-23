@@ -104,6 +104,56 @@ namespace StepsNs {
         return std::nullopt;
     }
 
+    float overlapForDirection(DataNs::Direction direction, float overlap, float verticalOverlap) {
+        const bool isVertical = direction == DataNs::Direction::Top || direction == DataNs::Direction::Bottom;
+        return isVertical && verticalOverlap > 0.f ? verticalOverlap : overlap;
+    }
+
+    std::string checkOverlaps(float overlap, float verticalOverlap) {
+        if (!std::isfinite(overlap) || !(overlap > 0.f && overlap < 1.f))
+            return "overlap must be in ]0, 1[, got " + std::to_string(overlap);
+        if (!std::isfinite(verticalOverlap) || verticalOverlap < 0.f || verticalOverlap >= 1.f)
+            return "verticalOverlap must be 0 (same as overlap) or in ]0, 1[, got " + std::to_string(verticalOverlap);
+        return {};
+    }
+
+    double measuredOverlapFraction(DataNs::Direction direction, cv::Size tileSize, cv::Point2d translation) {
+        const bool isVertical = direction == DataNs::Direction::Top || direction == DataNs::Direction::Bottom;
+        const double tileLength = isVertical ? tileSize.height : tileSize.width;
+        const double shift = isVertical ? translation.y : translation.x;
+        return (tileLength - std::abs(shift)) / tileLength;
+    }
+
+    std::optional<double> calibrateOverlap(const std::vector<OverlapObservation>& observations, DataNs::Direction direction) {
+        const auto isSameAxis = [direction](DataNs::Direction other) {
+            const auto isVertical = [](DataNs::Direction value) {
+                return value == DataNs::Direction::Top || value == DataNs::Direction::Bottom;
+            };
+            return isVertical(other) == isVertical(direction);
+        };
+        std::vector<double> fractions;
+        bool hasOutOfMarginPeak = false;
+        for (const OverlapObservation& observation : observations) {
+            if (!isSameAxis(observation.direction) || !std::isfinite(observation.overlapFraction)) continue;
+            fractions.push_back(observation.overlapFraction);
+            hasOutOfMarginPeak = hasOutOfMarginPeak || observation.isOutOfMargin;
+        }
+        if (!hasOutOfMarginPeak || fractions.size() < static_cast<std::size_t>(MINIMUM_AGREEING_OBSERVATIONS))
+            return std::nullopt;
+
+        std::vector<double> sorted = fractions;
+        std::sort(sorted.begin(), sorted.end());
+        const std::size_t middle = sorted.size() / 2;
+        const double median = sorted.size() % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+        const auto agreeing = std::count_if(fractions.begin(), fractions.end(), [median](double fraction) {
+            return std::abs(fraction - median) <= OVERLAP_AGREEMENT_TOLERANCE;
+        });
+        if (agreeing < MINIMUM_AGREEING_OBSERVATIONS || 2 * static_cast<std::size_t>(agreeing) <= fractions.size())
+            return std::nullopt;
+        if (!(median > 0 && median < 1)) return std::nullopt;
+        return median;
+    }
+
     nlohmann::json serializeOutput(const std::string& key, const std::vector<DataNs::PairMatches>& value, const std::string& type) {
         nlohmann::json json;
         nlohmann::json pairs = nlohmann::json::array();

@@ -3,12 +3,10 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/tile.h"
-#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
-#include <opencv2/core/mat.hpp>
-#include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -170,7 +168,7 @@ namespace StepsNs {
         // Dossier des TIFF pyramidaux : créé s'il n'existe pas, puis vérifié (le deuxième appel renvoie false sans
         // erreur si le dossier existe déjà ; une erreur est signalée par errorCode).
         fs::path prepareOutputDirectory(const fs::path& directory) {
-            const fs::path outputDirectory = directory / ".cache" / "pyramids";
+            const fs::path outputDirectory = IONs::pyramidCacheDirectory(directory);
             fs::create_directories(outputDirectory);
             std::error_code errorCode;
             if (!fs::create_directories(outputDirectory, errorCode) && errorCode)
@@ -178,22 +176,20 @@ namespace StepsNs {
             return outputDirectory;
         }
 
-        // Une seule image en mémoire à la fois : lue, convertie en TIFF pyramidal, puis libérée. Seule la fiche reste.
+        // Un TIFF par image, dans le cache partagé avec l'interface (core/io/pyramid_cache.h) :
+        // <nom de l'image>_<empreinte du chemin complet>_pyramid.tif. L'empreinte rend le nom unique, même pour deux
+        // images de même nom (a.tif et a.tiff, ou deux dossiers de la liste `tiles`), et indépendant de la case : une
+        // grille réorganisée réutilise ses pyramides. Le nom de l'image le garde lisible.
+        // Pyramide valide (même source, même taille, même date) : réutilisée sans lire l'image. Sinon, une seule image
+        // en mémoire à la fois : lue, convertie, puis libérée. Seule la fiche reste.
         std::shared_ptr<DataNs::TileClass> createTile(const ImageFile& imageFile, int tileId, const fs::path& outputDirectory) {
-            const cv::Mat image = IONs::readImage(imageFile.filePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
-            if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(imageFile.filePath));
-
-            // Un TIFF par image : <id>_<nom de l'image>_pyramid.tif. L'id rend le nom unique, même pour deux images de
-            // même nom (a.tif et a.tiff, ou deux dossiers de la liste `tiles`) ; le nom de l'image le garde lisible.
-            fs::path pyramidFileName = IONs::pathFromUtf8(std::to_string(tileId) + "_");
-            pyramidFileName += imageFile.filePath.stem();
-            pyramidFileName += "_pyramid.tif";
-            const fs::path pyramidPath = outputDirectory / pyramidFileName;
+            IONs::PyramidCacheEntry pyramid;
             std::string errorMessage;
-            if (!IONs::createPyramidalTiledTiff(image, pyramidPath, errorMessage))
-                throw std::runtime_error("cannot create " + IONs::pathToUtf8(pyramidPath) + ": " + errorMessage);
+            if (!IONs::preparePyramidCache(imageFile.filePath, outputDirectory, pyramid, errorMessage))
+                throw std::runtime_error("cannot create the pyramid of " + IONs::pathToUtf8(imageFile.filePath) + ": " + errorMessage);
 
-            auto tile = std::make_shared<DataNs::TileClass>(tileId, imageFile.filePath, pyramidPath, image.cols, image.rows, image.type());
+            auto tile = std::make_shared<DataNs::TileClass>(tileId, imageFile.filePath, pyramid.pyramidPath, pyramid.width,
+                                                            pyramid.height, pyramid.type);
             tile->setGridPosition(imageFile.row, imageFile.column);
             return tile;
         }

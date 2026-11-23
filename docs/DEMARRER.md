@@ -43,7 +43,7 @@ Toutes les commandes de ce guide se tapent dans un terminal ordinaire : PowerShe
    python -m pip install --user aqtinstall
    ```
    ```powershell
-   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
    ```
    Vous devez obtenir `C:\Qt\6.10.3\msvc2022_64`. Un Qt déjà installé avec Qt Creator ne convient que s'il contient le dossier `msvc2022_64` ; un Qt `mingw_64` seul ne suffit pas. La commande laisse un fichier `aqtinstall.log` dans le dossier courant : supprimez-le, et ne le commitez pas.
 4. **Les trois variables du build**, nécessaires pour CLion et pour compiler à la main (§ 5). Le script, lui, s'en passe si vous avez gardé les emplacements de ce guide.

@@ -36,10 +36,76 @@ find_package(TIFF REQUIRED)
 #
 # - Widgets : composants graphiques de l'application.
 # - Concurrent : gestion des traitements concurrents et des tâches asynchrones.
+# - Gui : lecture des images via QImageReader et les plugins Qt imageformats.
 #
 # REQUIRED indique que ces modules sont indispensables à la configuration
 # du projet.
-find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Gui)
+
+# Qt fournit QImageReader avec Qt6::Gui, mais le format TIFF est chargé par
+# le plugin Qt Image Formats. Il ne s'agit pas d'une cible CMake Qt distincte :
+# vérifier directement la présence du plugin rend la dépendance explicite.
+set(KIKIRPA_QT_IMAGE_FORMATS_DIRS "")
+
+foreach(KIKIRPA_QT_DIR
+        "${Qt6Gui_DIR}"
+        "${Qt6Core_DIR}"
+        "${Qt6_DIR}")
+    if(KIKIRPA_QT_DIR)
+        get_filename_component(KIKIRPA_QT_PREFIX "${KIKIRPA_QT_DIR}/../../.." ABSOLUTE)
+        list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+            "${KIKIRPA_QT_PREFIX}/plugins/imageformats"
+            "${KIKIRPA_QT_PREFIX}/share/qt/plugins/imageformats"
+        )
+    endif()
+endforeach()
+
+foreach(KIKIRPA_PREFIX IN LISTS CMAKE_PREFIX_PATH)
+    list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+        "${KIKIRPA_PREFIX}/plugins/imageformats"
+        "${KIKIRPA_PREFIX}/share/qt/plugins/imageformats"
+    )
+endforeach()
+
+if(APPLE)
+    list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+        "/opt/homebrew/share/qt/plugins/imageformats"
+        "/opt/homebrew/opt/qtimageformats/share/qt/plugins/imageformats"
+        "/opt/homebrew/opt/qt/share/qt/plugins/imageformats"
+        "/usr/local/share/qt/plugins/imageformats"
+        "/usr/local/opt/qtimageformats/share/qt/plugins/imageformats"
+        "/usr/local/opt/qt/share/qt/plugins/imageformats"
+    )
+endif()
+
+list(APPEND KIKIRPA_QT_IMAGE_FORMATS_DIRS
+    "/usr/lib/qt6/plugins/imageformats"
+    "/usr/lib/x86_64-linux-gnu/qt6/plugins/imageformats"
+)
+list(REMOVE_DUPLICATES KIKIRPA_QT_IMAGE_FORMATS_DIRS)
+
+set(KIKIRPA_QT_IMAGE_FORMATS_PLUGIN "")
+foreach(KIKIRPA_QT_IMAGE_FORMATS_DIR IN LISTS KIKIRPA_QT_IMAGE_FORMATS_DIRS)
+    file(GLOB KIKIRPA_QT_IMAGE_FORMATS_PLUGIN_CANDIDATES
+        "${KIKIRPA_QT_IMAGE_FORMATS_DIR}/qtiff*.dll"
+        "${KIKIRPA_QT_IMAGE_FORMATS_DIR}/libqtiff.so*"
+        "${KIKIRPA_QT_IMAGE_FORMATS_DIR}/libqtiff*.dylib"
+    )
+    if(KIKIRPA_QT_IMAGE_FORMATS_PLUGIN_CANDIDATES)
+        list(GET KIKIRPA_QT_IMAGE_FORMATS_PLUGIN_CANDIDATES 0
+            KIKIRPA_QT_IMAGE_FORMATS_PLUGIN)
+        break()
+    endif()
+endforeach()
+
+if(NOT KIKIRPA_QT_IMAGE_FORMATS_PLUGIN)
+    message(FATAL_ERROR
+        "Qt Image Formats plugin is missing; TIFF support via QImageReader is unavailable. "
+        "Ubuntu: sudo apt-get install qt6-image-formats-plugins. "
+        "macOS (Homebrew): brew install qtimageformats. "
+        "Windows (aqt): python -m aqt install-qt windows desktop "
+        "<version> win64_msvc2022_64 -O C:\\Qt -m qtimageformats --archives qtbase qtimageformats.")
+endif()
 
 # nlohmann_json
 

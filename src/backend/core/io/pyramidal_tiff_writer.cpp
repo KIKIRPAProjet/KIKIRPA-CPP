@@ -3,6 +3,7 @@
 
 #include "core/data/tile.h"
 #include "core/io/unicode_path.h"
+#include "core/io/file_replacement.h"
 
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
@@ -58,8 +59,9 @@ namespace IONs {
             }
 
             // Avec 4 canaux, le dernier est un canal alpha non prémultiplié.
-            if (channels == 4 &&
-                !TIFFSetField(tiffFile, TIFFTAG_EXTRASAMPLES, 1, static_cast<uint16_t>(EXTRASAMPLE_UNASSALPHA))) {
+            // TIFFTAG_EXTRASAMPLES attend un nombre et un tableau (pointeur), pas la valeur elle-même.
+            const uint16_t extraSamples[] = {EXTRASAMPLE_UNASSALPHA};
+            if (channels == 4 && !TIFFSetField(tiffFile, TIFFTAG_EXTRASAMPLES, 1, extraSamples)) {
                 errorMessage = "cannot configure TIFF alpha channel";
                 return false;
             }
@@ -139,13 +141,15 @@ namespace IONs {
             }
         }
 
-        TIFF* tiffFile = IONs::openTiff(outputPath, "w");
+        // Écriture dans un fichier temporaire unique pour éviter tout conflit concurrent
+        const auto tempPath = IONs::makeTemporaryPath(outputPath);
+        TIFF* tiffFile = IONs::openTiff(tempPath, "w");
         if (tiffFile == nullptr) {
-            errorMessage = "cannot open output TIFF";
+            errorMessage = "cannot open output TIFF: " + tempPath.string();
             return false;
         }
 
-        // do/while(false) : un seul point de sortie, pour fermer et supprimer le fichier en cas d'erreur (break).
+        // do/while(false) : un seul point de sortie, pour fermer et nettoyer le temporaire en cas d'erreur.
         bool success = false;
         do {
             // Réserve les sous-répertoires (SubIFD) qui contiendront les niveaux réduits.
@@ -180,11 +184,22 @@ namespace IONs {
         } while (false);
 
         TIFFClose(tiffFile);
+
+        // Si l'écriture a échoué, on détruit le temporaire et on sort
         if (!success) {
             std::error_code removeError;
-            std::filesystem::remove(outputPath, removeError);   // pas de fichier incomplet laissé sur le disque
+            std::filesystem::remove(tempPath, removeError);
+            return false;
         }
-        return success;
+
+        // Publication atomique : on remplace outputPath par tempPath
+        if (!IONs::replaceFile(tempPath, outputPath, errorMessage)) {
+            std::error_code removeError;
+            std::filesystem::remove(tempPath, removeError);
+            return false;
+        }
+
+        return true;
     }
 
 }

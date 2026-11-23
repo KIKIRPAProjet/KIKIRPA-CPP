@@ -248,7 +248,7 @@ void configurationAndRegistry(Fixtures& fixtures) {
     Json script = {{"pipeline", {{"steps", Json::array({Json{{"name", "import"}}, Json{{"name", "lightglue"},
         {"parameters", {{{"valueType", "string"}, {"name", "modelPath"}, {"value", "fixture.onnx"}}}}}})}}}};
     const auto pipeline = PipelineNs::buildPipeline(script);
-    require(pipeline.getSteps().size() == 2 && pipeline.getSteps()[1]->getConfigJson()["parameters"].size() == 3,
+    require(pipeline.getSteps().size() == 2 && pipeline.getSteps()[1]->getConfigJson()["parameters"].size() == 5,
             "JSON builds import -> lightglue and preserves defaults");
     const auto reject = [&](const Json& cfg) {
         bool rejected = false;
