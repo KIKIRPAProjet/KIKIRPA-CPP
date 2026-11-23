@@ -38,6 +38,9 @@ include(cmake/backend.cmake)
 # Le frontend regroupe les composants liés à l'interface graphique.
 include(cmake/frontend.cmake)
 
+# Configure la documentation API avec Doxygen.
+include(cmake/documentation.cmake)
+
 # Déclare l'exécutable principal de l'application.
 # Le point d'entrée du programme est défini dans src/main.cpp.
 add_executable(stitching src/main.cpp)

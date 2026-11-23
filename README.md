@@ -43,6 +43,9 @@ ctest --preset <même preset>
 
 Avant cela, il faut installer les dépendances : pas à pas dans [docs/DEMARRER.md](docs/DEMARRER.md), liste complète dans [docs/BUILD.md](docs/BUILD.md).
 
+La documentation API Doxygen se génère avec `cmake --build --preset <preset> --target stitching_docs`
+après installation de Doxygen ; elle est produite dans le dossier `docs/html/` du build.
+
 ## Organisation du dépôt
 
 ```

@@ -15,6 +15,7 @@ Première installation sur un poste, pas à pas, avec les problèmes courants : 
 | Qt 6 (Widgets, Concurrent, plugins imageformats) | oui | GUI (`kikirpa_frontend`) et lecture des TIFF |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
+| Doxygen | non | génération de la documentation API (`stitching_docs`) |
 
 ## Windows (MSVC)
 
@@ -119,6 +120,20 @@ Pour activer cette vérification dans un autre build CMake Clang, ajouter
 `-DENABLE_CLANG_TIDY=ON` à la configuration. La GitHub Action CI exécute aussi
 clang-tidy uniquement sur les fichiers C++ qu'une branche ou une pull request
 modifie par rapport à `main`, et fait échouer le job si un diagnostic est émis.
+
+### Documentation Doxygen
+
+Installer Doxygen, puis configurer le projet comme d'habitude. La génération
+est disponible avec la cible `stitching_docs` :
+
+```bash
+sudo apt-get install doxygen
+cmake --preset linux
+cmake --build --preset linux --target stitching_docs
+```
+
+La documentation HTML est générée dans `build/linux/docs/html/`. La
+configuration utilisée par la cible est `cmake/doxygen.conf`.
 
 ## ONNX Runtime et modèle LightGlue
 
