@@ -4,6 +4,7 @@
 // et l'intégration asynchrone multi-thread sur deux tuiles générées.
 #include "pipeline_worker.h"
 #include "pipeline_runner.h"
+#include "project_serializer.h"
 
 #include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
@@ -270,6 +271,21 @@ TEST_F(PipelineWorkerTestClass, PauseAfterStepAndResumeToCompletion) {
     // mosaic.tif ne doit pas encore exister
     EXPECT_FALSE(fs::exists(outputDirectory / "mosaic.tif"));
 
+    // Sauvegarde puis relecture avec de nouveaux objets : même chemin que fermeture et réouverture.
+    const QString projectPath = QString::fromStdString(IONs::pathToUtf8(rootDirectory / "resume.kikproj"));
+    ProjectGrid::State grid;
+    grid.tileDirectory = QString::fromStdString(IONs::pathToUtf8(tilesDirectory));
+    const QString savedOutput = QString::fromStdString(IONs::pathToUtf8(outputDirectory));
+    ASSERT_TRUE(ProjectSerializer::saveToFile(projectPath, QStringLiteral("Reprise"),
+                                            savedOutput, 3, grid, nullptr, script));
+    ProjectData reopened;
+    ASSERT_TRUE(ProjectSerializer::loadFromFile(projectPath, &reopened));
+    const auto summary = ProjectSerializer::summarize(reopened);
+    ASSERT_TRUE(summary.canResume) << summary.text().toStdString();
+    EXPECT_EQ(reopened.mode, 3);
+    EXPECT_EQ(summary.runStatus, QStringLiteral("paused"));
+    EXPECT_EQ(summary.upToDateSteps, QStringList{QStringLiteral("import")});
+
     // --- Phase 2 : Reprise (isResume = true, skipCompletedSteps = true) ---
     PipelineWorkerClass resumeWorker;
 
@@ -288,7 +304,8 @@ TEST_F(PipelineWorkerTestClass, PauseAfterStepAndResumeToCompletion) {
         resumeError = error;
     });
 
-    resumeWorker.runPipeline(scriptText, QString(), true, /*isResume=*/true);
+    resumeWorker.runPipeline(QString::fromStdString(reopened.backendScript.dump()),
+                             QString(), true, /*isResume=*/true);
 
     EXPECT_TRUE(resumeFinished);
     EXPECT_TRUE(resumeSuccess) << resumeError.toStdString();

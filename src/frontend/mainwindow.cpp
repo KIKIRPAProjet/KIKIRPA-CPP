@@ -464,12 +464,25 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
+        return;
+    }
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
+    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
+                        QMessageBox::Open | QMessageBox::Cancel, this);
+    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
+    resumeButton->setEnabled(summary.canResume);
+    opening.exec();
+    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+        return;
+    const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
@@ -481,11 +494,16 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(0);
+    setMode(projectData.mode);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    if (resume) {
+        pipelineRunner->setScriptJson(QString::fromStdString(projectData.backendScript.dump()));
+        pipelineRunner->setStartFromStepName(QString());
+        pipelineRunner->startRun(1, true);
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -651,8 +669,16 @@ void MainWindow::saveProject()
     if (path.isEmpty())
         return;
     QString errorMessage;
+    nlohmann::json backendScript;
+    try {
+        backendScript = nlohmann::json::parse(generatePipelineScript(1).toStdString());
+    } catch (const std::exception &exception) {
+        // Un projet en cours de configuration reste enregistrable sans script exécutable.
+        workspaceUI->appendLog(tr("Projet enregistré sans script exécutable : %1")
+                                   .arg(QString::fromUtf8(exception.what())));
+    }
     if (!ProjectSerializer::saveToFile(
-            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
