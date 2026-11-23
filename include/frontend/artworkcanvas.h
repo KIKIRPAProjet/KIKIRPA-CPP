@@ -11,6 +11,7 @@
 #include <QWidget>
 #include <QImage>
 
+#include <cstdint>
 #include <functional>
 
 class QKeyEvent;
@@ -94,7 +95,7 @@ private:
     int gridCellAt(const QPoint &point) const;
     void drawCropOverlay(QPainter &painter, const QRect &imageRect);
 
-    enum class CropHandle {
+    enum class CropHandle : std::uint8_t {
         None,
         TopLeft,
         TopRight,
