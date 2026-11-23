@@ -1,8 +1,12 @@
+// tests/frontend/test_project_setup.cpp
 #include "project_setup_model.h"
 
+#include "core/io/unicode_path.h"
 #include "core/pipeline/pipeline_builder.h"
 
 #include <gtest/gtest.h>
+
+#include <QTemporaryDir>
 
 #include <algorithm>
 #include <filesystem>
@@ -28,10 +32,9 @@ class ProjectSetupTestClass : public ::testing::Test {
 
 protected:
   void SetUp() override {
-    root = fs::temp_directory_path() /
-           ("kikirpa_frontend_" +
-            std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
-    fs::remove_all(root);
+    ASSERT_TRUE(temporaryDirectory.isValid());
+    // La graine GoogleTest peut être identique entre processus : chaque test possède son dossier.
+    root = IONs::pathFromUtf8(temporaryDirectory.path().toStdString());
     fs::create_directories(root / "input");
     fs::create_directories(root / "output");
     for (int row = 0; row < 3; ++row) {
@@ -50,8 +53,7 @@ protected:
     model.importTiles();
   }
 
-  void TearDown() override { fs::remove_all(root); }
-
+  QTemporaryDir temporaryDirectory;
   fs::path root;
   FrontendNs::ProjectSetupModelClass model;
 };
