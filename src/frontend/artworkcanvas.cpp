@@ -280,7 +280,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawPath(maskPath);
         p.setPen(QColor("#eeeeee"));
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
-                   tr("Masque d'exclusion — proposition"));
+                   tr("Masque d'exclusion : proposition"));
     } else if (assembly || modeValue == kModeExport) {
         if (seamVisible && !layersDrawn) {
             p.setPen(QPen(QColor("#df4038"), 2));
