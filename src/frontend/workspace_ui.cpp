@@ -163,7 +163,7 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         m_rightPanel->updateGridState(gridState);
     }
 
-    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" : KIK-IRPA Assemblage"));
 }
 
 /**

@@ -193,7 +193,7 @@ void AssemblyTab::applyChoices()
         return;
     m_projectGrid->setPipelineChoices(choices);   // le projet prévient l'interface, qui rappelle updateChoices
     m_mainWindow->refreshSavedState();             // les checkpoints des étapes changées ne sont plus valides
-    m_mainWindow->updateStatus(tr("Méthodes modifiées — les étapes suivantes sont à refaire."));
+    m_mainWindow->updateStatus(tr("Méthodes modifiées, les étapes suivantes sont à refaire."));
 }
 
 void AssemblyTab::updateChoices(const FrontendNs::PipelineChoices &requestedChoices)
