@@ -549,6 +549,7 @@ namespace IONs {
         return success;
     }
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     bool PyramidalTiffReaderClass::getLevelDimensions(
         int level,
         int& width,

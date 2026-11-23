@@ -40,6 +40,7 @@ namespace IONs {
             ) const;
 
             // Récupère les dimensions d'un niveau donné.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool getLevelDimensions(
                 int level,
                 int& width,

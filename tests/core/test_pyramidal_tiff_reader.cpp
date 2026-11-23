@@ -36,6 +36,7 @@ namespace {
     constexpr double ZOOM_FULL = 100.0;
     constexpr double ZOOM_QUARTER_FULL = 25.0;
     constexpr double ZOOM_LOW = 0.25;
+    constexpr int CLEANUP_TEST_IMAGE_SIZE = 64;
 
     std::filesystem::path createTestPyramid(std::string& error) {
         auto path = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_test.tif";
@@ -135,17 +136,17 @@ namespace {
     // Image à 4 canaux (RGBA) : le canal alpha est déclaré par TIFFTAG_EXTRASAMPLES. Passer la valeur au lieu d'un
     // tableau faisait planter libtiff.
     TEST(PyramidalTiffReaderClass, WritesAndReadsFourChannelImage) {
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
+        const auto path = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
         const cv::Mat source(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC4, cv::Scalar(10, 20, 30, 255));
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, path, error)) << error;
 
         cv::Mat region;
-        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(PATH).readRegion(
+        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(path).readRegion(
             0, cv::Rect(0, 0, BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE), region, error)) << error;
         ASSERT_EQ(region.type(), CV_8UC4);
         EXPECT_EQ(region.at<cv::Vec4b>(0, 0), cv::Vec4b(10, 20, 30, 255));
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(path);
     }
 
     TEST(PyramidalTiffReaderClass, RejectsRegionOutsideLevel) {
@@ -242,7 +243,7 @@ namespace {
     }
 
     TEST(PyramidalTiffWriterClass, WriteFailureCleansUpWithoutLeavingCorruptedOrTemporaryFile) {
-        cv::Mat validImage = cv::Mat::zeros(64, 64, CV_8UC3);
+        cv::Mat validImage = cv::Mat::zeros(CLEANUP_TEST_IMAGE_SIZE, CLEANUP_TEST_IMAGE_SIZE, CV_8UC3);
         std::string errorMessage;
 
         // Cas 1 : Image vide -> échec immédiat, aucun fichier créé
