@@ -195,11 +195,13 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
+            this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                     canvas->setMosaicPreview(image);
-                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    setMode(6); // 6 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
                     QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
@@ -287,19 +289,9 @@ void MainWindow::setupPageConnections()
 
 void MainWindow::setupPairAlignmentConnections()
 {
-    //seule ligne qui sera modifiée
-    m_pairs = FrontendUtils::defaultPairAlignments(); 
+    // Aucune paire tant qu'aucun calcul n'a été fait : elles arrivent avec PipelineRunnerClass::resultsReady.
+    m_pairs.clear();
     m_currentPairIndex = 0;
-
-    /* À décommenter lors de la connexion au backend (remplace defaultPairAlignments() après le run) ---
-    // Lorsque le DataStoreClass du pipeline contient la clé "matches" :
-    // m_pairs.clear();
-    // const auto &backendPairs = dataStore.get<std::vector<DataNs::PairMatches>>("matches");
-    // for (int i = 0; i < static_cast<int>(backendPairs.size()); ++i) {
-    //     m_pairs.append(FrontendUtils::pairInfoFromBackend(
-    //         i, tileNameA, tileNameB, backendPairs[i]));
-    // }
-    */
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
@@ -397,11 +389,10 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
 //comptage du nombre de paire douteuse et en échec, mise à jour des tables 
 void MainWindow::refreshPairViews()
 {
-    if (m_pairs.isEmpty())
-        return;
-
-    m_currentPairIndex = qBound(0, m_currentPairIndex, m_pairs.size() - 1);
-    const auto &currentPair = m_pairs.at(m_currentPairIndex);
+    // Sans paire (aucun calcul fait), les vues sont vidées : le canevas invite à lancer l'assemblage.
+    m_currentPairIndex = m_pairs.isEmpty() ? 0 : qBound(0, m_currentPairIndex, static_cast<int>(m_pairs.size()) - 1);
+    const FrontendUtils::PairAlignmentInfo currentPair =
+        m_pairs.isEmpty() ? FrontendUtils::PairAlignmentInfo() : m_pairs.at(m_currentPairIndex);
 
     int dubiousCount = 0;
     int failedCount = 0;
@@ -427,10 +418,10 @@ void MainWindow::refreshPairViews()
     }
 
     if (WorkspaceStatusBar *status = workspaceUI->workspaceStatusBar()) {
-        status->updatePairSummary(m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
+        status->updatePairSummary(m_pairs.isEmpty() ? 0 : m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
     }
 
-    if (currentMode == 3) {
+    if (currentMode == 3 && !m_pairs.isEmpty()) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
             label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
@@ -438,11 +429,25 @@ void MainWindow::refreshPairViews()
     }
 }
 
+void MainWindow::applyPipelineResults(const PipelineResults &results)
+{
+    m_pairs = results.pairs;
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamOverlay(results.seamOverlay);
+        canvasView->setAlignmentOverview(results.tiles, results.pairs);
+    }
+    refreshPairViews();
+}
+
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
     mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -484,6 +489,9 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -515,7 +523,7 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
-    currentMode = qBound(0, mode, 5);
+    currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
         const int gridIndex = workspaceUI->rightTabs()->indexOf(workspaceUI->gridTabPage());
@@ -535,7 +543,9 @@ void MainWindow::setMode(int mode)
     const QStringList descriptions = {
         tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
         tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Vue Paire : points de contrôle et correction"),
+        tr("Ligne de couture : frontières entre les tuiles, calculées par l'assemblage"),
+        tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
         tr("Export : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))

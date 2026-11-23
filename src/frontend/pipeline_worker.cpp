@@ -253,6 +253,7 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
         const auto& completed = pipeline->getRunState().completedSteps;
         const int count = static_cast<int>(completed.size());
         const QString name = count > 0 ? QString::fromStdString(completed.back()) : QString();
+        emit resultsReady(collectResults(QSize()));   // les paires déjà mesurées restent consultables pendant la pause
         emit pipelinePaused(count, name);
         return;
     }
@@ -269,13 +270,17 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
             }
         }
         emit progressChanged(100);
-        emit pipelineFinished(true, QString(), generatePreviewImage());
+        const QImage preview = generatePreviewImage();
+        emit resultsReady(collectResults(preview.size()));
+        emit pipelineFinished(true, QString(), preview);
         return;
     }
 
     const QString errorText = executionError.empty()
         ? tr("Échec de l'exécution d'une étape du pipeline.")
         : QString::fromStdString(executionError);
+    // Après un échec (une tuile non reliée, par exemple), les paires et leurs raisons d'échec aident à comprendre.
+    emit resultsReady(collectResults(QSize()));
     emit pipelineFinished(false, errorText, QImage());
 }
 
@@ -331,4 +336,36 @@ QImage PipelineWorkerClass::generatePreviewImage() {
         }
     }
     return QImage();
+}
+
+PipelineResults PipelineWorkerClass::collectResults(const QSize& previewSize) {
+    PipelineResults results;
+    if (!pipeline) return results;
+    const auto& dataStore = pipeline->getDataStore();
+    try {
+        if (dataStore.has("tiles")) results.tiles = FrontendNs::buildResultTiles(dataStore.get<DataNs::TileList>("tiles"));
+        if (dataStore.has("tiles") && dataStore.has("matches")) {
+            std::vector<nlohmann::json> stepResults;
+            for (const auto& step : pipeline->getSteps()) stepResults.push_back(step->getResult());
+            const std::vector<DataNs::PairResidual> noResiduals;
+            results.pairs = FrontendNs::buildPairInfos(
+                dataStore.get<DataNs::TileList>("tiles"), dataStore.get<std::vector<DataNs::PairMatches>>("matches"),
+                stepResults, dataStore.has("pairResiduals")
+                    ? dataStore.get<std::vector<DataNs::PairResidual>>("pairResiduals") : noResiduals);
+            if (dataStore.has("overlapEstimates"))
+                FrontendNs::attachOverlapEstimates(results.pairs, dataStore.get<DataNs::OverlapEstimates>("overlapEstimates"));
+        }
+        // Même réduction que l'aperçu (renderPositionsMosaic) : les coutures tombent sur l'image affichée.
+        if (!previewSize.isEmpty() && dataStore.has("territories") && dataStore.has("positions") && dataStore.has("tiles")) {
+            const BoundingBox box = computeBoundingBox(dataStore.get<std::vector<DataNs::TilePositionData>>("positions"),
+                                                       dataStore.get<DataNs::TileList>("tiles"));
+            if (box.isValid())
+                results.seamOverlay = FrontendNs::buildSeamOverlay(
+                    dataStore.get<std::vector<DataNs::TileTerritory>>("territories"), previewSize,
+                    static_cast<double>(previewSize.width()) / box.width());
+        }
+    } catch (const std::exception& exception) {
+        emit logMessageReceived(tr("Avertissement lecture des résultats : %1").arg(exception.what()), QStringLiteral("warning"));
+    }
+    return results;
 }

@@ -180,7 +180,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
         m_mainWindow->requestRun(4);
     });
 
-    setPairs(FrontendUtils::defaultPairAlignments(), 0);
+    setPairs({}, 0);   // les paires arrivent avec le premier calcul (MainWindow::applyPipelineResults)
 }
 
 // enregistre la liste des paires et l'index de la paire active 
@@ -212,12 +212,12 @@ void AlignmentTab::rebuildPairSelector()
         if (onlyDubious && !pair.isDubious())
             continue;
 
-        const QString prefix = pair.isDubious()
-            ? QStringLiteral("⚠ ")
-            : QStringLiteral("✓ ");
-        const QString statusText = pair.isDubious()
-            ? tr("douteuse")
-            : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable"));
+        const bool failed = pair.status == FrontendUtils::PairStatus::Failed;
+        const QString prefix = failed ? QStringLiteral("✕ ")
+            : (pair.isDubious() ? QStringLiteral("⚠ ") : QStringLiteral("✓ "));
+        const QString statusText = failed ? tr("échec")
+            : (pair.isDubious() ? tr("douteuse")
+                                : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable")));
         const QString itemLabel = QStringLiteral("%1%2 (%3)")
                                       .arg(prefix, pair.pairLabel(), statusText);
         m_pairCombo->addItem(itemLabel, pair.pairIndex);

@@ -29,7 +29,7 @@
 
 namespace {
 
-constexpr int LAST_PROJECT_MODE = 5;
+constexpr int LAST_PROJECT_MODE = 6;   // 0 Projet … 4 Ligne de couture, 5 Assemblage, 6 Export
 
 // Les anciens projets n'ont pas de script ; ils restent consultables avec le mode par défaut.
 bool readResumeData(const QJsonObject &project, ProjectData &loaded, QString *errorMessage)
