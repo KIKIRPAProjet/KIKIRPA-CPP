@@ -55,6 +55,7 @@
 #include <QPushButton>
 #include <QStackedWidget>
 #include <QStatusBar>
+#include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
 
@@ -140,6 +141,8 @@ void MainWindow::setupProjectGridConnections()
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
             this, &MainWindow::updateStatus);
+    connect(projectGrid, &ProjectGrid::logRequested,
+            workspaceUI, &WorkspaceUI::appendLog);
     connect(projectGrid, &ProjectGrid::tilesImported,
             this, &MainWindow::handleTilesImported);
     connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
@@ -154,6 +157,18 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
+        this, [this](const QString& imagePath) {
+            mosaicFilePath = imagePath;
+        });
+
+    // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
+    // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                mosaicFilePath.clear();
+                projectGrid->cancelBackgroundPyramidGeneration();
+            });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
@@ -186,6 +201,7 @@ void MainWindow::setupPipelineConnections()
                     canvas->setMosaicPreview(image);
                     setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
+                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
     });
 }
@@ -431,6 +447,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    mosaicFilePath.clear();
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -460,7 +477,7 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
-
+    mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -598,12 +615,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     if (outputDirectory.isEmpty()) {
-        outputDirectory = QFileDialog::getExistingDirectory(
-            this, tr("Choisir le dossier de sortie"));
-        if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
-            return;
-        }
+        outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
@@ -632,8 +644,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
     setMode(1);
-    updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
-                     .arg(importedCount).arg(QFileInfo(directory).fileName()));
+    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+        .arg(importedCount).arg(QFileInfo(directory).fileName());
+    updateStatus(msg);
+    workspaceUI->appendLog(msg);
 }
 
 void MainWindow::saveProject()
@@ -674,6 +688,9 @@ FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
     setup.gridRows = gridState.gridRows;
     setup.gridColumns = gridState.gridColumns;
     setup.overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
+    setup.verticalOverlap = qBound(0.01, static_cast<double>(gridState.verticalOverlap) / 100.0, 0.99);
+    // « Automatique » coché : 0, chaque step applique sa propre règle (5 % de la tuile, 10 % pour overlap-estimation)
+    setup.railMargin = gridState.automaticUncertainty ? 0.0 : qMax(0.0, gridState.uncertaintyMargin);
     setup.pipelineChoices = gridState.pipelineChoices;   // méthodes de l'onglet Chaîne
     setup.lightGlueModelPath = FrontendUtils::lightGlueModelPath();   // absolu : le script ne dépend pas du dossier courant
 

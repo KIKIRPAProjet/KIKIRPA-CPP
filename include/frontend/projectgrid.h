@@ -3,6 +3,7 @@
 
 #include "project_setup_model.h"
 
+#include <QFutureWatcher>
 #include <QObject>
 #include <QString>
 #include <QStringList>
@@ -16,6 +17,13 @@ struct GridTile
     int rotation = 0;
     bool flipped = false;
     bool empty = false;
+};
+
+// Résultat de la préparation d'une pyramide en arrière-plan (une par image), remis au thread de l'interface.
+struct PyramidGenerationResult
+{
+    QString fileName;       // nom de l'image source, pour le Journal
+    QString errorMessage;   // vide si la pyramide est prête
 };
 
 class ProjectGrid : public QObject
@@ -45,6 +53,7 @@ public:
     };
 
     explicit ProjectGrid(QObject *parent = nullptr);
+    ~ProjectGrid() override;
 
     const State &state() const;
     void setState(const State &state);
@@ -71,6 +80,9 @@ public:
     void rotateSelectedTile();
     void flipSelectedTile();
     void toggleSelectedCellEmpty();
+    // Arrête la préparation des pyramides en arrière-plan après l'image en cours, par exemple quand le calcul démarre :
+    // l'import du backend crée lui-même les pyramides manquantes, sans deux lectures d'image en même temps.
+    void cancelBackgroundPyramidGeneration();
 
 signals:
     void gridUpdated();
@@ -81,11 +93,21 @@ signals:
     void tilesImported(const QString &directory, int importedCount);
     void messageRequested(const QString &title, const QString &message, bool warning);
     void statusRequested(const QString &message);
+    void logRequested(const QString &message);
     void comparisonReady(const QString &referencePath, const QString &tilePath,
                          const QImage &referenceImage, const QImage &tileImage);
 
 private:
+    void startBackgroundPyramidGeneration();
+    void handlePyramidResult(int resultIndex);
+    void handlePyramidGenerationFinished();
+
     State gridState;
+    QFutureWatcher<PyramidGenerationResult> pyramidWatcher;   // tâche en cours ; ses signaux arrivent dans ce thread
+    int pyramidTotal = 0;      // pyramides à préparer dans la tâche en cours
+    int pyramidSuccesses = 0;
+    int pyramidFailures = 0;
+    bool pyramidCancelRequested = false;   // annulée par cancelBackgroundPyramidGeneration (lancement du calcul)
 };
 
 #endif

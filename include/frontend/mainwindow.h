@@ -41,6 +41,7 @@ private:
     friend class TopToolbars;
     friend class WorkspaceCenter;
     friend class WorkspaceStatusBar;
+    QString mosaicFilePath;
 
     void keyPressEvent(QKeyEvent *event) override;
 

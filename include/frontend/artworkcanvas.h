@@ -54,6 +54,7 @@ public:
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     void setMosaicPreview(const QImage &image);
+    const QImage &mosaicPreview() const { return m_mosaicPreview; }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire

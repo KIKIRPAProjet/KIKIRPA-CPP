@@ -4,3 +4,19 @@ target_link_libraries(test_frontend_project_setup PRIVATE kikirpa_frontend GTest
 target_compile_features(test_frontend_project_setup PRIVATE cxx_std_17)
 include(GoogleTest)
 gtest_discover_tests(test_frontend_project_setup)
+
+add_executable(test_frontend_pipeline_worker test_pipeline_worker.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_worker)
+target_link_libraries(test_frontend_pipeline_worker PRIVATE kikirpa_frontend GTest::gtest)
+target_compile_features(test_frontend_pipeline_worker PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_pipeline_worker PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+add_executable(test_frontend_preview_benchmark test_preview_benchmark.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_preview_benchmark)
+target_link_libraries(test_frontend_preview_benchmark PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_preview_benchmark PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_preview_benchmark PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)

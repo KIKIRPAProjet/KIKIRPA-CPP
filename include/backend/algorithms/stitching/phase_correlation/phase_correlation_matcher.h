@@ -8,6 +8,7 @@
 
 #include <opencv2/core.hpp>
 
+#include <optional>
 #include <string>
 
 namespace PhaseCorrelationNs {
@@ -52,11 +53,16 @@ namespace PhaseCorrelationNs {
             // réussi.
             const std::string& getFailureReason() const { return failureReason; }
 
+            // Si le dernier match() a échoué à la première passe sur un pic franc mais hors de la marge du rail : le
+            // recouvrement réel que ce pic indique (voir OverlapEstimatorClass::getOutOfMarginPeak). Vide sinon.
+            const std::optional<OutOfMarginPeak>& getOutOfMarginPeak() const { return outOfMarginPeak; }
+
         private:
             Parameters parameters;                                     // vérifiés une seule fois, dans le constructeur
             OverlapEstimationNs::OverlapEstimatorClass overlapEstimator;   // utilisée quand context.estimatedTranslation
                                                                        // n'est pas fournie
             std::string failureReason;                                 // message du dernier échec de match()
+            std::optional<OutOfMarginPeak> outOfMarginPeak;            // pic franc hors marge du dernier échec
 
     };
 

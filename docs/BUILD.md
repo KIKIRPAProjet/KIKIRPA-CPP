@@ -11,8 +11,8 @@ Première installation sur un poste, pas à pas, avec les problèmes courants : 
 | OpenCV 4, avec le module `dnn` | oui | images, algorithmes ; OpenCV 5 n'est pas pris en charge |
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
-| ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement sous Windows, à fournir sous Linux et macOS (voir [ONNX Runtime](#onnx-runtime-et-modèle-lightglue)) |
-| Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
+| ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
+| Qt 6 (Widgets, Concurrent, plugins imageformats) | oui | GUI (`kikirpa_frontend`) et lecture des TIFF |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
 
@@ -32,9 +32,9 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 4. **Qt 6 binaire avec aqt**. Installer Python si nécessaire, puis exécuter :
    ```bat
    python -m pip install --user aqtinstall
-   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
    ```
-   Cette commande installe Qt Widgets et Concurrent sans les compiler depuis les sources.
+   Cette commande installe Qt Widgets, Concurrent et le plugin Qt Image Formats requis pour les fichiers TIFF.
 5. **Variables d'environnement** utilisateur, une seule fois, puis rouvrir le terminal ou l'IDE :
    ```bat
    setx KIKIRPA_VCPKG_ROOT C:\vcpkg
@@ -58,7 +58,7 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv@4 libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase qtimageformats googletest
 ```
 
 La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore
@@ -84,7 +84,7 @@ Pour l'exécution locale de l'application ou en cas de problème lié aux plugin
 
 ```bash
 sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev \
-    qt6-base-dev libgtest-dev
+    qt6-base-dev qt6-image-formats-plugins libgtest-dev
 cmake --preset linux
 cmake --build --preset linux
 ctest --preset linux

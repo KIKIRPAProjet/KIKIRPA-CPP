@@ -200,10 +200,10 @@ Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se 
 | Step | Paramètres principaux | Entrées | Sortie | Fiche |
 |---|---|---|---|---|
 | `import` | `path`, `tiles` (liste des tuiles), `format`, `columns` | — | `tiles` : `Tiles` | [ImportStep.md](steps/ImportStep.md) |
-| `overlap-estimation` | `overlap`, réglages de la corrélation | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
-| `phase-correlation` | `overlap`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
-| `sift` | `overlap`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
-| `lightglue` | `modelPath`, `minMatches`, `overlap` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
+| `overlap-estimation` | `overlap`, `verticalOverlap`, `overlapCalibration`, réglages de la corrélation (marge automatique de 10 %) | `tiles` | `overlapEstimates` : `OverlapEstimates` | [OverlapEstimationStep.md](steps/OverlapEstimationStep.md) |
+| `phase-correlation` | `overlap`, `verticalOverlap`, `overlapCalibration`, `niveau` (0–3), réglages de la corrélation | `tiles` | `matches` : `PairMatches` | [PhaseCorrelationStep.md](steps/PhaseCorrelationStep.md) |
+| `sift` | `overlap`, `verticalOverlap`, `railMargin`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
+| `lightglue` | `modelPath`, `minMatches`, `overlap`, `verticalOverlap`, `railMargin` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
 | `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
@@ -231,7 +231,7 @@ Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. C'es
 
 ```json
 [ { "id": 0, "source": "D:/oeuvre/tuiles/2_no filter.tif", "row": 0, "column": 0,
-    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/0_2_no filter_pyramid.tif",
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/2_no filter_3f1c9a07_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 

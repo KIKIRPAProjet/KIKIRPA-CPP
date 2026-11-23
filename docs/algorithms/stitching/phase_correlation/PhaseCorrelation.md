@@ -89,6 +89,7 @@ C'est le struct unifié avec SIFT et LightGlue (`pointsInA`, `pointsInB`, `confi
 
 - `true` : la translation `(translationX, translationY)` est valide. La liste de points peut être vide si la zone commune est trop étroite pour y placer des patchs.
 - `false` : la mesure est impossible ou peu fiable. C'est le cas si les tuiles sont vides ou de tailles différentes, si les bandes n'ont pas de contenu commun (zone noire ou fond uni), si la translation réelle est hors de la marge du rail, si le pic de corrélation est ambigu, ou si `context.estimatedTranslation` est fausse de plus de 4 px (deuxième passe). `match` ne lève **aucune exception**.
+- **`getOutOfMarginPeak()`** : après un `false` de la première passe sur un pic **franc mais hors de la marge**, le recouvrement réel que ce pic indique (`OutOfMarginPeak` : `overlapFraction`, `peakRatio`, calculés par `OutputClass::findOutOfMarginPeak`). Vide dans tous les autres cas. Les steps s'en servent pour recaler le recouvrement nominal d'une direction ([PhaseCorrelationStep.md](../../../steps/PhaseCorrelationStep.md#recalage-du-recouvrement-nominal)). `OverlapEstimatorClass` a la même méthode.
 - **`getFailureReason()`** : après un `false`, message qui explique pourquoi, avec les chiffres et la correction à apporter quand elle est connue. Exemple sur Philadelphia 35 → 36 (recouvrement réel 26 %, annoncé 20 %) : *« translation outside the rail margin: the best peak is 520 px from the nominal overlap along the motion and 82 px across, beyond the rail margin (±435 px) (ratio 14.46). Increase the rail margin (Parameters::railMargin, 'marge' in the step, >= 530 px) or give the actual overlap (about 26 % instead of 20 %). »* (messages en anglais, comme ceux des steps). Vide après un `true`.
 
 ---
@@ -288,7 +289,8 @@ La deuxième colonne donne le nom du paramètre dans le script JSON du step `pha
 | `localSmoothingSigma` | `lissageLocal` | 1.5 | σ (px) du flou des surfaces locales. |
 | `maximumLocalDeviation` | `ecartMax` | 3.0 | Écart maximal (px) toléré entre la translation locale et la translation globale. |
 | `minimumPointSpacing` | `espacementMin` | 16 | Distance minimale (px) entre deux points candidats. |
-| `railMargin` | `marge` | 0 | Écart maximal (px), sur chaque axe, entre la translation globale et le recouvrement nominal (incertitude du rail, première passe). 0 = automatique : 5 % de la tuile dans le sens du déplacement, au moins 48 px. |
+| `railMargin` | `marge` | 0 | Écart maximal (px), sur chaque axe, entre la translation globale et le recouvrement nominal (incertitude du rail, première passe). 0 = automatique : `automaticRailMarginFraction` de la tuile dans le sens du déplacement, au moins 48 px. |
+| `automaticRailMarginFraction` | — | 0.05 | Marge automatique (`railMargin` = 0), en part de la tuile dans le sens du déplacement, dans ]0 ; 0,5]. Pas de paramètre dans `phase-correlation` ; le step `overlap-estimation` la met à 0,10. |
 | `minimumValidFraction` | `fractionValideMin` | 0.25 | Part minimale de pixels exploitables (ni extérieurs, ni saturés) communs aux deux bandes. |
 | `upsamplingFactor` | `facteurDft` | 100 | Précision du sous-pixel : 1/`upsamplingFactor` px (deuxième passe et points locaux). Le coût du raffinement est proportionnel à ce facteur. 1 = au pixel, sans raffinement (c'est ce que fait la première passe). |
 
