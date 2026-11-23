@@ -167,6 +167,8 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+                    canvas->setTilePositions({});
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
@@ -203,6 +205,11 @@ void MainWindow::setupPipelineConnections()
                     updateStatus(tr("Mosaïque finale générée."));
                     QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::tilePositionsReady,
+            this, [this](const QVector<ArtworkCanvas::TilePosition>& positions) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+            canvas->setTilePositions(positions);
     });
 }
 

@@ -156,6 +156,8 @@ namespace {
 
 PipelineWorkerClass::PipelineWorkerClass(QObject* parent)
     : QObject(parent) {
+    qRegisterMetaType<ArtworkCanvas::TilePosition>();
+    qRegisterMetaType<QVector<ArtworkCanvas::TilePosition>>();
 }
 
 PipelineWorkerClass::~PipelineWorkerClass() {
@@ -266,6 +268,38 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
             if (!mosaic.imagePath.empty()) {
                 emit mosaicFileReady(
                     QString::fromStdString(IONs::pathToUtf8(mosaic.imagePath)));
+            }
+        }
+
+        if (dataStore.has("positions") && dataStore.has("tiles")) {
+            try {
+                const auto& positions = dataStore.get<std::vector<DataNs::TilePositionData>>("positions");
+                const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
+                QVector<ArtworkCanvas::TilePosition> tilePositions;
+                tilePositions.reserve(static_cast<int>(positions.size()));
+                for (std::size_t i = 0; i < positions.size(); ++i) {
+                    const auto tileIt = std::find_if(tiles.begin(), tiles.end(), [&positions, i](const auto& tile) {
+                        return tile && tile->getId() == positions[i].tileId;
+                    });
+                    if (tileIt == tiles.end())
+                        continue;
+
+                    ArtworkCanvas::TilePosition tilePosition;
+                    const auto& tile = **tileIt;
+                    const QString fileName = QString::fromStdString(
+                        IONs::pathToUtf8(tile.getSource().filename()));
+                    tilePosition.tileId = fileName.isEmpty()
+                        ? QString::number(positions[i].tileId) : fileName;
+                    tilePosition.x = positions[i].position.x;
+                    tilePosition.y = positions[i].position.y;
+                    tilePosition.width = tile.getLevel(0).width;
+                    tilePosition.height = tile.getLevel(0).height;
+                    tilePositions.append(tilePosition);
+                }
+                emit tilePositionsReady(tilePositions);
+            } catch (const std::exception& exception) {
+                emit logMessageReceived(tr("Avertissement positions tuiles : %1").arg(exception.what()),
+                                        QStringLiteral("warning"));
             }
         }
         emit progressChanged(100);

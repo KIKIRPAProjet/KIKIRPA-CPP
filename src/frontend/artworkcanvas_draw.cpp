@@ -205,8 +205,8 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
     p.drawRect(r);
 }
 
-void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                              int rotation, bool flipped)
+QRect ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
+                               int rotation, bool flipped)
 {
     QSize previewSize = r.size();
     if (rotation % 180 != 0)
@@ -216,7 +216,7 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         p.fillRect(r, QColor("#262626"));
         p.setPen(QColor("#d35b55"));
         p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
-        return;
+        return r;
     }
     if (flipped)
         image = image.mirrored(true, false);
@@ -234,4 +234,5 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
     p.setPen(QPen(QColor("#101010"), 5));
     p.setBrush(Qt::NoBrush);
     p.drawRect(r);
+    return QRect(x, y, image.width(), image.height());
 }

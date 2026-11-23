@@ -58,6 +58,7 @@ class PipelineRunnerClass : public QObject {
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
         void mosaicFileReady(const QString& imagePath);
+        void tilePositionsReady(const QVector<ArtworkCanvas::TilePosition>& positions);
         void pausedStateChanged(bool isPaused);
 
     private:

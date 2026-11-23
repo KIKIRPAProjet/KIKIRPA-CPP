@@ -1,5 +1,7 @@
 #include "artworkcanvas.h"
 
+#include <QFileInfo>
+#include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -114,6 +116,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                              target.top() + (target.height() - fitted.height()) / 2);
         p.drawImage(topLeft, fitted);
 
+        const QRect actualMosaicRect(topLeft, fitted.size());
+        if (tileContoursVisible && !tilePositions.isEmpty())
+            drawTileContours(p, actualMosaicRect);
+
         // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
         p.setPen(QColor("#dddddd"));
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
@@ -151,8 +157,9 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                            ? (currentPair.tileIndexB % imagePaths.size())
                            : qMin(1, qMax(0, static_cast<int>(imagePaths.size()) - 1));
 
+    QRect renderedRect = firstImageRect;
     if (!imagePaths.isEmpty())
-        drawPhoto(p, firstImageRect, imagePaths.at(indexA));
+        renderedRect = drawPhoto(p, firstImageRect, imagePaths.at(indexA));
     else
         drawPainting(p, firstImageRect);
     if (pair) {
@@ -280,29 +287,36 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         if(seamVisible){
             p.setPen(QPen(QColor("#df4038"), 2));
             QPainterPath seam;
-            seam.moveTo(x0 + imageW * 0.72, y0);
-            seam.cubicTo(x0 + imageW * 0.68, y0 + imageH * .20,
-                        x0 + imageW * .83, y0 + imageH * .29,
-                        x0 + imageW * .65, y0 + imageH * .44);
-            seam.cubicTo(x0 + imageW * .58, y0 + imageH * .70,
-                        x0 + imageW * .76, y0 + imageH * .76,
-                        x0 + imageW * .69, y0 + imageH);
+            seam.moveTo(renderedRect.left() + renderedRect.width() * 0.72, renderedRect.top());
+            seam.cubicTo(renderedRect.left() + renderedRect.width() * 0.68, renderedRect.top() + renderedRect.height() * .20,
+                         renderedRect.left() + renderedRect.width() * 0.83, renderedRect.top() + renderedRect.height() * .29,
+                         renderedRect.left() + renderedRect.width() * 0.65, renderedRect.top() + renderedRect.height() * .44);
+            seam.cubicTo(renderedRect.left() + renderedRect.width() * .58, renderedRect.top() + renderedRect.height() * .70,
+                         renderedRect.left() + renderedRect.width() * .76, renderedRect.top() + renderedRect.height() * .76,
+                         renderedRect.left() + renderedRect.width() * .69, renderedRect.bottom());
             p.drawPath(seam);
         }
         if (comparison) {
             p.setPen(QPen(QColor("#f0cf36"), 2));
-            p.drawLine(x0 + imageW / 2, y0, x0 + imageW / 2, y0 + imageH);
-            p.fillRect(QRect(x0, y0, imageW / 2, imageH), QColor(225, 188, 40, 30));
+            p.drawLine(renderedRect.left() + renderedRect.width() / 2, renderedRect.top(),
+                       renderedRect.left() + renderedRect.width() / 2, renderedRect.bottom());
+            p.fillRect(QRect(renderedRect.left(), renderedRect.top(),
+                             renderedRect.width() / 2, renderedRect.height()),
+                       QColor(225, 188, 40, 30));
         }
         p.setPen(QPen(QColor("#e4ca37"), 1));
         p.setBrush(Qt::NoBrush);
-        p.drawRect(QRect(x0, y0, imageW, imageH));
+        p.drawRect(renderedRect);
         if (alignmentErrorVisible) {
-            const QRect errorZoneRect(x0 + imageW * .58, y0, imageW * .20, imageH);
+            const QRect errorZoneRect(renderedRect.left() + renderedRect.width() * .58,
+                                      renderedRect.top(),
+                                      renderedRect.width() * .20,
+                                      renderedRect.height());
             p.fillRect(errorZoneRect, QColor(228, 202, 55, 35));
             p.drawRect(errorZoneRect);
             p.setPen(QColor("#f0cf36"));
-            p.drawText(QRect(errorZoneRect.left() - 20, y0 - 22, errorZoneRect.width() + 80, 20),
+            p.drawText(QRect(errorZoneRect.left() - 20, renderedRect.top() - 22,
+                             errorZoneRect.width() + 80, 20),
                        Qt::AlignLeft,
                        tr("Erreur %1 : %2 px")
                            .arg(currentPair.pairLabel(),
@@ -337,4 +351,125 @@ void ArtworkCanvas::setPairOverlayMode(bool enabled)
         pairOverlayMode = enabled;
         update();
     }
+}
+
+QVector<ArtworkCanvas::TileContour> ArtworkCanvas::computeTileContours(
+    const QRectF &mosaicRect) const
+{
+    QVector<TileContour> contours;
+    if (mosaicRect.width() <= 0.0 || mosaicRect.height() <= 0.0)
+        return contours;
+
+    if (!tilePositions.isEmpty()) {
+        double defaultTileWidth = 0.0;
+        double defaultTileHeight = 0.0;
+        for (const TilePosition &pos : tilePositions) {
+            if (pos.width > 0.0 && defaultTileWidth <= 0.0)
+                defaultTileWidth = pos.width;
+            if (pos.height > 0.0 && defaultTileHeight <= 0.0)
+                defaultTileHeight = pos.height;
+        }
+        if (defaultTileWidth <= 0.0)
+            defaultTileWidth = 1.0;
+        if (defaultTileHeight <= 0.0)
+            defaultTileHeight = 1.0;
+
+        double minX = tilePositions.first().x;
+        double minY = tilePositions.first().y;
+        double maxX = minX;
+        double maxY = minY;
+        for (const TilePosition &position : tilePositions) {
+            const double tileWidth = position.width > 0.0 ? position.width : defaultTileWidth;
+            const double tileHeight = position.height > 0.0 ? position.height : defaultTileHeight;
+            minX = qMin(minX, position.x);
+            minY = qMin(minY, position.y);
+            maxX = qMax(maxX, position.x + tileWidth);
+            maxY = qMax(maxY, position.y + tileHeight);
+        }
+
+        const double spanX = qMax(1.0, maxX - minX);
+        const double spanY = qMax(1.0, maxY - minY);
+        for (const TilePosition &position : tilePositions) {
+            const double tileWidth = position.width > 0.0 ? position.width : defaultTileWidth;
+            const double tileHeight = position.height > 0.0 ? position.height : defaultTileHeight;
+            const double x = (position.x - minX) / spanX;
+            const double y = (position.y - minY) / spanY;
+            contours.append({
+                position.tileId,
+                QRectF(mosaicRect.x() + x * mosaicRect.width(),
+                       mosaicRect.y() + y * mosaicRect.height(),
+                       tileWidth / spanX * mosaicRect.width(),
+                       tileHeight / spanY * mosaicRect.height())
+            });
+        }
+        return contours;
+    }
+
+    const int rows = qMax(1, gridRows);
+    const int columns = qMax(1, gridColumns);
+    const double overlapX = qBound(0.0, horizontalOverlapPercent / 100.0, 0.90);
+    const double overlapY = qBound(0.0, verticalOverlapPercent / 100.0, 0.90);
+    const double stepX = 1.0 - overlapX;
+    const double stepY = 1.0 - overlapY;
+    const double totalWidth = 1.0 + (columns - 1) * stepX;
+    const double totalHeight = 1.0 + (rows - 1) * stepY;
+    const double tileWidth = 1.0 / totalWidth;
+    const double tileHeight = 1.0 / totalHeight;
+
+    for (int row = 0; row < rows; ++row) {
+        for (int column = 0; column < columns; ++column) {
+            const int index = row * columns + column;
+            if (index >= gridTiles.size())
+                continue;
+
+            const GridTile &tile = gridTiles.at(index);
+            if (tile.empty || tile.path.trimmed().isEmpty())
+                continue;
+
+            const QString tileId = QFileInfo(tile.path).fileName();
+            contours.append({
+                tileId,
+                QRectF(mosaicRect.x() + column * stepX / totalWidth * mosaicRect.width(),
+                       mosaicRect.y() + row * stepY / totalHeight * mosaicRect.height(),
+                       tileWidth * mosaicRect.width(),
+                       tileHeight * mosaicRect.height())
+            });
+        }
+    }
+    return contours;
+}
+
+void ArtworkCanvas::drawTileContours(QPainter &p, const QRect &mosaicRect)
+{
+    const QVector<TileContour> contours = computeTileContours(QRectF(mosaicRect));
+    if (contours.isEmpty())
+        return;
+
+    p.save();
+    p.setClipRect(mosaicRect);
+    p.setBrush(Qt::NoBrush);
+
+    p.setPen(QPen(QColor(0, 0, 0, 180), 4));
+    for (const TileContour &contour : contours)
+        p.drawRect(contour.rect);
+
+    const QFontMetrics metrics(p.font());
+    p.setPen(QPen(QColor("#f4cc4a"), 2));
+    for (const TileContour &contour : contours) {
+        p.drawRect(contour.rect);
+        const int padding = 4;
+        const int textWidth = metrics.horizontalAdvance(contour.tileId);
+        const int textHeight = metrics.height();
+        const QRectF badge(contour.rect.x() + 3, contour.rect.y() + 3,
+                           textWidth + 2 * padding, textHeight + 2 * padding);
+        if (badge.right() > contour.rect.right() || badge.bottom() > contour.rect.bottom())
+            continue;
+        p.fillRect(badge, QColor(20, 20, 20, 200));
+        p.setPen(QPen(QColor("#f4cc4a"), 1));
+        p.drawRect(badge);
+        p.setPen(QColor("#ffffff"));
+        p.drawText(badge, Qt::AlignCenter, contour.tileId);
+        p.setPen(QPen(QColor("#f4cc4a"), 2));
+    }
+    p.restore();
 }
