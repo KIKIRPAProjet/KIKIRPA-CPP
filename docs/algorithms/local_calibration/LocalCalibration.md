@@ -6,12 +6,12 @@
 
 | Pour… | Lire |
 |---|---|
-| situer le calage local dans le pipeline | [COMPRENDRE_LE_PROJET.md](../../COMPRENDRE_LE_PROJET.md) §1 et §10 |
-| ce que fait déjà la mise en position | [steps/AbsolutePosStep.md](../../steps/AbsolutePosStep.md) |
-| ce que contient `matches` (les points que le calage local lit) | [steps/PhaseCorrelationStep.md](../../steps/PhaseCorrelationStep.md), [steps/SiftStep.md](../../steps/SiftStep.md) |
-| le rejet des aberrants, supposé branché avant le calage local | [rejection/vote_2d/Vote2D.md](../rejection/vote_2d/Vote2D.md) |
-| ajouter un step | [steps/AJOUTER_UN_STEP.md](../../steps/AJOUTER_UN_STEP.md) |
-| les règles de code et de documentation | [CONVENTIONS.md](../../CONVENTIONS.md) |
+| Situer le calage local dans le pipeline | [COMPRENDRE_LE_PROJET.md](../../COMPRENDRE_LE_PROJET.md) §1 et §10 |
+| Ce que fait déjà la mise en position | [steps/AbsolutePosStep.md](../../steps/AbsolutePosStep.md) |
+| Ce que contient `matches` (les points que le calage local lit) | [steps/PhaseCorrelationStep.md](../../steps/PhaseCorrelationStep.md), [steps/SiftStep.md](../../steps/SiftStep.md) |
+| Le rejet des aberrants, supposé branché avant le calage local | [rejection/vote_2d/Vote2D.md](../rejection/vote_2d/Vote2D.md) |
+| Ajouter un step | [steps/AJOUTER_UN_STEP.md](../../steps/AJOUTER_UN_STEP.md) |
+| Les règles de code et de documentation | [CONVENTIONS.md](../../CONVENTIONS.md) |
 
 ## Sommaire
 
@@ -153,7 +153,10 @@ Remarques :
 On introduit le concept de fenêtre : un carré de 256*256 pixels dans une zone de recouvrement. On fait se chevaucher les fenêtres avec un pas de 128 pixels pour pouvoir observer les différences d'alignement.
 
 
+
 Le principe est de **mesurer le décalage résiduel dans le recouvrement après la meilleure translation, fenêtre par fenêtre**, puis de le caractériser. Le script de diagnostic (`diagnostic_calage_local.py`) applique ce principe. Il vit pour l'instant dans le dossier de travail du projet, pas dans le dépôt.
+
+
 
 Le script part des **images** : il fait lui-même l'alignement et les mesures par fenêtres. Dans le pipeline, ces mesures existent déjà : ce sont les points de `matches` ([§4.1](#41-ce-dont-le-calage-local-a-besoin)). Le script reste utile comme outil de validation, indépendant du pipeline.
 
@@ -436,7 +439,7 @@ Les positions 3 et 4 correspondent à ce que font les deux articles étudiés : 
 
 | Sens | Clé | Type | Remarque |
 |---|---|---|---|
-| Entrée | `tiles` | `Tiles` | les dimensions et le centre de chaque tuile |
+| Entrée | `tiles` | `Tiles` | les dimensions de chaque tuile |
 | Entrée | `matches` | `PairMatches` | après rejet des aberrants |
 | Sortie | `matches` | `PairMatches` | **réécrite** : points corrigés, translations recalculées. Même précédent que `match-filter` dans [AJOUTER_UN_STEP.md](../../steps/AJOUTER_UN_STEP.md#5-enregistrer-le-step) : les steps suivants lisent des clés fixées dans leur code, donc `absolute-pos` continue de lire `matches` |
 | Sortie | `distortion` | nouveau type, à définir | le modèle, ses coefficients, son centre, l'amplitude au bord, l'erreur résiduelle par paire |
