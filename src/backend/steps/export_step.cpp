@@ -272,11 +272,11 @@ namespace StepsNs {
 
             for (int sourceY = 0; sourceY < mosaic.canvasSize.height; sourceY += DataNs::BLOCK_SIZE) {
                 for (int sourceX = 0; sourceX < mosaic.canvasSize.width; sourceX += DataNs::BLOCK_SIZE) {
-                    const cv::Rect sourceRect{
+                    const cv::Rect sourceRect(
                         sourceX, sourceY,
                         std::min(DataNs::BLOCK_SIZE, mosaic.canvasSize.width - sourceX),
                         std::min(DataNs::BLOCK_SIZE, mosaic.canvasSize.height - sourceY)
-                    };
+                    );
 
                     cv::Mat source16;
                     std::string errorMessage;
@@ -291,15 +291,15 @@ namespace StepsNs {
                     cv::Mat sourceBgr;
                     cv::cvtColor(source8, sourceBgr, cv::COLOR_RGB2BGR);
 
-                    const cv::Rect previewRect{
+                    const cv::Rect previewRect(
                         static_cast<int>(std::round(sourceX * scale)),
                         static_cast<int>(std::round(sourceY * scale)),
                         std::max(1, static_cast<int>(std::round((sourceX + sourceRect.width) * scale)) -
                             static_cast<int>(std::round(sourceX * scale))),
                         std::max(1, static_cast<int>(std::round((sourceY + sourceRect.height) * scale)) -
                             static_cast<int>(std::round(sourceY * scale)))
-                    };
-                    const cv::Rect clippedPreview = previewRect & cv::Rect({0, 0}, previewSize);
+                    );
+                    const cv::Rect clippedPreview = previewRect & cv::Rect(0, 0, previewSize.width, previewSize.height);
                     if (clippedPreview.empty()) continue;
                     cv::resize(sourceBgr, preview(clippedPreview), clippedPreview.size(), 0.0, 0.0, cv::INTER_AREA);
                 }
