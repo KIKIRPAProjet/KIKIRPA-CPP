@@ -1,3 +1,4 @@
+// src/frontend/frontendutils.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : regrouper les composants graphiques communs évite de dupliquer leur style ;
@@ -24,9 +25,11 @@
 
 #include <QCoreApplication>
 #include <QFileInfo>
+#include <QGuiApplication>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
+#include <QPixmap>
 #include <QPushButton>
 #include <QtMath>
 
@@ -34,7 +37,7 @@ namespace FrontendUtils {
 
 const QStringList MODE_NAMES = {
     QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
-    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
+    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Image Finale")
 };
 
 // Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
@@ -85,6 +88,24 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
 {
     auto *label = new QLabel(text, parent);
     label->setProperty("muted", true);
+    return label;
+}
+
+QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath)
+{
+    auto *label = new QLabel(parent);
+    const QPixmap source(resourcePath);
+    if (source.isNull()) {
+        label->hide();
+        return label;
+    }
+    // Le PNG est plus grand que l'affichage : on le réduit à la densité de l'écran pour éviter un logo flou sur un écran 150 % ou 200 %.
+    const qreal pixelRatio = qGuiApp != nullptr ? qGuiApp->devicePixelRatio() : 1.0;
+    const int physicalSide = qRound(sideInPixels * pixelRatio);
+    QPixmap scaled = source.scaled(physicalSide, physicalSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    scaled.setDevicePixelRatio(pixelRatio);
+    label->setPixmap(scaled);
+    label->setFixedSize(sideInPixels, sideInPixels);
     return label;
 }
 

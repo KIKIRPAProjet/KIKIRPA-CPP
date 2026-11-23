@@ -1,5 +1,4 @@
-#ifndef MASKS_TAB_H
-#define MASKS_TAB_H
+#pragma once
 
 #include <QWidget>
 
@@ -16,5 +15,3 @@ private:
     MainWindow *m_mainWindow;
     ArtworkCanvas *m_canvas;
 };
-
-#endif // MASKS_TAB_H

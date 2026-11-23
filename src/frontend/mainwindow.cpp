@@ -22,6 +22,7 @@
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
+#include "left_toolbar.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -69,6 +70,10 @@
 #include <wincodec.h>
 #include <windows.h>
 #endif
+
+namespace {
+constexpr int kModeExport = 5;
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -213,9 +218,9 @@ void MainWindow::setupPipelineConnections()
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                     canvas->setMosaicPreview(image);
-                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    setMode(5); // 5 = Mode "Image Finale", forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
-                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
+                    // L'export est accessible via le bouton "Exporter…" dans la barre supérieure.
                 }
     });
 }
@@ -247,10 +252,6 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::undoRequested,
-            this, [this]() { updateStatus(tr("Dernière action annulée.")); });
-    connect(menuBarManager, &MenuBarManager::redoRequested,
-            this, [this]() { updateStatus(tr("Action rétablie.")); });
     connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
@@ -271,15 +272,7 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
-    connect(menuBarManager, &MenuBarManager::modeChangeRequested, this, [this](int mode) {
-        setMode(mode);
-        if (mode == 1) {
-            updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
-        } else if (mode == 2) {
-            static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
-        }
-    });
+   
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::resumeRequested,
@@ -318,10 +311,6 @@ void MainWindow::setupPairAlignmentConnections()
     //         i, tileNameA, tileNameB, backendPairs[i]));
     // }
     */
-
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        connect(bottom, &BottomTabs::pairSelected, this, &MainWindow::selectPair);
-    }
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
@@ -434,11 +423,6 @@ void MainWindow::refreshPairViews()
             ++failedCount;
     }
 
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        bottom->updatePairs(m_pairs);
-        bottom->selectPairRow(m_currentPairIndex);
-    }
-
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             alignTab->setPairs(m_pairs, m_currentPairIndex);
@@ -470,6 +454,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QStringList &newTilePaths)
 {
     mosaicFilePath.clear();
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
+        top->setExportVisible(false);
+    }
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -511,6 +499,10 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
+        top->setExportVisible(false);
+    }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -563,7 +555,7 @@ void MainWindow::setMode(int mode)
         tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
         tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
         tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export : TIFF 16 bits, profil ICC conservé")
+        tr("Image finale : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
@@ -576,6 +568,32 @@ void MainWindow::setMode(int mode)
     if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
+    }
+    // Boutons d'export et de recadrage uniquement en mode 5 = Image Finale
+    const bool isExportMode = (currentMode == kModeExport);
+    if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("applyCropButton"))) {
+        applyCropBtn->setVisible(isExportMode);
+    }
+    if (auto *resetCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("resetCropButton"))) {
+        resetCropBtn->setVisible(isExportMode);
+    }
+    if (auto *exportBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("exportImageButton"))) {
+        exportBtn->setVisible(isExportMode);
+    }
+    // Outil de recadrage dans la barre latérale uniquement visible en mode 5 = Image finale
+    if (workspaceUI && workspaceUI->leftToolbar()) {
+        workspaceUI->leftToolbar()->setToolVisible(LeftToolbar::kCropToolIndex, isExportMode);
+    }
+    // Si l'on quitte le mode Image finale alors que l'outil de recadrage était actif, on désactive l'outil
+    if (!isExportMode) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->activeTool() == LeftToolbar::kCropToolIndex) {
+                canvas->setActiveTool(-1);
+            }
+        }
     }
     workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
@@ -879,6 +897,36 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         selectNextDubiousPair();
         event->accept();
         return;
+    }
+    // Raccourci clavier (touche C) : active l'outil de recadrage uniquement en mode Image finale (mode 5).
+    if (event->key() == Qt::Key_C && currentMode == kModeExport) {
+        if (workspaceUI && workspaceUI->leftToolbar()) {
+            workspaceUI->leftToolbar()->selectTool(LeftToolbar::kCropToolIndex);
+            event->accept();
+            return;
+        }
+    }
+    // Raccourci clavier (touches Entrée / Return) : valide le recadrage si une sélection existe.
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->hasActiveCropSelection()) {
+                canvas->applyCrop();
+                updateStatus(tr("Recadrage validé et appliqué à l'image."));
+                event->accept();
+                return;
+            }
+        }
+    }
+    // Raccourci clavier (touche Échap) : annule la boîte de sélection de recadrage en cours.
+    if (event->key() == Qt::Key_Escape) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->hasActiveCropSelection()) {
+                canvas->cancelCropSelection();
+                updateStatus(tr("Sélection de recadrage annulée."));
+                event->accept();
+                return;
+            }
+        }
     }
     QMainWindow::keyPressEvent(event);
 }
