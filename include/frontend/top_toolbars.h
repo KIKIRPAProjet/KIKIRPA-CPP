@@ -20,6 +20,7 @@ public:
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
+    void setExportVisible(bool visible);
 
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
 
@@ -32,7 +33,6 @@ public slots:
     void updateRunButtonState();
 
 private:
-    void createToolbar();
     void createModesBar();
     void createModeButtons(QWidget *stages, QHBoxLayout *stageLayout);
     void createActionButtons(QWidget *stages, QHBoxLayout *stageLayout);
@@ -48,4 +48,5 @@ private:
     QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
+    QPushButton *m_exportButton = nullptr;
 };
