@@ -22,6 +22,11 @@
 #include <string>
 #include <system_error>
 
+#include <atomic>
+#include <chrono>
+#include <fstream>
+#include <utility>
+
 namespace CroppingNs {
 
     namespace {
@@ -91,41 +96,162 @@ namespace CroppingNs {
             return true;
         }
 
-        // Un dossier réservé à cet appel rend les trois fichiers solidaires : si
-        // le dernier échoue, les premiers sont retirés aussi. Aucun dossier existant
-        // n'est possédé ou supprimé par cette garde.
+        // Le résultat est préparé séparément. Seul un ancien résultat identifié,
+// sans fichiers étrangers, peut être remplacé.
         class OutputDirectoryClass {
 
         public:
-            ~OutputDirectoryClass() {
-                if (owned && !committed) {
-                    std::error_code ignored;
-                    fs::remove_all(directory, ignored);
-                }
-            }
-
             OutputDirectoryClass() = default;
             OutputDirectoryClass(const OutputDirectoryClass&) = delete;
             OutputDirectoryClass& operator=(const OutputDirectoryClass&) = delete;
 
+            ~OutputDirectoryClass() {
+                if (ownsWorkspace && !preserveBackup) {
+                    std::error_code ignored;
+                    fs::remove_all(workspace, ignored);
+                }
+            }
+
             bool create(const fs::path& path, std::string& errorMessage) {
-                if (path.empty()) return fail(errorMessage, "output directory is required");
-                directory = fs::absolute(path);
-                if (!fs::is_directory(directory.parent_path()))
+                if (path.empty())
+                    return fail(errorMessage, "output directory is required");
+
+                destination = fs::absolute(path).lexically_normal();
+                if (destination.filename().empty())
+                    destination = destination.parent_path();
+
+                if (!fs::is_directory(destination.parent_path()))
                     return fail(errorMessage, "output parent directory does not exist");
-                std::error_code errorCode;
-                owned = fs::create_directory(directory, errorCode);
-                if (!owned) return fail(errorMessage, "cannot create a new output directory: " +
-                    IONs::pathToUtf8(directory));
+
+                if (!validateDestination(errorMessage)) return false;
+                if (!createWorkspace(errorMessage)) return false;
+
+                std::ofstream marker(getStagingDirectory() / OWNER_FILE);
+                marker << OWNER_SIGNATURE << '\n';
+                marker.close();
+                if (!marker)
+                    return fail(errorMessage, "cannot write crop ownership marker");
+
                 return true;
             }
 
-            void commit() { committed = true; }
+            fs::path getStagingDirectory() const {
+                return workspace / "result";
+            }
+
+            bool commit(std::string& errorMessage) {
+                if (!validateDestination(errorMessage)) return false;
+
+                const fs::path staging = getStagingDirectory();
+                const fs::path backup = workspace / "previous";
+                const bool hasPreviousResult = fs::exists(destination);
+                std::error_code errorCode;
+
+                if (hasPreviousResult) {
+                    fs::rename(destination, backup, errorCode);
+                    if (errorCode)
+                        return fail(errorMessage,
+                            "cannot back up previous crop: " + errorCode.message());
+
+                    // Ne jamais nettoyer une sauvegarde avant publication
+                    // ou restauration réussie.
+                    preserveBackup = true;
+                }
+
+                fs::rename(staging, destination, errorCode);
+                if (errorCode)
+                    return restorePreviousResult(backup, errorCode, errorMessage);
+
+                preserveBackup = false;
+                return true;
+            }
 
         private:
-            fs::path directory;
-            bool owned = false;
-            bool committed = false;
+            static constexpr const char* OWNER_FILE = ".mosaic-crop-owner";
+            static constexpr const char* OWNER_SIGNATURE = "KIKIRPA mosaic-crop v1";
+
+            bool validateDestination(std::string& errorMessage) const {
+                const auto status = fs::symlink_status(destination);
+                if (!fs::exists(status)) return true;
+
+                if (!fs::is_directory(status))
+                    return fail(errorMessage,
+                        "output must be a crop-owned directory, not a file or symbolic link");
+
+                for (const auto& entry : fs::directory_iterator(destination)) {
+                    const fs::path name = entry.path().filename();
+                    const bool isExpectedName =
+                        name == OWNER_FILE ||
+                        name == "mosaic_image.tif" ||
+                        name == "mosaic_provenance.tif" ||
+                        name == "mosaic_mask.tif";
+
+                    if (!isExpectedName || !fs::is_regular_file(entry.symlink_status()))
+                        return fail(errorMessage,
+                            "output directory contains foreign entries or symbolic links");
+                }
+
+                std::ifstream marker(destination / OWNER_FILE);
+                std::string signature;
+                if (!std::getline(marker, signature) || signature != OWNER_SIGNATURE)
+                    return fail(errorMessage,
+                        "output directory was not created by mosaic-crop");
+
+                return true;
+            }
+
+            bool createWorkspace(std::string& errorMessage) {
+                static std::atomic<unsigned int> sequence{ 0 };
+                constexpr int MAXIMUM_ATTEMPTS = 100;
+                const auto timestamp =
+                    std::chrono::steady_clock::now().time_since_epoch().count();
+
+                for (int attempt = 0; attempt < MAXIMUM_ATTEMPTS; ++attempt) {
+                    workspace = destination.parent_path() /
+                        (".mosaic-crop-" + std::to_string(timestamp) + "-" +
+                            std::to_string(sequence.fetch_add(1)));
+
+                    std::error_code errorCode;
+                    ownsWorkspace = fs::create_directory(workspace, errorCode);
+                    if (errorCode)
+                        return fail(errorMessage,
+                            "cannot create crop workspace: " + errorCode.message());
+
+                    if (ownsWorkspace) {
+                        if (!fs::create_directory(getStagingDirectory(), errorCode))
+                            return fail(errorMessage,
+                                "cannot create crop staging directory: " +
+                                errorCode.message());
+                        return true;
+                    }
+                }
+
+                return fail(errorMessage, "cannot reserve a unique crop workspace");
+            }
+
+            bool restorePreviousResult(const fs::path& backup,
+                const std::error_code& publicationError,
+                std::string& errorMessage) {
+                if (preserveBackup) {
+                    std::error_code restoreError;
+                    fs::rename(backup, destination, restoreError);
+                    if (restoreError)
+                        return fail(errorMessage,
+                            "cannot publish crop: " + publicationError.message() +
+                            "; cannot restore previous result: " + restoreError.message() +
+                            "; backup preserved at " + IONs::pathToUtf8(backup));
+
+                    preserveBackup = false;
+                }
+
+                return fail(errorMessage,
+                    "cannot publish crop: " + publicationError.message());
+            }
+
+            fs::path destination;
+            fs::path workspace;
+            bool ownsWorkspace = false;
+            bool preserveBackup = false;
 
         };
 
@@ -174,20 +300,60 @@ namespace CroppingNs {
             return writer.close(errorMessage);
         }
 
+        bool validateOutputLocation(const CropInput& input, std::string& errorMessage) {
+            if (!fs::exists(input.outputDirectory)) return true;
+
+            const std::array<fs::path, 3> sources = {
+                input.mosaic.imagePath,
+                input.mosaic.provenancePath,
+                input.mosaic.maskPath
+            };
+
+            for (const auto& source : sources) {
+                fs::path ancestor = fs::canonical(source).parent_path();
+
+                while (!ancestor.empty()) {
+                    if (fs::equivalent(ancestor, input.outputDirectory))
+                        return fail(errorMessage,
+                            "output directory must not contain source files");
+
+                    const fs::path parent = ancestor.parent_path();
+                    if (parent == ancestor) break;
+                    ancestor = parent;
+                }
+            }
+
+            return true;
+        }
+
         bool cropValidated(const CropInput& input, DataNs::Mosaic& output,
             std::string& errorMessage) {
             if (!validateRectangle(input, errorMessage)) return false;
-            if (input.outputDirectory.empty()) return fail(errorMessage, "output directory is required");
-            const DataNs::Mosaic candidate = makeOutput(input);
-            const auto requests = makeRequests(input, candidate);
-            for (const auto& request : requests)
-                if (!validateSource(request, input.mosaic.canvasSize, errorMessage)) return false;
+            if (input.outputDirectory.empty())
+                return fail(errorMessage, "output directory is required");
+
+            DataNs::Mosaic candidate = makeOutput(input);
+            for (const auto& request : makeRequests(input, candidate)) {
+                if (!validateSource(request, input.mosaic.canvasSize, errorMessage))
+                    return false;
+            }
+
+            if (!validateOutputLocation(input, errorMessage)) return false;
+
             OutputDirectoryClass directory;
             if (!directory.create(input.outputDirectory, errorMessage)) return false;
-            for (const auto& request : requests)
+
+            CropInput stagingInput = input;
+            stagingInput.outputDirectory = directory.getStagingDirectory();
+            const DataNs::Mosaic stagingOutput = makeOutput(stagingInput);
+
+            for (const auto& request : makeRequests(input, stagingOutput)) {
                 if (!cropFile(request, errorMessage)) return false;
-            output = candidate;
-            directory.commit();
+            }
+
+            if (!directory.commit(errorMessage)) return false;
+
+            output = std::move(candidate);
             return true;
         }
 

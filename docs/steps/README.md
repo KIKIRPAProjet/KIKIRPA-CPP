@@ -16,6 +16,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `final-verification` | chemins TIFF/JPEG configurés | `verificationReport` | [FinalVerificationStep.md](FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `tiles`, `positions`, `intensityCorrection` | `seamlines` | [dp-dijkstrat.md](dp-dijkstrat.md) |
 | `fusion` | `tiles` (TIFF pyramidaux, région par région), `positions`, `territories`, `intensityCorrection` si présente | `mosaic` (trois TIFF écrits bloc par bloc) | [FusionStep.md](FusionStep.md) |
+| `mosaic-crop` | `mosaic` | `mosaic` rognée (trois TIFF) | [MosaicCropStep.md](MosaicCropStep.md) |
 | `export` | `mosaic` | `mosaic.tif` dans `outputDirectory` | [ExportStep.md](ExportStep.md) |
 
 `overlap-estimation` mesure le recouvrement réel de chaque paire : c'est la première passe commune aux trois méthodes d'appariement, qui la font encore chacune en interne. `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
@@ -23,3 +24,6 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 - Le schéma de l'enchaînement, et le JSON de chaque type de donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 - **Ajouter un step**, avec un exemple complet (code, test, enregistrement, fiche) : [AJOUTER_UN_STEP.md](AJOUTER_UN_STEP.md).
 - Le script JSON, les contrôles de `buildPipeline` et les checkpoints : [core/Pipeline.md](../core/Pipeline.md).
+
+Le rognage est facultatif et se place après l'assemblage, avant l'export :
+`fusion → mosaic-crop → export`.

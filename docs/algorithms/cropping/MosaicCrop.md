@@ -6,7 +6,7 @@ produite par `fusion`. L'ancien format de blocs PNG n'est plus utilisé.
 ## Entrée et sortie
 
 `CropInput` contient la mosaïque source, le rectangle en pixels pleine résolution
-et le nouveau dossier de sortie.
+et le dossier de sortie.
 
 Le rectangle doit être non vide et inclus dans `canvasSize`.
 Ses bords droit et inférieur sont exclus.
@@ -41,15 +41,44 @@ Les métadonnées ICC et de résolution ne sont pas recopiées par ce traitement
 
 ## Publication et erreurs
 
-Le dossier de sortie doit être inexistant et son parent doit déjà exister.
-Les sources ne sont jamais modifiées.
+## Publication et erreurs
 
-La sortie n'est publiée qu'après fermeture réussie des trois writers.
-En cas d'échec, le dossier créé et ses fichiers sont supprimés si le système le
-permet. Le nettoyage n'est pas garanti après interruption brutale du processus.
+Le parent du dossier de sortie doit déjà exister. Les fichiers sources ne
+sont jamais modifiés et ne doivent pas se trouver dans le dossier de sortie.
 
-La fonction renvoie `false`, vide la sortie et renseigne `errorMessage` en anglais
-en cas d'échec. En cas de succès, elle renvoie `true` et le message est vide.
+Les trois TIFF sont écrits dans un dossier temporaire voisin. La publication
+ne commence qu'après fermeture réussie des trois writers.
+
+Un dossier de sortie existant peut être remplacé s'il contient le marqueur
+`.mosaic-crop-owner` avec la signature attendue, et uniquement les fichiers
+prévus. Un ou plusieurs TIFF peuvent manquer : la relance les recrée.
+
+Les dossiers sans marqueur valide, les entrées étrangères et les liens
+symboliques sont refusés. Les résultats d'une ancienne version sans marqueur
+doivent être déplacés manuellement avant de réutiliser leur chemin.
+
+Lors du remplacement, l'ancien résultat est renommé en sauvegarde, puis
+le nouveau résultat prend sa place. La sauvegarde est ensuite supprimée
+si le système le permet.
+
+Si la publication échoue, l'ancien résultat est restauré. Si la restauration
+échoue également, la sauvegarde est conservée et son chemin est indiqué
+dans le message d'erreur.
+
+La fonction renvoie `false`, vide la sortie et renseigne `errorMessage`
+en anglais en cas d'échec. En cas de succès, elle renvoie `true` et publie
+les chemins définitifs dans la sortie.
+
+Les renommages successifs ne constituent pas une transaction résistante
+à une interruption brutale du processus. Le nettoyage des temporaires
+n'est pas garanti après une telle interruption. Les exécutions simultanées
+vers le même dossier ne sont pas prises en charge.
+
+Pendant une relance, les sources, l'ancien résultat et le nouveau résultat
+coexistent sur disque. La mémoire utilisée reste limitée au traitement
+par blocs.
+
+## Tests
 
 ## Tests
 
@@ -60,5 +89,12 @@ Les images synthétiques vérifient :
 - la provenance et le masque ;
 - les chemins Unicode ;
 - les coordonnées hors limites ;
-- le refus d'un dossier existant ;
-- le refus d'un type source incohérent.
+- le refus d'un type source incohérent ;
+- le remplacement d'un précédent résultat avec un autre rectangle ;
+- la recréation de chacun des trois TIFF après sa suppression ;
+- la conservation du précédent résultat si les nouvelles sources sont invalides ;
+- le refus d'un dossier étranger ou contenant des entrées étrangères ;
+- le refus de remplacer un dossier contenant les sources.
+
+Ces tests ne couvrent pas encore les échecs pendant l'écriture, la publication
+ou la restauration de la sauvegarde.
