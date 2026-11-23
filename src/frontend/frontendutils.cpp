@@ -1,3 +1,4 @@
+// src/frontend/frontendutils.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : regrouper les composants graphiques communs évite de dupliquer leur style ;

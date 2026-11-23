@@ -1,3 +1,4 @@
+// include/frontend/left_toolbar.h
 #ifndef LEFT_TOOLBAR_H
 #define LEFT_TOOLBAR_H
 
@@ -11,6 +12,9 @@ class LeftToolbar : public QWidget
 {
     Q_OBJECT
 public:
+    // Index standard de l'outil de recadrage dans la barre d'outils.
+    static constexpr int kCropToolIndex = 9;
+
     explicit LeftToolbar(QWidget *parent = nullptr);
 
     // Sélectionne programmatiquement un outil par son index dans la liste.

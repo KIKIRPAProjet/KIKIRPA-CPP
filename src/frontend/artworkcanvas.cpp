@@ -1,3 +1,4 @@
+// src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
 
 #include <QKeyEvent>
@@ -23,7 +24,8 @@ constexpr int kModePair = 3;
 constexpr int kModeAssembly = 4;
 constexpr int kModeExport = 5;
 
-constexpr int TOOL_CROP = 9;
+// Index de l'outil de recadrage dans la barre latérale gauche.
+constexpr int kCropTool = 9;
 }
 
 ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
@@ -69,30 +71,30 @@ ArtworkCanvas::CropHandle ArtworkCanvas::hitTestCropHandle(const QPoint &pos) co
     }
 
     constexpr int margin = 12;
-    const auto r = m_cropSelectionRect;
+    const QRect &cropRect = m_cropSelectionRect;
 
     // Coins (prioritaires)
-    if (QRect(r.left() - margin, r.top() - margin, 2 * margin, 2 * margin).contains(pos))
+    if (QRect(cropRect.left() - margin, cropRect.top() - margin, 2 * margin, 2 * margin).contains(pos))
         return CropHandle::TopLeft;
-    if (QRect(r.right() - margin, r.top() - margin, 2 * margin, 2 * margin).contains(pos))
+    if (QRect(cropRect.right() - margin, cropRect.top() - margin, 2 * margin, 2 * margin).contains(pos))
         return CropHandle::TopRight;
-    if (QRect(r.left() - margin, r.bottom() - margin, 2 * margin, 2 * margin).contains(pos))
+    if (QRect(cropRect.left() - margin, cropRect.bottom() - margin, 2 * margin, 2 * margin).contains(pos))
         return CropHandle::BottomLeft;
-    if (QRect(r.right() - margin, r.bottom() - margin, 2 * margin, 2 * margin).contains(pos))
+    if (QRect(cropRect.right() - margin, cropRect.bottom() - margin, 2 * margin, 2 * margin).contains(pos))
         return CropHandle::BottomRight;
 
     // Bords
-    if (qAbs(pos.y() - r.top()) <= margin && pos.x() >= r.left() && pos.x() <= r.right())
+    if (qAbs(pos.y() - cropRect.top()) <= margin && pos.x() >= cropRect.left() && pos.x() <= cropRect.right())
         return CropHandle::Top;
-    if (qAbs(pos.y() - r.bottom()) <= margin && pos.x() >= r.left() && pos.x() <= r.right())
+    if (qAbs(pos.y() - cropRect.bottom()) <= margin && pos.x() >= cropRect.left() && pos.x() <= cropRect.right())
         return CropHandle::Bottom;
-    if (qAbs(pos.x() - r.left()) <= margin && pos.y() >= r.top() && pos.y() <= r.bottom())
+    if (qAbs(pos.x() - cropRect.left()) <= margin && pos.y() >= cropRect.top() && pos.y() <= cropRect.bottom())
         return CropHandle::Left;
-    if (qAbs(pos.x() - r.right()) <= margin && pos.y() >= r.top() && pos.y() <= r.bottom())
+    if (qAbs(pos.x() - cropRect.right()) <= margin && pos.y() >= cropRect.top() && pos.y() <= cropRect.bottom())
         return CropHandle::Right;
 
     // Déplacement complet à l'intérieur
-    if (r.contains(pos))
+    if (cropRect.contains(pos))
         return CropHandle::Move;
 
     return CropHandle::None;
@@ -113,9 +115,9 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         }
     }
 
-    if (modeValue == kModeExport && m_activeTool == TOOL_CROP && event->button() == Qt::LeftButton) {
-        const QRect imgRect = mosaicDisplayedRect();
-        if (imgRect.contains(event->pos())) {
+    if (modeValue == kModeExport && m_activeTool == kCropTool && event->button() == Qt::LeftButton) {
+        const QRect displayedImageRect = mosaicDisplayedRect();
+        if (displayedImageRect.contains(event->pos())) {
             m_cropDragStart = event->pos();
             m_cropRectAtDragStart = m_cropSelectionRect;
             m_activeHandle = hitTestCropHandle(event->pos());
@@ -137,7 +139,7 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 
 void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (modeValue == kModeExport && m_activeTool == TOOL_CROP) {
+    if (modeValue == kModeExport && m_activeTool == kCropTool) {
         if (m_cropSelectionRect.isValid() && m_cropSelectionRect.contains(event->pos())) {
             applyCrop();
             event->accept();
@@ -149,10 +151,10 @@ void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 
 void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
 {
-    if (modeValue == kModeExport && m_activeTool == TOOL_CROP) {
-        const QRect imgRect = mosaicDisplayedRect();
-        const int clampedX = qBound(imgRect.left(), event->pos().x(), imgRect.right());
-        const int clampedY = qBound(imgRect.top(), event->pos().y(), imgRect.bottom());
+    if (modeValue == kModeExport && m_activeTool == kCropTool) {
+        const QRect displayedImageRect = mosaicDisplayedRect();
+        const int clampedX = qBound(displayedImageRect.left(), event->pos().x(), displayedImageRect.right());
+        const int clampedY = qBound(displayedImageRect.top(), event->pos().y(), displayedImageRect.bottom());
         const QPoint curPos(clampedX, clampedY);
 
         if (m_isCropping) {
@@ -161,46 +163,46 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
                 m_cropSelectionRect = QRect(m_cropStartPos, curPos).normalized();
             } else if (m_activeHandle == CropHandle::Move) {
                 QRect moved = m_cropRectAtDragStart.translated(delta);
-                if (moved.left() < imgRect.left()) moved.moveLeft(imgRect.left());
-                if (moved.top() < imgRect.top()) moved.moveTop(imgRect.top());
-                if (moved.right() > imgRect.right()) moved.moveRight(imgRect.right());
-                if (moved.bottom() > imgRect.bottom()) moved.moveBottom(imgRect.bottom());
+                if (moved.left() < displayedImageRect.left()) moved.moveLeft(displayedImageRect.left());
+                if (moved.top() < displayedImageRect.top()) moved.moveTop(displayedImageRect.top());
+                if (moved.right() > displayedImageRect.right()) moved.moveRight(displayedImageRect.right());
+                if (moved.bottom() > displayedImageRect.bottom()) moved.moveBottom(displayedImageRect.bottom());
                 m_cropSelectionRect = moved;
             } else {
-                QRect r = m_cropRectAtDragStart;
+                QRect adjustedCropRect = m_cropRectAtDragStart;
                 switch (m_activeHandle) {
                     case CropHandle::TopLeft:
-                        r.setTop(qMin(curPos.y(), r.bottom() - 15));
-                        r.setLeft(qMin(curPos.x(), r.right() - 15));
+                        adjustedCropRect.setTop(qMin(curPos.y(), adjustedCropRect.bottom() - 15));
+                        adjustedCropRect.setLeft(qMin(curPos.x(), adjustedCropRect.right() - 15));
                         break;
                     case CropHandle::TopRight:
-                        r.setTop(qMin(curPos.y(), r.bottom() - 15));
-                        r.setRight(qMax(curPos.x(), r.left() + 15));
+                        adjustedCropRect.setTop(qMin(curPos.y(), adjustedCropRect.bottom() - 15));
+                        adjustedCropRect.setRight(qMax(curPos.x(), adjustedCropRect.left() + 15));
                         break;
                     case CropHandle::BottomLeft:
-                        r.setBottom(qMax(curPos.y(), r.top() + 15));
-                        r.setLeft(qMin(curPos.x(), r.right() - 15));
+                        adjustedCropRect.setBottom(qMax(curPos.y(), adjustedCropRect.top() + 15));
+                        adjustedCropRect.setLeft(qMin(curPos.x(), adjustedCropRect.right() - 15));
                         break;
                     case CropHandle::BottomRight:
-                        r.setBottom(qMax(curPos.y(), r.top() + 15));
-                        r.setRight(qMax(curPos.x(), r.left() + 15));
+                        adjustedCropRect.setBottom(qMax(curPos.y(), adjustedCropRect.top() + 15));
+                        adjustedCropRect.setRight(qMax(curPos.x(), adjustedCropRect.left() + 15));
                         break;
                     case CropHandle::Top:
-                        r.setTop(qMin(curPos.y(), r.bottom() - 15));
+                        adjustedCropRect.setTop(qMin(curPos.y(), adjustedCropRect.bottom() - 15));
                         break;
                     case CropHandle::Bottom:
-                        r.setBottom(qMax(curPos.y(), r.top() + 15));
+                        adjustedCropRect.setBottom(qMax(curPos.y(), adjustedCropRect.top() + 15));
                         break;
                     case CropHandle::Left:
-                        r.setLeft(qMin(curPos.x(), r.right() - 15));
+                        adjustedCropRect.setLeft(qMin(curPos.x(), adjustedCropRect.right() - 15));
                         break;
                     case CropHandle::Right:
-                        r.setRight(qMax(curPos.x(), r.left() + 15));
+                        adjustedCropRect.setRight(qMax(curPos.x(), adjustedCropRect.left() + 15));
                         break;
                     default:
                         break;
                 }
-                m_cropSelectionRect = r.intersected(imgRect);
+                m_cropSelectionRect = adjustedCropRect.intersected(displayedImageRect);
             }
             update();
             event->accept();
@@ -257,7 +259,7 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
         return;
     }
 
-    if (modeValue == kModeExport && m_activeTool == TOOL_CROP && event->button() == Qt::LeftButton && m_isCropping) {
+    if (modeValue == kModeExport && m_activeTool == kCropTool && event->button() == Qt::LeftButton && m_isCropping) {
         m_isCropping = false;
         m_activeHandle = CropHandle::None;
         if (m_cropSelectionRect.width() < 15 || m_cropSelectionRect.height() < 15) {
@@ -273,7 +275,7 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
 
 void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
 {
-    if (modeValue == kModeExport && m_activeTool == TOOL_CROP) {
+    if (modeValue == kModeExport && m_activeTool == kCropTool) {
         if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
             applyCrop();
             event->accept();
@@ -311,7 +313,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
             p.drawImage(displayedRect.topLeft(), fitted);
 
             // Surcouche interactive de recadrage si l'outil est sélectionné
-            if (m_activeTool == TOOL_CROP) {
+            if (m_activeTool == kCropTool) {
                 drawCropOverlay(p, displayedRect);
             }
 
@@ -568,63 +570,63 @@ QRect ArtworkCanvas::mosaicDisplayedRect() const
                  scaledSize.width(), scaledSize.height());
 }
 
-void ArtworkCanvas::drawCropOverlay(QPainter &p, const QRect &imageRect)
+void ArtworkCanvas::drawCropOverlay(QPainter &painter, const QRect &imageRect)
 {
     if (!m_cropSelectionRect.isValid() || m_cropSelectionRect.isEmpty()) {
-        p.setPen(QColor(240, 240, 240, 180));
-        p.drawText(QRect(imageRect.left(), imageRect.top() + 10, imageRect.width(), 24),
-                   Qt::AlignCenter, tr("Cliquez et glissez sur l'image pour définir la zone à recadrer"));
+        painter.setPen(QColor(240, 240, 240, 180));
+        painter.drawText(QRect(imageRect.left(), imageRect.top() + 10, imageRect.width(), 24),
+                         Qt::AlignCenter, tr("Cliquez et glissez sur l'image pour définir la zone à recadrer"));
         return;
     }
 
     // Assombrissement semi-transparent de la zone située hors du rectangle de recadrage.
     const QRegion fullRegion(imageRect);
     const QRegion cropRegion(m_cropSelectionRect);
-    p.setClipRegion(fullRegion.subtracted(cropRegion));
-    p.fillRect(imageRect, QColor(0, 0, 0, 150));
-    p.setClipping(false);
+    painter.setClipRegion(fullRegion.subtracted(cropRegion));
+    painter.fillRect(imageRect, QColor(0, 0, 0, 150));
+    painter.setClipping(false);
 
     // Cadre de découpe en pointillés blancs.
-    p.setPen(QPen(QColor("#ffffff"), 1, Qt::DashLine));
-    p.drawRect(m_cropSelectionRect);
+    painter.setPen(QPen(QColor("#ffffff"), 1, Qt::DashLine));
+    painter.drawRect(m_cropSelectionRect);
 
     // Poignées d'angle accentuées en jaune doré (cornières).
-    p.setPen(QPen(QColor("#f0cf36"), 3));
+    painter.setPen(QPen(QColor("#f0cf36"), 3));
     constexpr int handleLength = 12;
     const auto &selection = m_cropSelectionRect;
     // Coin supérieur gauche
-    p.drawLine(selection.left(), selection.top(), selection.left() + handleLength, selection.top());
-    p.drawLine(selection.left(), selection.top(), selection.left(), selection.top() + handleLength);
+    painter.drawLine(selection.left(), selection.top(), selection.left() + handleLength, selection.top());
+    painter.drawLine(selection.left(), selection.top(), selection.left(), selection.top() + handleLength);
     // Coin supérieur droit
-    p.drawLine(selection.right(), selection.top(), selection.right() - handleLength, selection.top());
-    p.drawLine(selection.right(), selection.top(), selection.right(), selection.top() + handleLength);
+    painter.drawLine(selection.right(), selection.top(), selection.right() - handleLength, selection.top());
+    painter.drawLine(selection.right(), selection.top(), selection.right(), selection.top() + handleLength);
     // Coin inférieur gauche
-    p.drawLine(selection.left(), selection.bottom(), selection.left() + handleLength, selection.bottom());
-    p.drawLine(selection.left(), selection.bottom(), selection.left(), selection.bottom() - handleLength);
+    painter.drawLine(selection.left(), selection.bottom(), selection.left() + handleLength, selection.bottom());
+    painter.drawLine(selection.left(), selection.bottom(), selection.left(), selection.bottom() - handleLength);
     // Coin inférieur droit
-    p.drawLine(selection.right(), selection.bottom(), selection.right() - handleLength, selection.bottom());
-    p.drawLine(selection.right(), selection.bottom(), selection.right(), selection.bottom() - handleLength);
+    painter.drawLine(selection.right(), selection.bottom(), selection.right() - handleLength, selection.bottom());
+    painter.drawLine(selection.right(), selection.bottom(), selection.right(), selection.bottom() - handleLength);
 
     // Poignées carrées préhensiles (4 coins + 4 milieux des côtés)
     constexpr int squareSize = 8;
-    p.setBrush(QColor("#f0cf36"));
-    p.setPen(QPen(QColor("#222222"), 1));
+    painter.setBrush(QColor("#f0cf36"));
+    painter.setPen(QPen(QColor("#222222"), 1));
     // 4 coins
-    p.drawRect(selection.left() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.right() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.left() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.right() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.left() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.right() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.left() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.right() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
     // 4 milieux de bordures
-    p.drawRect(selection.center().x() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.center().x() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.left() - squareSize / 2, selection.center().y() - squareSize / 2, squareSize, squareSize);
-    p.drawRect(selection.right() - squareSize / 2, selection.center().y() - squareSize / 2, squareSize, squareSize);
-    p.setBrush(Qt::NoBrush);
+    painter.drawRect(selection.center().x() - squareSize / 2, selection.top() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.center().x() - squareSize / 2, selection.bottom() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.left() - squareSize / 2, selection.center().y() - squareSize / 2, squareSize, squareSize);
+    painter.drawRect(selection.right() - squareSize / 2, selection.center().y() - squareSize / 2, squareSize, squareSize);
+    painter.setBrush(Qt::NoBrush);
 
     // Guide contextuel rappelant les touches de raccourci.
-    p.setPen(QColor("#ffffff"));
+    painter.setPen(QColor("#ffffff"));
     const QRect bannerRect(selection.left(), qMax(imageRect.top(), selection.bottom() + 6), selection.width(), 20);
-    p.drawText(bannerRect, Qt::AlignCenter, tr("Entrée : Valider | Échap : Annuler"));
+    painter.drawText(bannerRect, Qt::AlignCenter, tr("Entrée : Valider | Échap : Annuler"));
 }
 
 void ArtworkCanvas::applyCrop()
@@ -632,40 +634,40 @@ void ArtworkCanvas::applyCrop()
     if (!m_cropSelectionRect.isValid() || m_cropSelectionRect.width() < 15 || m_cropSelectionRect.height() < 15)
         return;
 
-    const QRect imgRect = mosaicDisplayedRect();
-    if (imgRect.isEmpty()) return;
+    const QRect displayedImageRect = mosaicDisplayedRect();
+    if (displayedImageRect.isEmpty()) return;
 
     // Coordonnées relatives [0..1] par rapport à l'image actuellement affichée.
-    const double relX = double(m_cropSelectionRect.left() - imgRect.left()) / imgRect.width();
-    const double relY = double(m_cropSelectionRect.top() - imgRect.top()) / imgRect.height();
-    const double relW = double(m_cropSelectionRect.width()) / imgRect.width();
-    const double relH = double(m_cropSelectionRect.height()) / imgRect.height();
+    const double relativeX = static_cast<double>(m_cropSelectionRect.left() - displayedImageRect.left()) / displayedImageRect.width();
+    const double relativeY = static_cast<double>(m_cropSelectionRect.top() - displayedImageRect.top()) / displayedImageRect.height();
+    const double relativeWidth = static_cast<double>(m_cropSelectionRect.width()) / displayedImageRect.width();
+    const double relativeHeight = static_cast<double>(m_cropSelectionRect.height()) / displayedImageRect.height();
 
-    const double clampedX = qBound(0.0, relX, 1.0);
-    const double clampedY = qBound(0.0, relY, 1.0);
-    const double clampedW = qBound(0.0, relW, 1.0 - clampedX);
-    const double clampedH = qBound(0.0, relH, 1.0 - clampedY);
+    const double clampedX = qBound(0.0, relativeX, 1.0);
+    const double clampedY = qBound(0.0, relativeY, 1.0);
+    const double clampedWidth = qBound(0.0, relativeWidth, 1.0 - clampedX);
+    const double clampedHeight = qBound(0.0, relativeHeight, 1.0 - clampedY);
 
     if (m_isCropped) {
         m_cropNormalizedRect = QRectF(
             m_cropNormalizedRect.x() + clampedX * m_cropNormalizedRect.width(),
             m_cropNormalizedRect.y() + clampedY * m_cropNormalizedRect.height(),
-            clampedW * m_cropNormalizedRect.width(),
-            clampedH * m_cropNormalizedRect.height()
+            clampedWidth * m_cropNormalizedRect.width(),
+            clampedHeight * m_cropNormalizedRect.height()
         );
     } else {
-        m_cropNormalizedRect = QRectF(clampedX, clampedY, clampedW, clampedH);
+        m_cropNormalizedRect = QRectF(clampedX, clampedY, clampedWidth, clampedHeight);
     }
 
     // Découpe effective de l'aperçu affiché.
-    const int maxW = m_mosaicPreview.width();
-    const int maxH = m_mosaicPreview.height();
-    const int pixelX = qBound(0, qRound(clampedX * maxW), maxW - 1);
-    const int pixelY = qBound(0, qRound(clampedY * maxH), maxH - 1);
-    const int pixelW = qBound(1, qRound(clampedW * maxW), maxW - pixelX);
-    const int pixelH = qBound(1, qRound(clampedH * maxH), maxH - pixelY);
+    const int previewWidth = m_mosaicPreview.width();
+    const int previewHeight = m_mosaicPreview.height();
+    const int pixelX = qBound(0, qRound(clampedX * previewWidth), previewWidth - 1);
+    const int pixelY = qBound(0, qRound(clampedY * previewHeight), previewHeight - 1);
+    const int pixelWidth = qBound(1, qRound(clampedWidth * previewWidth), previewWidth - pixelX);
+    const int pixelHeight = qBound(1, qRound(clampedHeight * previewHeight), previewHeight - pixelY);
 
-    m_mosaicPreview = m_mosaicPreview.copy(pixelX, pixelY, pixelW, pixelH);
+    m_mosaicPreview = m_mosaicPreview.copy(pixelX, pixelY, pixelWidth, pixelHeight);
     m_isCropped = true;
     m_cropSelectionRect = QRect();
     update();

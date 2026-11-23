@@ -1,3 +1,4 @@
+// src/frontend/left_toolbar.cpp
 #include "left_toolbar.h"
 
 #include <QVBoxLayout>
@@ -30,7 +31,7 @@ LeftToolbar::LeftToolbar(QWidget *parent)
         tool->setText(icons.at(i));
         tool->setToolTip(m_toolNames.at(i));
         tool->setFixedSize(kToolButtonSize, kToolButtonSize);
-        if (i == 9) {
+        if (i == kCropToolIndex) {
             tool->setVisible(false); // L'outil de recadrage est masqué par défaut hors du mode Image finale
         }
         toolLayout->addWidget(tool);

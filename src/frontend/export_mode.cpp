@@ -1,3 +1,4 @@
+// src/frontend/export_mode.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : centraliser les options d'export dans une boîte de dialogue ;
@@ -163,7 +164,7 @@ void MainWindow::showExportDialog()
         const bool isCropped = canvas && canvas->isCropped();
 
         if (isCropped) {
-            const QRectF norm = canvas->cropNormalizedRect();
+            const QRectF normalizedCropRect = canvas->cropNormalizedRect();
             IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(mosaicFilePath.toStdString()));
             int fullWidth = 0;
             int fullHeight = 0;
@@ -175,12 +176,12 @@ void MainWindow::showExportDialog()
                 return;
             }
 
-            const int cropX = qBound(0, static_cast<int>(norm.x() * fullWidth), fullWidth - 1);
-            const int cropY = qBound(0, static_cast<int>(norm.y() * fullHeight), fullHeight - 1);
-            const int cropW = qBound(1, static_cast<int>(norm.width() * fullWidth), fullWidth - cropX);
-            const int cropH = qBound(1, static_cast<int>(norm.height() * fullHeight), fullHeight - cropY);
+            const int cropX = qBound(0, static_cast<int>(normalizedCropRect.x() * fullWidth), fullWidth - 1);
+            const int cropY = qBound(0, static_cast<int>(normalizedCropRect.y() * fullHeight), fullHeight - 1);
+            const int cropWidth = qBound(1, static_cast<int>(normalizedCropRect.width() * fullWidth), fullWidth - cropX);
+            const int cropHeight = qBound(1, static_cast<int>(normalizedCropRect.height() * fullHeight), fullHeight - cropY);
 
-            cv::Rect cropRegion(cropX, cropY, cropW, cropH);
+            cv::Rect cropRegion(cropX, cropY, cropWidth, cropHeight);
             cv::Mat croppedImage;
             if (!reader.readRegion(0, cropRegion, croppedImage, readError)) {
                 QMessageBox::warning(&dialog, tr("Export impossible"),

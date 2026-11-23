@@ -1,3 +1,4 @@
+// src/frontend/workspace_center.cpp
 #include "workspace_center.h"
 #include "mainwindow.h"
 #include "frontendutils.h"

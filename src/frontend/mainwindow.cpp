@@ -71,6 +71,10 @@
 #include <windows.h>
 #endif
 
+namespace {
+constexpr int kModeExport = 5;
+}
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
     setWindowTitle(tr("KIK-IRPA Assemblage"));
@@ -552,26 +556,27 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     // Boutons d'export et de recadrage uniquement en mode 5 = Image Finale
+    const bool isExportMode = (currentMode == kModeExport);
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
                 QStringLiteral("applyCropButton"))) {
-        applyCropBtn->setVisible(currentMode == 5);
+        applyCropBtn->setVisible(isExportMode);
     }
     if (auto *resetCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
                 QStringLiteral("resetCropButton"))) {
-        resetCropBtn->setVisible(currentMode == 5);
+        resetCropBtn->setVisible(isExportMode);
     }
     if (auto *exportBtn = workspaceUI->workspace()->findChild<QPushButton *>(
                 QStringLiteral("exportImageButton"))) {
-        exportBtn->setVisible(currentMode == 5);
+        exportBtn->setVisible(isExportMode);
     }
     // Outil de recadrage dans la barre latérale uniquement visible en mode 5 = Image finale
     if (workspaceUI && workspaceUI->leftToolbar()) {
-        workspaceUI->leftToolbar()->setToolVisible(9, currentMode == 5);
+        workspaceUI->leftToolbar()->setToolVisible(LeftToolbar::kCropToolIndex, isExportMode);
     }
     // Si l'on quitte le mode Image finale alors que l'outil de recadrage était actif, on désactive l'outil
-    if (currentMode != 5) {
+    if (!isExportMode) {
         if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
-            if (canvas->activeTool() == 9) {
+            if (canvas->activeTool() == LeftToolbar::kCropToolIndex) {
                 canvas->setActiveTool(-1);
             }
         }
@@ -863,9 +868,9 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         return;
     }
     // Raccourci clavier (touche C) : active l'outil de recadrage uniquement en mode Image finale (mode 5).
-    if (event->key() == Qt::Key_C && currentMode == 5) {
+    if (event->key() == Qt::Key_C && currentMode == kModeExport) {
         if (workspaceUI && workspaceUI->leftToolbar()) {
-            workspaceUI->leftToolbar()->selectTool(9);
+            workspaceUI->leftToolbar()->selectTool(LeftToolbar::kCropToolIndex);
             event->accept();
             return;
         }
