@@ -9,6 +9,7 @@
 #include "core/step/data_store.h"
 #include "core/io/unicode_path.h"
 #include "core/io/pyramidal_tiff_reader.h"
+#include "steps/export_step.h"
 #include "frontendutils.h"
 
 #include <filesystem>
@@ -260,7 +261,20 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
     if (success) {
         const auto& dataStore = pipeline->getDataStore();
 
-        if (dataStore.has("mosaic")) {
+        QString exportedImagePath;
+        for (const auto& step : pipeline->getSteps()) {
+            if (auto *exportStep = dynamic_cast<StepsNs::ExportStepClass*>(step.get())) {
+                const auto& out = exportStep->getOutput();
+                if (!out.imagePath.empty()) {
+                    exportedImagePath = QString::fromStdString(IONs::pathToUtf8(out.imagePath));
+                    break;
+                }
+            }
+        }
+
+        if (!exportedImagePath.isEmpty()) {
+            emit mosaicFileReady(exportedImagePath);
+        } else if (dataStore.has("mosaic")) {
             const auto& mosaic = dataStore.get<DataNs::Mosaic>("mosaic");
 
             if (!mosaic.imagePath.empty()) {

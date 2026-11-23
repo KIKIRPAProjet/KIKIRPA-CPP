@@ -13,6 +13,7 @@
 #include <functional>
 
 class QMouseEvent;
+class QKeyEvent;
 class QPaintEvent;
 class QPainter;
 
@@ -33,7 +34,8 @@ public:
                       int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped,
-                          std::function<void(int)> cellDoubleClicked = nullptr);
+                          std::function<void(int)> cellDoubleClicked = nullptr,
+                          std::function<void()> cellDeleteRequested = nullptr);
     void toggleComparison() { comparison = !comparison; update(); }
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
@@ -52,6 +54,7 @@ protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
     void paintEvent(QPaintEvent *) override;
 
 private:
@@ -71,6 +74,7 @@ private:
     std::function<void(int)> selectionChangedCallback;
     std::function<void(int, int)> cellsSwappedCallback;
     std::function<void(int)> cellDoubleClickedCallback;
+    std::function<void()> cellDeleteRequestedCallback;
     int gridRows = 3;
     int gridColumns = 2;
     int captureOrder = 0;

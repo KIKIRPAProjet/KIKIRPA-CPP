@@ -270,6 +270,8 @@ void GridTab::setupConnections()
     connect(m_validateGridButton, &QPushButton::clicked,
             m_projectGrid, &ProjectGrid::validateGrid);
 
+    m_removeTileButton->setShortcut(QKeySequence(Qt::Key_Backspace));
+
     m_canvas->setGridCallbacks(
         [this](int cell) { m_projectGrid->setSelectedGridCell(cell); },
         [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); },
@@ -277,6 +279,10 @@ void GridTab::setupConnections()
             Q_UNUSED(cell);
             if (m_addTileButton && m_addTileButton->isEnabled())
                 m_addTileButton->click();
+        },
+        [this]() {
+            if (m_removeTileButton && m_removeTileButton->isEnabled())
+                m_removeTileButton->click();
         });
 }
 

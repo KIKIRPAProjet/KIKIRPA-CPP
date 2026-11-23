@@ -50,7 +50,7 @@ void MainWindow::showExportDialog()
     const QString defaultImagePath = outputDirectory.isEmpty()
         ? defaultImageName
         : QDir(outputDirectory).filePath(defaultImageName);
-    imagePathEdit->setText(defaultImagePath);
+    imagePathEdit->setText(!mosaicFilePath.isEmpty() ? mosaicFilePath : defaultImagePath);
     auto *browseButton = new QPushButton(tr("Parcourir…"), &dialog);
     imagePathLayout->addWidget(imagePathEdit);
     imagePathLayout->addWidget(browseButton);
@@ -130,21 +130,28 @@ void MainWindow::showExportDialog()
 
         destination = requestedFile.absoluteFilePath();
 
-        int counter = 1;
-        while (QFileInfo::exists(destination)) {
-            const QString numberedName =
-                requestedFile.completeBaseName() +
-                QStringLiteral(" (%1).").arg(counter) + extension;
-            destination = destinationDirectory.filePath(numberedName);
-            ++counter;
-        }
+        const bool alreadyAtDestination =
+            (!mosaicFilePath.isEmpty() &&
+             (destination == mosaicFilePath ||
+              QFileInfo(destination).canonicalFilePath() == QFileInfo(mosaicFilePath).canonicalFilePath()));
 
-        QFile sourceFile(mosaicFilePath);
-        if (!sourceFile.copy(destination)) {
-            QMessageBox::warning(&dialog, tr("Export impossible"),
-                tr("Impossible de copier le TIFF : %1")
-                    .arg(sourceFile.errorString()));
-            return;
+        if (!alreadyAtDestination) {
+            int counter = 1;
+            while (QFileInfo::exists(destination)) {
+                const QString numberedName =
+                    requestedFile.completeBaseName() +
+                    QStringLiteral(" (%1).").arg(counter) + extension;
+                destination = destinationDirectory.filePath(numberedName);
+                ++counter;
+            }
+
+            QFile sourceFile(mosaicFilePath);
+            if (!sourceFile.copy(destination)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible de copier le TIFF : %1")
+                        .arg(sourceFile.errorString()));
+                return;
+            }
         }
 
         const QFileInfo fileInfo(destination);

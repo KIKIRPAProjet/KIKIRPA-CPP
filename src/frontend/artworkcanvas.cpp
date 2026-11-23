@@ -1,6 +1,7 @@
 #include "artworkcanvas.h"
 
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QPainterPath>
 
@@ -27,6 +28,7 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
 {
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
     const auto defaultPairs = FrontendUtils::defaultPairAlignments();
     if (!defaultPairs.isEmpty()) {
         currentPair = defaultPairs.first();
@@ -53,11 +55,13 @@ void ArtworkCanvas::setGridState(int rows, int columns, int order,
 
 void ArtworkCanvas::setGridCallbacks(std::function<void(int)> selectionChanged,
                                      std::function<void(int, int)> cellsSwapped,
-                                     std::function<void(int)> cellDoubleClicked)
+                                     std::function<void(int)> cellDoubleClicked,
+                                     std::function<void()> cellDeleteRequested)
 {
     selectionChangedCallback = std::move(selectionChanged);
     cellsSwappedCallback = std::move(cellsSwapped);
     cellDoubleClickedCallback = std::move(cellDoubleClicked);
+    cellDeleteRequestedCallback = std::move(cellDeleteRequested);
 }
 
 void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
@@ -81,6 +85,7 @@ void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 {
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
+        setFocus();
         dragStartCell = gridCellAt(event->pos());
         if (dragStartCell >= 0) {
             selectedGridCell = dragStartCell;
@@ -92,6 +97,18 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         }
     }
     QWidget::mousePressEvent(event);
+}
+
+void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
+{
+    if (modeValue == kModeGrid && (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
+        if (cellDeleteRequestedCallback) {
+            cellDeleteRequestedCallback();
+            event->accept();
+            return;
+        }
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
