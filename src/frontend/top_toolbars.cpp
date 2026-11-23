@@ -38,6 +38,8 @@ void TopToolbars::createToolbar()
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 5, 8, 5);
 
+    toolbarLayout->addWidget(FrontendUtils::logoLabel(22, toolbar));
+    toolbarLayout->addSpacing(6);
     auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
     title->setObjectName(QStringLiteral("workspaceTitle"));
     toolbarLayout->addWidget(title);

@@ -40,7 +40,16 @@ include(cmake/frontend.cmake)
 
 # Déclare l'exécutable principal de l'application.
 # Le point d'entrée du programme est défini dans src/main.cpp.
-add_executable(stitching src/main.cpp)
+#
+# resources/resources.qrc embarque le logo (":/logo/logo.png"), compilé par AUTORCC.
+# Il est dans l'exécutable et non dans kikirpa_frontend : une ressource d'une bibliothèque
+# statique demanderait un Q_INIT_RESOURCE. Sous Windows, stitching.rc donne au .exe son icône
+# (Explorateur, barre des tâches). PNG et ICO sont générés par scripts/generer_icones.py.
+add_executable(stitching src/main.cpp resources/resources.qrc)
+set_target_properties(stitching PROPERTIES AUTORCC ON)
+if(WIN32)
+    target_sources(stitching PRIVATE resources/stitching.rc)
+endif()
 kikirpa_copy_onnxruntime_dlls(stitching)
 
 # Lie l'interface et le backend à l'exécutable principal.

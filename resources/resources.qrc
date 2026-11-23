@@ -1,0 +1,7 @@
+<!-- Ressources Qt embarquées dans l'exécutable stitching (lues par ":/logo/logo.png"). -->
+<RCC>
+    <qresource prefix="/logo">
+        <file alias="logo.png">logo/logo.png</file>
+        <file alias="logo_home.png">logo/logo_home.png</file>
+    </qresource>
+</RCC>
