@@ -15,24 +15,64 @@
 //  gere les tuiles et leur organisation dans la grille
 #include "projectgrid.h"
 
-#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
 #include "frontendutils.h"
 
-#include <opencv2/imgcodecs.hpp>
 #include <QDir>
 #include <QFileInfo>
+#include <QFuture>
 #include <QImage>
-#include <QPointer>
+#include <QPromise>
 #include <QSet>
-#include <QThreadPool>
 #include <QTransform>
+#include <QtConcurrentRun>
 
+#include <filesystem>
+#include <string>
 #include <utility>
+
+namespace {
+
+// Image dont la pyramide est à préparer : la source et le dossier du cache, à côté d'elle (là où l'aperçu la cherche).
+struct PyramidTask
+{
+    std::filesystem::path source;
+    std::filesystem::path cacheDirectory;
+};
+
+// Exécutée dans le pool de threads, sans accès à ProjectGrid : une image à la fois, et arrêt entre deux images si la
+// tâche est annulée. Chaque résultat est remis au thread de l'interface par le QFutureWatcher.
+void generatePyramids(QPromise<PyramidGenerationResult> &promise, const QVector<PyramidTask> &tasks)
+{
+    for (const PyramidTask &task : tasks) {
+        if (promise.isCanceled())
+            return;
+        IONs::PyramidCacheEntry entry;
+        std::string errorMessage;
+        PyramidGenerationResult result;
+        result.fileName = QString::fromStdString(IONs::pathToUtf8(task.source.filename()));
+        if (!IONs::preparePyramidCache(task.source, task.cacheDirectory, entry, errorMessage))
+            result.errorMessage = QString::fromStdString(errorMessage);
+        promise.addResult(result);
+    }
+}
+
+}
 
 ProjectGrid::ProjectGrid(QObject *parent)
     : QObject(parent)
 {
+    connect(&pyramidWatcher, &QFutureWatcher<PyramidGenerationResult>::resultReadyAt,
+            this, &ProjectGrid::handlePyramidResult);
+    connect(&pyramidWatcher, &QFutureWatcher<PyramidGenerationResult>::finished,
+            this, &ProjectGrid::handlePyramidGenerationFinished);
+}
+
+// La tâche en cours ne touche pas à cet objet : elle peut finir son image après sa destruction.
+ProjectGrid::~ProjectGrid()
+{
+    pyramidWatcher.cancel();
 }
 
 const ProjectGrid::State &ProjectGrid::state() const
@@ -398,113 +438,82 @@ void ProjectGrid::toggleSelectedCellEmpty()
 
 void ProjectGrid::startBackgroundPyramidGeneration()
 {
-    const QString tileDir = gridState.tileDirectory;
-    if (tileDir.isEmpty())
-        return;
+    // Une seule tâche à la fois : celle de l'ancienne grille s'arrête après son image en cours.
+    pyramidWatcher.cancel();
+    pyramidCancelRequested = false;
 
-    struct GenerationTask {
-        int tileId = 0;
-        QString sourcePath;
-        QString pyramidPath;
-    };
-
-    QVector<GenerationTask> tasks;
-    const QDir pyramidsDir(QDir(tileDir).filePath(QStringLiteral(".cache/pyramids")));
-    if (!pyramidsDir.exists()) {
-        QDir(tileDir).mkpath(QStringLiteral(".cache/pyramids"));
-    }
-
-    int tileId = 0;
-    int alreadyExistingCount = 0;
-    for (int cell = 0; cell < gridState.gridTiles.size(); ++cell) {
-        const auto &tile = gridState.gridTiles.at(cell);
+    QVector<PyramidTask> tasks;
+    int reusedCount = 0;
+    for (const GridTile &tile : std::as_const(gridState.gridTiles)) {
         if (tile.path.isEmpty() || tile.empty)
             continue;
-
-        const QFileInfo fileInfo(tile.path);
-        const QString pyramidFileName = QStringLiteral("%1_%2_pyramid.tif")
-            .arg(tileId)
-            .arg(fileInfo.completeBaseName());
-        const QString pyramidPath = pyramidsDir.filePath(pyramidFileName);
-        const QFileInfo pyramidInfo(pyramidPath);
-
-        // Vérifier si la pyramide existe, n'est pas vide, ET est à jour par rapport à la source
-        if (pyramidInfo.exists() && pyramidInfo.size() > 0 &&
-            pyramidInfo.lastModified() >= fileInfo.lastModified()) {
-            ++alreadyExistingCount;
-        } else {
-            tasks.append({tileId, tile.path, pyramidPath});
-        }
-        ++tileId;
+        const std::filesystem::path source = IONs::pathFromUtf8(tile.path.toStdString());
+        const std::filesystem::path cacheDirectory = IONs::pyramidCacheDirectory(source.parent_path());
+        if (IONs::isPyramidCacheValid(source, IONs::pyramidCachePath(cacheDirectory, source)))
+            ++reusedCount;
+        else
+            tasks.append({source, cacheDirectory});
     }
 
+    pyramidTotal = static_cast<int>(tasks.size());
+    pyramidSuccesses = 0;
+    pyramidFailures = 0;
     if (tasks.isEmpty()) {
-        if (alreadyExistingCount > 0) {
-            const QString cachedMsg = tr("Vignettes optimisées déjà présentes (%1 tuiles réutilisées).")
-                .arg(alreadyExistingCount);
-            emit statusRequested(cachedMsg);
-            emit logRequested(cachedMsg);
+        if (reusedCount > 0) {
+            const QString cachedMessage = tr("Vignettes optimisées déjà présentes (%1 tuiles réutilisées).")
+                .arg(reusedCount);
+            emit statusRequested(cachedMessage);
+            emit logRequested(cachedMessage);
         }
         return;
     }
 
-    const int total = tasks.size();
-    const QString startMsg = tr("Préparation des vignettes optimisées (0/%1)...").arg(total);
-    emit statusRequested(startMsg);
-    emit logRequested(startMsg);
+    const QString startMessage = tr("Préparation des vignettes optimisées (0/%1)...").arg(pyramidTotal);
+    emit statusRequested(startMessage);
+    emit logRequested(startMessage);
+    pyramidWatcher.setFuture(QtConcurrent::run(generatePyramids, tasks));
+}
 
-    QPointer<ProjectGrid> weakThis(this);
-    QThreadPool::globalInstance()->start([weakThis, tasks, total]() {
-        int successCount = 0;
-        int failureCount = 0;
-        for (const auto &task : tasks) {
-            if (!weakThis) return;
-            std::string errorMessage;
-            const cv::Mat image = IONs::readImage(
-                IONs::pathFromUtf8(task.sourcePath.toStdString()),
-                cv::IMREAD_UNCHANGED);
-            bool ok = false;
-            if (!image.empty() && weakThis) {
-                ok = IONs::createPyramidalTiledTiff(
-                    image,
-                    IONs::pathFromUtf8(task.pyramidPath.toStdString()),
-                    errorMessage);
-            } else if (image.empty()) {
-                errorMessage = "Image illisible ou fichier corrompu";
-            }
-            if (ok) {
-                ++successCount;
-            } else {
-                ++failureCount;
-            }
-            if (weakThis) {
-                QMetaObject::invokeMethod(weakThis.data(), [weakThis, successCount, failureCount, total, ok, task, errorMessage]() {
-                    if (!weakThis) return;
-                    if (ok) {
-                        weakThis->gridUpdated();
-                    } else {
-                        emit weakThis->logRequested(
-                            QObject::tr("Erreur vignette (%1) : %2")
-                                .arg(QFileInfo(task.sourcePath).fileName())
-                                .arg(QString::fromStdString(errorMessage)));
-                    }
-                    const int processed = successCount + failureCount;
-                    if (processed < total) {
-                        emit weakThis->statusRequested(
-                            QObject::tr("Préparation des vignettes optimisées (%1/%2)...")
-                                .arg(processed).arg(total));
-                    } else {
-                        QString finalMsg;
-                        if (failureCount == 0) {
-                            finalMsg = QObject::tr("%1 vignettes optimisées (TIFF pyramidaux prêts).").arg(successCount);
-                        } else {
-                            finalMsg = QObject::tr("%1 vignettes optimisées, %2 échec(s).").arg(successCount).arg(failureCount);
-                        }
-                        emit weakThis->statusRequested(finalMsg);
-                        emit weakThis->logRequested(finalMsg);
-                    }
-                }, Qt::QueuedConnection);
-            }
-        }
-    });
+void ProjectGrid::cancelBackgroundPyramidGeneration()
+{
+    if (!pyramidWatcher.isRunning())
+        return;
+    pyramidCancelRequested = true;
+    pyramidWatcher.cancel();
+}
+
+// Une pyramide prête (ou en échec) : la grille se redessine avec elle, ou l'erreur part dans le Journal.
+void ProjectGrid::handlePyramidResult(int resultIndex)
+{
+    if (pyramidWatcher.isCanceled())
+        return;
+    const PyramidGenerationResult result = pyramidWatcher.resultAt(resultIndex);
+    if (result.errorMessage.isEmpty()) {
+        ++pyramidSuccesses;
+        emit gridUpdated();
+    } else {
+        ++pyramidFailures;
+        emit logRequested(tr("Erreur vignette (%1) : %2").arg(result.fileName, result.errorMessage));
+    }
+    const int processed = pyramidSuccesses + pyramidFailures;
+    if (processed < pyramidTotal)
+        emit statusRequested(tr("Préparation des vignettes optimisées (%1/%2)...").arg(processed).arg(pyramidTotal));
+}
+
+// Fin de la tâche. Annulée par une nouvelle grille : rien à dire, la tâche suivante prend le relais. Annulée au
+// lancement du calcul : on le note, l'import du backend préparera les pyramides restantes.
+void ProjectGrid::handlePyramidGenerationFinished()
+{
+    const int processed = pyramidSuccesses + pyramidFailures;
+    if (pyramidWatcher.isCanceled()) {
+        if (pyramidCancelRequested)
+            emit logRequested(tr("Préparation des vignettes interrompue (%1/%2) : le calcul prépare les pyramides restantes.")
+                                  .arg(processed).arg(pyramidTotal));
+        return;
+    }
+    const QString finalMessage = pyramidFailures == 0
+        ? tr("%1 vignettes optimisées (TIFF pyramidaux prêts).").arg(pyramidSuccesses)
+        : tr("%1 vignettes optimisées, %2 échec(s).").arg(pyramidSuccesses).arg(pyramidFailures);
+    emit statusRequested(finalMessage);
+    emit logRequested(finalMessage);
 }

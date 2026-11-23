@@ -231,7 +231,7 @@ Une fiche par tuile, **sans pixels**. Les pixels restent dans les fichiers. C'es
 
 ```json
 [ { "id": 0, "source": "D:/oeuvre/tuiles/2_no filter.tif", "row": 0, "column": 0,
-    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/0_2_no filter_pyramid.tif",
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/2_no filter_3f1c9a07_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 } ]
 ```
 

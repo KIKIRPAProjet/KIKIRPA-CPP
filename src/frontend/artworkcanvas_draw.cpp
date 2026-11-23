@@ -81,7 +81,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
         }
 
         if (!tile.path.isEmpty()) {
-            drawPhoto(p, cell, tile.path, tile.rotation, tile.flipped, index);
+            drawPhoto(p, cell, tile.path, tile.rotation, tile.flipped);
             if (tile.empty)
                 p.fillRect(cell, QColor(20, 20, 20, 170));
         } else {
@@ -206,12 +206,12 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 }
 
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                              int rotation, bool flipped, int tileIndex)
+                              int rotation, bool flipped)
 {
     QSize previewSize = r.size();
     if (rotation % 180 != 0)
         previewSize.transpose();
-    QImage image = readPreviewImage(path, previewSize, tileIndex);
+    QImage image = readPreviewImage(path, previewSize);
     if (image.isNull()) {
         p.fillRect(r, QColor("#262626"));
         p.setPen(QColor("#d35b55"));

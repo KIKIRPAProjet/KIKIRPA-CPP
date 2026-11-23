@@ -15,6 +15,7 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/pyramid_cache.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
@@ -22,7 +23,6 @@
 #include <opencv2/core/mat.hpp>
 
 #include <QCoreApplication>
-#include <QDir>
 #include <QFileInfo>
 #include <QImageReader>
 #include <QLabel>
@@ -209,64 +209,26 @@ QImage matToQImage(const cv::Mat &mat)
     return {};
 }
 
-QString findPyramidPathForSource(const QString &sourcePath, int tileIndex)
+// Pyramide de `sourcePath` dans le cache partagé avec le backend (core/io/pyramid_cache.h), à côté de l'image.
+// Chemin vide si elle n'existe pas encore ou si elle a été produite à partir d'une autre version de l'image : l'aperçu
+// relit alors la source.
+QString findPyramidPathForSource(const QString &sourcePath)
 {
     if (sourcePath.isEmpty())
         return {};
 
-    const QFileInfo sourceInfo(sourcePath);
-    if (!sourceInfo.exists())
-        return {};
-
-    // Si le chemin passé est déjà un TIFF pyramidal
+    // Le chemin passé est déjà un TIFF pyramidal
     if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
         sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
-        return sourcePath;
+        return QFileInfo::exists(sourcePath) ? sourcePath : QString();
     }
 
-    const QDir pyramidsDir(sourceInfo.dir().filePath(QStringLiteral(".cache/pyramids")));
-    if (!pyramidsDir.exists())
+    const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());
+    const std::filesystem::path pyramid =
+        IONs::pyramidCachePath(IONs::pyramidCacheDirectory(source.parent_path()), source);
+    if (!IONs::isPyramidCacheValid(source, pyramid))
         return {};
-
-    const QString baseName = sourceInfo.completeBaseName();
-    QString candidatePath;
-
-    // 1. Recherche précise via tileIndex (priorité absolue pour éviter toute collision)
-    if (tileIndex >= 0) {
-        const QString exactName = QStringLiteral("%1_%2_pyramid.tif").arg(tileIndex).arg(baseName);
-        if (pyramidsDir.exists(exactName)) {
-            candidatePath = pyramidsDir.filePath(exactName);
-        }
-    }
-
-    // 2. Recherche directe sans index
-    if (candidatePath.isEmpty()) {
-        const QString simpleName = QStringLiteral("%1_pyramid.tif").arg(baseName);
-        if (pyramidsDir.exists(simpleName)) {
-            candidatePath = pyramidsDir.filePath(simpleName);
-        } else {
-            // Recherche par motif "*_<baseName>_pyramid.tif"
-            const QString filter = QStringLiteral("*_%1_pyramid.tif").arg(baseName);
-            const QStringList matches = pyramidsDir.entryList(QStringList{filter}, QDir::Files);
-            // Si une seule correspondance existe : aucune ambiguïté (pas de conflit homonyme comme photo.tif vs photo.tiff)
-            if (matches.size() == 1) {
-                candidatePath = pyramidsDir.filePath(matches.first());
-            }
-            // Si plusieurs correspondent (ex: 0_photo_pyramid.tif et 1_photo_pyramid.tif) et qu'aucun tileIndex
-            // n'a été spécifié, on ne devine pas pour éviter d'associer la mauvaise tuile.
-        }
-    }
-
-    if (candidatePath.isEmpty())
-        return {};
-
-    // 3. Vérification de la validité du cache : si la source a été modifiée après la pyramide, le cache est périmé !
-    const QFileInfo pyramidInfo(candidatePath);
-    if (sourceInfo.lastModified() > pyramidInfo.lastModified() || pyramidInfo.size() == 0) {
-        return {}; // Forcera une nouvelle lecture / régénération
-    }
-
-    return candidatePath;
+    return QString::fromStdString(IONs::pathToUtf8(pyramid));
 }
 
 QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
@@ -358,9 +320,9 @@ QVector<int> captureOrderCells(int rows, int columns, int order)
     return cells;
 }
 
-QImage readPreviewImage(const QString &path, const QSize &maximumSize, int tileIndex)
+QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
-    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path, tileIndex);
+    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
     if (!pyramidPath.isEmpty()) {
         const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
         if (!pyramidPreview.isNull())

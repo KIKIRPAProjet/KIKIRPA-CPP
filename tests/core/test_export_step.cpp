@@ -175,6 +175,35 @@ TEST(ExportStepTest, IncrementsFilenameWhenFileAlreadyExists) {
     EXPECT_EQ(secondStep.getOutput().imagePath, fixture.outputDirectory / "mosaic (2).tif");
 }
 
+// Un nouvel export suit le numéro le plus élevé présent, même si des copies intermédiaires ont été supprimées : le
+// dernier export est toujours celui de rang maximal.
+TEST(ExportStepTest, NewExportFollowsTheHighestExistingNumber) {
+    ExportFixture fixture(CV_16UC3);
+    fs::create_directories(fixture.outputDirectory);
+    std::ofstream(fixture.outputDirectory / "mosaic.tif") << "old_output";
+    std::ofstream(fixture.outputDirectory / "mosaic (3).tif") << "old_output";
+    std::ofstream(fixture.outputDirectory / "mosaic (x).tif") << "not_a_copy";
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    EXPECT_EQ(fixture.step.getOutput().imagePath, fixture.outputDirectory / "mosaic (4).tif");
+}
+
+// Reprise d'un run : un step neuf, avant execute(), retrouve le dernier export sur le disque. Son empreinte égale celle
+// enregistrée à la sauvegarde du checkpoint, qui reste donc valable (pas de copie de plus) ; si le fichier exporté a
+// disparu, elle change et l'export est refait.
+TEST(ExportStepTest, ResumedStepKeepsItsCheckpointWhileTheExportIsUnchanged) {
+    ExportFixture fixture(CV_16UC3);
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const Json savedFingerprint = fixture.step.externalInputsFingerprint();
+
+    StepsNs::ExportStepClass resumedStep;
+    configureOutputDirectory(resumedStep, fixture.outputDirectory);
+    EXPECT_EQ(resumedStep.externalInputsFingerprint(), savedFingerprint);
+
+    fs::remove(fixture.step.getOutput().imagePath);
+    EXPECT_NE(resumedStep.externalInputsFingerprint(), savedFingerprint);
+}
+
 TEST(ExportStepTest, SupportsCustomFilename) {
     ExportFixture fixture(CV_16UC3);
     configureOutput(fixture.step, fixture.outputDirectory, "custom_artwork.tif");
@@ -226,15 +255,7 @@ TEST(ExportStepTest, ReportsAMissingMosaicInput) {
     EXPECT_NE(step.getResult().value("error", "").find("mosaic"), std::string::npos);
 }
 
-// L'empreinte suit mosaic.tif : le checkpoint de l'export se périme si le fichier publié disparaît.
-/*TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
-    ExportFixture fixture(CV_16UC3);
-    EXPECT_FALSE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
-
-    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
-    EXPECT_TRUE(fixture.step.externalInputsFingerprint().at("exists").get<bool>());
-}*/
-
+// L'empreinte suit le fichier publié : le checkpoint de l'export se périme si ce fichier disparaît.
 TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     ExportFixture fixture(CV_16UC3);
 

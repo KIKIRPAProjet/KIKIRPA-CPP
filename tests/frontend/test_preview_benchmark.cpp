@@ -1,5 +1,6 @@
 // tests/frontend/test_preview_benchmark.cpp
 #include "frontendutils.h"
+#include "core/io/pyramid_cache.h"
 #include "core/io/pyramidal_tiff_writer.h"
 #include "core/io/unicode_path.h"
 
@@ -15,6 +16,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <system_error>
 
 namespace fs = std::filesystem;
 
@@ -102,49 +104,40 @@ TEST(PreviewBenchmark, CompareRawTiffVsPyramidalTiff) {
     fs::remove_all(tempDir, ec);
 }
 
+// L'aperçu retrouve la pyramide d'une image par le cache partagé avec l'import (core/io/pyramid_cache.h) :
+// photo.tif et photo.tiff ont chacune la leur, et une source remplacée n'utilise plus l'ancienne.
 TEST(PreviewBenchmark, FindPyramidPathValidatesCacheAndAvoidsCollision) {
     const fs::path tempDir = fs::temp_directory_path() / "kikirpa_find_pyramid_test";
+    std::error_code ec;
+    fs::remove_all(tempDir, ec);
     fs::create_directories(tempDir);
     const fs::path sourceTif = tempDir / "photo.tif";
     const fs::path sourceTiff = tempDir / "photo.tiff";
-    const fs::path pyramidDir = tempDir / ".cache" / "pyramids";
-    fs::create_directories(pyramidDir);
+    const fs::path cacheDirectory = IONs::pyramidCacheDirectory(tempDir);
 
-    const fs::path pyr0 = pyramidDir / "0_photo_pyramid.tif";
-    const fs::path pyr1 = pyramidDir / "1_photo_pyramid.tif";
-
-    cv::Mat dummy(64, 64, CV_8UC3, cv::Scalar(10, 20, 30));
-    std::string err;
+    const cv::Mat dummy(64, 64, CV_8UC3, cv::Scalar(10, 20, 30));
     ASSERT_TRUE(IONs::writeImage(sourceTif, dummy));
     ASSERT_TRUE(IONs::writeImage(sourceTiff, dummy));
-    ASSERT_TRUE(IONs::createPyramidalTiledTiff(dummy, pyr0, err));
-    ASSERT_TRUE(IONs::createPyramidalTiledTiff(dummy, pyr1, err));
+    IONs::PyramidCacheEntry tifEntry;
+    IONs::PyramidCacheEntry tiffEntry;
+    std::string err;
+    ASSERT_TRUE(IONs::preparePyramidCache(sourceTif, cacheDirectory, tifEntry, err)) << err;
+    ASSERT_TRUE(IONs::preparePyramidCache(sourceTiff, cacheDirectory, tiffEntry, err)) << err;
 
-    const QString pathTifQt = QString::fromStdString(IONs::pathToUtf8(sourceTif));
-    const QString pathTiffQt = QString::fromStdString(IONs::pathToUtf8(sourceTiff));
+    const auto toQt = [](const fs::path& path) { return QString::fromStdString(IONs::pathToUtf8(path)); };
+    const auto found = [&](const fs::path& source) {
+        return QDir::fromNativeSeparators(FrontendUtils::findPyramidPathForSource(toQt(source)));
+    };
 
-    // 1. Avec tileIndex exact : chaque source retrouve sa pyramide sans confusion
-    EXPECT_EQ(
-        QDir::fromNativeSeparators(
-            FrontendUtils::findPyramidPathForSource(pathTifQt, 0)),
-        QDir::fromNativeSeparators(
-            QString::fromStdString(IONs::pathToUtf8(pyr0))));
+    // 1. Chaque source retrouve sa propre pyramide, quelle que soit sa case dans la grille
+    EXPECT_EQ(found(sourceTif), QDir::fromNativeSeparators(toQt(tifEntry.pyramidPath)));
+    EXPECT_EQ(found(sourceTiff), QDir::fromNativeSeparators(toQt(tiffEntry.pyramidPath)));
+    EXPECT_NE(found(sourceTif), found(sourceTiff));
 
-    EXPECT_EQ(
-        QDir::fromNativeSeparators(
-            FrontendUtils::findPyramidPathForSource(pathTiffQt, 1)),
-        QDir::fromNativeSeparators(
-            QString::fromStdString(IONs::pathToUtf8(pyr1))));
+    // 2. Source remplacée (même par un fichier plus ancien) : le cache n'est plus utilisé
+    fs::last_write_time(sourceTif, fs::last_write_time(tifEntry.pyramidPath) - std::chrono::hours(24));
+    EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(toQt(sourceTif)).isEmpty());
 
-    // 2. Sans tileIndex (-1) quand 2 pyramides partagent le même radical : pas d'assignation au hasard !
-    EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(pathTifQt, -1).isEmpty());
-
-    // 3. Invalidation du cache si la source est plus récente que la pyramide
-    const auto newerTime = fs::last_write_time(pyr0) + std::chrono::seconds(10);
-    fs::last_write_time(sourceTif, newerTime);
-    EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(pathTifQt, 0).isEmpty());
-
-    std::error_code ec;
     fs::remove_all(tempDir, ec);
 }
 

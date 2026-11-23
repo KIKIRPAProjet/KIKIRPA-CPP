@@ -2,7 +2,7 @@
 
 Code : [export_step.h](../../include/backend/steps/export_step.h) / [export_step.cpp](../../src/backend/steps/export_step.cpp), namespace `StepsNs`.
 
-Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite sur disque par l'assemblage, sous le nom `mosaic.tif` (ou un nom configuré) dans le dossier choisi. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé, et les pixels ne passent pas par la mémoire : le fichier est copié tel quel. Si un fichier du même nom existe déjà dans le dossier de destination, il n'est pas écrasé : un suffixe incrémental ` (1)`, ` (2)`... est automatiquement ajouté.
+Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite sur disque par l'assemblage, sous le nom `mosaic.tif` (ou un nom configuré) dans le dossier choisi. Il ne crée ni fichier JSON, ni fichier de provenance, ni masque séparé, et les pixels ne passent pas par la mémoire : le fichier est copié tel quel. Si un fichier du même nom existe déjà dans le dossier de destination, il n'est pas écrasé : le nouvel export prend le numéro qui suit le plus élevé présent (` (1)`, ` (2)`...).
 
 ## Entrées et sorties
 
@@ -30,7 +30,7 @@ Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite 
 ## Fonctionnement
 
 1. **Contrôle** : l'en-tête de `imagePath` est lu sans décoder de pixel. Le fichier doit être un TIFF tuilé, à 3 canaux de 16 bits, aux dimensions de `canvasSize`.
-2. **Nom unique** : si `<filename>` existe déjà dans le dossier de sortie, le step cherche le premier nom disponible selon la règle Windows : `<nom> (1).tif`, `<nom> (2).tif`, etc.
+2. **Nom unique** : si `<filename>` ou une de ses copies numérotées existe déjà dans le dossier de sortie, le step prend le numéro qui suit le plus élevé présent : `<nom> (1).tif`, `<nom> (2).tif`, etc. Le dernier export est ainsi toujours celui de numéro maximal, même si des copies intermédiaires ont été supprimées.
 3. **Publication** : `IONs::copyFileReplacing` copie le fichier sous un nom temporaire dans `outputDirectory`, puis le renomme vers le chemin unique déterminé. L'ancien fichier existant n'est donc jamais écrasé. Une erreur pendant la copie ne pollue pas la destination et le temporaire est supprimé.
 
 Le format du fichier (blocs de 512 × 512, LZW, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
@@ -51,7 +51,7 @@ Les fichiers annexes d'anciennes exécutions ne sont pas supprimés.
 
 ## Checkpoint
 
-L'export n'a pas de sortie dans le DataStore. Son empreinte de reprise (`externalInputsFingerprint`) suit l'existence, la taille et la date de modification du fichier publié : si le fichier publié est supprimé ou modifié, le checkpoint de ce step est périmé et l'export est refait.
+L'export n'a pas de sortie dans le DataStore. Son empreinte de reprise (`externalInputsFingerprint`) suit l'existence, la taille et la date de modification du dernier fichier publié. Après `execute()`, c'est le fichier qui vient d'être écrit ; à la reprise d'un run, avant `execute()`, le step le retrouve sur le disque (numéro maximal). Tant que ce fichier est là, inchangé, le checkpoint reste valable et la reprise ne crée pas de copie de plus ; s'il est supprimé ou modifié, l'export est refait.
 
 L'entrée `Mosaic` a sa sérialisation dans `pipelineTypes()` (`core/checkpoint/checkpoint_types.cpp`) : seuls les chemins et les dimensions sont écrits, les pixels restent dans les TIFF.
 
@@ -72,7 +72,7 @@ Aucune image n'est chargée : l'en-tête est lu par libtiff et la copie passe pa
 
 ## Tests
 
-`tests/core/test_export_step.cpp` (cible `export_step_tests`) : publication par défaut sous `mosaic.tif`, incrémentation automatique sans écrasement (`mosaic (1).tif`...), support d'un nom de fichier personnalisé, contenu relu identique, sortie de l'assemblage conservée ; refus d'une image aux mauvaises dimensions ou qui n'est pas RGB 16 bits ; image ou entrée manquante ; empreinte qui suit le fichier publié. Les images sont synthétiques, écrites avec `TiledTiffWriterClass` dans un dossier temporaire.
+`tests/core/test_export_step.cpp` (cible `export_step_tests`) : publication par défaut sous `mosaic.tif`, incrémentation automatique sans écrasement (`mosaic (1).tif`...), support d'un nom de fichier personnalisé, contenu relu identique, sortie de l'assemblage conservée ; refus d'une image aux mauvaises dimensions ou qui n'est pas RGB 16 bits ; image ou entrée manquante ; empreinte qui suit le fichier publié, y compris pour un step neuf à la reprise ; numéro qui suit le plus élevé présent. Les images sont synthétiques, écrites avec `TiledTiffWriterClass` dans un dossier temporaire.
 
 ```text
 cmake --build --preset windows-aqt --target export_step_tests

@@ -5,7 +5,7 @@
 #include "pipeline_worker.h"
 #include "pipeline_runner.h"
 
-#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
@@ -421,28 +421,34 @@ TEST_F(PipelineWorkerTestClass, AsyncRunnerExecutesInDedicatedThread) {
     EXPECT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
 }
 
-// 6. Concurrence : import et génération d'arrière-plan puis lancement immédiat du pipeline
+// 6. Concurrence : l'interface prépare les pyramides en arrière-plan pendant que le pipeline importe les mêmes images.
+// Le thread passe par le cache partagé (core/io/pyramid_cache.h), donc écrit exactement les fichiers que lit et écrit
+// l'import ; il retire la provenance à chaque passage pour forcer la réécriture pendant tout le calcul.
 TEST_F(PipelineWorkerTestClass, ImportAndImmediatePipelineRunConcurrentExecution) {
     const Json script = makeScript(tilesDirectory, outputDirectory, checkpointDirectory);
     const QString scriptText = QString::fromStdString(script.dump());
 
-    // Thread simulant l'interface graphique qui prépare les pyramides en arrière-plan
+    std::vector<fs::path> sources;
+    for (const auto& entry : fs::directory_iterator(tilesDirectory))
+        if (entry.is_regular_file() && entry.path().extension() == ".tif") sources.push_back(entry.path());
+    ASSERT_FALSE(sources.empty());
+    const fs::path cacheDirectory = IONs::pyramidCacheDirectory(tilesDirectory);
+
     std::atomic<bool> stopBackgroundThread{false};
     std::thread backgroundPyramidGenerator([&]() {
-        const fs::path pyramidDir = tilesDirectory / ".cache" / "pyramids";
-        fs::create_directories(pyramidDir);
-        for (int i = 0; i < 20 && !stopBackgroundThread.load(); ++i) {
-            for (const auto& entry : fs::directory_iterator(tilesDirectory)) {
-                if (entry.path().extension() == ".tif" && entry.path().filename().string().find("_pyramid") == std::string::npos) {
-                    const cv::Mat img = IONs::readImage(entry.path(), cv::IMREAD_UNCHANGED);
-                    if (!img.empty()) {
-                        const fs::path dest = pyramidDir / (entry.path().stem().string() + "_pyramid.tif");
-                        std::string err;
-                        IONs::createPyramidalTiledTiff(img, dest, err);
-                    }
-                }
+        constexpr int MAXIMUM_PASSES = 20;
+        for (int pass = 0; pass < MAXIMUM_PASSES && !stopBackgroundThread.load(); ++pass) {
+            for (const fs::path& source : sources) {
+                fs::path provenance = IONs::pyramidCachePath(cacheDirectory, source);
+                provenance += ".source.json";
+                std::error_code removeError;
+                fs::remove(provenance, removeError);
+                IONs::PyramidCacheEntry entry;
+                std::string errorMessage;
+                // Un échec ponctuel est permis (remplacement refusé sous Windows pendant une lecture) : seul compte
+                // le résultat du pipeline et l'état final du cache.
+                IONs::preparePyramidCache(source, cacheDirectory, entry, errorMessage);
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
     });
 
@@ -467,6 +473,17 @@ TEST_F(PipelineWorkerTestClass, ImportAndImmediatePipelineRunConcurrentExecution
     EXPECT_TRUE(finishedEmitted);
     EXPECT_TRUE(finishedSuccess) << finishedError.toStdString();
     EXPECT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
+
+    // Le cache final est cohérent : chaque pyramide est complète et vient de sa source.
+    for (const fs::path& source : sources) {
+        IONs::PyramidCacheEntry entry;
+        std::string errorMessage;
+        ASSERT_TRUE(IONs::preparePyramidCache(source, cacheDirectory, entry, errorMessage)) << errorMessage;
+        const cv::Mat original = IONs::readImage(source, cv::IMREAD_UNCHANGED);
+        EXPECT_EQ(entry.width, original.cols);
+        EXPECT_EQ(entry.height, original.rows);
+        EXPECT_EQ(entry.type, original.type());
+    }
 }
 
 // 7. Calcul complet 2x2 jusqu'à l'export

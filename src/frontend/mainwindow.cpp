@@ -162,9 +162,12 @@ void MainWindow::setupPipelineConnections()
             mosaicFilePath = imagePath;
         });
 
+    // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
+    // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);

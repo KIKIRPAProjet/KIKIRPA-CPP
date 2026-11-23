@@ -78,12 +78,13 @@ namespace {
         QImage tileImage;
         const auto& tiffPath = tile.getTiff();
         if (!tiffPath.empty() && std::filesystem::exists(tiffPath)) {
-            // Utilise le TIFF pyramidal : on sélectionne le niveau réduit le plus approprié
+            // Utilise le TIFF pyramidal : le plus petit niveau encore au moins aussi large que la tuile dessinée.
             IONs::PyramidalTiffReaderClass reader(tiffPath);
-            int chosenLevel = DataNs::LEVEL_COUNT - 1;
-            for (int l = chosenLevel; l >= 0; --l) {
-                if (tile.getLevel(l).width * scale >= 100 || l == 0) {
-                    chosenLevel = l;
+            const double drawnWidth = tile.getLevel(0).width * scale;
+            int chosenLevel = 0;
+            for (int level = DataNs::LEVEL_COUNT - 1; level > 0; --level) {
+                if (tile.getLevel(level).width >= drawnWidth) {
+                    chosenLevel = level;
                     break;
                 }
             }

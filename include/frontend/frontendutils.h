@@ -41,7 +41,7 @@ std::filesystem::path lightGlueModelPath();
 
 // Détection et lecture d'un TIFF pyramidal pour l'affichage fluide
 QImage matToQImage(const cv::Mat &mat);
-QString findPyramidPathForSource(const QString &sourcePath, int tileIndex = -1);
+QString findPyramidPathForSource(const QString &sourcePath);
 QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize);
 
 //définition des 4 états possibles d'une paire de tuiles 
@@ -103,6 +103,6 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order);
-QImage readPreviewImage(const QString &path, const QSize &maximumSize, int tileIndex = -1);
+QImage readPreviewImage(const QString &path, const QSize &maximumSize);
 
 #endif

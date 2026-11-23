@@ -27,7 +27,8 @@ namespace StepsNs {
 
     // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename> (défaut mosaic.tif) : contrôle de son
     // en-tête (dimensions, RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas
-    // par la mémoire. Si un fichier du même nom existe déjà, un suffixe incrémental " (1)", " (2)"... est ajouté.
+    // par la mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
+    // " (1)", " (2)"... Le checkpoint du step reste valable tant que ce dernier export est là, inchangé.
     //
     // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide = mosaic.tif).
     // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou nom incrémenté (ni provenance ni masque).
