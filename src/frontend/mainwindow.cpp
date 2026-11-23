@@ -140,6 +140,9 @@ void MainWindow::setupProjectGridConnections()
             this, &MainWindow::refreshProjectInfo);
     connect(projectGrid, &ProjectGrid::gridValidated,
             this, &MainWindow::refreshProjectInfo);
+    // Grille ou recouvrement modifiés : le script change, donc les checkpoints valides aussi.
+    connect(projectGrid, &ProjectGrid::gridUpdated, this, &MainWindow::refreshSavedState);
+    connect(projectGrid, &ProjectGrid::gridValidated, this, &MainWindow::refreshSavedState);
     connect(projectGrid, &ProjectGrid::referenceImageLoaded,
             this, &MainWindow::refreshProjectInfo);
     connect(projectGrid, &ProjectGrid::messageRequested,
@@ -469,6 +472,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     projectPath.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
+    workspaceUI->showSavedState(-1);   // pas encore de calcul : ne pas garder l'état du projet précédent
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
