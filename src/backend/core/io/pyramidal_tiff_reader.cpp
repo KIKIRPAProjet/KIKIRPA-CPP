@@ -549,10 +549,10 @@ namespace IONs {
         return success;
     }
 
-    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+    // NOLINTBEGIN(bugprone-easily-swappable-parameters)
     bool PyramidalTiffReaderClass::getLevelDimensions(
         int level,
-        int& width,
+        int& width, // NOLINT(bugprone-easily-swappable-parameters)
         int& height,
         std::string& errorMessage
     ) const {
@@ -584,6 +584,7 @@ namespace IONs {
         }
         return success;
     }
+    // NOLINTEND(bugprone-easily-swappable-parameters)
 
     int PyramidalTiffReaderClass::getLevelCount() const {
         TIFF* tiffFile = IONs::openTiff(tiffPath, "r");

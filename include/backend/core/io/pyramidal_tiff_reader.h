@@ -40,13 +40,14 @@ namespace IONs {
             ) const;
 
             // Récupère les dimensions d'un niveau donné.
-            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+            // NOLINTBEGIN(bugprone-easily-swappable-parameters)
             bool getLevelDimensions(
                 int level,
-                int& width,
+                int& width, // NOLINT(bugprone-easily-swappable-parameters)
                 int& height,
                 std::string& errorMessage
             ) const;
+            // NOLINTEND(bugprone-easily-swappable-parameters)
 
             // Nombre total de niveaux dans la pyramide (1 si non pyramidal).
             int getLevelCount() const;
