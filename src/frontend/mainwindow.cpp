@@ -277,7 +277,7 @@ void MainWindow::setupMenuConnections()
             updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
         } else if (mode == 2) {
             static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
+            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
         }
     });
     connect(menuBarManager, &MenuBarManager::runRequested,
@@ -290,7 +290,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage — prototype d'interface.\n"
+            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
 }
@@ -361,7 +361,7 @@ void MainWindow::selectPair(int pairIndex)
     const auto &pair = m_pairs.at(m_currentPairIndex);
     updateStatus(tr("Paire sélectionnée : %1 (%2)")
                      .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse — %1").arg(pair.statusReason) : tr("fiable")));
+                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
 }
 
 void MainWindow::selectPreviousPair()
@@ -459,7 +459,7 @@ void MainWindow::refreshPairViews()
 
     if (currentMode == 3) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
-            label->setText(tr("Vue Paire — %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
+            label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
         }
     }
@@ -491,12 +491,25 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
+        return;
+    }
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
+    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
+                        QMessageBox::Open | QMessageBox::Cancel, this);
+    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
+    resumeButton->setEnabled(summary.canResume);
+    opening.exec();
+    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+        return;
+    const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
@@ -508,11 +521,16 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(0);
+    setMode(projectData.mode);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    if (resume) {
+        pipelineRunner->setScriptJson(QString::fromStdString(projectData.backendScript.dump()));
+        pipelineRunner->setStartFromStepName(QString());
+        pipelineRunner->startRun(1, true);
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -542,10 +560,10 @@ void MainWindow::setMode(int mode)
         button->setChecked(true);
 
     const QStringList descriptions = {
-        tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
-        tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire — points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export — TIFF 16 bits, profil ICC conservé")
+        tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
+        tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
+        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Export : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
@@ -678,8 +696,16 @@ void MainWindow::saveProject()
     if (path.isEmpty())
         return;
     QString errorMessage;
+    nlohmann::json backendScript;
+    try {
+        backendScript = nlohmann::json::parse(generatePipelineScript(1).toStdString());
+    } catch (const std::exception &exception) {
+        // Un projet en cours de configuration reste enregistrable sans script exécutable.
+        workspaceUI->appendLog(tr("Projet enregistré sans script exécutable : %1")
+                                   .arg(QString::fromUtf8(exception.what())));
+    }
     if (!ProjectSerializer::saveToFile(
-            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
