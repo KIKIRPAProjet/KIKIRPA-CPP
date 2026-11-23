@@ -1,5 +1,4 @@
-#ifndef ARTWORKCANVAS_H
-#define ARTWORKCANVAS_H
+#pragma once
 
 #include "projectgrid.h"
 #include "image_layer.h"
@@ -131,5 +130,3 @@ private:
     bool pairOverlayMode = false;
     FrontendUtils::PairAlignmentInfo currentPair;
 };
-
-#endif // ARTWORKCANVAS_H
