@@ -301,10 +301,6 @@ void MainWindow::setupPairAlignmentConnections()
     // }
     */
 
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        connect(bottom, &BottomTabs::pairSelected, this, &MainWindow::selectPair);
-    }
-
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             connect(alignTab, &AlignmentTab::pairSelectionRequested,
@@ -414,11 +410,6 @@ void MainWindow::refreshPairViews()
             ++dubiousCount;
         else if (p.status == FrontendUtils::PairStatus::Failed)
             ++failedCount;
-    }
-
-    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
-        bottom->updatePairs(m_pairs);
-        bottom->selectPairRow(m_currentPairIndex);
     }
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
