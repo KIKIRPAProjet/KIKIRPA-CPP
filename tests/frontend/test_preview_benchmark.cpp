@@ -9,6 +9,7 @@
 
 #include <QElapsedTimer>
 #include <QImageReader>
+#include <QDir>
 
 #include <chrono>
 #include <filesystem>
@@ -123,10 +124,17 @@ TEST(PreviewBenchmark, FindPyramidPathValidatesCacheAndAvoidsCollision) {
     const QString pathTiffQt = QString::fromStdString(IONs::pathToUtf8(sourceTiff));
 
     // 1. Avec tileIndex exact : chaque source retrouve sa pyramide sans confusion
-    EXPECT_EQ(FrontendUtils::findPyramidPathForSource(pathTifQt, 0),
-              QString::fromStdString(IONs::pathToUtf8(pyr0)));
-    EXPECT_EQ(FrontendUtils::findPyramidPathForSource(pathTiffQt, 1),
-              QString::fromStdString(IONs::pathToUtf8(pyr1)));
+    EXPECT_EQ(
+        QDir::fromNativeSeparators(
+            FrontendUtils::findPyramidPathForSource(pathTifQt, 0)),
+        QDir::fromNativeSeparators(
+            QString::fromStdString(IONs::pathToUtf8(pyr0))));
+
+    EXPECT_EQ(
+        QDir::fromNativeSeparators(
+            FrontendUtils::findPyramidPathForSource(pathTiffQt, 1)),
+        QDir::fromNativeSeparators(
+            QString::fromStdString(IONs::pathToUtf8(pyr1))));
 
     // 2. Sans tileIndex (-1) quand 2 pyramides partagent le même radical : pas d'assignation au hasard !
     EXPECT_TRUE(FrontendUtils::findPyramidPathForSource(pathTifQt, -1).isEmpty());
