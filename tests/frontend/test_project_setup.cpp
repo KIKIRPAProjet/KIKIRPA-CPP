@@ -316,6 +316,5 @@ TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
   known.seamStep = "dynamic-programming-dijkstra";
   EXPECT_EQ(FrontendNs::validatedChoices(known), known);
 }
-}
 
 } // namespace

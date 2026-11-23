@@ -82,12 +82,30 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
     setMouseTracking(true);
     mosaicRequestTimer = new QTimer(this);
     mosaicRequestTimer->setSingleShot(true);
-    mosaicRequestTimer->setInterval(35);
+    mosaicRequestTimer->setInterval(75);
     connect(mosaicRequestTimer, &QTimer::timeout,
             this, &ArtworkCanvas::startMosaicRegionRead);
     const auto defaultPairs = FrontendUtils::defaultPairAlignments();
     if (!defaultPairs.isEmpty()) {
         currentPair = defaultPairs.first();
+    }
+}
+
+void ArtworkCanvas::setMode(int mode)
+{
+    if (modeValue != mode) {
+        modeValue = mode;
+        generalPanOffset = {0.0, 0.0};
+        if (modeValue == kModeExport) {
+            if (!mosaicTiffPath.isEmpty()) {
+                updateZoom(mosaicScale * 100.0, true);
+            } else {
+                updateZoom(generalZoomPercent, true);
+            }
+        } else {
+            updateZoom(generalZoomPercent, true);
+        }
+        update();
     }
 }
 
@@ -187,38 +205,39 @@ void ArtworkCanvas::updateZoom(double zoom, bool notify)
 void ArtworkCanvas::setZoom(double zoom)
 {
     const double boundedZoom = std::clamp(zoom, kMinimumFitZoom, kMaximumZoom);
-    if (mosaicTiffPath.isEmpty()) {
-        mosaicScale = boundedZoom / 100.0;
-        updateZoom(boundedZoom, true);
-        update();
-        return;
+    if (modeValue == kModeExport && !mosaicTiffPath.isEmpty()) {
+        applyMosaicZoom(boundedZoom, QRectF(rect()).center());
+    } else {
+        applyGeneralZoom(boundedZoom, QRectF(rect()).center());
     }
-    applyMosaicZoom(boundedZoom, QRectF(rect()).center());
 }
 
 void ArtworkCanvas::fitMosaicToView()
 {
-    if (mosaicTiffPath.isEmpty() || mosaicSize.isEmpty()) {
-        updateZoom(100.0, true);
-        mosaicScale = 1.0;
+    if (modeValue == kModeExport && !mosaicTiffPath.isEmpty() && !mosaicSize.isEmpty()) {
+        const QSize contentSize = size();
+        const double scale = qMin(
+            static_cast<double>(contentSize.width()) / mosaicSize.width(),
+            static_cast<double>(contentSize.height()) / mosaicSize.height());
+        mosaicScale = std::clamp(scale, kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
+        updateZoom(mosaicScale * 100.0, true);
+        mosaicOrigin = {};
+        requestMosaicRegion();
         update();
         return;
     }
 
-    const QSize contentSize = size();
-    const double scale = qMin(
-        static_cast<double>(contentSize.width()) / mosaicSize.width(),
-        static_cast<double>(contentSize.height()) / mosaicSize.height());
-    mosaicScale = std::clamp(scale, kMinimumFitZoom / 100.0, kMaximumZoom / 100.0);
-    updateZoom(mosaicScale * 100.0, true);
-    mosaicOrigin = {};
-    requestMosaicRegion();
+    generalPanOffset = QPointF(0.0, 0.0);
+    generalZoomPercent = 100.0;
+    updateZoom(100.0, true);
     update();
 }
 
 void ArtworkCanvas::zoomIn()
 {
-    const double currentZoom = zoomPercent;
+    const double currentZoom = (modeValue == kModeExport && !mosaicTiffPath.isEmpty())
+        ? mosaicScale * 100.0
+        : generalZoomPercent;
     double newZoom = 0.0;
     if (currentZoom < kZoomThreshold) {
         newZoom = currentZoom * kZoomFactor;
@@ -232,7 +251,9 @@ void ArtworkCanvas::zoomIn()
 
 void ArtworkCanvas::zoomOut()
 {
-    const double currentZoom = zoomPercent;
+    const double currentZoom = (modeValue == kModeExport && !mosaicTiffPath.isEmpty())
+        ? mosaicScale * 100.0
+        : generalZoomPercent;
     double newZoom = 0.0;
     if (currentZoom > kZoomThreshold) {
         newZoom = currentZoom - kZoomStep;
@@ -242,6 +263,21 @@ void ArtworkCanvas::zoomOut()
         newZoom = currentZoom / kZoomFactor;
     }
     setZoom(std::max(kMinimumFitZoom, newZoom));
+}
+
+void ArtworkCanvas::applyGeneralZoom(double newZoom, const QPointF &anchor)
+{
+    const double boundedZoom = std::clamp(newZoom, 10.0, kMaximumZoom);
+    const double oldScale = generalZoomPercent / 100.0;
+    const double newScale = boundedZoom / 100.0;
+    if (std::abs(oldScale) > 1e-6) {
+        const QPointF center = QRectF(rect()).center();
+        const double k = newScale / oldScale;
+        generalPanOffset = (anchor - center) - k * (anchor - center - generalPanOffset);
+    }
+    generalZoomPercent = boundedZoom;
+    updateZoom(boundedZoom, true);
+    update();
 }
 
 QRectF ArtworkCanvas::mosaicImageRect() const
@@ -430,6 +466,18 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
             return;
         }
     }
+
+    const bool isGeneralPan = (event->button() == Qt::LeftButton && modeValue != kModeGrid) ||
+                              (event->button() == Qt::RightButton) ||
+                              (event->button() == Qt::MiddleButton);
+    if (isGeneralPan) {
+        panningGeneral = true;
+        lastPanPosition = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
+
     QWidget::mousePressEvent(event);
 }
 
@@ -446,6 +494,16 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+
+    if (panningGeneral) {
+        const QPoint delta = event->pos() - lastPanPosition;
+        lastPanPosition = event->pos();
+        generalPanOffset += delta;
+        update();
+        event->accept();
+        return;
+    }
+
     QWidget::mouseMoveEvent(event);
 }
 
@@ -453,6 +511,15 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
     if (panningMosaic && event->button() == Qt::LeftButton) {
         panningMosaic = false;
+        unsetCursor();
+        event->accept();
+        return;
+    }
+
+    if (panningGeneral && (event->button() == Qt::LeftButton ||
+                           event->button() == Qt::RightButton ||
+                           event->button() == Qt::MiddleButton)) {
+        panningGeneral = false;
         unsetCursor();
         event->accept();
         return;
@@ -482,20 +549,32 @@ void ArtworkCanvas::resizeEvent(QResizeEvent *event)
 
 void ArtworkCanvas::wheelEvent(QWheelEvent *event)
 {
-    if (modeValue != kModeExport || mosaicTiffPath.isEmpty()) {
-        QWidget::wheelEvent(event);
-        return;
-    }
-
     const double factor = event->angleDelta().y() > 0 ? 1.2 : 1.0 / 1.2;
-    applyMosaicZoom(mosaicScale * 100.0 * factor, event->position());
+    if (modeValue == kModeExport && !mosaicTiffPath.isEmpty()) {
+        applyMosaicZoom(mosaicScale * 100.0 * factor, event->position());
+    } else {
+        applyGeneralZoom(generalZoomPercent * factor, event->position());
+    }
     event->accept();
+}
+
+QPoint ArtworkCanvas::mapToScene(const QPoint &pos) const
+{
+    if (modeValue == kModeExport && !mosaicTiffPath.isEmpty())
+        return pos;
+    const double scale = generalZoomPercent / 100.0;
+    if (std::abs(scale) < 1e-6)
+        return pos;
+    const QPointF center = QRectF(rect()).center();
+    const QPointF pt = center + (QPointF(pos) - center - generalPanOffset) / scale;
+    return pt.toPoint();
 }
 
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
 {
+    const QPoint scenePoint = mapToScene(point);
     for (int index = 0; index < gridCellRects.size(); ++index)
-        if (gridCellRects.at(index).contains(point))
+        if (gridCellRects.at(index).contains(scenePoint))
             return index;
     return -1;
 }
@@ -507,22 +586,6 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#484848"));
-
-    if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
-        const QRect target = rect().adjusted(24, 24, -24, -24);
-        // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
-        // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
-        const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
-                             target.top() + (target.height() - fitted.height()) / 2);
-        p.drawImage(topLeft, fitted);
-
-        // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
-        p.setPen(QColor("#dddddd"));
-        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
-                   FrontendUtils::formatZoom(zoomPercent));
-        return; // On arrête de dessiner ici
-    }
 
     if (modeValue == kModeExport && !mosaicTiffPath.isEmpty()) {
         const QRectF imageRect = mosaicImageRect();
@@ -554,13 +617,26 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    if (modeValue == kModeGrid) {
-        drawGrid(p);
-        return;
-    }
+    p.save();
+    p.setClipRect(rect());
+    const QPointF center = QRectF(rect()).center();
+    p.translate(center + generalPanOffset);
+    const double scale = generalZoomPercent / 100.0;
+    p.scale(scale, scale);
+    p.translate(-center);
 
-    const bool pair = modeValue == kModePair;
-    const int gutter = pair ? kPairGutter : 0;
+    if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
+        const QRect target = rect().adjusted(24, 24, -24, -24);
+        // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
+        const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
+                             target.top() + (target.height() - fitted.height()) / 2);
+        p.drawImage(topLeft, fitted);
+    } else if (modeValue == kModeGrid) {
+        drawGrid(p);
+    } else {
+        const bool pair = modeValue == kModePair;
+        const int gutter = pair ? kPairGutter : 0;
     const int maxW = pair ? (width() - 90) / 2 : width() - 130;
     const int maxH = height() - 80;
     const double aspect = pair ? kPairAspect : kSingleAspect;
@@ -742,6 +818,9 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                                 QString::number(currentPair.optimizationErrorPx, 'f', 2).replace('.', ',')));
         }
     }
+    }
+
+    p.restore();
 
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,

@@ -35,7 +35,7 @@ public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
     ~ArtworkCanvas() override;
 
-    void setMode(int mode) { modeValue = mode; update(); }
+    void setMode(int mode);
     void setZoom(double zoom);
     double zoomPercentValue() const { return zoomPercent; }
     void fitMosaicToView();
@@ -83,9 +83,11 @@ private:
                    int rotation = 0, bool flipped = false);
 
     int gridCellAt(const QPoint &point) const;
+    QPoint mapToScene(const QPoint &pos) const;
     QRectF mosaicImageRect() const;
     QPointF clampedMosaicOrigin(const QPointF &origin, double scale) const;
     void applyMosaicZoom(double zoomPercent, const QPointF &anchor);
+    void applyGeneralZoom(double newZoom, const QPointF &anchor);
     void requestMosaicRegion();
     void startMosaicRegionRead();
     void acceptMosaicRegion(quint64 requestId, const MosaicRegionResult &result);
@@ -94,6 +96,9 @@ private:
     int modeValue = 4;
     double zoomPercent = 12.0;
     double mosaicScale = 0.12;
+    double generalZoomPercent = 100.0;
+    QPointF generalPanOffset{0.0, 0.0};
+    bool panningGeneral = false;
     QStringList imagePaths;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
