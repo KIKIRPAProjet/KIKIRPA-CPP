@@ -453,6 +453,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    // Un calcul en pause appartient au projet précédent : l'annuler avant de changer de contexte.
+    if (pipelineRunner->isPaused())
+        pipelineRunner->cancelRun();
+
     mosaicFilePath.clear();
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
@@ -483,6 +487,9 @@ void MainWindow::applyLoadedProject(const QString &path)
         updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
         return;
     }
+    // Un calcul en pause appartient au projet précédent : l'annuler avant de changer de contexte.
+    if (pipelineRunner->isPaused())
+        pipelineRunner->cancelRun();
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
@@ -839,6 +846,20 @@ void MainWindow::requestResume()
         updateStatus(tr("Aucun pipeline en pause à reprendre."));
         return;
     }
+    // Reconstruire le script depuis l'état actuel de l'interface afin de prendre en compte
+    // tout changement de paramètre survenu pendant la pause. Les checkpoints existants
+    // détermineront automatiquement ce qui doit être recalculé ou ignoré.
+    QString scriptJson;
+    try {
+        scriptJson = generatePipelineScript(1);
+    } catch (const std::exception &exception) {
+        QMessageBox::critical(this, tr("Erreur de configuration"),
+            tr("Impossible de reprendre : pipeline invalide : %1").arg(exception.what()));
+        return;
+    }
+    if (scriptJson.isEmpty()) return;
+    pipelineRunner->setScriptJson(scriptJson);
+    pipelineRunner->setStartFromStepName(QString());
     pipelineRunner->resumeRun();
 }
 

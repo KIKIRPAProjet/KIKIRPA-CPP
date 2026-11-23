@@ -123,7 +123,7 @@ void TopToolbars::handleRunButtonClicked()
     if (m_pipelineRunner->isRunning()) {
         m_pipelineRunner->pauseRun();
     } else if (m_pipelineRunner->isPaused()) {
-        m_pipelineRunner->resumeRun();
+        m_mainWindow->requestResume();
     } else {
         m_mainWindow->requestRun(1);
     }
