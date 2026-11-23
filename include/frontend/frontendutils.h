@@ -15,6 +15,7 @@
 #include <cstdint>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -66,14 +67,14 @@ struct PairAlignmentInfo {
     PairStatus status = PairStatus::Reliable;
     QString statusReason;
     double meanConfidence = 0.0;
-    double nccScore = 0.0;
+    std::optional<double> nccScore;   // vide : non mesuré (SIFT, LightGlue, step repris d'un checkpoint)
     double dx = 0.0;
     double dy = 0.0;
     int inlierCount = 0;
     int totalMatches = 0;
     int shownInliers = 0;
     int shownOutliers = 0;
-    double optimizationErrorPx = 0.0;
+    std::optional<double> optimizationErrorPx;   // écart après positionnement ; vide : non calculé
     QString intervention;
 
     // Données calculées par le backend (vide tant qu'aucun calcul n'a été fait) : images, tailles pleine résolution et
@@ -106,8 +107,11 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
                                       const QString &tileBName,
                                       const DataNs::PairMatches &pairMatches,
                                       const DataNs::Alignment *alignment = nullptr,
-                                      double nccScore = 1.0,
-                                      double optimizationErrorPx = 0.0);
+                                      std::optional<double> nccScore = std::nullopt,
+                                      std::optional<double> optimizationErrorPx = std::nullopt);
+
+// Valeur mesurée avec `decimals` décimales (virgule) suivie de `suffix`, ou « non disponible ».
+QString formatMeasure(const std::optional<double> &value, int decimals, const QString &suffix = QString());
 
 }
 

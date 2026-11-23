@@ -25,7 +25,9 @@
 #include <QJsonParseError>
 #include <QSaveFile>
 
+#include <array>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -52,6 +54,54 @@ bool readResumeData(const QJsonObject &project, ProjectData &loaded, QString *er
     return true;
 }
 
+QJsonArray pointsToJson(const std::vector<std::array<double, 2>> &points)
+{
+    QJsonArray json;
+    for (const auto &point : points) json.append(QJsonArray{point[0], point[1]});
+    return json;
+}
+
+// Points [[x, y], ...] ; un point mal formé est ignoré.
+std::vector<std::array<double, 2>> pointsFromJson(const QJsonArray &json)
+{
+    std::vector<std::array<double, 2>> points;
+    for (const QJsonValue &value : json) {
+        const QJsonArray point = value.toArray();
+        if (point.size() == 2 && point.at(0).isDouble() && point.at(1).isDouble())
+            points.push_back({point.at(0).toDouble(), point.at(1).toDouble()});
+    }
+    return points;
+}
+
+QJsonArray correctionsToJson(const std::vector<FrontendNs::ManualCorrection> &corrections)
+{
+    QJsonArray json;
+    for (const FrontendNs::ManualCorrection &correction : corrections) {
+        json.append(QJsonObject{{QStringLiteral("tileIdA"), correction.tileIdA},
+                                {QStringLiteral("tileIdB"), correction.tileIdB},
+                                {QStringLiteral("pointsInA"), pointsToJson(correction.pointsInA)},
+                                {QStringLiteral("pointsInB"), pointsToJson(correction.pointsInB)}});
+    }
+    return json;
+}
+
+// Une correction sans point, ou aux listes de tailles différentes, est ignorée : manual-matches la refuserait.
+std::vector<FrontendNs::ManualCorrection> correctionsFromJson(const QJsonArray &json)
+{
+    std::vector<FrontendNs::ManualCorrection> corrections;
+    for (const QJsonValue &value : json) {
+        const QJsonObject object = value.toObject();
+        FrontendNs::ManualCorrection correction{object.value(QStringLiteral("tileIdA")).toInt(-1),
+                                                object.value(QStringLiteral("tileIdB")).toInt(-1),
+                                                pointsFromJson(object.value(QStringLiteral("pointsInA")).toArray()),
+                                                pointsFromJson(object.value(QStringLiteral("pointsInB")).toArray())};
+        const bool valid = correction.tileIdA >= 0 && correction.tileIdB >= 0 && !correction.pointsInA.empty() &&
+                           correction.pointsInA.size() == correction.pointsInB.size();
+        if (valid) corrections.push_back(std::move(correction));
+    }
+    return corrections;
+}
+
 // Méthodes de l'onglet Chaîne, enregistrées dans l'objet "pipeline" du projet.
 QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
 {
@@ -60,6 +110,7 @@ QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
     json.insert(QStringLiteral("matchingStep"), QString::fromStdString(choices.matchingStep));
     json.insert(QStringLiteral("intensityMethod"), QString::fromStdString(choices.intensityMethod));
     json.insert(QStringLiteral("seamStep"), QString::fromStdString(choices.seamStep));
+    json.insert(QStringLiteral("manualCorrections"), correctionsToJson(choices.manualCorrections));
     return json;
 }
 
@@ -74,6 +125,7 @@ FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
     choices.matchingStep = text("matchingStep", choices.matchingStep);
     choices.intensityMethod = text("intensityMethod", choices.intensityMethod);
     choices.seamStep = text("seamStep", choices.seamStep);
+    choices.manualCorrections = correctionsFromJson(json.value(QStringLiteral("manualCorrections")).toArray());
     return FrontendNs::validatedChoices(choices);
 }
 

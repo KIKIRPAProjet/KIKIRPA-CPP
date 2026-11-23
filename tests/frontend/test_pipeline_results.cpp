@@ -71,7 +71,63 @@ TEST(PipelineResultsTest, ReliablePairCarriesPointsSizesAndResidual) {
     EXPECT_EQ(pair.tileSizeA, QSize(TILE_WIDTH, TILE_HEIGHT));
     EXPECT_EQ(pair.imagePathB, QStringLiteral("photo_1.tif"));
     EXPECT_DOUBLE_EQ(pair.dx, SHIFT_X);
-    EXPECT_DOUBLE_EQ(pair.optimizationErrorPx, RESIDUAL);
+    ASSERT_TRUE(pair.optimizationErrorPx.has_value());
+    EXPECT_DOUBLE_EQ(*pair.optimizationErrorPx, RESIDUAL);
+    ASSERT_TRUE(pair.nccScore.has_value());
+    EXPECT_DOUBLE_EQ(*pair.nccScore, 0.9);
+}
+
+// Sans verdict ni résidu (SIFT, LightGlue, reprise) : NCC et écart restent « non mesurés », pas 1,00 et 0,00 px.
+TEST(PipelineResultsTest, MissingNccAndResidualStayUnmeasured) {
+    const auto pairs = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, POINT_COUNT)}, {}, {});
+    ASSERT_EQ(pairs.size(), 1);
+    EXPECT_FALSE(pairs.at(0).nccScore.has_value());
+    EXPECT_FALSE(pairs.at(0).optimizationErrorPx.has_value());
+    EXPECT_EQ(FrontendUtils::formatMeasure(pairs.at(0).optimizationErrorPx, 2, QStringLiteral(" px")),
+              QObject::tr("non disponible"));
+}
+
+// Toutes les paires échouent : pas de `matches`, mais les raisons d'échec des steps donnent toutes les paires.
+TEST(PipelineResultsTest, AllPairsFailedWithoutMatchesAreStillListed) {
+    const nlohmann::json result = {{"failures", {{{"idA", 0}, {"idB", 1}, {"reason", "ambiguous correlation peak"}},
+                                                 {{"idA", 0}, {"idB", 2}, {"reason", "tiles have different sizes"}}}}};
+    const auto pairs = FrontendNs::buildPairInfos(makeTiles(), {}, {result}, {});
+    ASSERT_EQ(pairs.size(), 2);
+    EXPECT_EQ(pairs.at(0).status, PairStatus::Failed);
+    EXPECT_EQ(pairs.at(1).status, PairStatus::Failed);
+    EXPECT_TRUE(pairs.at(0).statusReason.contains(QStringLiteral("ambiguous")));
+}
+
+// Une paire corrigée par manual-matches est validée, même si l'appariement l'avait jugée ambiguë.
+TEST(PipelineResultsTest, ManuallyCorrectedPairIsValidated) {
+    const nlohmann::json manualResult = {{"correctedPairs", {{{"idA", 0}, {"idB", 1}, {"added", false}}}}};
+    const auto pairs = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, 1)},
+                                                  {phaseCorrelationResult("ambigu"), manualResult}, {});
+    EXPECT_EQ(pairs.at(0).status, PairStatus::Validated);
+}
+
+// Le point de la correction tombe au centre de la zone commune, et sa différence redonne le décalage saisi.
+TEST(PipelineResultsTest, ManualCorrectionReproducesTheOffset) {
+    const auto pairs = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, POINT_COUNT)}, {}, {});
+    const FrontendNs::ManualCorrection correction = FrontendNs::manualCorrectionFor(pairs.at(0), 330.0, -6.0);
+    EXPECT_EQ(correction.tileIdA, 0);
+    EXPECT_EQ(correction.tileIdB, 1);
+    ASSERT_EQ(correction.pointsInA.size(), 1U);
+    ASSERT_EQ(correction.pointsInB.size(), 1U);
+    EXPECT_DOUBLE_EQ(correction.pointsInA[0][0] - correction.pointsInB[0][0], 330.0);
+    EXPECT_DOUBLE_EQ(correction.pointsInA[0][1] - correction.pointsInB[0][1], -6.0);
+    EXPECT_DOUBLE_EQ(correction.pointsInA[0][0], (330.0 + TILE_WIDTH) / 2.0);   // milieu de x = 330..400
+}
+
+// Une nouvelle correction remplace celle de la même paire, saisie dans un sens ou dans l'autre.
+TEST(PipelineResultsTest, NewCorrectionReplacesTheSamePair) {
+    const FrontendNs::ManualCorrection first{0, 1, {{1.0, 1.0}}, {{0.0, 0.0}}};
+    const FrontendNs::ManualCorrection other{0, 2, {{1.0, 1.0}}, {{0.0, 0.0}}};
+    const FrontendNs::ManualCorrection reversed{1, 0, {{5.0, 5.0}}, {{0.0, 0.0}}};
+    const auto corrections = FrontendNs::withCorrection({first, other}, reversed);
+    ASSERT_EQ(corrections.size(), 2U);
+    EXPECT_EQ(corrections.at(0), other);
+    EXPECT_EQ(corrections.at(1), reversed);
 }
 
 // Une paire citée dans `failures` mais absente de `matches` apparaît en échec, avec la raison du backend.
@@ -136,10 +192,12 @@ TEST(PipelineResultsTest, OverlapEstimateIsAttachedToItsPair) {
     estimate.tileIdB = 2;
     estimate.commonAreaInA = cv::Rect(0, 240, TILE_WIDTH, 60);
     estimate.commonAreaInB = cv::Rect(0, 0, TILE_WIDTH, 60);
+    estimate.estimate.translationBInA = cv::Point2d(0.0, 240.0);
     FrontendNs::attachOverlapEstimates(pairs, {estimate});
     EXPECT_TRUE(pairs.at(0).overlapInA.isNull());
     EXPECT_EQ(pairs.at(1).overlapInA, QRect(0, 240, TILE_WIDTH, 60));
     EXPECT_EQ(pairs.at(1).overlapInB, QRect(0, 0, TILE_WIDTH, 60));
+    EXPECT_DOUBLE_EQ(pairs.at(1).dy, 240.0) << "point de départ de la correction manuelle d'une paire en échec";
 }
 
 TEST(PipelineResultsTest, NoTerritoryGivesNoOverlay) {

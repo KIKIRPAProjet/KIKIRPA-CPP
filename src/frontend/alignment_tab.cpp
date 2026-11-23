@@ -275,7 +275,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     m_confidenceValueLabel->setText(
         tr("%1 · NCC %2")
             .arg(QString::number(pair.meanConfidence, 'f', 2).replace('.', ','),
-                 QString::number(pair.nccScore, 'f', 2).replace('.', ',')));
+                 FrontendUtils::formatMeasure(pair.nccScore, 2)));
 
     m_offsetValueLabel->setText(
         tr("%1 ; %2 px")
@@ -288,8 +288,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
             .arg(pair.shownInliers)
             .arg(pair.shownOutliers));
 
-    m_errorValueLabel->setText(
-        tr("%1 px").arg(QString::number(pair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+    m_errorValueLabel->setText(FrontendUtils::formatMeasure(pair.optimizationErrorPx, 2, QStringLiteral(" px")));
     m_interventionValueLabel->setText(pair.intervention);
 }
 

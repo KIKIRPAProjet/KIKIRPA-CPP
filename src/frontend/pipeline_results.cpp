@@ -10,12 +10,17 @@
 #include <QColor>
 #include <QFileInfo>
 #include <QObject>
+#include <QPointF>
+#include <QRectF>
+#include <QSizeF>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,6 +45,7 @@ namespace FrontendNs {
         struct StepFindings {
             std::map<PairKey, PairVerdict> verdicts;
             std::map<PairKey, std::string> failureReasons;
+            std::set<PairKey> correctedPairs;   // corrigées à la main (manual-matches)
         };
 
         PairKey pairKey(const nlohmann::json &entry) { return {entry.at("idA").get<int>(), entry.at("idB").get<int>()}; }
@@ -69,12 +75,19 @@ namespace FrontendNs {
             }
         }
 
+        void readCorrectedPairs(const nlohmann::json &result, StepFindings &findings) {
+            if (!result.contains("correctedPairs") || !result.at("correctedPairs").is_array()) return;
+            for (const nlohmann::json &entry : result.at("correctedPairs"))
+                if (hasPairIds(entry)) findings.correctedPairs.insert(pairKey(entry));
+        }
+
         StepFindings readStepFindings(const std::vector<nlohmann::json> &stepResults) {
             StepFindings findings;
             for (const nlohmann::json &result : stepResults) {
                 if (!result.is_object()) continue;
                 readVerdicts(result, findings);
                 readFailures(result, findings);
+                readCorrectedPairs(result, findings);
             }
             return findings;
         }
@@ -124,12 +137,14 @@ namespace FrontendNs {
             info.statusReason = QObject::tr("peu de points (%1) : à vérifier").arg(info.totalMatches);
         }
 
+        // NCC ou écart absents (SIFT, LightGlue, reprise) : laissés vides, affichés « non disponible ».
         PairAlignmentInfo matchedPair(int index, const DataNs::PairMatches &pairMatches, const DataNs::TileList &tiles,
-                                      const StepFindings &findings, double residualNorm) {
+                                      const StepFindings &findings, std::optional<double> residualNorm) {
             const DataNs::TileClass *tileA = findTile(tiles, pairMatches.tileIdA);
             const DataNs::TileClass *tileB = findTile(tiles, pairMatches.tileIdB);
             const auto verdict = findings.verdicts.find({pairMatches.tileIdA, pairMatches.tileIdB});
-            const double ncc = verdict != findings.verdicts.end() && verdict->second.ncc >= 0.0 ? verdict->second.ncc : 1.0;
+            std::optional<double> ncc;
+            if (verdict != findings.verdicts.end() && verdict->second.ncc >= 0.0) ncc = verdict->second.ncc;
             PairAlignmentInfo info = FrontendUtils::pairInfoFromBackend(
                 index, tileName(tileA, pairMatches.tileIdA), tileName(tileB, pairMatches.tileIdB), pairMatches, nullptr,
                 ncc, residualNorm);
@@ -138,6 +153,12 @@ namespace FrontendNs {
             attachTiles(info, tileA, tileB);
             if (verdict != findings.verdicts.end()) applyVerdict(info, verdict->second);
             else softenWithoutVerdict(info);
+            // Le verdict de l'appariement porte sur les points remplacés : la correction de l'opérateur prime.
+            if (findings.correctedPairs.count({pairMatches.tileIdA, pairMatches.tileIdB}) != 0) {
+                info.status = PairStatus::Validated;
+                info.statusReason = QObject::tr("corrigée à la main");
+                info.intervention = QObject::tr("manuelle (%1 point(s))").arg(info.totalMatches);
+            }
             return info;
         }
 
@@ -220,7 +241,7 @@ namespace FrontendNs {
         for (const DataNs::PairMatches &pairMatches : matches) {
             const auto norm = norms.find({pairMatches.tileIdA, pairMatches.tileIdB});
             pairs.append(matchedPair(static_cast<int>(pairs.size()), pairMatches, tiles, findings,
-                                     norm != norms.end() ? norm->second : 0.0));
+                                     norm != norms.end() ? std::optional<double>(norm->second) : std::nullopt));
         }
         for (const auto &[key, reason] : findings.failureReasons) {
             const bool alreadyListed = std::any_of(pairs.begin(), pairs.end(), [&key = key](const PairAlignmentInfo &pair) {
@@ -238,8 +259,30 @@ namespace FrontendNs {
                 if (estimate.tileIdA != pair.tileIndexA || estimate.tileIdB != pair.tileIndexB) continue;
                 pair.overlapInA = toQRect(estimate.commonAreaInA);
                 pair.overlapInB = toQRect(estimate.commonAreaInB);
+                if (pair.totalMatches == 0) {
+                    pair.dx = estimate.estimate.translationBInA.x;
+                    pair.dy = estimate.estimate.translationBInA.y;
+                }
             }
         }
+    }
+
+    ManualCorrection manualCorrectionFor(const PairAlignmentInfo &pair, double dx, double dy) {
+        const QPointF offset(dx, dy);
+        const QRectF common = QRectF(QPointF(0, 0), QSizeF(pair.tileSizeA)) & QRectF(offset, QSizeF(pair.tileSizeB));
+        const QPointF pointInA = common.isEmpty() ? offset : common.center();
+        const QPointF pointInB = pointInA - offset;
+        return {pair.tileIndexA, pair.tileIndexB, {{pointInA.x(), pointInA.y()}}, {{pointInB.x(), pointInB.y()}}};
+    }
+
+    std::vector<ManualCorrection> withCorrection(std::vector<ManualCorrection> corrections, const ManualCorrection &correction) {
+        const auto samePair = [&correction](const ManualCorrection &existing) {
+            return (existing.tileIdA == correction.tileIdA && existing.tileIdB == correction.tileIdB) ||
+                   (existing.tileIdA == correction.tileIdB && existing.tileIdB == correction.tileIdA);
+        };
+        corrections.erase(std::remove_if(corrections.begin(), corrections.end(), samePair), corrections.end());
+        corrections.push_back(correction);
+        return corrections;
     }
 
     QImage buildSeamOverlay(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,

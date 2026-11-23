@@ -27,6 +27,7 @@
 #include "project_serializer.h"
 #include "project_setup_model.h"
 #include "projectgrid.h"
+#include "pipeline_results.h"
 #include "pipeline_runner.h"
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
@@ -60,6 +61,7 @@
 #include <QtMath>
 #include <QProgressDialog>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <stdexcept>
@@ -366,6 +368,8 @@ void MainWindow::validatePair(int pairIndex)
 }
 
 //met à jours les variables après modification manuelle
+// La correction devient une donnée du projet : le step manual-matches remplace les points de la paire, puis le calcul
+// repart de ce step (l'import et l'appariement sont repris de leurs checkpoints).
 void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
 {
     if (pairIndex < 0 || pairIndex >= m_pairs.size())
@@ -377,6 +381,18 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
                             .arg(QString::number(dx, 'f', 1).replace('.', ','),
                                  QString::number(dy, 'f', 1).replace('.', ','));
     refreshPairViews();
+
+    FrontendNs::PipelineChoices choices = projectGrid->state().pipelineChoices;
+    choices.manualCorrections =
+        FrontendNs::withCorrection(choices.manualCorrections, FrontendNs::manualCorrectionFor(pair, dx, dy));
+    projectGrid->setPipelineChoices(choices);
+    const auto steps = FrontendUtils::pipelineSteps(choices);
+    const auto manualStep = std::find_if(steps.begin(), steps.end(), [](const FrontendUtils::PipelineStepInfo &step) {
+        return step.technicalName == "manual-matches";
+    });
+    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pair.pairLabel()));
+    if (manualStep != steps.end())
+        requestRun(static_cast<int>(manualStep - steps.begin()) + 1);
 }
 
 //comptage du nombre de paire douteuse et en échec, mise à jour des tables 

@@ -50,6 +50,7 @@ static QString stepDisplayName(const std::string &technicalName)
     if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
     if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
     if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
+    if (technicalName == "manual-matches") return QObject::tr("Corrections manuelles");
     if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
     if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
     if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
@@ -116,8 +117,8 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
                                       const QString &tileBName,
                                       const DataNs::PairMatches &pairMatches,
                                       const DataNs::Alignment *alignment,
-                                      double nccScore,
-                                      double optimizationErrorPx)
+                                      std::optional<double> nccScore,
+                                      std::optional<double> optimizationErrorPx)
 {
     PairAlignmentInfo info;
     info.pairIndex = pairIndex;
@@ -163,10 +164,9 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
     if (info.totalMatches == 0 || info.inlierCount < 4) {
         info.status = PairStatus::Failed;
         info.statusReason = QObject::tr("nombre de points insuffisant (%1)").arg(info.inlierCount);
-    } else if (info.nccScore < 0.50) {
+    } else if (info.nccScore && *info.nccScore < 0.50) {
         info.status = PairStatus::Dubious;
-        info.statusReason = QObject::tr("contrôle NCC faible (%1)")
-                                .arg(QString::number(info.nccScore, 'f', 2).replace('.', ','));
+        info.statusReason = QObject::tr("contrôle NCC faible (%1)").arg(formatMeasure(info.nccScore, 2));
     } else if (info.meanConfidence < 0.75) {
         info.status = PairStatus::Dubious;
         info.statusReason = QObject::tr("score de confiance faible (%1)")
@@ -176,6 +176,12 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
         info.statusReason = QObject::tr("corrélation et géométrie cohérentes");
     }
     return info;
+}
+
+QString formatMeasure(const std::optional<double> &value, int decimals, const QString &suffix)
+{
+    if (!value) return QObject::tr("non disponible");
+    return QString::number(*value, 'f', decimals).replace('.', ',') + suffix;
 }
 
 QImage matToQImage(const cv::Mat &mat)
