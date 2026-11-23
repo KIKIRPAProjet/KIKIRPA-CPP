@@ -200,7 +200,7 @@ void PipelineRunnerClass::toggleComparison() {
     comparisonVisible = !comparisonVisible;
     emit comparisonVisibilityChanged(comparisonVisible);
     emit statusChanged(comparisonVisible
-        ? tr("Comparaison affichée — curseur de séparation actif.")
+        ? tr("Comparaison affichée : curseur de séparation actif.")
         : tr("Comparaison côte à côte affichée."));
 }
 
