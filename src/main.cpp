@@ -7,6 +7,7 @@
 
 #include <QtCore/QString>
 #include <QtCore/qtimer.h>
+#include <QtGui/QIcon>
 #include <QtWidgets/QApplication>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -270,6 +271,8 @@ namespace {
         QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
         QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
         QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
+        // Icône de toutes les fenêtres (barre de titre, barre des tâches, Alt+Tab) ; resources/resources.qrc.
+        QApplication::setWindowIcon(QIcon(QStringLiteral(":/logo/logo.png"))); // NOLINT(misc-include-cleaner)
 
         MainWindow window;
         window.show();

@@ -102,7 +102,7 @@ void GridTab::createReferenceActions(QVBoxLayout *layout)
 
     m_importReferenceButton = FrontendUtils::makeButton(tr("Importer une image de référence…"), m_gridTabPage);
     m_compareReferenceButton = FrontendUtils::makeButton(tr("Comparer à l'image de référence"), m_gridTabPage);
-    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille ✓"), m_gridTabPage, true);
+    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille"), m_gridTabPage, true);
 
     layout->addWidget(m_importReferenceButton);
     layout->addWidget(m_compareReferenceButton);

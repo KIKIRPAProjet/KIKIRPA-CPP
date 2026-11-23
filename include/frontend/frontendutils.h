@@ -87,6 +87,10 @@ struct PairAlignmentInfo {
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false);
 QLabel *mutedLabel(const QString &text, QWidget *parent);
+// Logo du projet dans un carré de sideInPixels pixels logiques, net sur écran haute densité.
+// resourcePath : ":/logo/logo.png" (avec fond, en-têtes) ou ":/logo/logo_home.png" (gris sans fond, accueil).
+// Sans la ressource (cible qui n'embarque pas resources.qrc, comme les tests), le label est vide et caché.
+QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath = QStringLiteral(":/logo/logo.png"));
 
 QVector<PairAlignmentInfo> defaultPairAlignments();
 

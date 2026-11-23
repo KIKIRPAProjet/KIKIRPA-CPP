@@ -132,7 +132,7 @@ CLion lit les presets du projet. Il fournit CMake et Ninja, et trouve MSVC tout 
 2. Ouvrez le dossier du dépôt.
 3. *Settings → Build, Execution, Deployment → Toolchains* : choisissez **Visual Studio**, pas MinGW.
 4. *CMake → Profiles* : activez le preset **windows-aqt**, et désactivez le profil `Debug` que CLion crée de lui-même.
-5. En haut à droite, choisissez la cible **stitching**, puis Run (▶). Si Windows signale une DLL de Qt ou d'OpenCV introuvable : *Run → Edit Configurations → stitching → Environment variables*, et ajoutez
+5. En haut à droite, choisissez la cible **stitching**, puis Run. Si Windows signale une DLL de Qt ou d'OpenCV introuvable : *Run → Edit Configurations → stitching → Environment variables*, et ajoutez
    `PATH=C:\Qt\6.10.3\msvc2022_64\bin;C:\opencv\build\x64\vc16\bin;$PATH$`.
 6. Les tests se lancent depuis la cible **All CTest**, ou un par un depuis l'éditeur.
 
