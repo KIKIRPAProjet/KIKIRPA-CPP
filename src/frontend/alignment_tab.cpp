@@ -61,7 +61,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
 
     // En-tête de la paire courante + statut (douteuse / fiable)
     auto *headerRow = new QHBoxLayout;
-    m_pairTitleLabel = new QLabel(tr("Paire r00_c00 → r00_c01"), this);
+    m_pairTitleLabel = new QLabel(tr("Paire r00_c00 / r00_c01"), this);
     m_pairTitleLabel->setStyleSheet(QStringLiteral("font-weight:600; color:#ececec;"));
     m_statusBadgeLabel = new QLabel(tr("douteuse"), this);
     m_statusBadgeLabel->setAlignment(Qt::AlignCenter);
@@ -119,7 +119,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     actionsGrid->addWidget(m_validateButton, 1, 1);
     mainLayout->addLayout(actionsGrid);
 
-    auto *recalcButton = FrontendUtils::makeButton(tr("↻ Recalculer les positions F7"), this, true);
+    auto *recalcButton = FrontendUtils::makeButton(tr("Recalculer les positions F7"), this, true);
     mainLayout->addWidget(recalcButton);
 
     auto *separatorBottom = new QFrame(this);
@@ -283,8 +283,8 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
                  QString::number(pair.dy, 'f', 1).replace('.', ',')));
 
     m_pointsShownValueLabel->setText(
-        QStringLiteral("<span style='color:#4ec978;'>● %1 retenus</span> · "
-                       "<span style='color:#e05a52;'>● %2 rejetés</span>")
+        QStringLiteral("<span style='color:#4ec978;'>- %1 retenus</span> · "
+                       "<span style='color:#e05a52;'>- %2 rejetés</span>")
             .arg(pair.shownInliers)
             .arg(pair.shownOutliers));
 

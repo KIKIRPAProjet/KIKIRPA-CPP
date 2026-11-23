@@ -205,6 +205,7 @@ Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se 
 | `sift` | `overlap`, `verticalOverlap`, `railMargin`, `maxFeatures`, `loweRatio`, `minMatches`… | `tiles` | `matches` : `PairMatches` | [SiftStep.md](steps/SiftStep.md) |
 | `lightglue` | `modelPath`, `minMatches`, `overlap`, `verticalOverlap`, `railMargin` | `tiles` | `matches` : `PairMatches` | [LightGlueStep.md](steps/LightGlueStep.md) |
 | `vote-2d` | `seuil`, `case`, `minMatches`, `minInliers` | `matches` | `matches` : `PairMatches` | [Vote2DStep.md](steps/Vote2DStep.md) |
+| `manual-matches` | `corrections` (points saisis à la main, vide par défaut ; une paire écartée est ajoutée) ; après `vote-2d` | `tiles`, `matches` | `matches` : `PairMatches` | [ManualMatchesStep.md](steps/ManualMatchesStep.md) |
 | `absolute-pos` | `referenceTileId` | `tiles`, `matches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` | [AbsolutePosStep.md](steps/AbsolutePosStep.md) |
 | `intensity-correction` | `method`, seuils, itérations | `tiles`, `matches` | `intensityCorrection` : `IntensityCorrection` | [IntensityCorrectionStep.md](steps/IntensityCorrectionStep.md) |
 | `graphcut` | `scale` (0,25 par défaut depuis #150) | `tiles`, `positions` | `territories` : `Territories` | [GraphCutStep.md](steps/GraphCutStep.md) |

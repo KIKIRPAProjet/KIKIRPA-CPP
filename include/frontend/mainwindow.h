@@ -101,7 +101,7 @@ private:
     PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
-    QString projectName = QStringLiteral("VanDerVeken");
+    QString projectName = QStringLiteral("Polyptik");
     QString projectPath;
     QString outputDirectory;
     bool projectCreated = false;
