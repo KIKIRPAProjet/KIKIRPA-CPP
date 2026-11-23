@@ -38,6 +38,8 @@ void TopToolbars::createToolbar()
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 5, 8, 5);
 
+    toolbarLayout->addWidget(FrontendUtils::logoLabel(22, toolbar));
+    toolbarLayout->addSpacing(6);
     auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
     title->setObjectName(QStringLiteral("workspaceTitle"));
     toolbarLayout->addWidget(title);
@@ -71,12 +73,12 @@ void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
 void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
 {
     // Bouton polymorphe d'exécution du calcul (Lancer / Pause / Reprendre).
-    m_runButton = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
+    m_runButton = FrontendUtils::makeButton(tr("Tout lancer"), stages, true);
     m_runButton->setObjectName(QStringLiteral("runPipelineButton"));
     stageLayout->addWidget(m_runButton);
     connect(m_runButton, &QPushButton::clicked, this, &TopToolbars::handleRunButtonClicked);
 
-    m_stopButton = FrontendUtils::makeButton(tr("⏹ Arrêter"), stages);
+    m_stopButton = FrontendUtils::makeButton(tr("Arrêter"), stages);
     m_stopButton->setObjectName(QStringLiteral("stopPipelineButton"));
     m_stopButton->setVisible(false);
     stageLayout->addWidget(m_stopButton);
@@ -98,12 +100,12 @@ void TopToolbars::createModesBar()
 
     createModeButtons(stages, stageLayout);
 
-    auto *prevPairBtn = FrontendUtils::makeButton(tr("‹ Préc."), stages);
+    auto *prevPairBtn = FrontendUtils::makeButton(tr("Précédente"), stages);
     prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
     stageLayout->addWidget(prevPairBtn);
     connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
 
-    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante N ›"), stages);
+    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante"), stages);
     nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
     stageLayout->addWidget(nextDubiousBtn);
     connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
@@ -140,13 +142,13 @@ void TopToolbars::updateRunButtonState()
 
     // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend (+ afficher / masquer le bouton Stop).
     if (m_pipelineRunner->isRunning()) {
-        m_runButton->setText(tr("⏸ Pause"));
+        m_runButton->setText(tr("Pause"));
         if (m_stopButton) m_stopButton->setVisible(false); // Masqué pendant le calcul : seul Pause est affiché
     } else if (m_pipelineRunner->isPaused()) {
-        m_runButton->setText(tr("▶ Reprendre"));
+        m_runButton->setText(tr("Reprendre"));
         if (m_stopButton) m_stopButton->setVisible(true);  // Affiché lorsque le calcul est en pause
     } else {
-        m_runButton->setText(tr("▶ Tout lancer"));
+        m_runButton->setText(tr("Tout lancer"));
         if (m_stopButton) m_stopButton->setVisible(false); // Masqué au repos
     }
 }
@@ -188,9 +190,9 @@ void TopToolbars::updateDubiousState(int dubiousCount)
 {
     if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
         if (dubiousCount > 0) {
-            alignBtn->setText(QStringLiteral("!   %1 (%2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
+            alignBtn->setText(QStringLiteral("  %1 (%2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
         } else {
-            alignBtn->setText(QStringLiteral("✓   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
+            alignBtn->setText(QStringLiteral("  %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
     }
     if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
