@@ -72,10 +72,11 @@ TEST(PipelineResultsTest, ReliablePairCarriesPointsSizesAndResidual) {
     EXPECT_EQ(pair.tileSizeA, QSize(TILE_WIDTH, TILE_HEIGHT));
     EXPECT_EQ(pair.imagePathB, QStringLiteral("photo_1.tif"));
     EXPECT_DOUBLE_EQ(pair.dx, SHIFT_X);
+    // value_or plutôt que * : clang-tidy (bugprone-unchecked-optional-access) ne voit pas qu'ASSERT_TRUE arrête le test.
     ASSERT_TRUE(pair.optimizationErrorPx.has_value());
-    EXPECT_DOUBLE_EQ(*pair.optimizationErrorPx, RESIDUAL);
+    EXPECT_DOUBLE_EQ(pair.optimizationErrorPx.value_or(0.0), RESIDUAL);
     ASSERT_TRUE(pair.nccScore.has_value());
-    EXPECT_DOUBLE_EQ(*pair.nccScore, 0.9);
+    EXPECT_DOUBLE_EQ(pair.nccScore.value_or(0.0), 0.9);
 }
 
 // Sans verdict ni résidu (SIFT, LightGlue, reprise) : NCC et écart restent « non mesurés », pas 1,00 et 0,00 px.
