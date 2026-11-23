@@ -36,7 +36,7 @@ Le nom des fichiers n'est **jamais exigé** : il sert seulement s'il donne la ca
 
 ```json
 { "name": "import", "parameters": [
-    { "valueType": "string", "name": "path",  "value": "D:/oeuvres/VanDerVeken" },
+    { "valueType": "string", "name": "path",  "value": "D:/oeuvres/Polyptik" },
     { "valueType": "json",   "name": "tiles", "value": [
         { "file": "2_no filter f8 v30 20cm.tif", "row": 0, "column": 0 },
         { "file": "3_no filter f8 v30 20cm.tif", "row": 0, "column": 1 },
@@ -55,7 +55,7 @@ Le nom des fichiers n'est **jamais exigé** : il sert seulement s'il donne la ca
 
 ```json
 { "name": "import", "parameters": [
-    { "valueType": "string", "name": "path",    "value": "D:/oeuvres/VanDerVeken" },
+    { "valueType": "string", "name": "path",    "value": "D:/oeuvres/Polyptik" },
     { "valueType": "int",    "name": "columns", "value": 2 } ] }
 ```
 
