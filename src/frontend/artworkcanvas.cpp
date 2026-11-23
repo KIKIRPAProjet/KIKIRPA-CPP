@@ -52,10 +52,30 @@ void ArtworkCanvas::setGridState(int rows, int columns, int order,
 }
 
 void ArtworkCanvas::setGridCallbacks(std::function<void(int)> selectionChanged,
-                                     std::function<void(int, int)> cellsSwapped)
+                                     std::function<void(int, int)> cellsSwapped,
+                                     std::function<void(int)> cellDoubleClicked)
 {
     selectionChangedCallback = std::move(selectionChanged);
     cellsSwappedCallback = std::move(cellsSwapped);
+    cellDoubleClickedCallback = std::move(cellDoubleClicked);
+}
+
+void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
+        const int cell = gridCellAt(event->pos());
+        if (cell >= 0) {
+            selectedGridCell = cell;
+            if (selectionChangedCallback)
+                selectionChangedCallback(selectedGridCell);
+            if (cellDoubleClickedCallback)
+                cellDoubleClickedCallback(cell);
+            update();
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mouseDoubleClickEvent(event);
 }
 
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)

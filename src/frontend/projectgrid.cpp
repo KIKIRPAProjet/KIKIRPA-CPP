@@ -436,6 +436,80 @@ void ProjectGrid::toggleSelectedCellEmpty()
     emit gridUpdated();
 }
 
+void ProjectGrid::addTileToSelectedCell(const QString &path)
+{
+    if (path.isEmpty())
+        return;
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridRows * gridState.gridColumns) {
+        emit statusRequested(tr("Sélectionnez une case de la grille."));
+        return;
+    }
+    while (gridState.gridTiles.size() <= cell)
+        gridState.gridTiles.append(GridTile{});
+
+    const QString oldPath = gridState.gridTiles.at(cell).path;
+    gridState.gridTiles[cell].path = path;
+    gridState.gridTiles[cell].empty = false;
+    gridState.gridTiles[cell].rotation = 0;
+    gridState.gridTiles[cell].flipped = false;
+
+    if (!gridState.tilePaths.contains(path))
+        gridState.tilePaths.append(path);
+
+    if (!oldPath.isEmpty() && oldPath != path) {
+        bool oldStillUsed = false;
+        for (const GridTile &t : std::as_const(gridState.gridTiles)) {
+            if (t.path == oldPath) {
+                oldStillUsed = true;
+                break;
+            }
+        }
+        if (!oldStillUsed)
+            gridState.tilePaths.removeAll(oldPath);
+    }
+
+    if (gridState.tileDirectory.isEmpty())
+        gridState.tileDirectory = QFileInfo(path).absolutePath();
+
+    gridState.gridValidated = false;
+    startBackgroundPyramidGeneration();
+    emit gridUpdated();
+    emit statusRequested(tr("Tuile ajoutée à la case sélectionnée : %1").arg(QFileInfo(path).fileName()));
+}
+
+void ProjectGrid::removeSelectedTile()
+{
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridTiles.size()) {
+        emit statusRequested(tr("Sélectionnez une case de la grille."));
+        return;
+    }
+    const QString oldPath = gridState.gridTiles.at(cell).path;
+    if (oldPath.isEmpty() && !gridState.gridTiles.at(cell).empty) {
+        emit statusRequested(tr("La case sélectionnée ne contient pas de tuile."));
+        return;
+    }
+
+    gridState.gridTiles[cell] = GridTile{};
+
+    if (!oldPath.isEmpty()) {
+        bool oldStillUsed = false;
+        for (const GridTile &t : std::as_const(gridState.gridTiles)) {
+            if (t.path == oldPath) {
+                oldStillUsed = true;
+                break;
+            }
+        }
+        if (!oldStillUsed)
+            gridState.tilePaths.removeAll(oldPath);
+    }
+
+    gridState.gridValidated = false;
+    emit gridUpdated();
+    emit statusRequested(tr("Tuile retirée de la case sélectionnée."));
+}
+
 void ProjectGrid::startBackgroundPyramidGeneration()
 {
     // Une seule tâche à la fois : celle de l'ancienne grille s'arrête après son image en cours.

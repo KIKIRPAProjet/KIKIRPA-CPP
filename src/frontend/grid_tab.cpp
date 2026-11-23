@@ -18,6 +18,7 @@
 #include <QGroupBox>
 #include <QPushButton>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QSignalBlocker>
 
 namespace {
@@ -80,6 +81,16 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
  */
 void GridTab::createTileActions(QVBoxLayout *layout)
 {
+    m_importTilesButton = FrontendUtils::makeButton(tr("Importer des photos…"), m_gridTabPage);
+    layout->addWidget(m_importTilesButton);
+
+    auto *tileEditLayout = new QHBoxLayout;
+    m_addTileButton = FrontendUtils::makeButton(tr("Ajouter tuile…"), m_gridTabPage);
+    m_removeTileButton = FrontendUtils::makeButton(tr("Supprimer tuile"), m_gridTabPage);
+    tileEditLayout->addWidget(m_addTileButton);
+    tileEditLayout->addWidget(m_removeTileButton);
+    layout->addLayout(tileEditLayout);
+
     auto *tileActions = new QHBoxLayout;
     m_rotateTileButton = FrontendUtils::makeButton(tr("Pivoter 90°"), m_gridTabPage);
     m_flipTileButton = FrontendUtils::makeButton(tr("Retourner"), m_gridTabPage);
@@ -231,8 +242,21 @@ void GridTab::setupConnections()
             [this](bool automatic) { m_projectGrid->setAutomaticUncertainty(automatic); });
     connect(m_uncertaintySpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this,
             [this](double value) { m_projectGrid->setUncertaintyMargin(value); });
+    
 
     // Actions sur la tuile et la grille
+    connect(m_importTilesButton, &QPushButton::clicked, this, [this]() {
+        m_mainWindow->chooseTilesDirectory();
+    });
+    connect(m_addTileButton, &QPushButton::clicked, this, [this]() {
+        const QString path = QFileDialog::getOpenFileName(
+            this, tr("Choisir une tuile pour la case"), QString(),
+            tr("Images (*.tif *.tiff *.png *.jpg *.jpeg *.bmp);;Tous les fichiers (*)"));
+        if (!path.isEmpty())
+            m_projectGrid->addTileToSelectedCell(path);
+    });
+    connect(m_removeTileButton, &QPushButton::clicked,
+            m_projectGrid, &ProjectGrid::removeSelectedTile);
     connect(m_rotateTileButton, &QPushButton::clicked,
             m_projectGrid, &ProjectGrid::rotateSelectedTile);
     connect(m_flipTileButton, &QPushButton::clicked,
@@ -248,7 +272,12 @@ void GridTab::setupConnections()
 
     m_canvas->setGridCallbacks(
         [this](int cell) { m_projectGrid->setSelectedGridCell(cell); },
-        [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); });
+        [this](int first, int second) { m_projectGrid->swapGridTiles(first, second); },
+        [this](int cell) {
+            Q_UNUSED(cell);
+            if (m_addTileButton && m_addTileButton->isEnabled())
+                m_addTileButton->click();
+        });
 }
 
 /**
@@ -333,6 +362,18 @@ void GridTab::updateSelectionLabel(const ProjectGrid::State &gridState)
 
     const bool canRestore = hasSelection && tile.empty;
     m_emptyCellButton->setText(canRestore ? tr("Restaurer la tuile") : tr("Marquer une case vide"));
+
+    const bool hasTile = hasSelection && !tile.path.isEmpty();
+    if (m_addTileButton)
+        m_addTileButton->setEnabled(hasSelection);
+    if (m_removeTileButton)
+        m_removeTileButton->setEnabled(hasTile);
+    if (m_rotateTileButton)
+        m_rotateTileButton->setEnabled(hasTile && !tile.empty);
+    if (m_flipTileButton)
+        m_flipTileButton->setEnabled(hasTile && !tile.empty);
+    if (m_emptyCellButton)
+        m_emptyCellButton->setEnabled(hasSelection);
 }
 
 /**

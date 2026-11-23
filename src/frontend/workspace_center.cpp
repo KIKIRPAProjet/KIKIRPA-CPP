@@ -153,15 +153,20 @@ void WorkspaceCenter::updateProjectInfo(const QString &projectName, const Projec
                 ++validFiles;
         }   
     const bool allFilesValid = !folderFiles.isEmpty() && validFiles == folderFiles.size();
-    
-    m_projectFormatLabel->setText(allFilesValid
-            ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
-                  .arg(validFiles)
-            : tr("Format : %1 fichier(s) TIFF compatible(s) sur %2 ; certains éléments "
-                "ne sont pas au bon format.")
-                  .arg(validFiles).arg(folderFiles.size()));
 
-    m_projectFormatLabel->setStyleSheet(allFilesValid
-            ? QStringLiteral("color:#66c98a;")
-            : QStringLiteral("color:#e0a45f;"));
+    if (gridState.tileDirectory.isEmpty()) {
+        m_projectFormatLabel->setText(tr("Format : aucune tuile importée pour le moment."));
+        m_projectFormatLabel->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+    } else {
+        m_projectFormatLabel->setText(allFilesValid
+                ? tr("Format : tous les éléments sont au format TIFF compatible (%1 fichier(s)).")
+                      .arg(validFiles)
+                : tr("Format : %1 fichier(s) TIFF compatible(s) sur %2 ; certains éléments "
+                    "ne sont pas au bon format.")
+                      .arg(validFiles).arg(folderFiles.size()));
+
+        m_projectFormatLabel->setStyleSheet(allFilesValid
+                ? QStringLiteral("color:#66c98a;")
+                : QStringLiteral("color:#e0a45f;"));
+    }
 }

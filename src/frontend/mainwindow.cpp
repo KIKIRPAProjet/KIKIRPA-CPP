@@ -455,11 +455,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     const int tileCount = projectGrid->state().tilePaths.size();
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, tileCount);
-    if (tileCount == 0) {
-        updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
-    } else {
-        updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tileCount));
-    }
+    updateStatus(tr("Projet créé."));
 }
 
 void MainWindow::applyLoadedProject(const QString &path)

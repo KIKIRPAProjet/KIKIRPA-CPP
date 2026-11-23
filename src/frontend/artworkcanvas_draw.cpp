@@ -76,6 +76,12 @@ void ArtworkCanvas::drawGrid(QPainter &p)
                 p.setPen(QPen(QColor("#4b9bea"), 2, Qt::DashLine));
                 p.setBrush(Qt::NoBrush);
                 p.drawRect(cell.adjusted(1, 1, -2, -2));
+                p.setPen(QColor("#4b9bea"));
+                p.drawText(cell, Qt::AlignCenter, tr("+ Ajouter une tuile"));
+            } else {
+                p.setPen(QPen(QColor("#555555"), 1, Qt::DashLine));
+                p.setBrush(Qt::NoBrush);
+                p.drawRect(cell.adjusted(1, 1, -2, -2));
             }
             continue;
         }

@@ -44,11 +44,14 @@ private:
     ArtworkCanvas *m_canvas;
 
     QWidget *m_gridTabPage = nullptr;
+    QPushButton *m_importTilesButton = nullptr;
     QLabel *m_gridSummaryLabel = nullptr;
     QSpinBox *m_gridRowsSpin = nullptr;
     QSpinBox *m_gridColumnsSpin = nullptr;
     QComboBox *m_captureOrderCombo = nullptr;
     QLabel *m_selectedGridTileLabel = nullptr;
+    QPushButton *m_addTileButton = nullptr;
+    QPushButton *m_removeTileButton = nullptr;
     QPushButton *m_rotateTileButton = nullptr;
     QPushButton *m_flipTileButton = nullptr;
     QPushButton *m_emptyCellButton = nullptr;
