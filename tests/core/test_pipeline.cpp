@@ -23,21 +23,21 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <cmath>
-#include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
+
 
 namespace fs = std::filesystem;
 
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
-constexpr int PHASE_PARAMETER_COUNT = 15;
-constexpr std::size_t REGISTERED_STEP_COUNT = 9;
+constexpr int PHASE_PARAMETER_COUNT = 17;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -88,8 +88,18 @@ public:
 
 void testerRegistre() {
     std::cout << "Registre des steps\n";
+    const std::set<std::string> attendus = {
+        "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification", "fusion",
+        "graphcut", "import", "intensity-correction", "lightglue", "manual-matches", "overlap-estimation",
+        "phase-correlation", "sift", "vote-2d"};
     const auto noms = PipelineNs::getRegisteredStepNames();
-    verifier(noms.size() == REGISTERED_STEP_COUNT, "9 steps enregistrés");
+    const std::set<std::string> enregistres(noms.begin(), noms.end());
+
+    for (const auto& nom : enregistres)
+        verifier(attendus.count(nom) == 1, "step '" + nom + "' presente dans le registre mais pas attendu");
+    for (const auto& nom : attendus)
+        verifier(enregistres.count(nom) == 1, "step '" + nom + "' attendu mais absent du registre");
+
     for (const auto& nom : noms) {
         const auto step = PipelineNs::createStep(nom);
         verifier(step && step->getConfigJson().value("name", "") == nom, "createStep(\"" + nom + "\") a le bon nom");
@@ -109,7 +119,7 @@ void testerDefaults() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 15 options");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 17 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());

@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
-#include <string>
 #include <vector>
 
 namespace DataNs {
@@ -45,6 +44,18 @@ namespace DataNs {
         double peakRatio = 0.0;        // rapport pic / second pic de la mesure : confiance
     };
 
+    // Estimation du recouvrement d'une paire voisine, produite par le step « recouvrement ».
+    // commonAreaInA et commonAreaInB sont en pixels de pleine résolution, dans les repères locaux de A et de B.
+    struct PairOverlapEstimate {
+        int tileIdA = 0;
+        int tileIdB = 0;
+        Direction direction = Direction::Right;
+        OverlapEstimate estimate;
+        cv::Rect commonAreaInA;
+        cv::Rect commonAreaInB;
+    };
+    using OverlapEstimates = std::vector<PairOverlapEstimate>;
+
     // Sortie d'un StitchingNs::FeatureMatcherClass : pointsInA[i] correspond à pointsInB[i].
     struct Matches {
         std::vector<cv::Point2f> pointsInA;
@@ -71,7 +82,7 @@ namespace DataNs {
 
     // Position finale d'une tuile, calculée par le placement global (PositioningNs::computeTilePositions).
     struct TilePositionData {
-        std::string tileId;     // nom de la tuile, de la forme "rLL_cCC" (ligne, colonne)
+        int tileId = 0;         // TileClass::getId() de la tuile, comme PairMatches
         cv::Point2d position;   // coin haut-gauche dans le repère absolu de la mosaïque
         double rotationRadians = 0.0;   // rotation absolue de la tuile, en radians
     };
@@ -100,6 +111,25 @@ namespace DataNs {
         std::vector<double> tileGains;           // un gain par tuile, dans l'ordre de la TileList
         double fieldStrength = 0.0;              // force c du champ d'éclairage exp(c · r²) ; 0 si seuls les gains sont utilisés
         std::vector<int> isolatedTileIndices;    // tuiles sans voisine exploitable : gain 1, non égalisées
+    };
+
+    // Un bloc de la mosaïque calculé par l'assemblage, en mémoire le temps de l'écrire sur disque
+    // (IONs::TiledTiffWriterClass) ; les matrices ont la taille de blockRect. Jamais rangé dans le DataStore.
+    struct CompositeBlock {
+        cv::Mat imageRgb;       // CV_16UC3, canaux RGB
+        cv::Mat provenance;     // CV_16UC1, TileClass::getId() de la tuile source ; 0 là où mask vaut 0
+        cv::Mat mask;           // CV_8UC1, 255 = pixel valide
+        cv::Rect blockRect;     // rectangle du bloc sur la mosaïque, en pixels
+    };
+
+    // Mosaïque assemblée (type "Mosaic", clé "mosaic"). Les pixels sont sur disque, dans trois TIFF tuilés pleine
+    // résolution (blocs de BLOCK_SIZE, LZW) de canvasSize pixels, écrits bloc par bloc : le DataStore ne garde que les
+    // chemins, jamais l'image (6 octets par pixel).
+    struct Mosaic {
+        std::filesystem::path imagePath;        // CV_16UC3, canaux RGB
+        std::filesystem::path provenancePath;   // CV_16UC1, comme CompositeBlock::provenance
+        std::filesystem::path maskPath;         // CV_8UC1, 255 = pixel valide
+        cv::Size canvasSize;                    // dimensions de la mosaïque, en pixels pleine résolution
     };
 
 }

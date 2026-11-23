@@ -3,6 +3,7 @@
 
 #include "algorithms/stitching/positioning/position_solver.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/pair_residual.h"
 #include "core/checkpoint/checkpoint.h"
 #include "core/pipeline/pipeline.h"
 #include "core/data/tile.h"
@@ -39,7 +40,7 @@ namespace {
     DataNs::TileList makeTiles(int count = 3) {
         DataNs::TileList tiles;
         for (int index = 0; index < count; ++index) {
-            auto path = "tile_r01_c0" + std::to_string(index + 1) + ".tif";
+            auto path = "tile_C0" + std::to_string(index + 1) + "_R01.tif";
             tiles.push_back(std::make_shared<DataNs::TileClass>(index, path, "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1));
         }
         return tiles;
@@ -83,7 +84,7 @@ namespace {
         EXPECT_NEAR(positions[0].position.x, 0.0, TOLERANCE);
         EXPECT_NEAR(positions[1].position.x, SHIFT, TOLERANCE);
         EXPECT_NEAR(positions[2].position.x, 2 * SHIFT, TOLERANCE);
-        EXPECT_EQ(positions[1].tileId, "r01_c02");
+        EXPECT_EQ(positions[1].tileId, 1);   // TileClass::getId() de la tuile
         EXPECT_EQ(step.getOutput().key, "positions");
         EXPECT_EQ(step.getOutput().type, "Positions");
         EXPECT_EQ(step.getResult()["positions"], 3);
@@ -140,6 +141,7 @@ namespace {
         EXPECT_FALSE(step.execute());
         EXPECT_TRUE(step.getOutput().value.empty());
         EXPECT_TRUE(store.get<std::vector<DataNs::TilePositionData>>("positions").empty());
+        EXPECT_TRUE(store.get<std::vector<DataNs::PairResidual>>("pairResiduals").empty());   // résidus vidés aussi après l'échec
         EXPECT_FALSE(step.getResult()["error"].get<std::string>().empty());
     }
 
@@ -213,22 +215,21 @@ namespace {
         checkpoint.load(0, step, "positions", "Positions", restored);
         auto positions = restored.get<std::vector<DataNs::TilePositionData>>("positions");
         ASSERT_EQ(positions.size(), 3U);
-        EXPECT_EQ(positions[2].tileId, "r01_c03");
+        EXPECT_EQ(positions[2].tileId, 2);
         EXPECT_NEAR(positions[2].position.x, 2 * SHIFT, TOLERANCE);
     }
 
-    TEST(AbsolutePosStep, RejectsMalformedNamesAndDuplicateGridCoordinates) {
+    // Les tuiles sont identifiées par TileClass::getId() : le nom du fichier source n'est pas lu.
+    TEST(AbsolutePosStep, AcceptsAnyTileFileName) {
         StepNs::DataStoreClass store;
         fillStore(store);
         auto tiles = makeTiles();
-        tiles[1] = std::make_shared<DataNs::TileClass>(1, "bad.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
+        tiles[1] = std::make_shared<DataNs::TileClass>(1, "1_no filter f8 v30 20cm.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
         store.replace("tiles", tiles);
         StepsNs::AbsolutePosStepClass step;
         step.setDataStore(store);
-        EXPECT_FALSE(step.execute());
-        tiles[1] = std::make_shared<DataNs::TileClass>(1, "tile_r01_c01.tif", "cache.tif", TILE_WIDTH, TILE_HEIGHT, CV_8UC1);
-        store.replace("tiles", tiles);
-        EXPECT_FALSE(step.execute());
+        ASSERT_TRUE(step.execute()) << step.getResult();
+        EXPECT_EQ(step.getOutput().value[1].tileId, 1);
     }
 
     TEST(AbsolutePosStep, RejectsOutOfRangeIntegerWithoutWrappingToDefaultReference) {
@@ -262,6 +263,44 @@ namespace {
         EXPECT_EQ(pipeline.getSteps().size(), 3U);
         EXPECT_EQ(pipeline.getSteps()[2]->getConfigJson()["name"], "absolute-pos");
         EXPECT_THROW(PipelineNs::buildPipeline({{"pipeline", {{"steps", {{{"name", "absolute-pos"}}}}}}}), std::invalid_argument);
+    }
+
+    // Boucle incohérente 10 / 10 / 23 : positions ajustées 0, 11, 22, d'où les résidus −1, −1 et +1 px.
+    TEST(AbsolutePosStep, PublishesResidualOfEachPairAfterAdjustment) {
+        StepNs::DataStoreClass store;
+        fillStore(store);
+        store.replace("matches", std::vector<DataNs::PairMatches>{makePair(0, 1), makePair(1, 2), makePair(0, 2, {INCONSISTENT_SHIFT, 0.0f})});
+        StepsNs::AbsolutePosStepClass step;
+        step.setDataStore(store);
+        ASSERT_TRUE(step.execute()) << step.getResult();
+        const auto residuals = store.get<std::vector<DataNs::PairResidual>>("pairResiduals");
+        ASSERT_EQ(residuals.size(), 3U);
+        EXPECT_EQ(residuals[2].tileIdA, 0);
+        EXPECT_EQ(residuals[2].tileIdB, 2);
+        EXPECT_NEAR(residuals[0].residual.x, -1.0, TOLERANCE);   // 10 − 11
+        EXPECT_NEAR(residuals[1].residual.x, -1.0, TOLERANCE);   // 10 − 11
+        EXPECT_NEAR(residuals[2].residual.x, 1.0, TOLERANCE);    // 23 − 22
+        EXPECT_NEAR(residuals[2].residualNorm, 1.0, TOLERANCE);
+        EXPECT_EQ(step.getConfigJson()["outputs"][1]["dataType"], "PairResiduals");
+    }
+
+    // Les résidus sont sauvegardés puis relus par le checkpoint (chaîne sans boucle : résidus nuls).
+    TEST(AbsolutePosStep, RestoresResidualsFromCheckpoint) {
+        TestDirectory directory;
+        StepNs::DataStoreClass store;
+        fillStore(store);
+        StepsNs::AbsolutePosStepClass step;
+        step.setDataStore(store);
+        ASSERT_TRUE(step.execute());
+        CheckpointNs::CheckpointClass checkpoint(directory.path);
+        std::string failureReason;
+        ASSERT_TRUE(checkpoint.save(0, step, store, failureReason)) << failureReason;
+        StepNs::DataStoreClass restored;
+        checkpoint.load(0, step, "pairResiduals", "PairResiduals", restored);
+        const auto residuals = restored.get<std::vector<DataNs::PairResidual>>("pairResiduals");
+        ASSERT_EQ(residuals.size(), 2U);
+        EXPECT_EQ(residuals[1].tileIdB, 2);
+        EXPECT_NEAR(residuals[1].residualNorm, 0.0, TOLERANCE);
     }
 
 }

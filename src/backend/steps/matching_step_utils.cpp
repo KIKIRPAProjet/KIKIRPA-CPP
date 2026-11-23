@@ -2,6 +2,8 @@
 #include "steps/matching_step_utils.h"
 #include "core/data/tile.h"
 #include "core/data/algorithm_types.h"
+#include "core/io/unicode_path.h"
+#include "core/step/data_store.h"
 
 #include <cstddef>
 #include <nlohmann/json.hpp>
@@ -14,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -53,8 +56,8 @@ namespace StepsNs {
     }
 
     cv::Mat readImage(const DataNs::TileClass& tile) {
-        auto image = cv::imread(tile.getSource().string(), cv::IMREAD_UNCHANGED);
-        if (image.empty()) throw std::runtime_error("cannot read " + tile.getSource().string());
+        auto image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);
+        if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(tile.getSource()));
         if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
             (image.channels() != 1 && image.channels() != 3 && image.channels() != 4))
             throw std::invalid_argument("expected a 2D 8/16-bit image with 1, 3 or 4 channels");
@@ -88,6 +91,67 @@ namespace StepsNs {
         }
         matches.translationX += static_cast<float>(regionA.x - regionB.x);
         matches.translationY += static_cast<float>(regionA.y - regionB.y);
+    }
+
+    const DataNs::OverlapEstimates* findOverlapEstimates(const StepNs::DataStoreClass& dataStore) {
+        return dataStore.has("overlapEstimates") ? &dataStore.get<DataNs::OverlapEstimates>("overlapEstimates") : nullptr;
+    }
+
+    std::optional<cv::Point2d> findEstimatedTranslation(const DataNs::OverlapEstimates* estimates, int tileIdA, int tileIdB) {
+        if (estimates == nullptr) return std::nullopt;
+        for (const DataNs::PairOverlapEstimate& pairEstimate : *estimates)
+            if (pairEstimate.tileIdA == tileIdA && pairEstimate.tileIdB == tileIdB) return pairEstimate.estimate.translationBInA;
+        return std::nullopt;
+    }
+
+    float overlapForDirection(DataNs::Direction direction, float overlap, float verticalOverlap) {
+        const bool isVertical = direction == DataNs::Direction::Top || direction == DataNs::Direction::Bottom;
+        return isVertical && verticalOverlap > 0.f ? verticalOverlap : overlap;
+    }
+
+    std::string checkOverlaps(float overlap, float verticalOverlap) {
+        if (!std::isfinite(overlap) || !(overlap > 0.f && overlap < 1.f))
+            return "overlap must be in ]0, 1[, got " + std::to_string(overlap);
+        if (!std::isfinite(verticalOverlap) || verticalOverlap < 0.f || verticalOverlap >= 1.f)
+            return "verticalOverlap must be 0 (same as overlap) or in ]0, 1[, got " + std::to_string(verticalOverlap);
+        return {};
+    }
+
+    double measuredOverlapFraction(DataNs::Direction direction, cv::Size tileSize, cv::Point2d translation) {
+        const bool isVertical = direction == DataNs::Direction::Top || direction == DataNs::Direction::Bottom;
+        const double tileLength = isVertical ? tileSize.height : tileSize.width;
+        const double shift = isVertical ? translation.y : translation.x;
+        return (tileLength - std::abs(shift)) / tileLength;
+    }
+
+    std::optional<double> calibrateOverlap(const std::vector<OverlapObservation>& observations, DataNs::Direction direction) {
+        const auto isSameAxis = [direction](DataNs::Direction other) {
+            const auto isVertical = [](DataNs::Direction value) {
+                return value == DataNs::Direction::Top || value == DataNs::Direction::Bottom;
+            };
+            return isVertical(other) == isVertical(direction);
+        };
+        std::vector<double> fractions;
+        bool hasOutOfMarginPeak = false;
+        for (const OverlapObservation& observation : observations) {
+            if (!isSameAxis(observation.direction) || !std::isfinite(observation.overlapFraction)) continue;
+            fractions.push_back(observation.overlapFraction);
+            hasOutOfMarginPeak = hasOutOfMarginPeak || observation.isOutOfMargin;
+        }
+        if (!hasOutOfMarginPeak || fractions.size() < static_cast<std::size_t>(MINIMUM_AGREEING_OBSERVATIONS))
+            return std::nullopt;
+
+        std::vector<double> sorted = fractions;
+        std::sort(sorted.begin(), sorted.end());
+        const std::size_t middle = sorted.size() / 2;
+        const double median = sorted.size() % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+        const auto agreeing = std::count_if(fractions.begin(), fractions.end(), [median](double fraction) {
+            return std::abs(fraction - median) <= OVERLAP_AGREEMENT_TOLERANCE;
+        });
+        if (agreeing < MINIMUM_AGREEING_OBSERVATIONS || 2 * static_cast<std::size_t>(agreeing) <= fractions.size())
+            return std::nullopt;
+        if (!(median > 0 && median < 1)) return std::nullopt;
+        return median;
     }
 
     nlohmann::json serializeOutput(const std::string& key, const std::vector<DataNs::PairMatches>& value, const std::string& type) {

@@ -27,6 +27,11 @@ kikirpa_copy_onnxruntime_dlls(test_lightglue_model)
 add_test(NAME lightglue_model COMMAND test_lightglue_model "${lightglue_test_model}")
 set_tests_properties(lightglue_model PROPERTIES LABELS "integration")
 
+add_executable(test_import_step test_import_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_import_step)
+target_link_libraries(test_import_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_import_step PROPERTIES LABELS "unit")
+
 add_executable(test_absolute_pos_step test_absolute_pos_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_absolute_pos_step)
 target_link_libraries(test_absolute_pos_step PRIVATE kikirpa_backend GTest::gtest_main)
@@ -36,3 +41,35 @@ add_executable(test_sift_step test_sift_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_sift_step)
 target_link_libraries(test_sift_step PRIVATE kikirpa_backend GTest::gtest_main)
 gtest_discover_tests(test_sift_step PROPERTIES LABELS "unit")
+
+# Recouvrements horizontal et vertical, marge du rail et recalage du recouvrement (phase-correlation,
+# overlap-estimation, sift)
+add_executable(test_overlap_calibration test_overlap_calibration.cpp)
+kikirpa_copy_onnxruntime_dlls(test_overlap_calibration)
+target_link_libraries(test_overlap_calibration PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_overlap_calibration PROPERTIES LABELS "unit")
+
+add_executable(test_overlap_estimation_step test_overlap_estimation_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_overlap_estimation_step)
+target_link_libraries(test_overlap_estimation_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_overlap_estimation_step PROPERTIES LABELS "unit")
+
+add_executable(test_final_verification_step test_final_verification_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_final_verification_step)
+target_link_libraries(test_final_verification_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_final_verification_step PROPERTIES LABELS "unit")
+
+add_executable(test_vote_2d_step test_vote_2d_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_vote_2d_step)
+target_link_libraries(test_vote_2d_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_vote_2d_step PROPERTIES LABELS "unit")
+
+add_executable(test_manual_matches_step test_manual_matches_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_manual_matches_step)
+target_link_libraries(test_manual_matches_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_manual_matches_step PROPERTIES LABELS "unit")
+
+add_executable(test_fusion_step test_fusion_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_fusion_step)
+target_link_libraries(test_fusion_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_fusion_step PROPERTIES LABELS "unit")

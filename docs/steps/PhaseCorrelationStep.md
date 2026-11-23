@@ -12,13 +12,14 @@ Mesure par corrélation de phase la position de chaque tuile par rapport à ses 
 | Sortie | `matches` | `PairMatches` | `std::vector<DataNs::PairMatches>` | `absolute-pos`, `intensity-correction` |
 
 - **Lit** dans chaque fiche de `tiles` : l'identifiant, les voisines de droite et du dessous, et le chemin de l'image source, relue en entier puis réduite au niveau `niveau` (voir « Lecture des pixels »).
+- **Lit aussi**, si le pipeline en contient (step `overlap-estimation` placé avant), `overlapEstimates` : la translation mesurée de chaque paire, ramenée au niveau `niveau`, sert de point de départ à la mesure au lieu du recouvrement nominal `overlap`. Ce n'est pas une entrée déclarée : sans elle, le step fonctionne comme avant ([OverlapEstimationStep.md](OverlapEstimationStep.md#qui-lit-cette-sortie)).
 - **Écrit** dans `matches` une entrée par paire réussie (une tuile A et sa voisine de droite ou du dessous, B) : `tileIdA`, `tileIdB`, `direction`, les points locaux `pointsInA` ↔ `pointsInB` (au plus `nbPoints` ; aucun si la zone commune est trop petite ou si `nbPoints = 0`) avec la NCC de chacun dans `confidenceScores`, et la translation de B dans A (`translationX`, `translationY`). Les coordonnées sont en pixels de pleine résolution, dans le repère de chaque tuile entière. Une paire en échec n'y figure pas : elle est dans `failures`.
 
 Les signes et les axes sont détaillés dans « Conventions ».
 
-`getResult()` : `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `error`.
+`getResult()` : `pairs`, `niveau`, `failures` (`{idA, idB, reason}`), `confidence` (une entrée par paire, voir § Confiance), `overlapCalibration` (si un recouvrement a été recalé, voir § Recalage), `error`.
 
-**Paramètres** : `overlap` (0.2), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de la corrélation de phase : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Ces noms n'ont pas changé avec la migration des algorithmes ; le champ de `PhaseCorrelationNs::Parameters` qui correspond à chacun est donné dans [PhaseCorrelation.md §5](../algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
+**Paramètres** : `overlap` (0.2 ; seulement les paires horizontales si `verticalOverlap` > 0), `verticalOverlap` (0 = comme `overlap`), `overlapCalibration` (`bool`, `true` : § Recalage), `niveau` (0 = pleine résolution, n = 1/2ⁿ, de 0 à 3), et les paramètres de la corrélation de phase : `lissage`, `seuilRapport`, `lissageLocal`, `ecartMax`, `espacementMin`, `marge`, `fractionValideMin`, `nbPoints`, `fenetre`, `facteurDft`, et les contrôles de confiance (§ Confiance). Ces noms n'ont pas changé avec la migration des algorithmes ; le champ de `PhaseCorrelationNs::Parameters` qui correspond à chacun est donné dans [PhaseCorrelation.md §5](../algorithms/stitching/phase_correlation/PhaseCorrelation.md#5-paramètres). Un paramètre absent du JSON prend sa valeur par défaut. Les longueurs en px sont en pixels **du niveau analysé** : à un niveau réduit, réduire `fenetre`, par exemple à `max(16, 64 / 2ⁿ)`, sinon aucun point local n'est trouvé.
 
 ## Conventions
 
@@ -72,6 +73,19 @@ Chaque paire, gardée ou rejetée, a une entrée `PairConfidence` dans `getOutpu
 | `points` | Paires de points `a` (tuile A) ↔ `b` (tuile B), px pleine résolution, avec la NCC de chacune |
 
 Pour une paire que l'algorithme n'a pas pu mesurer, tous les indicateurs sont `null` et `points` est vide.
+
+## Recalage du recouvrement nominal
+
+Le rail fait le même pas pour toutes les paires d'une direction. Si le recouvrement annoncé est faux (02-Philadelphia : 26 % en vertical pour 20 % annoncés), toutes les paires de cette direction sont refusées de la même façon : leur meilleur pic est **franc**, mais **hors de la marge** du rail.
+
+Avec `overlapCalibration` (par défaut), le step regarde, direction par direction, le recouvrement réel de chaque paire : mesuré pour une paire gardée, ou indiqué par le pic franc hors marge pour une paire refusée (`PhaseCorrelationMatcherClass::getOutOfMarginPeak`). Le recouvrement de la direction est recalé (`StepsNs::calibrateOverlap`, [`matching_step_utils.h`](../../include/backend/steps/matching_step_utils.h)) seulement si :
+
+- au moins une paire de la direction a un pic franc hors marge ;
+- au moins **deux** observations s'accordent à 2 % de la tuile près avec leur médiane, et elles sont la **majorité**.
+
+Les paires refusées de la direction sont alors mesurées une seconde fois, avec la médiane comme recouvrement nominal et la **même marge** : un pic isolé, qui ne s'accorde pas avec les autres, reste refusé. Un pic hors marge seul (une seule paire verticale, par exemple) n'est jamais cru : sur un motif répété, il peut être faux d'une période.
+
+`getResult()["overlapCalibration"]` liste chaque direction recalée : `{"dir": "Bottom", "nominal": 0.2, "calibrated": 0.262, "recoveredPairs": 4}`. Une paire qui échoue encore garde sa première raison dans `failures`.
 
 ## Échecs
 

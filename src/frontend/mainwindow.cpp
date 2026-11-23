@@ -13,60 +13,54 @@
  * - quand ça lève une exception : si l'initialisation d'un composant de la fenêtre échoue.
  */
 //  implemente la fenetre principale de lapplication
+
+// src/frontend/mainwindow.cpp
 #include "mainwindow.h"
+
 #include "artworkcanvas.h"
+#include "core/pipeline/pipeline_builder.h"
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
 #include "menubar_manager.h"
-#include "projectgrid.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
-#include "simulationrunner.h"
+#include "projectgrid.h"
+#include "pipeline_runner.h"
 #include "workspace_ui.h"
+#include "core/io/unicode_path.h"
+#include "alignment_tab.h"
+#include "bottom_tabs.h"
+#include "right_panel.h"
+#include "top_toolbars.h"
+#include "workspace_status_bar.h"
 
+#include <nlohmann/json.hpp>
+
+#include <QAbstractItemView>
 #include <QApplication>
-#include <QButtonGroup>
-#include <QCheckBox>
+#include <QCloseEvent>
 #include <QComboBox>
-#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFormLayout>
-#include <QGraphicsDropShadowEffect>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QHeaderView>
-#include <QKeyEvent>
-#include <QImage>
-#include <QLabel>
-#include <QLineEdit>
-#include <QLineF>
-#include <QMenuBar>
-#include <QMouseEvent>
-#include <QMessageBox>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPolygonF>
-#include <QProgressBar>
-#include <QPushButton>
-#include <QScrollArea>
-#include <QSlider>
-#include <QSpinBox>
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QTabWidget>
-#include <QTableWidget>
-#include <QToolButton>
-#include <QVBoxLayout>
-#include <QStatusBar>
-#include <QAbstractItemView>
 #include <QFontMetrics>
 #include <QFrame>
+#include <QImage>
+#include <QKeyEvent>
+#include <QLabel>
+#include <QMenuBar>
+#include <QMessageBox>
 #include <QPixmap>
+#include <QProgressBar>
+#include <QPushButton>
+#include <QStackedWidget>
+#include <QStatusBar>
+#include <QTimer>
 #include <QtMath>
-#include <functional>
+#include <QProgressDialog>
+
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -81,6 +75,25 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setWindowTitle(tr("KIK-IRPA Assemblage"));
     resize(1228, 780);
     setMinimumSize(920, 600);
+    applyStyleSheet();
+
+    projectGrid = new ProjectGrid(this);
+    pipelineRunner = new PipelineRunnerClass(this);
+    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, pipelineRunner);
+    menuBarManager = new MenuBarManager(this);
+    menuBarManager->setupMenus(menuBar());
+    refreshGrid();
+    refreshProjectInfo();
+    setupProjectGridConnections();
+    setupPipelineConnections();
+    setupHomePageConnections();
+    setupMenuConnections();
+    setupPageConnections();
+    setupPairAlignmentConnections();
+}
+
+void MainWindow::applyStyleSheet()
+{
     setStyleSheet(QStringLiteral(
         "QMainWindow,QWidget { background:#303030; color:#d5d5d5; font-size:12px; }"
         "QMenuBar,QMenu { background:#242424; color:#dedede; }"
@@ -95,6 +108,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
+        // Flèches de défilement des onglets (panneau étroit) : sans ces règles, le padding des QToolButton ne laisse
+        // plus de place pour dessiner la flèche.
+        "QTabBar::scroller { width:40px; }"
+        "QTabBar QToolButton { padding:0px; border-radius:0px; }"
         "QTableWidget,QListWidget { background:#303030; alternate-background-color:#363636;"
         " gridline-color:#484848; selection-background-color:#36536d; }"
         "QHeaderView::section { background:#303030; color:#bdbdbd; border:0;"
@@ -104,15 +121,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
         "QSplitter::handle { background:#202020; }"
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
-        "QCheckBox { spacing:7px; }"));
+        "QCheckBox { spacing:7px; }"
+        // Un élément désactivé doit se voir : texte et bordure atténués, entrées de menu grisées.
+        "QWidget:disabled { color:#6f6f6f; }"
+        "QPushButton:disabled,QToolButton:disabled,QComboBox:disabled,QSpinBox:disabled,QLineEdit:disabled {"
+        " background:#333; border-color:#3d3d3d; }"
+        "QComboBox QAbstractItemView::item:disabled { color:#6f6f6f; }"));
+}
 
-    projectGrid = new ProjectGrid(this);
-    simulationRunner = new SimulationRunner(this);
-    workspaceUI = new WorkspaceUI(this, new HomePage, projectGrid, simulationRunner);
-    menuBarManager = new MenuBarManager(this);
-    menuBarManager->setupMenus(menuBar());
-    refreshGrid();
-    refreshProjectInfo();
+void MainWindow::setupProjectGridConnections()
+{
     connect(projectGrid, &ProjectGrid::gridUpdated,
             this, &MainWindow::refreshProjectInfo);
     connect(projectGrid, &ProjectGrid::gridValidated,
@@ -123,6 +141,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
             this, &MainWindow::updateStatus);
+    connect(projectGrid, &ProjectGrid::logRequested,
+            workspaceUI, &WorkspaceUI::appendLog);
     connect(projectGrid, &ProjectGrid::tilesImported,
             this, &MainWindow::handleTilesImported);
     connect(projectGrid, &ProjectGrid::referenceImageImportRequested, this, [this]() {
@@ -133,34 +153,71 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             this, &MainWindow::showReferenceComparison);
     connect(projectGrid, &ProjectGrid::gridValidationCompleted,
             this, &MainWindow::handleGridValidation);
-    connect(simulationRunner, &SimulationRunner::runStarted, this, [this]() {
+}
+
+void MainWindow::setupPipelineConnections()
+{
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
+        this, [this](const QString& imagePath) {
+            mosaicFilePath = imagePath;
+        });
+
+    // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
+    // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                mosaicFilePath.clear();
+                projectGrid->cancelBackgroundPyramidGeneration();
+            });
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
     });
-    connect(simulationRunner, &SimulationRunner::progressAdvanced,
+    connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
-    connect(simulationRunner, &SimulationRunner::stepChanged,
-            workspaceUI->currentStepLabel(), &QLabel::setText);
-    connect(simulationRunner, &SimulationRunner::statusChanged,
+    connect(pipelineRunner, &PipelineRunnerClass::stepChanged,
+            this, [this](int stepNumber, const QString &stepName) {
+                workspaceUI->currentStepLabel()->setText(stepName);
+                workspaceUI->setActiveStep(stepNumber);
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
-    connect(simulationRunner, &SimulationRunner::cancellationAvailable,
+    connect(pipelineRunner, &PipelineRunnerClass::cancellationAvailable,
             this, &MainWindow::showCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runFinished,
+    connect(pipelineRunner, &PipelineRunnerClass::runFinished,
             this, &MainWindow::removeCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::runCancelled,
+    connect(pipelineRunner, &PipelineRunnerClass::runCancelled,
             this, &MainWindow::removeCancelRunButton);
-    connect(simulationRunner, &SimulationRunner::comparisonRequested,
+    connect(pipelineRunner, &PipelineRunnerClass::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
-    connect(simulationRunner, &SimulationRunner::comparisonVisibilityChanged,
+    connect(pipelineRunner, &PipelineRunnerClass::comparisonVisibilityChanged,
             this, [this](bool visible) {
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setComparisonVisible(visible);
     });
+    connect(pipelineRunner, &PipelineRunnerClass::logMessage,
+            workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
+            this, [this](const QImage &image) {
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                    canvas->setMosaicPreview(image);
+                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    updateStatus(tr("Mosaïque finale générée."));
+                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
+                }
+    });
+}
+
+void MainWindow::setupHomePageConnections()
+{
     connect(workspaceUI->homePage(), &HomePage::projectCreationRequested,
             this, &MainWindow::initializeNewProject);
     connect(workspaceUI->homePage(), &HomePage::projectLoaded,
             this, &MainWindow::applyLoadedProject);
     connect(workspaceUI->homePage(), &HomePage::currentProjectRequested,
             this, &MainWindow::openCurrentProjectFromHome);
+}
 
+void MainWindow::setupMenuConnections()
+{
     connect(menuBarManager, &MenuBarManager::newProjectRequested,
             workspaceUI->homePage(), &HomePage::createProject);
     connect(menuBarManager, &MenuBarManager::openProjectRequested,
@@ -206,29 +263,195 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
             updateStatus(tr("Grille réorganisée selon l'ordre sélectionné."));
         } else if (mode == 2) {
             static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setMaskVisible(true);
-            updateStatus(tr("Proposition de masque affichée — à valider par l'opérateur."));
+            updateStatus(tr("Proposition de masque affichée à valider par l'opérateur."));
         }
     });
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
-            simulationRunner, &SimulationRunner::showComparison);
+            pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage — prototype d'interface.\n"
+            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
+}
 
+void MainWindow::setupPageConnections()
+{
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
     });
     menuBar()->setVisible(false);
 }
 
+void MainWindow::setupPairAlignmentConnections()
+{
+    //seule ligne qui sera modifiée
+    m_pairs = FrontendUtils::defaultPairAlignments(); 
+    m_currentPairIndex = 0;
+
+    /* À décommenter lors de la connexion au backend (remplace defaultPairAlignments() après le run) ---
+    // Lorsque le DataStoreClass du pipeline contient la clé "matches" :
+    // m_pairs.clear();
+    // const auto &backendPairs = dataStore.get<std::vector<DataNs::PairMatches>>("matches");
+    // for (int i = 0; i < static_cast<int>(backendPairs.size()); ++i) {
+    //     m_pairs.append(FrontendUtils::pairInfoFromBackend(
+    //         i, tileNameA, tileNameB, backendPairs[i]));
+    // }
+    */
+
+    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
+        connect(bottom, &BottomTabs::pairSelected, this, &MainWindow::selectPair);
+    }
+
+    if (RightPanel *right = workspaceUI->rightPanel()) {
+        if (AlignmentTab *alignTab = right->alignmentTab()) {
+            connect(alignTab, &AlignmentTab::pairSelectionRequested,
+                    this, &MainWindow::selectPair);
+            connect(alignTab, &AlignmentTab::nextDubiousRequested,
+                    this, &MainWindow::selectNextDubiousPair);
+            connect(alignTab, &AlignmentTab::pairValidated,
+                    this, &MainWindow::validatePair);
+            connect(alignTab, &AlignmentTab::manualOffsetApplied,
+                    this, &MainWindow::applyManualPairOffset);
+        }
+    }
+
+    if (TopToolbars *top = workspaceUI->topToolbars()) {
+        connect(top, &TopToolbars::previousPairRequested,
+                this, &MainWindow::selectPreviousPair);
+        connect(top, &TopToolbars::nextDubiousPairRequested,
+                this, &MainWindow::selectNextDubiousPair);
+    }
+
+    refreshPairViews();
+}
+
+//permet la sélection d'une nouvelles paires et la mise à jour des affichages
+void MainWindow::selectPair(int pairIndex)
+{
+    if (m_pairs.isEmpty())
+        return;
+    m_currentPairIndex = qBound(0, pairIndex, m_pairs.size() - 1);
+    refreshPairViews();
+
+    if (currentMode == 3 && workspaceUI->rightPanel()) {
+        workspaceUI->rightPanel()->showPairTab();
+    }
+
+    const auto &pair = m_pairs.at(m_currentPairIndex);
+    updateStatus(tr("Paire sélectionnée : %1 (%2)")
+                     .arg(pair.pairLabel(),
+                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
+}
+
+void MainWindow::selectPreviousPair()
+{
+    if (m_pairs.isEmpty())
+        return;
+    setMode(3);
+    const int prevIndex = (m_currentPairIndex - 1 + m_pairs.size()) % m_pairs.size();
+    selectPair(prevIndex);
+}
+
+//
+void MainWindow::selectNextDubiousPair()
+{
+    if (m_pairs.isEmpty())
+        return;
+    setMode(3);
+    for (int offset = 1; offset <= m_pairs.size(); ++offset) {
+        const int idx = (m_currentPairIndex + offset) % m_pairs.size();
+        if (m_pairs.at(idx).isDubious()) {
+            selectPair(idx);
+            return;
+        }
+    }
+    updateStatus(tr("Aucune paire douteuse restante à inspecter."));
+}
+
+//une fois une paire validée, mise à jour du status
+void MainWindow::validatePair(int pairIndex)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    auto &pair = m_pairs[pairIndex];
+    pair.status = FrontendUtils::PairStatus::Validated;
+    pair.intervention = tr("validée par l'opérateur");
+    refreshPairViews();
+    updateStatus(tr("Paire %1 validée par l'opérateur ; les étapes suivantes sont à refaire.")
+                     .arg(pair.pairLabel()));
+}
+
+//met à jours les variables après modification manuelle
+void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    auto &pair = m_pairs[pairIndex];
+    pair.dx = dx;
+    pair.dy = dy;
+    pair.intervention = tr("manuelle (%1 ; %2 px)")
+                            .arg(QString::number(dx, 'f', 1).replace('.', ','),
+                                 QString::number(dy, 'f', 1).replace('.', ','));
+    refreshPairViews();
+}
+
+//comptage du nombre de paire douteuse et en échec, mise à jour des tables 
+void MainWindow::refreshPairViews()
+{
+    if (m_pairs.isEmpty())
+        return;
+
+    m_currentPairIndex = qBound(0, m_currentPairIndex, m_pairs.size() - 1);
+    const auto &currentPair = m_pairs.at(m_currentPairIndex);
+
+    int dubiousCount = 0;
+    int failedCount = 0;
+    for (const auto &p : m_pairs) {
+        if (p.status == FrontendUtils::PairStatus::Dubious)
+            ++dubiousCount;
+        else if (p.status == FrontendUtils::PairStatus::Failed)
+            ++failedCount;
+    }
+
+    if (BottomTabs *bottom = workspaceUI->bottomTabsPanel()) {
+        bottom->updatePairs(m_pairs);
+        bottom->selectPairRow(m_currentPairIndex);
+    }
+
+    if (RightPanel *right = workspaceUI->rightPanel()) {
+        if (AlignmentTab *alignTab = right->alignmentTab()) {
+            alignTab->setPairs(m_pairs, m_currentPairIndex);
+        }
+    }
+
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setCurrentPair(currentPair);
+    }
+
+    if (TopToolbars *top = workspaceUI->topToolbars()) {
+        top->updateDubiousState(dubiousCount);
+    }
+
+    if (WorkspaceStatusBar *status = workspaceUI->workspaceStatusBar()) {
+        status->updatePairSummary(m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
+    }
+
+    if (currentMode == 3) {
+        if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
+            label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
+                               .arg(currentPair.tileA, currentPair.tileB));
+        }
+    }
+}
+
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    mosaicFilePath.clear();
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -250,13 +473,26 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
+        return;
+    }
     ProjectData projectData;
     QString errorMessage;
     if (!ProjectSerializer::loadFromFile(path, &projectData, &errorMessage)) {
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
-
+    const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
+    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
+                        QMessageBox::Open | QMessageBox::Cancel, this);
+    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
+    resumeButton->setEnabled(summary.canResume);
+    opening.exec();
+    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+        return;
+    const bool resume = opening.clickedButton() == resumeButton;
+    mosaicFilePath.clear();
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -267,11 +503,16 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectCreated = true;
     refreshProjectInfo();
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(0);
+    setMode(projectData.mode);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    if (resume) {
+        pipelineRunner->setScriptJson(QString::fromStdString(projectData.backendScript.dump()));
+        pipelineRunner->setStartFromStepName(QString());
+        pipelineRunner->startRun(1, true);
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -299,11 +540,12 @@ void MainWindow::setMode(int mode)
     }
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
+
     const QStringList descriptions = {
-        tr("Projet — aperçu général"), tr("Vue Grille de tuiles — organiser et vérifier l'import"),
-        tr("Tuile r00_c00 — rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire — points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export — TIFF 16 bits, profil ICC conservé")
+        tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
+        tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
+        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Export : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
@@ -319,9 +561,13 @@ void MainWindow::setMode(int mode)
     }
     workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
-    if (currentMode == 3)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
+    if (currentMode == 3) {
+        workspaceUI->bottomTabs()->setCurrentIndex(1);
+        if (workspaceUI->rightPanel())
+            workspaceUI->rightPanel()->showPairTab();
+        refreshPairViews();
+    }
     updateStatus(tr("Mode : %1").arg(FrontendUtils::MODE_NAMES.at(currentMode)));
 }
 
@@ -387,32 +633,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     }
 
     if (outputDirectory.isEmpty()) {
-        outputDirectory = QFileDialog::getExistingDirectory(
-            this, tr("Choisir le dossier de sortie"));
-        if (outputDirectory.isEmpty()) {
-            updateStatus(tr("Validation annulée : aucun dossier de sortie sélectionné."));
-            return;
-        }
+        outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
 
-    FrontendNs::ProjectSetup setup;
-    setup.projectName = projectName.toStdString();
-    setup.inputDirectory = gridState.tileDirectory.toStdString();
-    setup.outputDirectory = outputDirectory.toStdString();
-    setup.gridRows = gridState.gridRows;
-    setup.gridColumns = gridState.gridColumns;
-    setup.filenameFormat.clear();
-    setup.overlap = static_cast<double>(gridState.horizontalOverlap) / 100.0;
-    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
-        if (index >= gridState.gridTiles.size())
-            continue;
-        const GridTile &tile = gridState.gridTiles.at(index);
-        if (tile.empty || tile.path.isEmpty())
-            continue;
-        setup.tiles.push_back({std::filesystem::path(tile.path.toStdString()),
-                               index / gridState.gridColumns,
-                               index % gridState.gridColumns});
-    }
+    FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
 
     std::filesystem::path scriptPath;
     try {
@@ -432,14 +656,16 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
                      .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
-            .arg(QString::fromStdString(scriptPath.string())));
+            .arg(QString::fromStdString(IONs::pathToUtf8(scriptPath))));
 }
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
     setMode(1);
-    updateStatus(tr("%1 photo(s) importée(s) depuis « %2 ». Les images source ne sont pas modifiées.")
-                     .arg(importedCount).arg(QFileInfo(directory).fileName()));
+    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+        .arg(importedCount).arg(QFileInfo(directory).fileName());
+    updateStatus(msg);
+    workspaceUI->appendLog(msg);
 }
 
 void MainWindow::saveProject()
@@ -452,8 +678,16 @@ void MainWindow::saveProject()
     if (path.isEmpty())
         return;
     QString errorMessage;
+    nlohmann::json backendScript;
+    try {
+        backendScript = nlohmann::json::parse(generatePipelineScript(1).toStdString());
+    } catch (const std::exception &exception) {
+        // Un projet en cours de configuration reste enregistrable sans script exécutable.
+        workspaceUI->appendLog(tr("Projet enregistré sans script exécutable : %1")
+                                   .arg(QString::fromUtf8(exception.what())));
+    }
     if (!ProjectSerializer::saveToFile(
-            path, projectName, outputDirectory, currentMode, gridState, &errorMessage)) {
+            path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
         return;
@@ -466,29 +700,98 @@ void MainWindow::saveProject()
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
 }
 
+FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
+{
+    const auto& gridState = projectGrid->state();
+    FrontendNs::ProjectSetup setup;
+    setup.projectName = projectName.toStdString();
+    setup.inputDirectory = gridState.tileDirectory.isEmpty()
+        ? std::filesystem::current_path()
+        : IONs::pathFromUtf8(gridState.tileDirectory.toStdString());
+    setup.outputDirectory = outputDirectory.isEmpty()
+        ? (setup.inputDirectory / "output")
+        : IONs::pathFromUtf8(outputDirectory.toStdString());
+    setup.gridRows = gridState.gridRows;
+    setup.gridColumns = gridState.gridColumns;
+    setup.overlap = qBound(0.01, static_cast<double>(gridState.horizontalOverlap) / 100.0, 0.99);
+    setup.verticalOverlap = qBound(0.01, static_cast<double>(gridState.verticalOverlap) / 100.0, 0.99);
+    // « Automatique » coché : 0, chaque step applique sa propre règle (5 % de la tuile, 10 % pour overlap-estimation)
+    setup.railMargin = gridState.automaticUncertainty ? 0.0 : qMax(0.0, gridState.uncertaintyMargin);
+    setup.pipelineChoices = gridState.pipelineChoices;   // méthodes de l'onglet Chaîne
+    setup.lightGlueModelPath = FrontendUtils::lightGlueModelPath();   // absolu : le script ne dépend pas du dossier courant
+
+    for (int index = 0; index < gridState.gridRows * gridState.gridColumns; ++index) {
+        if (index >= gridState.gridTiles.size()) continue;
+        const GridTile &tile = gridState.gridTiles.at(index);
+        if (tile.empty || tile.path.isEmpty()) continue;
+        setup.tiles.push_back({IONs::pathFromUtf8(tile.path.toStdString()),
+                               index / gridState.gridColumns,
+                               index % gridState.gridColumns});
+    }
+    return setup;
+}
+
+QString MainWindow::generatePipelineScript(int firstStep) const
+{
+    FrontendNs::ProjectSetupModelClass model;
+    model.setSetup(buildCurrentProjectSetup());
+
+    nlohmann::json script = model.createBackendScript();
+
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
+    if (firstStep > 1 && firstStep <= static_cast<int>(steps.size())) {
+        nlohmann::json completedStepsArray = nlohmann::json::array();
+        for (int i = 0; i < firstStep - 1; ++i) {
+            completedStepsArray.push_back(steps[static_cast<std::size_t>(i)].technicalName);
+        }
+        script["run"]["completedSteps"] = completedStepsArray;
+        script["run"]["startFromStep"] = steps[static_cast<std::size_t>(firstStep - 1)].technicalName;
+    }
+
+    return QString::fromStdString(script.dump(2));
+}
+
 void MainWindow::requestRun(int firstStep)
 {
-    if (simulationRunner->isRunning()) {
-        updateStatus(tr("Une démonstration de progression est déjà en cours."));
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Une exécution du pipeline est déjà en cours."));
         return;
     }
+    // Vérification préalable : au moins une tuile doit être chargée dans la grille.
     if (projectGrid->state().tilePaths.isEmpty()) {
-        const auto answer = QMessageBox::question(this, tr("Aucune tuile importée"),
-            tr("Aucune tuile n'est chargée. Lancer quand même la démonstration d'interface ?"),
-            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
-        if (answer != QMessageBox::Yes)
-            return;
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de lancer le pipeline de calcul."));
+        return;
     }
-    if (firstStep > 1) {
-        if (!DialogHelpers::confirmRunRestart(this, firstStep))
-            return;
+    // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep)) {
+        return;
     }
-    simulationRunner->startRun(firstStep);
+
+    QString scriptJson;
+    try {
+        scriptJson = generatePipelineScript(firstStep);
+    } catch (const std::exception& exception) {
+        QMessageBox::critical(this, tr("Erreur de configuration"),
+            tr("Pipeline invalide : %1").arg(exception.what()));
+        return;
+    }
+    if (scriptJson.isEmpty()) return;
+
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
+    const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(steps.size()))
+        ? QString::fromStdString(steps[static_cast<std::size_t>(firstStep - 1)].technicalName)
+        : QString();
+
+    // Transmet la configuration à la façade asynchrone puis démarre le calcul.
+    pipelineRunner->setScriptJson(scriptJson);
+    pipelineRunner->setStartFromStepName(startStep);
+    pipelineRunner->startRun(firstStep);
 }
 
 void MainWindow::showComparisonDialog()
 {
-    DialogHelpers::showComparisonDialog(this, simulationRunner);
+    DialogHelpers::showComparisonDialog(this, pipelineRunner);
 }
 
 void MainWindow::showCancelRunButton()
@@ -500,7 +803,7 @@ void MainWindow::showCancelRunButton()
     cancelRunButton->setObjectName(QStringLiteral("cancelRunButton"));
     statusBar()->addPermanentWidget(cancelRunButton);
     connect(cancelRunButton, &QPushButton::clicked,
-            simulationRunner, &SimulationRunner::cancelRun);
+            pipelineRunner, &PipelineRunnerClass::cancelRun);
 }
 
 void MainWindow::removeCancelRunButton()
@@ -526,6 +829,7 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
     workspaceUI->progressBar()->setValue(qBound(0, percentage, 100));
 }
 
+
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
@@ -535,5 +839,66 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         event->accept();
         return;
     }
+    // Raccourci clavier (touche N) : passe directement à la prochaine paire douteuse.
+    if (event->key() == Qt::Key_N) {
+        selectNextDubiousPair();
+        event->accept();
+        return;
+    }
     QMainWindow::keyPressEvent(event);
+}
+
+// Sécurise la fermeture : si un calcul est en cours dans le QThread secondaire,
+// demande confirmation à l'opérateur avant d'ordonner l'arrêt du worker pour éviter
+// un arrêt brutal en pleine écriture de fichier ou une fuite de ressources.
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    // Si la fermeture a déjà été ordonnée et que le worker s'est arrêté, on accepte la fermeture
+    if (isClosing) {
+        event->accept();
+        return;
+    }
+
+    if (pipelineRunner && pipelineRunner->isRunning()) {
+        const QMessageBox::StandardButton reply = QMessageBox::question(
+            this,
+            tr("Calcul en cours"),
+            tr("Un calcul du pipeline est en cours d'exécution.\n"
+               "Voulez-vous vraiment l'interrompre et quitter l'application ?"),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+
+        if (reply != QMessageBox::Yes) {
+            event->ignore();
+            return;
+        }
+
+        // Empêche la fermeture immédiate de la fenêtre
+        event->ignore();
+        isClosing = true;
+        setEnabled(false); // Bloque les entrées utilisateur sur la fenêtre
+
+        // Affiche une boîte de dialogue indiquant que l'étape courante doit se terminer
+        auto *progressDialog = new QProgressDialog(
+            tr("Arrêt du pipeline après l'étape en cours...\nVeuillez patienter."),
+            QString(), 0, 0, this);
+        progressDialog->setWindowTitle(tr("Fermeture"));
+        progressDialog->setWindowModality(Qt::WindowModal);
+        progressDialog->setCancelButton(nullptr);
+        progressDialog->show();
+
+        // Ferme définitivement la fenêtre dès que le thread backend s'est arrêté
+        auto finalizeClose = [this, progressDialog]() {
+            progressDialog->close();
+            this->close();
+        };
+
+        connect(pipelineRunner, &PipelineRunnerClass::runCancelled, this, finalizeClose);
+        connect(pipelineRunner, &PipelineRunnerClass::runFinished, this, finalizeClose);
+
+        pipelineRunner->cancelRun();
+        return;
+    }
+
+    event->accept();
 }

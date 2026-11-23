@@ -1,6 +1,6 @@
 # ManualMatchesStep
 
-`StepsNs::ManualMatchesStepClass`, enregistré sous `manual-matches`, applique les corrections faites à la main sur les points de contrôle d'une paire de tuiles (tâche 7). Il remplace les points des paires corrigées, recalcule leur translation et laisse les autres paires inchangées. Il se place entre le step d'appariement et `absolute-pos`.
+`StepsNs::ManualMatchesStepClass`, enregistré sous `manual-matches`, applique les corrections faites à la main sur les points de contrôle d'une paire de tuiles (tâche 7). Il remplace les points des paires corrigées, recalcule leur translation et laisse les autres paires inchangées. Il se place après le step d'appariement et après `vote-2d` s'il est présent, juste avant `absolute-pos` : appariement → `vote-2d` → `manual-matches` → `absolute-pos`. Placé avant `vote-2d`, il verrait ses points saisis à la main refiltrés, voire la paire rejetée s'il en reste trop peu.
 
 Ce step est la partie backend de la tâche. L'écran de saisie des points viendra quand l'interface sera reliée au backend (R2) : il n'aura qu'à écrire les corrections dans le paramètre `corrections` du script, puis à relancer le run.
 
@@ -49,7 +49,7 @@ En cas d'erreur, `matches` n'est pas modifié.
 
 ## Exemple JSON
 
-À insérer après un step produisant `matches` :
+À insérer juste avant `absolute-pos`, après l'appariement et après `vote-2d` s'il est présent :
 
 ```json
 {

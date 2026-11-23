@@ -20,6 +20,9 @@ namespace PhaseCorrelationNs {
         double railMargin = 0.0;              // (marge) écart maximal (px) entre la translation globale et le recouvrement
                                               // nominal (incertitude du rail, première passe) ; 0 = automatique
                                               // (voir computeRailMargin dans preparation.cpp)
+        double automaticRailMarginFraction = 0.05;   // (pas de paramètre) marge automatique (railMargin = 0) : part de la
+                                                     // tuile dans le sens du déplacement, dans ]0, 0,5] ; 0,10 pour le
+                                                     // step overlap-estimation
         double minimumValidFraction = 0.25;   // (fractionValideMin) part minimale de pixels exploitables, communs aux deux bandes
         int maximumPointCount = 10;           // (nbPoints) nombre maximal de points renvoyés (0 = translation seule)
         int patchSize = 64;                   // (fenetre) côté (px) des patchs de corrélation locale
@@ -58,6 +61,14 @@ namespace PhaseCorrelationNs {
         cv::Point2d unconstrainedPeak;   // décalage résiduel entier (dx, dy) du meilleur pic, cherché sur toute la surface
         double unconstrainedPeakRatio;   // rapport pic / second pic de ce meilleur pic, sur toute la surface
         bool isOutsideMargin;            // ce meilleur pic dépasse la marge du rail sur au moins un axe
+    };
+
+    // Pic franc refusé parce qu'il est hors de la marge du rail : le recouvrement réel qu'il indique. Une paire seule ne
+    // suffit pas à le croire (motif répété) ; plusieurs paires de la même direction qui s'accordent, si (voir
+    // StepsNs::calibrateOverlap).
+    struct OutOfMarginPeak {
+        double overlapFraction;   // recouvrement réel indiqué par le pic, en fraction de la tuile dans le sens du déplacement
+        double peakRatio;         // rapport pic / second pic de ce pic, cherché sur toute la surface
     };
 
     // Translation globale entre les deux tuiles.

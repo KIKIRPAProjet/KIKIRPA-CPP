@@ -178,7 +178,7 @@ TEST(IntensityCorrectionStepTest, FeedsDynamicProgrammingDijkstraStep) {
     StepNs::DataStoreClass dijkstraStore;
     dijkstraStore.add("tiles", pipelineStore.get<DataNs::TileList>("tiles"));
     dijkstraStore.add("positions", std::vector<DataNs::TilePositionData>{
-        {"r00_c00", cv::Point2d(0.0, 0.0), 0.0}, {"r00_c01", cv::Point2d(TILE_OFFSET_X, 0.0), 0.0} });
+        {0, cv::Point2d(0.0, 0.0), 0.0}, {1, cv::Point2d(TILE_OFFSET_X, 0.0), 0.0} });
     dijkstraStore.add("intensityCorrection", pipelineStore.get<DataNs::IntensityCorrection>("intensityCorrection"));
 
     StepsNs::DynamicProgrammingDijkstraStepClass dijkstraStep;
