@@ -15,16 +15,20 @@
 // fournit les outils communs de linterface frontend
 #include "frontendutils.h"
 
+#include "core/io/pyramid_cache.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
+
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
+
+#include <QCoreApplication>
+#include <QFileInfo>
 #include <QImageReader>
 #include <QLabel>
 #include <QObject>
 #include <QPushButton>
 #include <QtMath>
-
-#ifdef Q_OS_WIN
-#include <wincodec.h>
-#include <windows.h>
-#endif
 
 namespace FrontendUtils {
 
@@ -33,17 +37,40 @@ const QStringList MODE_NAMES = {
     QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
 };
 
-const std::vector<PipelineStepInfo>& pipelineSteps() {
-    static const std::vector<PipelineStepInfo> STEPS = {
-        {"import", QObject::tr("1  Importation des tuiles")},
-        {"phase-correlation", QObject::tr("2  Correspondance (Appariement)")},
-        {"absolute-pos", QObject::tr("3  Positionnement global")},
-        {"intensity-correction", QObject::tr("4  Égalisation de luminosité")},
-        {"graphcut", QObject::tr("5  Ligne de couture (GraphCut)")},
-        {"fusion", QObject::tr("6  Fusion des tuiles")},
-        {"export", QObject::tr("7  Export de la mosaïque")}
-    };
-    return STEPS;
+// Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
+static QString stepDisplayName(const std::string &technicalName)
+{
+    if (technicalName == "import") return QObject::tr("Importation des tuiles");
+    if (technicalName == "overlap-estimation") return QObject::tr("Recouvrement réel (première passe)");
+    if (technicalName == "phase-correlation") return QObject::tr("Appariement (corrélation de phase)");
+    if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
+    if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
+    if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
+    if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
+    if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
+    if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
+    if (technicalName == "dynamic-programming-dijkstra") return QObject::tr("Ligne de couture (programmation dynamique)");
+    if (technicalName == "fusion") return QObject::tr("Fusion des tuiles");
+    if (technicalName == "export") return QObject::tr("Export de la mosaïque");
+    return QString::fromStdString(technicalName);
+}
+
+std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &choices) {
+    std::vector<PipelineStepInfo> steps;
+    for (const std::string &technicalName : FrontendNs::pipelineStepNames(choices)) {
+        const QString number = QString::number(static_cast<int>(steps.size()) + 1);
+        steps.push_back({technicalName, number + QStringLiteral("  ") + stepDisplayName(technicalName)});
+    }
+    return steps;
+}
+
+// Le dossier de l'exécutable, et non le dossier courant : stitching et models/ sont tous deux dans le dossier de build,
+// d'où que l'application soit lancée.
+std::filesystem::path lightGlueModelPath()
+{
+    const std::filesystem::path applicationDirectory =
+        IONs::pathFromUtf8(QCoreApplication::applicationDirPath().toStdString());
+    return (applicationDirectory / FrontendNs::LIGHTGLUE_MODEL_PATH).lexically_normal();
 }
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary)
@@ -153,6 +180,92 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 }
 */
 
+QImage matToQImage(const cv::Mat &mat)
+{
+    if (mat.empty())
+        return {};
+
+    cv::Mat mat8;
+    if (mat.depth() == CV_16U) {
+        mat.convertTo(mat8, CV_8U, 1.0 / 256.0);
+    } else if (mat.depth() == CV_8U) {
+        mat8 = mat;
+    } else {
+        return {};
+    }
+
+    if (mat8.channels() == 1) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_Grayscale8).copy();
+    }
+    if (mat8.channels() == 3) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_BGR888).copy();
+    }
+    if (mat8.channels() == 4) {
+        return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
+                      QImage::Format_ARGB32).copy();
+    }
+    return {};
+}
+
+// Pyramide de `sourcePath` dans le cache partagé avec le backend (core/io/pyramid_cache.h), à côté de l'image.
+// Chemin vide si elle n'existe pas encore ou si elle a été produite à partir d'une autre version de l'image : l'aperçu
+// relit alors la source.
+QString findPyramidPathForSource(const QString &sourcePath)
+{
+    if (sourcePath.isEmpty())
+        return {};
+
+    // Le chemin passé est déjà un TIFF pyramidal
+    if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
+        sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
+        return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+    }
+
+    const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());
+    const std::filesystem::path pyramid =
+        IONs::pyramidCachePath(IONs::pyramidCacheDirectory(source.parent_path()), source);
+    if (!IONs::isPyramidCacheValid(source, pyramid))
+        return {};
+    return QString::fromStdString(IONs::pathToUtf8(pyramid));
+}
+
+QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
+{
+    if (pyramidPath.isEmpty())
+        return {};
+
+    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    const int levelCount = reader.getLevelCount();
+    if (levelCount <= 0)
+        return {};
+
+    int chosenLevel = levelCount - 1;
+    for (int level = levelCount - 1; level >= 0; --level) {
+        int width = 0;
+        int height = 0;
+        std::string err;
+        if (reader.getLevelDimensions(level, width, height, err)) {
+            if (width >= maximumSize.width() && height >= maximumSize.height()) {
+                chosenLevel = level;
+                break;
+            }
+        }
+    }
+
+    cv::Mat levelMat;
+    std::string errorMessage;
+    if (!reader.readLevel(chosenLevel, levelMat, errorMessage))
+        return {};
+
+    QImage image = matToQImage(levelMat);
+    if (!image.isNull() && (image.width() > maximumSize.width() || image.height() > maximumSize.height())) {
+        image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    }
+    return image;
+}
+
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order)
@@ -207,93 +320,15 @@ QVector<int> captureOrderCells(int rows, int columns, int order)
     return cells;
 }
 
-#ifdef Q_OS_WIN
-QImage readWindowsTiff(const QString &path, const QSize &maximumSize)
-{
-    HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    const bool uninitialize = SUCCEEDED(result);
-    if (FAILED(result) && result != RPC_E_CHANGED_MODE)
-        return {};
-
-    IWICImagingFactory *factory = nullptr;
-    IWICBitmapDecoder *decoder = nullptr;
-    IWICBitmapFrameDecode *frame = nullptr;
-    IWICBitmapScaler *scaler = nullptr;
-    IWICFormatConverter *converter = nullptr;
-    QImage image;
-
-    do {
-        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-                                     IID_PPV_ARGS(&factory)))) {
-            break;
-        }
-        if (FAILED(factory->CreateDecoderFromFilename(
-                reinterpret_cast<LPCWSTR>(path.utf16()), nullptr, GENERIC_READ,
-                WICDecodeMetadataCacheOnLoad, &decoder))) {
-            break;
-        }
-        if (FAILED(decoder->GetFrame(0, &frame)))
-            break;
-
-        UINT sourceWidth = 0;
-        UINT sourceHeight = 0;
-        if (FAILED(frame->GetSize(&sourceWidth, &sourceHeight)) ||
-            sourceWidth == 0 || sourceHeight == 0)
-            break;
-
-        const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceWidth,
-                                  static_cast<double>(maximumSize.height()) / sourceHeight);
-        const UINT previewWidth = qMax<UINT>(1, qRound(sourceWidth * qMin(1.0, scale)));
-        const UINT previewHeight = qMax<UINT>(1, qRound(sourceHeight * qMin(1.0, scale)));
-        IWICBitmapSource *source = frame;
-        if (previewWidth != sourceWidth || previewHeight != sourceHeight) {
-            if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
-                FAILED(scaler->Initialize(frame, previewWidth, previewHeight,
-                                          WICBitmapInterpolationModeFant))) {
-                break;
-            }
-            source = scaler;
-        }
-
-        if (FAILED(factory->CreateFormatConverter(&converter)) ||
-            FAILED(converter->Initialize(source, GUID_WICPixelFormat32bppBGRA,
-                                         WICBitmapDitherTypeNone, nullptr, 0.0,
-                                         WICBitmapPaletteTypeCustom))) {
-            break;
-        }
-
-        UINT width = 0;
-        UINT height = 0;
-        if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0)
-            break;
-
-        image = QImage(static_cast<int>(width), static_cast<int>(height), QImage::Format_ARGB32);
-        if (image.isNull() ||
-            FAILED(converter->CopyPixels(nullptr, static_cast<UINT>(image.bytesPerLine()),
-                                         static_cast<UINT>(image.sizeInBytes()),
-                                         image.bits()))) {
-            image = {};
-        }
-    } while (false);
-
-    if (converter)
-        converter->Release();
-    if (scaler)
-        scaler->Release();
-    if (frame)
-        frame->Release();
-    if (decoder)
-        decoder->Release();
-    if (factory)
-        factory->Release();
-    if (uninitialize)
-        CoUninitialize();
-    return image;
-}
-#endif
-
 QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
+    const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
+    if (!pyramidPath.isEmpty()) {
+        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
+        if (!pyramidPreview.isNull())
+            return pyramidPreview;
+    }
+
     QImageReader reader(path);
     reader.setAutoTransform(true);
     const QSize sourceSize = reader.size();
@@ -305,10 +340,6 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
                                        qMax(1, qRound(sourceSize.height() * scale))));
     }
     QImage image = reader.read();
-#ifdef Q_OS_WIN
-    if (image.isNull())
-        image = readWindowsTiff(path, maximumSize);
-#endif
     if (!image.isNull())
         image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     return image;

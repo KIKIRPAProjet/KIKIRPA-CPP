@@ -17,7 +17,9 @@ namespace StepsNs {
         static constexpr float DEFAULT_LOWE_RATIO = 0.75f;
         static constexpr double DEFAULT_CONTRAST_THRESHOLD = 0.01;
         static constexpr double DEFAULT_CLAHE_CLIP_LIMIT = 2.0;
-        float overlap = DEFAULT_OVERLAP;
+        float overlap = DEFAULT_OVERLAP;   // recouvrement nominal (paires horizontales si verticalOverlap > 0)
+        float verticalOverlap = 0.f;       // recouvrement nominal des paires verticales ; 0 = comme overlap
+        double railMargin = 0.0;           // marge du rail (px) de la première passe ; 0 = automatique (5 % de la tuile)
         int maxFeatures = DEFAULT_MAX_FEATURES;
         float loweRatio = DEFAULT_LOWE_RATIO;
         double contrastThreshold = DEFAULT_CONTRAST_THRESHOLD;

@@ -199,7 +199,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
 
     p.setPen(QColor("#eeeeee"));
     p.drawText(QRect(18, 12, width() - 36, 24), Qt::AlignLeft,
-               tr("Grille %1 × %2 — %3 tuile(s) — glisser pour permuter")
+               tr("Grille %1 × %2 : %3 tuile(s), glisser pour permuter")
                    .arg(rows).arg(columns).arg(activeTileCount));
 }
 

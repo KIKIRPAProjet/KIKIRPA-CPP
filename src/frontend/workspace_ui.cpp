@@ -163,7 +163,7 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         m_rightPanel->updateGridState(gridState);
     }
 
-    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" — KIK-IRPA Assemblage"));
+    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" : KIK-IRPA Assemblage"));
 }
 
 /**
@@ -216,7 +216,17 @@ void WorkspaceUI::createWorkspace()
     });
     m_rightPanel = new RightPanel(m_mainWindow, m_projectGrid, m_centerArea);
 
-    body->addWidget(m_leftToolbar);
+    // La barre d'outils défile (molette) quand la hauteur manque, au lieu d'imposer la hauteur de ses 9 boutons à toute
+    // la partie haute : sinon le panneau du bas ne peut pas être agrandi au-delà, sur un petit écran.
+    auto *leftToolbarArea = new QScrollArea;
+    leftToolbarArea->setWidget(m_leftToolbar);
+    leftToolbarArea->setWidgetResizable(true);
+    leftToolbarArea->setFrameShape(QFrame::NoFrame);
+    leftToolbarArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftToolbarArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftToolbarArea->setFixedWidth(kLeftToolbarWidth);
+
+    body->addWidget(leftToolbarArea);
     body->addWidget(m_centerArea);
     body->addWidget(m_rightPanel);
 

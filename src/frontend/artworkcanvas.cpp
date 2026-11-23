@@ -10,7 +10,7 @@
 
 namespace {
 constexpr int kMinimumWidth = 360;
-constexpr int kMinimumHeight = 260;
+constexpr int kMinimumHeight = 120;   // assez bas pour laisser grandir le panneau du bas ; le dessin est recadré
 constexpr int kPairGutter = 22;
 constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
@@ -228,11 +228,13 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
     if (modeValue == kModeExport && !m_mosaicPreview.isNull()) {
         const QRect target = rect().adjusted(24, 24, -24, -24);
-        const QSize fitted = m_mosaicPreview.size().scaled(target.size(),Qt::KeepAspectRatio);
-        const QRect fittedRect(target.left()+(target.width()-fitted.width())/2,target.top()+(target.height() - fitted.height())/2,fitted.width(),fitted.height());
-        beginViewTransform();
-        p.drawImage(fittedRect, m_mosaicPreview);
-        p.restore();
+        // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
+        // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
+        const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
+                             target.top() + (target.height() - fitted.height()) / 2);
+        p.drawImage(topLeft, fitted);
+
         // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
         p.setPen(QColor("#dddddd"));
         p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
@@ -401,7 +403,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         p.drawPath(maskPath);
         p.setPen(QColor("#eeeeee"));
         p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
-                   tr("Masque d'exclusion — proposition"));
+                   tr("Masque d'exclusion : proposition"));
     } else if (modeValue == kModeAssembly || modeValue == kModeExport) {
         if(seamVisible){
             p.setPen(QPen(QColor("#df4038"), 2));

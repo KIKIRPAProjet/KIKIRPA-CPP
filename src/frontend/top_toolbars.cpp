@@ -74,7 +74,7 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     stageLayout->addWidget(save);
     connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
 
-    auto *panelsBtn = FrontendUtils::makeButton(tr("◫ Panneaux"), stages);
+    auto *panelsBtn = FrontendUtils::makeButton(tr("Panneaux"), stages);
     panelsBtn->setToolTip(tr("Afficher / masquer les panneaux (Tab)"));
     stageLayout->addWidget(panelsBtn);
     connect(panelsBtn, &QPushButton::clicked, this, &TopToolbars::togglePanelsRequested);
