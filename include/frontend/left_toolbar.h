@@ -1,5 +1,4 @@
-#ifndef LEFT_TOOLBAR_H
-#define LEFT_TOOLBAR_H
+#pragma once
 
 #include <QWidget>
 
@@ -13,5 +12,3 @@ signals:
     // Émis quand l'utilisateur clique sur un outil (index dans la liste, nom affichable).
     void toolSelected(int index, const QString &name);
 };
-
-#endif // LEFT_TOOLBAR_H

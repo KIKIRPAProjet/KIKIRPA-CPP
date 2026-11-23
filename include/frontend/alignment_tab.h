@@ -1,5 +1,4 @@
-#ifndef ALIGNMENT_TAB_H
-#define ALIGNMENT_TAB_H
+#pragma once
 
 #include <QWidget>
 #include <QVector>
@@ -57,5 +56,3 @@ private:
     QLabel *m_tileCountLabel = nullptr;
     QLabel *m_projectMetadataLabel = nullptr;
 };
-
-#endif

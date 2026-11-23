@@ -70,7 +70,7 @@ HomePage::HomePage(QWidget *parent)
     sideLayout->addWidget(open);
     sideLayout->addStretch();
     sideLayout->addWidget(FrontendUtils::mutedLabel(
-        tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
+        tr("À propos"), side));
     layout->addWidget(side);
 
     auto *recentArea = new QWidget(this);
