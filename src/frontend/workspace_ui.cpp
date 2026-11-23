@@ -212,6 +212,9 @@ void WorkspaceUI::createWorkspace()
                 && index >= kPaintToolFirst && index <= kPaintToolLast) {
             m_centerArea->canvas()->toggleMask();
         }
+        if (m_centerArea && m_centerArea->canvas()) {
+            m_centerArea->canvas()->setActiveTool(index);
+        }
     });
     m_rightPanel = new RightPanel(m_mainWindow, m_projectGrid, m_centerArea);
 

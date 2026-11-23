@@ -14,8 +14,17 @@
  */
 //  gere l'export du projet et la creation du rapport
 #include "mainwindow.h"
-#include "projectgrid.h"
+#include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "projectgrid.h"
+#include "workspace_ui.h"
+
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/unicode_path.h"
+
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
 
 
 #include <QCheckBox>
@@ -38,6 +47,17 @@
 
 void MainWindow::showExportDialog()
 {
+    if (mosaicFilePath.isEmpty() || !QFileInfo(mosaicFilePath).isFile()) {
+        QMessageBox::information(this, tr("Image non disponible"),
+            tr("L'image finale n'est pas encore prête. Lancez le calcul complet avant de pouvoir l'exporter."));
+        return;
+    }
+
+    auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
+    if (canvas && !canvas->isCropped() && canvas->hasActiveCropSelection()) {
+        canvas->applyCrop();
+    }
+
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Exporter le projet"));
     QVBoxLayout layout(&dialog);
@@ -139,12 +159,54 @@ void MainWindow::showExportDialog()
             ++counter;
         }
 
-        QFile sourceFile(mosaicFilePath);
-        if (!sourceFile.copy(destination)) {
-            QMessageBox::warning(&dialog, tr("Export impossible"),
-                tr("Impossible de copier le TIFF : %1")
-                    .arg(sourceFile.errorString()));
-            return;
+        auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
+        const bool isCropped = canvas && canvas->isCropped();
+
+        if (isCropped) {
+            const QRectF norm = canvas->cropNormalizedRect();
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(mosaicFilePath.toStdString()));
+            int fullWidth = 0;
+            int fullHeight = 0;
+            std::string readError;
+            if (!reader.getLevelDimensions(0, fullWidth, fullHeight, readError)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible de lire les dimensions de la mosaïque source : %1")
+                        .arg(QString::fromStdString(readError)));
+                return;
+            }
+
+            const int cropX = qBound(0, static_cast<int>(norm.x() * fullWidth), fullWidth - 1);
+            const int cropY = qBound(0, static_cast<int>(norm.y() * fullHeight), fullHeight - 1);
+            const int cropW = qBound(1, static_cast<int>(norm.width() * fullWidth), fullWidth - cropX);
+            const int cropH = qBound(1, static_cast<int>(norm.height() * fullHeight), fullHeight - cropY);
+
+            cv::Rect cropRegion(cropX, cropY, cropW, cropH);
+            cv::Mat croppedImage;
+            if (!reader.readRegion(0, cropRegion, croppedImage, readError)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible d'extraire la zone recadrée : %1")
+                        .arg(QString::fromStdString(readError)));
+                return;
+            }
+
+            std::string writeError;
+            const auto destinationPath = IONs::pathFromUtf8(destination.toStdString());
+            if (!IONs::createPyramidalTiledTiff(croppedImage, destinationPath, writeError)) {
+                if (!IONs::writeImage(destinationPath, croppedImage)) {
+                    QMessageBox::warning(&dialog, tr("Export impossible"),
+                        tr("Impossible d'enregistrer le TIFF recadré : %1")
+                            .arg(QString::fromStdString(writeError)));
+                    return;
+                }
+            }
+        } else {
+            QFile sourceFile(mosaicFilePath);
+            if (!sourceFile.copy(destination)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible de copier le TIFF : %1")
+                        .arg(sourceFile.errorString()));
+                return;
+            }
         }
 
         const QFileInfo fileInfo(destination);

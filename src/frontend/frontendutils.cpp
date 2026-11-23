@@ -34,7 +34,7 @@ namespace FrontendUtils {
 
 const QStringList MODE_NAMES = {
     QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
-    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
+    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Image Finale")
 };
 
 // Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
