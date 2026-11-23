@@ -25,6 +25,13 @@ namespace cv {
 
 namespace FrontendUtils {
 
+constexpr int kModeProject = 0;
+constexpr int kModeGrid = 1;
+constexpr int kModeMasks = 2;
+constexpr int kModePair = 3;
+constexpr int kModeAssembly = 4;
+constexpr int kModeExport = 5;
+
 extern const QStringList MODE_NAMES;
 
 struct PipelineStepInfo {

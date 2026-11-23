@@ -2,6 +2,7 @@
 #include "frontendutils.h"
 
 #include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <QDebug>
 #include <QFutureWatcher>
@@ -39,6 +40,10 @@ constexpr int kModeAssembly = 4;
 constexpr int kModeExport = 5;
 constexpr double kMaximumZoom = 1600.0;
 constexpr double kMinimumFitZoom = 0.01;
+constexpr double kZoomThreshold = 5.0;
+constexpr double kZoomFactor = 1.25;
+constexpr double kZoomStep = 5.0;
+constexpr double kZoomIncrement = 0.25;
 
 QImage imageForDisplay(const cv::Mat &pixels)
 {
@@ -121,7 +126,7 @@ bool ArtworkCanvas::setMosaicTiff(const QString &path, QString *errorMessage)
         return false;
     }
 
-    IONs::PyramidalTiffReaderClass reader(std::filesystem::path(path.toStdWString()));
+    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(path.toStdString()));
     std::vector<cv::Size> dimensions;
     std::string error;
     if (!reader.readPyramidDimensions(dimensions, error)) {
@@ -213,35 +218,28 @@ void ArtworkCanvas::fitMosaicToView()
 
 void ArtworkCanvas::zoomIn()
 {
-    constexpr double ZOOM_THRESHOLD = 5.0;
-    constexpr double ZOOM_FACTOR = 1.25;
-    constexpr double ZOOM_STEP = 5.0;
-    constexpr double ZOOM_INCREMENT = 0.25;
     const double currentZoom = zoomPercent;
     double newZoom = 0.0;
-    if (currentZoom < ZOOM_THRESHOLD) {
-        newZoom = currentZoom * ZOOM_FACTOR;
+    if (currentZoom < kZoomThreshold) {
+        newZoom = currentZoom * kZoomFactor;
         if (newZoom <= currentZoom)
-            newZoom = currentZoom + ZOOM_INCREMENT;
+            newZoom = currentZoom + kZoomIncrement;
     } else {
-        newZoom = currentZoom + ZOOM_STEP;
+        newZoom = currentZoom + kZoomStep;
     }
     setZoom(std::min(kMaximumZoom, newZoom));
 }
 
 void ArtworkCanvas::zoomOut()
 {
-    constexpr double ZOOM_THRESHOLD = 5.0;
-    constexpr double ZOOM_FACTOR = 1.25;
-    constexpr double ZOOM_STEP = 5.0;
     const double currentZoom = zoomPercent;
     double newZoom = 0.0;
-    if (currentZoom > ZOOM_THRESHOLD) {
-        newZoom = currentZoom - ZOOM_STEP;
+    if (currentZoom > kZoomThreshold) {
+        newZoom = currentZoom - kZoomStep;
         if (newZoom < 1.0)
-            newZoom = std::max(kMinimumFitZoom, currentZoom / ZOOM_FACTOR);
+            newZoom = std::max(kMinimumFitZoom, currentZoom / kZoomFactor);
     } else {
-        newZoom = currentZoom / ZOOM_FACTOR;
+        newZoom = currentZoom / kZoomFactor;
     }
     setZoom(std::max(kMinimumFitZoom, newZoom));
 }
@@ -319,10 +317,6 @@ void ArtworkCanvas::startMosaicRegionRead()
     const QPointF origin = mosaicOrigin;
     const QSize viewportSize = size();
     const double zoomPercentValue = mosaicScale * 100.0;
-    qInfo().noquote() << "Mosaic viewport request: zoom" << zoomPercentValue
-                      << "%, origin" << origin.x() << origin.y()
-                      << ", viewport" << viewportSize.width() << "x"
-                      << viewportSize.height();
 
     auto *watcher = new QFutureWatcher<MosaicRegionResult>(this);
     activeMosaicRead = watcher;
@@ -340,7 +334,7 @@ void ArtworkCanvas::startMosaicRegionRead()
     watcher->setFuture(QtConcurrent::run([path, origin, viewportSize, zoomPercentValue]() {
         MosaicRegionResult result;
         try {
-            IONs::PyramidalTiffReaderClass reader(std::filesystem::path(path.toStdWString()));
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(path.toStdString()));
             IONs::PyramidViewportRegion viewport;
             std::string error;
             if (!reader.readViewport(
@@ -360,9 +354,6 @@ void ArtworkCanvas::startMosaicRegionRead()
                 viewport.fullResolutionRegion.width,
                 viewport.fullResolutionRegion.height);
             result.level = viewport.level;
-            qInfo().noquote() << "Mosaic TIFF read: level" << viewport.level
-                              << "region" << viewport.region.x << viewport.region.y
-                              << viewport.region.width << viewport.region.height;
             if (result.image.isNull())
                 result.errorMessage = QObject::tr(
                     "Le format de pixels du TIFF n’est pas pris en charge.");

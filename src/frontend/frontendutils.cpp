@@ -106,6 +106,7 @@ QString formatZoom(double zoomPercent)
         }
         text.chop(1);
     }
+    text.replace(QLatin1Char('.'), QLatin1Char(','));
     return text + QStringLiteral(" %");
 }
 

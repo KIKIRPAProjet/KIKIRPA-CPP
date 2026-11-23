@@ -17,7 +17,6 @@
 
 namespace {
 constexpr double DEFAULT_CANVAS_ZOOM = 12.0;
-constexpr int MODE_EXPORT = 5;
 }
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
@@ -144,7 +143,8 @@ void WorkspaceCenter::createCanvasAndControls()
             return;
         }
 
-        m_mainWindow->setMode(MODE_EXPORT);
+        m_mainWindow->mosaicFilePath = path;
+        m_mainWindow->setMode(FrontendUtils::kModeExport);
         m_mainWindow->updateStatus(
             tr("Mosaïque ouverte : %1").arg(QFileInfo(path).fileName()));
     });

@@ -160,6 +160,10 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
+            if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                QString errorMessage;
+                canvas->setMosaicTiff(imagePath, &errorMessage);
+            }
         });
 
     // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
@@ -198,8 +202,10 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
-                    canvas->setMosaicPreview(image);
-                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    if (mosaicFilePath.isEmpty()) {
+                        canvas->setMosaicPreview(image);
+                    }
+                    setMode(FrontendUtils::kModeExport); // Mode "Export", force l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
                     QTimer::singleShot(0, this, &MainWindow::showExportDialog);
                 }
