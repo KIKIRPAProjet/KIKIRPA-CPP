@@ -43,8 +43,8 @@ public:
         int horizontalOverlap = 20;
         int verticalOverlap = 20;
         bool overlapsLinked = true;
-        QString modality = QStringLiteral("Infrarouge");
-        double scaleMmPerPixel = 0.0;
+        QString modality = QStringLiteral("Lumière visible");
+        double scaleMmPerPixel = 8.62;
         double uncertaintyMargin = 0.0;
         bool automaticUncertainty = true;
         bool gridValidated = false;
