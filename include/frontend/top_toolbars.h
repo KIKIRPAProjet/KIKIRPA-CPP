@@ -6,7 +6,6 @@
 class MainWindow;
 class ProjectGrid;
 class PipelineRunnerClass;
-class QComboBox;
 class QHBoxLayout;
 class QPushButton;
 
@@ -22,8 +21,6 @@ public:
     void updateDubiousState(int dubiousCount);
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
-
-    QComboBox *arrangementCombo() const { return m_arrangementCombo; }
 
 signals:
     void previousPairRequested();
@@ -43,10 +40,8 @@ private:
     void handleRunButtonClicked();
 
     MainWindow *m_mainWindow;
-    ProjectGrid *m_projectGrid;
     PipelineRunnerClass *m_pipelineRunner;
 
-    QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
     QPushButton *m_exportButton = nullptr;

@@ -21,7 +21,7 @@ public:
     explicit GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas *canvas, QWidget *parent = nullptr);
 
     void updateState(const ProjectGrid::State &gridState);
-    QComboBox *captureOrderCombo() const { return m_captureOrderCombo; }
+
 
 private:
     // sous-fonctions de création
@@ -46,7 +46,6 @@ private:
     QLabel *m_gridSummaryLabel = nullptr;
     QSpinBox *m_gridRowsSpin = nullptr;
     QSpinBox *m_gridColumnsSpin = nullptr;
-    QComboBox *m_captureOrderCombo = nullptr;
     QLabel *m_selectedGridTileLabel = nullptr;
     QPushButton *m_rotateTileButton = nullptr;
     QPushButton *m_flipTileButton = nullptr;
