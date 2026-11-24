@@ -1,5 +1,4 @@
 add_executable(test_frontend_project_setup test_project_setup.cpp)
-kikirpa_copy_onnxruntime_dlls(test_frontend_project_setup)
 target_link_libraries(test_frontend_project_setup PRIVATE kikirpa_frontend GTest::gtest_main)
 target_compile_features(test_frontend_project_setup PRIVATE cxx_std_17)
 include(GoogleTest)
@@ -9,14 +8,6 @@ target_link_libraries(test_frontend_project_serializer PRIVATE kikirpa_frontend 
 target_compile_features(test_frontend_project_serializer PRIVATE cxx_std_17)
 gtest_discover_tests(test_frontend_project_serializer PROPERTIES LABELS "unit")
 gtest_discover_tests(test_frontend_project_setup)
-
-add_executable(test_frontend_utils test_frontend_utils.cpp)
-kikirpa_copy_onnxruntime_dlls(test_frontend_utils)
-target_link_libraries(test_frontend_utils PRIVATE kikirpa_frontend GTest::gtest_main)
-target_compile_features(test_frontend_utils PRIVATE cxx_std_17)
-gtest_discover_tests(test_frontend_utils PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
 
 add_executable(test_frontend_pipeline_worker test_pipeline_worker.cpp)
 kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_worker)
@@ -33,3 +24,9 @@ target_compile_features(test_frontend_preview_benchmark PRIVATE cxx_std_17)
 gtest_discover_tests(test_frontend_preview_benchmark PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+add_executable(test_frontend_pipeline_results test_pipeline_results.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_results)
+target_link_libraries(test_frontend_pipeline_results PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_pipeline_results PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_pipeline_results PROPERTIES LABELS "unit")

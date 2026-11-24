@@ -1,3 +1,4 @@
+// src/frontend/frontendutils.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : regrouper les composants graphiques communs évite de dupliquer leur style ;
@@ -32,12 +33,12 @@
 #include <QPushButton>
 #include <QtMath>
 
-#include <cmath>
 namespace FrontendUtils {
 
 const QStringList MODE_NAMES = {
     QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
-    QObject::tr("Alignement"), QObject::tr("Assemblage"), QObject::tr("Export")
+    QObject::tr("Alignement"), QObject::tr("Ligne de couture"), QObject::tr("Assemblage"),
+    QObject::tr("Image finale")
 };
 
 // Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
@@ -49,6 +50,7 @@ static QString stepDisplayName(const std::string &technicalName)
     if (technicalName == "sift") return QObject::tr("Appariement (SIFT)");
     if (technicalName == "lightglue") return QObject::tr("Appariement (LightGlue)");
     if (technicalName == "vote-2d") return QObject::tr("Rejet des aberrants (Vote 2D)");
+    if (technicalName == "manual-matches") return QObject::tr("Corrections manuelles");
     if (technicalName == "absolute-pos") return QObject::tr("Positionnement global");
     if (technicalName == "intensity-correction") return QObject::tr("Égalisation de luminosité");
     if (technicalName == "graphcut") return QObject::tr("Ligne de couture (GraphCut)");
@@ -91,27 +93,6 @@ QLabel *mutedLabel(const QString &text, QWidget *parent)
     return label;
 }
 
-constexpr double ROUND_EPSILON = 0.05;
-constexpr double ZOOM_DECIMAL_THRESHOLD = 10.0;
-
-QString formatZoom(double zoomPercent)
-{
-    if (std::abs(zoomPercent - std::round(zoomPercent)) < ROUND_EPSILON) {
-        return QString::number(static_cast<int>(std::round(zoomPercent))) + QStringLiteral(" %");
-    }
-    QString text = QString::number(zoomPercent, 'f', zoomPercent < ZOOM_DECIMAL_THRESHOLD ? 2 : 1);
-    while (text.contains(QLatin1Char('.')) &&
-           (text.endsWith(QLatin1Char('0')) || text.endsWith(QLatin1Char('.')))) {
-        if (text.endsWith(QLatin1Char('.'))) {
-            text.chop(1);
-            break;
-        }
-        text.chop(1);
-    }
-    text.replace(QLatin1Char('.'), QLatin1Char(','));
-    return text + QStringLiteral(" %");
-}
-
 QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath)
 {
     auto *label = new QLabel(parent);
@@ -130,37 +111,14 @@ QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath
     return label;
 }
 
-//paires d'exemple de la maquette - à supprimé lors de la connection au backend
-QVector<PairAlignmentInfo> defaultPairAlignments()
-{
-    return {
-        {0, 0, 1, QStringLiteral("r00_c00"), QStringLiteral("r00_c01"),
-         QObject::tr("horizontal"), PairStatus::Dubious,
-         QObject::tr("contrôle NCC faible (0,37)"),
-         0.91, 0.37, 4065.5, -20.7, 263, 1401, 14, 3, 3.95, QObject::tr("aucune")},
-        {1, 0, 2, QStringLiteral("r00_c00"), QStringLiteral("r01_c00"),
-         QObject::tr("vertical"), PairStatus::Reliable,
-         QObject::tr("corrélation et géométrie cohérentes"),
-         0.99, 0.76, 23.5, 4086.7, 678, 1232, 16, 1, 0.04, QObject::tr("aucune")},
-        {2, 1, 3, QStringLiteral("r00_c01"), QStringLiteral("r01_c01"),
-         QObject::tr("vertical"), PairStatus::Reliable,
-         QObject::tr("corrélation et géométrie cohérentes"),
-         0.99, 0.92, 23.8, 4133.7, 1105, 1429, 18, 1, 0.04, QObject::tr("aucune")},
-        {3, 2, 3, QStringLiteral("r01_c00"), QStringLiteral("r01_c01"),
-         QObject::tr("horizontal"), PairStatus::Reliable,
-         QObject::tr("corrélation et géométrie cohérentes"),
-         0.98, 0.65, 4064.7, 29.9, 421, 1492, 15, 2, 0.02, QObject::tr("aucune")}
-    };
-}
-
-/* À décommenter lors de la connexion au backend (convertit DataNs::PairMatches en PairAlignmentInfo) ---
+// Convertit DataNs::PairMatches en PairAlignmentInfo
 PairAlignmentInfo pairInfoFromBackend(int pairIndex,
                                       const QString &tileAName,
                                       const QString &tileBName,
                                       const DataNs::PairMatches &pairMatches,
                                       const DataNs::Alignment *alignment,
-                                      double nccScore,
-                                      double optimizationErrorPx)
+                                      std::optional<double> nccScore,
+                                      std::optional<double> optimizationErrorPx)
 {
     PairAlignmentInfo info;
     info.pairIndex = pairIndex;
@@ -206,21 +164,27 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
     if (info.totalMatches == 0 || info.inlierCount < 4) {
         info.status = PairStatus::Failed;
         info.statusReason = QObject::tr("nombre de points insuffisant (%1)").arg(info.inlierCount);
-    } else if (info.nccScore < 0.50) {
+    } else if (info.nccScore && *info.nccScore < 0.50) {
         info.status = PairStatus::Dubious;
-        info.statusReason = QObject::tr("contrôle NCC faible (%1)")
-                                .arg(QString::number(info.nccScore, 'f', 2).replace('.', ','));
+        info.statusReason = QObject::tr("contrôle NCC faible (%1)").arg(formatMeasure(info.nccScore, 2));
     } else if (info.meanConfidence < 0.75) {
         info.status = PairStatus::Dubious;
         info.statusReason = QObject::tr("score de confiance faible (%1)")
                                 .arg(QString::number(info.meanConfidence, 'f', 2).replace('.', ','));
     } else {
         info.status = PairStatus::Reliable;
-        info.statusReason = QObject::tr("corrélation et géométrie cohérentes");
+        // Sans NCC, seule la confiance des points a été contrôlée : ne pas annoncer une corrélation vérifiée.
+        info.statusReason = info.nccScore ? QObject::tr("corrélation et géométrie cohérentes")
+                                          : QObject::tr("points cohérents (NCC non mesuré)");
     }
     return info;
 }
-*/
+
+QString formatMeasure(const std::optional<double> &value, int decimals, const QString &suffix)
+{
+    if (!value) return QObject::tr("non disponible");
+    return QString::number(*value, 'f', decimals).replace('.', ',') + suffix;
+}
 
 QImage matToQImage(const cv::Mat &mat)
 {
@@ -282,17 +246,25 @@ QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize
     const int levelCount = reader.getLevelCount();
     if (levelCount <= 0)
         return {};
+    
+    // Taille de l'image une fois ajustée dans maximumSize (ratio conservé) : c'est elle que le niveau doit couvrir.
+    // Comparer à maximumSize lui-même ferait lire la pleine résolution dès que la boîte est carrée.
+    int fullWidth = 0;
+    int fullHeight = 0;
+    std::string err;
+    if (!reader.getLevelDimensions(0, fullWidth, fullHeight, err))
+        return {};
+    const QSize fitted = QSize(fullWidth, fullHeight).scaled(maximumSize, Qt::KeepAspectRatio);
 
-    int chosenLevel = levelCount - 1;
-    for (int level = levelCount - 1; level >= 0; --level) {
+    // Le plus petit niveau qui couvre cette taille ; aucun (tuile plus petite que la boîte) : la pleine résolution.
+    int chosenLevel = 0;
+    for (int level = levelCount - 1; level > 0; --level) {
         int width = 0;
         int height = 0;
-        std::string err;
-        if (reader.getLevelDimensions(level, width, height, err)) {
-            if (width >= maximumSize.width() && height >= maximumSize.height()) {
-                chosenLevel = level;
-                break;
-            }
+        if (reader.getLevelDimensions(level, width, height, err) &&
+            width >= fitted.width() && height >= fitted.height()) {
+            chosenLevel = level;
+            break;
         }
     }
 

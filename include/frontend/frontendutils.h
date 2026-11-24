@@ -1,9 +1,12 @@
-#ifndef FRONTENDUTILS_H
-#define FRONTENDUTILS_H
+#pragma once
 
 #include "project_setup_model.h"
 
+#include "core/data/algorithm_types.h"
+
 #include <QImage>
+#include <QPointF>
+#include <QRect>
 #include <QSize>
 #include <QString>
 #include <QStringList>
@@ -12,6 +15,7 @@
 #include <cstdint>
 
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -24,13 +28,6 @@ namespace cv {
 }
 
 namespace FrontendUtils {
-
-constexpr int kModeProject = 0;
-constexpr int kModeGrid = 1;
-constexpr int kModeMasks = 2;
-constexpr int kModePair = 3;
-constexpr int kModeAssembly = 4;
-constexpr int kModeExport = 5;
 
 extern const QStringList MODE_NAMES;
 
@@ -70,23 +67,29 @@ struct PairAlignmentInfo {
     PairStatus status = PairStatus::Reliable;
     QString statusReason;
     double meanConfidence = 0.0;
-    double nccScore = 0.0;
+    std::optional<double> nccScore;   // vide : non mesuré (SIFT, LightGlue, step repris d'un checkpoint)
     double dx = 0.0;
     double dy = 0.0;
     int inlierCount = 0;
     int totalMatches = 0;
     int shownInliers = 0;
     int shownOutliers = 0;
-    double optimizationErrorPx = 0.0;
+    std::optional<double> optimizationErrorPx;   // écart après positionnement ; vide : non calculé
     QString intervention;
 
-    /* À décommenter lors de la connexion au backend (vrais points du canvas) ---
+    // Données calculées par le backend (vide tant qu'aucun calcul n'a été fait) : images, tailles pleine résolution et
+    // points appariés, chacun dans le repère de sa tuile.
+    QString imagePathA;
+    QString imagePathB;
     QSize tileSizeA;
     QSize tileSizeB;
     QVector<QPointF> pointsInA;
     QVector<QPointF> pointsInB;
     QVector<bool> isInlier;
-    */
+    // Zone commune estimée par le step overlap-estimation (pixels pleine résolution, repères de A et de B) ; vide si ce
+    // step n'a pas été lancé ou n'a pas pu mesurer la paire.
+    QRect overlapInA;
+    QRect overlapInB;
 
     QString pairLabel() const { return tileA + QStringLiteral(" → ") + tileB; }
     bool isDubious() const { return status == PairStatus::Dubious; }
@@ -94,28 +97,23 @@ struct PairAlignmentInfo {
 
 QPushButton *makeButton(const QString &text, QWidget *parent, bool primary = false);
 QLabel *mutedLabel(const QString &text, QWidget *parent);
-QString formatZoom(double zoomPercent);
-
 // Logo du projet dans un carré de sideInPixels pixels logiques, net sur écran haute densité.
 // resourcePath : ":/logo/logo.png" (avec fond, en-têtes) ou ":/logo/logo_home.png" (gris sans fond, accueil).
 // Sans la ressource (cible qui n'embarque pas resources.qrc, comme les tests), le label est vide et caché.
 QLabel *logoLabel(int sideInPixels, QWidget *parent, const QString &resourcePath = QStringLiteral(":/logo/logo.png"));
 
-QVector<PairAlignmentInfo> defaultPairAlignments();
-
-/* À décommenter lors de la connexion au backend (#include "backend/core/data/algorithm_types.h") ---
 PairAlignmentInfo pairInfoFromBackend(int pairIndex,
                                       const QString &tileAName,
                                       const QString &tileBName,
                                       const DataNs::PairMatches &pairMatches,
                                       const DataNs::Alignment *alignment = nullptr,
-                                      double nccScore = 1.0,
-                                      double optimizationErrorPx = 0.0);
-*/
+                                      std::optional<double> nccScore = std::nullopt,
+                                      std::optional<double> optimizationErrorPx = std::nullopt);
+
+// Valeur mesurée avec `decimals` décimales (virgule) suivie de `suffix`, ou « non disponible ».
+QString formatMeasure(const std::optional<double> &value, int decimals, const QString &suffix = QString());
 
 }
 
 QVector<int> captureOrderCells(int rows, int columns, int order);
 QImage readPreviewImage(const QString &path, const QSize &maximumSize);
-
-#endif
