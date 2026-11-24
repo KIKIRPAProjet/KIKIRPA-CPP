@@ -37,6 +37,7 @@
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include <QAbstractItemView>
@@ -73,10 +74,30 @@
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
+#include <dwmapi.h>
 #endif
 
 namespace {
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+#ifdef Q_OS_WIN
+void applyWindowsDarkTitleBar(QWidget *widget)
+{
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    if (!hwnd)
+        return;
+    constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+    constexpr DWORD kDwmwaCaptionColor = 35;
+    constexpr DWORD kDwmwaTextColor = 36;
+    // Active le mode sombre natif de la barre de titre (Windows 10 2004+ et Windows 11).
+    const BOOL useDarkMode = TRUE;
+    DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &useDarkMode, sizeof(useDarkMode));
+    // Windows 11 uniquement (ignoré sans erreur sous Windows 10) : couleur exacte du QMenuBar (#242424).
+    const COLORREF captionColor = RGB(0x24, 0x24, 0x24);
+    const COLORREF textColor = RGB(0xDE, 0xDE, 0xDE);
+    DwmSetWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
+    DwmSetWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
+}
+#endif
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -85,6 +106,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     resize(1228, 780);
     setMinimumSize(920, 600);
     applyStyleSheet();
+    #ifdef Q_OS_WIN
+        applyWindowsDarkTitleBar(this);
+    #endif
 
     projectGrid = new ProjectGrid(this);
     pipelineRunner = new PipelineRunnerClass(this);
@@ -211,7 +235,7 @@ void MainWindow::setupPipelineConnections()
         workspaceUI->progressBar()->setValue(0);
         if (workspaceUI->bottomTabs())
             workspaceUI->bottomTabs()->setVisible(true);
-        panelsVisible = true;
+        sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -276,10 +300,9 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+    connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -301,10 +324,17 @@ void MainWindow::setupMenuConnections()
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
+        logVisible = !logVisible;
+        workspaceUI->bottomTabs()->setVisible(logVisible);
+    });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
+    });
+    connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
+        DialogHelpers::showCreditsDialog(this);
     });
 }
 
@@ -1072,9 +1102,9 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
         event->accept();
         return;
     }
