@@ -122,12 +122,17 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addWidget(overlayDiff);
     canvasControlsLayout->addStretch();
 
+    auto* startCropButton = FrontendUtils::makeButton(tr("Rogner"), canvasControls);
+    startCropButton->setObjectName(QStringLiteral("startCropButton"));
+    startCropButton->setToolTip(tr("Tracer un rectangle sur la mosaïque à conserver"));
+    startCropButton->setVisible(false);
+    canvasControlsLayout->addWidget(startCropButton);
     auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le recadrage"), canvasControls);
     applyCropButton->setObjectName(QStringLiteral("applyCropButton"));
     applyCropButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(applyCropButton);
 
-    auto *resetCropButton = FrontendUtils::makeButton(tr("Annuler le recadrage"), canvasControls);
+    auto *resetCropButton = FrontendUtils::makeButton(tr("Réinitialiser"), canvasControls);
     resetCropButton->setObjectName(QStringLiteral("resetCropButton"));
     resetCropButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(resetCropButton);
@@ -169,18 +174,23 @@ void WorkspaceCenter::createCanvasAndControls()
             ? tr("Vue Paire : superposition (différence) activée.")
             : tr("Vue Paire : examen des 2 tuiles côte à côte."));
     });
+    connect(startCropButton, &QPushButton::clicked, this, [this]() {
+        m_mainWindow->beginMosaicCrop();
+        });
+
     connect(applyCropButton, &QPushButton::clicked, this, [this]() {
         if (m_canvas->hasActiveCropSelection()) {
             m_canvas->applyCrop();
-            m_mainWindow->updateStatus(tr("Recadrage validé et appliqué à l'image."));
-        } else {
-            m_mainWindow->updateStatus(tr("Tracez d'abord une zone sur l'image avec l'outil Recadrer."));
         }
-    });
+        else {
+            m_mainWindow->updateStatus(
+                tr("Tracez d'abord un rectangle sur la mosaïque."));
+        }
+        });
+
     connect(resetCropButton, &QPushButton::clicked, this, [this]() {
-        m_canvas->resetCrop();
-        m_mainWindow->updateStatus(tr("Recadrage réinitialisé : image complète restaurée."));
-    });
+        m_mainWindow->resetMosaicCrop();
+        });
     connect(exportButton, &QPushButton::clicked, this, [this]() {
         m_mainWindow->showExportDialog();
     });

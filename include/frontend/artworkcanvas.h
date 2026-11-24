@@ -81,8 +81,15 @@ public:
     // Retourne le rectangle de recadrage normalisé entre 0.0 et 1.0 par rapport à l'image pleine résolution.
     QRectF cropNormalizedRect() const { return m_cropNormalizedRect; }
 
-    // Valide et applique la sélection de recadrage actuelle sur l'image affichée.
+    // Retourne la sélection courante dans le repère normalisé de l'image originale.
+    // Rectangle vide si aucune sélection exploitable n'est disponible.
+    QRectF selectedCropNormalizedRect() const;
+
+    // Demande au backend d'appliquer la sélection ; ne modifie pas l'aperçu.
     void applyCrop();
+
+    // Active la sélection du rectangle sur la mosaïque affichée.
+    void startCropSelection();
 
     // Annule la boîte de sélection en cours sans modifier le recadrage déjà appliqué.
     void cancelCropSelection();
@@ -92,10 +99,14 @@ public:
 
     void resetView();
     void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
+    // Affiche le résultat du backend sans perdre l'aperçu original.
+    void setBackendCropPreview(const QImage& image, const QRectF& normalizedRectangle);
 
     signals:
         void zoomChanged(int zoomPercent);
         void importTilesRequested();
+        // Demande un rognage dans le repère normalisé de la mosaïque originale.
+        void cropRequested(const QRectF& normalizedRectangle);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;

@@ -5,6 +5,7 @@
 
 #include <QImage>
 #include <QObject>
+#include <QRect>
 #include <QString>
 
 class QThread;
@@ -25,11 +26,15 @@ class PipelineRunnerClass : public QObject {
         int pausedStep() const { return pausedStepNumber; }
         void resetPausedState() { paused = false; pausedStepNumber = 0; }
 
-        void setScriptJson(const QString& scriptJsonText) { scriptJson = scriptJsonText; }
+        void setScriptJson(const QString& scriptJsonText) {
+            scriptJson = scriptJsonText;
+            cropRun = false;
+        }
         const QString& getScriptJson() const { return scriptJson; }
 
         void setStartFromStepName(const QString& stepName) { startFromStepName = stepName; }
         const QString& getStartFromStepName() const { return startFromStepName; }
+        bool isCropRun() const { return cropRun; }// Indique si le calcul courant a été lancé pour appliquer un rognage.
 
     public slots:
         // Démarre l'exécution asynchrone du pipeline backend dans un QThread dédié.
@@ -46,6 +51,9 @@ class PipelineRunnerClass : public QObject {
         void keepComparisonA();
         void keepComparisonB();
 
+        // Insère le rognage avant l'export et réutilise les checkpoints valides.
+        // Le rectangle est exprimé en pixels pleine résolution.
+        void startCropRun(const QRect& rectangle, const QString& cropOutputDirectory);
     signals:
         void runStarted();
         void progressAdvanced(int percentage);
@@ -62,6 +70,7 @@ class PipelineRunnerClass : public QObject {
         void mosaicFileReady(const QString& imagePath);
         void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
+        void cropFinished(bool success, const QImage& previewImage);
 
     private:
         // Connecte les signaux d'avancement et de journalisation du worker vers l'UI.
@@ -83,6 +92,7 @@ class PipelineRunnerClass : public QObject {
         bool running = false;
         bool paused = false;
         bool comparisonVisible = false;
+        bool cropRun = false;
         int pausedStepNumber = 0;
 
 };

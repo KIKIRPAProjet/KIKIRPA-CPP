@@ -13,7 +13,7 @@ namespace StepsNs {
         int y = 0;
         int width = 0;
         int height = 0;
-        // Dossier inexistant dont le parent existe déjà.
+        // Dossier nouveau ou résultat identifié de mosaic-crop ; parent existant.
         std::string outputDirectory;
     };
 
