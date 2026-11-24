@@ -246,17 +246,25 @@ QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize
     const int levelCount = reader.getLevelCount();
     if (levelCount <= 0)
         return {};
+    
+    // Taille de l'image une fois ajustée dans maximumSize (ratio conservé) : c'est elle que le niveau doit couvrir.
+    // Comparer à maximumSize lui-même ferait lire la pleine résolution dès que la boîte est carrée.
+    int fullWidth = 0;
+    int fullHeight = 0;
+    std::string err;
+    if (!reader.getLevelDimensions(0, fullWidth, fullHeight, err))
+        return {};
+    const QSize fitted = QSize(fullWidth, fullHeight).scaled(maximumSize, Qt::KeepAspectRatio);
 
-    int chosenLevel = levelCount - 1;
-    for (int level = levelCount - 1; level >= 0; --level) {
+    // Le plus petit niveau qui couvre cette taille ; aucun (tuile plus petite que la boîte) : la pleine résolution.
+    int chosenLevel = 0;
+    for (int level = levelCount - 1; level > 0; --level) {
         int width = 0;
         int height = 0;
-        std::string err;
-        if (reader.getLevelDimensions(level, width, height, err)) {
-            if (width >= maximumSize.width() && height >= maximumSize.height()) {
-                chosenLevel = level;
-                break;
-            }
+        if (reader.getLevelDimensions(level, width, height, err) &&
+            width >= fitted.width() && height >= fitted.height()) {
+            chosenLevel = level;
+            break;
         }
     }
 
