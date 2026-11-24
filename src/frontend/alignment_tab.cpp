@@ -29,6 +29,7 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QDialogButtonBox>
+#include <QKeySequence>
 #include <QSignalBlocker>
 
 AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *parent)
@@ -110,6 +111,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
 
     auto *addPointButton = FrontendUtils::makeButton(tr("Ajouter un point P"), this);
     auto *deletePointButton = FrontendUtils::makeButton(tr("Supprimer Suppr"), this);
+    deletePointButton->setShortcut(QKeySequence::Delete);
     auto *adjustButton = FrontendUtils::makeButton(tr("Saisir un décalage…"), this);
     m_validateButton = FrontendUtils::makeButton(tr("Valider la paire"), this);
 
@@ -125,18 +127,22 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     auto *separatorBottom = new QFrame(this);
     separatorBottom->setFrameShape(QFrame::HLine);
     separatorBottom->setStyleSheet(QStringLiteral("color:#424242;"));
+    separatorBottom->setVisible(false);
     mainLayout->addWidget(separatorBottom);
 
-    // Résumé du projet 
+    // Résumé du projet (masqué pour alléger l'onglet Paire, déjà visible dans Projet/Grille)
     m_projectNameLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectNameLabel->setWordWrap(true);
+    m_projectNameLabel->setVisible(false);
     mainLayout->addWidget(m_projectNameLabel);
 
     m_tileCountLabel = FrontendUtils::mutedLabel(QString(), this);
+    m_tileCountLabel->setVisible(false);
     mainLayout->addWidget(m_tileCountLabel);
 
     m_projectMetadataLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectMetadataLabel->setObjectName(QStringLiteral("projectMetadataLabel"));
+    m_projectMetadataLabel->setVisible(false);
     mainLayout->addWidget(m_projectMetadataLabel);
 
     mainLayout->addStretch();
@@ -195,6 +201,20 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
     rebuildPairSelector();
     if (!m_pairs.isEmpty()) {
         setCurrentPair(m_pairs.at(m_currentPairIndex));
+    } else {
+        if (m_pairTitleLabel)
+            m_pairTitleLabel->setText(tr("Aucune paire calculée"));
+        if (m_statusBadgeLabel) {
+            m_statusBadgeLabel->setText(QStringLiteral("-"));
+            m_statusBadgeLabel->setStyleSheet(QStringLiteral(
+                "background:#3a3a3a; color:#aaaaaa; border-radius:3px; padding:2px 8px;"));
+        }
+        if (m_reasonValueLabel) m_reasonValueLabel->setText(QStringLiteral("-"));
+        if (m_confidenceValueLabel) m_confidenceValueLabel->setText(QStringLiteral("-"));
+        if (m_offsetValueLabel) m_offsetValueLabel->setText(QStringLiteral("-"));
+        if (m_pointsShownValueLabel) m_pointsShownValueLabel->setText(QStringLiteral("-"));
+        if (m_errorValueLabel) m_errorValueLabel->setText(QStringLiteral("-"));
+        if (m_interventionValueLabel) m_interventionValueLabel->setText(QStringLiteral("-"));
     }
 }
 

@@ -1,10 +1,12 @@
 // src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
 
+#include <QEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QWheelEvent>
 
 #include <utility>
 
@@ -16,6 +18,10 @@ constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
 constexpr double kPairAspect = 0.78;
 constexpr double kSingleAspect = 0.70;
+constexpr int kMinZoomPercent = 5;
+constexpr int kMaxZoomPercent = 1600;
+constexpr double kZoomWheelFactor = 1.15;
+constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour le cache d'aperçus
 
 // Modes de l'espace de travail (voir FrontendUtils::MODE_NAMES).
 constexpr int kModeGrid = 1;
@@ -34,12 +40,31 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+    m_imageCache.setMaxCost(kImageCacheMaxBytes);
 }
 
 //enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
 void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
     currentPair = pair;
+    update();
+}
+
+QTransform ArtworkCanvas::viewTransform() const
+{
+    const qreal scale = zoomPercent / 100.0;
+    const QPointF viewCenter(width() / 2.0, height() / 2.0);
+    QTransform transform;
+    transform.translate(viewCenter.x() + m_panOffset.x(), viewCenter.y() + m_panOffset.y());
+    transform.scale(scale, scale);
+    transform.translate(-viewCenter.x(), -viewCenter.y());
+    return transform;
+}
+
+void ArtworkCanvas::resetView()
+{
+    zoomPercent = 100;
+    m_panOffset = QPointF(0.0, 0.0);
     update();
 }
 
@@ -59,6 +84,24 @@ void ArtworkCanvas::setGridCallbacks(std::function<void(int)> selectionChanged,
 {
     selectionChangedCallback = std::move(selectionChanged);
     cellsSwappedCallback = std::move(cellsSwapped);
+}
+
+bool ArtworkCanvas::hasActiveImages() const
+{
+    if (!imagePaths.isEmpty())
+        return true;
+    for (const GridTile &tile : gridTiles) {
+        if (!tile.path.isEmpty())
+            return true;
+    }
+    return false;
+}
+
+QRect ArtworkCanvas::emptyImportCardRect() const
+{
+    const int cardW = qMin(340, qMax(220, width() - 48));
+    const int cardH = qMin(190, qMax(140, height() - 48));
+    return QRect((width() - cardW) / 2, (height() - cardH) / 2, cardW, cardH);
 }
 
 ArtworkCanvas::CropHandle ArtworkCanvas::hitTestCropHandle(const QPoint &pos) const
@@ -99,11 +142,20 @@ ArtworkCanvas::CropHandle ArtworkCanvas::hitTestCropHandle(const QPoint &pos) co
 
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 {
+    if (!hasActiveImages()) {
+        if (event->button() == Qt::LeftButton && emptyImportCardRect().contains(event->pos())) {
+            emit importTilesRequested();
+            event->accept();
+            return;
+        }
+    }
     setFocus();
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
         dragStartCell = gridCellAt(event->pos());
         if (dragStartCell >= 0) {
+            dragTargetCell = dragStartCell;
             selectedGridCell = dragStartCell;
+            setCursor(Qt::ClosedHandCursor);
             if (selectionChangedCallback)
                 selectionChangedCallback(selectedGridCell);
             update();
@@ -113,16 +165,17 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     }
 
     if (modeValue == kModeExport && m_activeTool == kCropTool && event->button() == Qt::LeftButton) {
+        const QPoint scenePos = viewTransform().inverted().map(event->pos());   // repère de l'image non zoomée
         const QRect displayedImageRect = mosaicDisplayedRect();
-        if (displayedImageRect.contains(event->pos())) {
-            m_cropDragStart = event->pos();
+        if (displayedImageRect.contains(scenePos)) {
+            m_cropDragStart = scenePos;
             m_cropRectAtDragStart = m_cropSelectionRect;
-            m_activeHandle = hitTestCropHandle(event->pos());
+            m_activeHandle = hitTestCropHandle(scenePos);
             m_isCropping = true;
 
             // Si clic hors poignée et hors cadre, démarre une nouvelle sélection
             if (m_activeHandle == CropHandle::None) {
-                m_cropStartPos = event->pos();
+                m_cropStartPos = scenePos;
                 m_cropSelectionRect = QRect(m_cropStartPos, QSize(0, 0));
             }
             update();
@@ -131,13 +184,21 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         }
     }
 
+    if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
+        m_panning = true;
+        m_lastPanPos = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
+    }
     QWidget::mousePressEvent(event);
 }
 
 void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 {
     if (modeValue == kModeExport && m_activeTool == kCropTool) {
-        if (m_cropSelectionRect.isValid() && m_cropSelectionRect.contains(event->pos())) {
+        const QPoint scenePos = viewTransform().inverted().map(event->pos());   // repère de l'image non zoomée
+        if (m_cropSelectionRect.isValid() && m_cropSelectionRect.contains(scenePos)) {
             applyCrop();
             event->accept();
             return;
@@ -148,10 +209,40 @@ void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
 
 void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
 {
+    if (!hasActiveImages()) {
+        const bool hovered = emptyImportCardRect().contains(event->pos());
+        if (hovered != m_emptyCardHovered) {
+            m_emptyCardHovered = hovered;
+            if (hovered)
+                setCursor(Qt::PointingHandCursor);
+            else
+                unsetCursor();
+            update();
+        }
+        event->accept();
+        return;
+    }
+    if (modeValue == kModeGrid && dragStartCell >= 0) {
+        const int hovered = gridCellAt(event->pos());
+        if (hovered != dragTargetCell) {
+            dragTargetCell = hovered;
+            update();
+        }
+        event->accept();
+        return;
+    }
+    if (m_panning) {
+        m_panOffset += event->pos() - m_lastPanPos;
+        m_lastPanPos = event->pos();
+        update();
+        event->accept();
+        return;
+    }
     if (modeValue == kModeExport && m_activeTool == kCropTool) {
+        const QPoint scenePos = viewTransform().inverted().map(event->pos());   // repère de l'image non zoomée
         const QRect displayedImageRect = mosaicDisplayedRect();
-        const int clampedX = qBound(displayedImageRect.left(), event->pos().x(), displayedImageRect.right());
-        const int clampedY = qBound(displayedImageRect.top(), event->pos().y(), displayedImageRect.bottom());
+        const int clampedX = qBound(displayedImageRect.left(), scenePos.x(), displayedImageRect.right());
+        const int clampedY = qBound(displayedImageRect.top(), scenePos.y(), displayedImageRect.bottom());
         const QPoint curPos(clampedX, clampedY);
 
         if (m_isCropping) {
@@ -208,7 +299,7 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
 
         // Survol : mise à jour du curseur selon la zone sous la souris
         if (m_cropSelectionRect.isValid() && !m_cropSelectionRect.isEmpty()) {
-            const CropHandle handle = hitTestCropHandle(event->pos());
+            const CropHandle handle = hitTestCropHandle(scenePos);
             switch (handle) {
                 case CropHandle::TopLeft:
                 case CropHandle::BottomRight:
@@ -243,6 +334,17 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
     QWidget::mouseMoveEvent(event);
 }
 
+
+void ArtworkCanvas::leaveEvent(QEvent *event)
+{
+    if (m_emptyCardHovered) {
+        m_emptyCardHovered = false;
+        unsetCursor();
+        update();
+    }
+    QWidget::leaveEvent(event);
+}
+
 void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
@@ -252,6 +354,14 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
                 cellsSwappedCallback(dragStartCell, targetCell);
         }
         dragStartCell = -1;
+        dragTargetCell = -1;
+        unsetCursor();
+        event->accept();
+        return;
+    }
+    if (m_panning) {
+        m_panning = false;
+        unsetCursor();
         event->accept();
         return;
     }
@@ -268,6 +378,29 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
     }
 
     QWidget::mouseReleaseEvent(event);
+}
+
+void ArtworkCanvas::wheelEvent(QWheelEvent *event)
+{
+    const int delta = event->angleDelta().y();
+    if (delta == 0) {
+        QWidget::wheelEvent(event);
+        return;
+    }
+
+    const qreal factor = (delta > 0) ? kZoomWheelFactor : (1.0 / kZoomWheelFactor);
+    const int newZoom = qBound(kMinZoomPercent, qRound(zoomPercent * factor), kMaxZoomPercent);
+    if (newZoom != zoomPercent) {
+        const qreal oldScale = zoomPercent / 100.0;
+        const qreal newScale = newZoom / 100.0;
+        const QPointF center(width() / 2.0, height() / 2.0);
+        const QPointF mousePos = event->position();
+        m_panOffset = mousePos - center - (mousePos - center - m_panOffset) * (newScale / oldScale);
+        zoomPercent = newZoom;
+        emit zoomChanged(zoomPercent);
+        update();
+    }
+    event->accept();
 }
 
 void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
@@ -302,17 +435,28 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     p.fillRect(rect(), QColor("#484848"));
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
+
+    const qreal scale = zoomPercent / 100.0;
+    const QPointF viewCenter(width() / 2.0, height() / 2.0);
+    auto beginViewTransform = [&]() {
+        p.save();
+        p.translate(viewCenter + m_panOffset);
+        p.scale(scale, scale);
+        p.translate(-viewCenter);
+    };
 
     if (modeValue == kModeExport) {
         if (!m_mosaicPreview.isNull()) {
             const QRect displayedRect = mosaicDisplayedRect();
-            const QImage fitted = m_mosaicPreview.scaled(displayedRect.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            p.drawImage(displayedRect.topLeft(), fitted);
+            beginViewTransform();
+            p.drawImage(QRectF(displayedRect), m_mosaicPreview);
 
             // Surcouche interactive de recadrage si l'outil est sélectionné
             if (m_activeTool == kCropTool) {
                 drawCropOverlay(p, displayedRect);
             }
+            p.restore();
 
             p.setPen(QColor("#dddddd"));
             p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
@@ -330,12 +474,25 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    // Assemblage : la mosaïque et, si le calque est actif, ses coutures.
-    if (modeValue == kModeAssembly && drawMosaicPreview(p, seamVisible))
+    if (!hasActiveImages()) {
+        drawEmptyState(p);
         return;
+    }
+
+    // Assemblage et Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
+    if (modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+        beginViewTransform();
+        const bool drawn = drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
+        p.restore();
+        if (drawn) {
+            p.setPen(QColor("#dddddd"));
+            p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                       QString::number(zoomPercent) + QStringLiteral(" %"));
+            return;
+        }
+    }
     if (modeValue == MODE_SEAM) {
-        if (!drawMosaicPreview(p, true))
-            drawCenteredMessage(p, tr("Lancez l'assemblage pour afficher les lignes de couture calculées."));
+        drawCenteredMessage(p, tr("Lancez l'assemblage pour afficher les lignes de couture calculées."));
         return;
     }
 
@@ -362,8 +519,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     const int y0 = (height() - imageH) / 2;
 
     const QRect firstImageRect(x0, y0, imageW, imageH);
+    beginViewTransform();   // zoom et déplacement de la vue, aussi pour l'alignement
     if (pair) {
         drawPairView(p);
+        p.restore();
         return;
     }
 
@@ -400,6 +559,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
                    tr("La mosaïque s'affichera ici après l'assemblage."));
     }
 
+    p.restore();
     p.setPen(QColor("#dddddd"));
     p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
                QString::number(zoomPercent) + QStringLiteral(" %"));
@@ -407,7 +567,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
 
 void ArtworkCanvas::setSeamVisible(bool visible)
 {
-    if(seamVisible != visible){
+    if (seamVisible != visible) {
         seamVisible = visible;
         update();
     }

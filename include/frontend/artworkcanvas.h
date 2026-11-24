@@ -9,6 +9,10 @@
 #include <QVector>
 #include <QWidget>
 #include <QImage>
+#include <QCache>
+#include <QPoint>
+#include <QPointF>
+#include <QTransform>
 
 #include <cstdint>
 #include <functional>
@@ -17,6 +21,7 @@ class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
 class QPainter;
+class QWheelEvent;
 
 /**
  * Zone d'affichage centrale : œuvre, grille de tuiles, paire, masque et couture.
@@ -25,12 +30,13 @@ class QPainter;
  */
 class ArtworkCanvas final : public QWidget
 {
+    Q_OBJECT
+
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
     void setMode(int mode) { modeValue = mode; update(); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
-    void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
@@ -84,6 +90,13 @@ public:
     // Rétablit l'image originale non recadrée.
     void resetCrop();
 
+    void resetView();
+    void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
+
+    signals:
+        void zoomChanged(int zoomPercent);
+        void importTilesRequested();
+
 protected:
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -91,9 +104,12 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void paintEvent(QPaintEvent *) override;
+    void leaveEvent(QEvent *event) override;
+    void wheelEvent(QWheelEvent *event) override;
 
 private:
     // artworkcanvas_draw.cpp
+    void drawEmptyState(QPainter &p);
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
@@ -107,6 +123,8 @@ private:
     void drawSuperposedPair(QPainter &p);
     void drawCenteredMessage(QPainter &p, const QString &message);
 
+    bool hasActiveImages() const;
+    QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
     void drawCropOverlay(QPainter &painter, const QRect &imageRect);
 
@@ -126,7 +144,7 @@ private:
     CropHandle hitTestCropHandle(const QPoint &pos) const;
 
     int modeValue = 4;
-    int zoomPercent = 12;
+    int zoomPercent = 100;
     QStringList imagePaths;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
@@ -137,6 +155,7 @@ private:
     int captureOrder = 0;
     int selectedGridCell = 0;
     int dragStartCell = -1;
+    int dragTargetCell = -1;
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
@@ -148,7 +167,15 @@ private:
     bool pairOverlayMode = false;
     FrontendUtils::PairAlignmentInfo currentPair;
 
+    QPointF m_panOffset;
+    QPoint m_lastPanPos;
+    bool m_panning = false;
+    bool m_emptyCardHovered = false;
+    QCache<QString, QImage> m_imageCache;
+
     QRect mosaicDisplayedRect() const;
+    // Zoom et déplacement de la vue : repère de l'image non zoomée -> écran (paintEvent, recadrage).
+    QTransform viewTransform() const;
     int m_activeTool = -1;
     QImage m_originalMosaicPreview;
     bool m_isCropping = false;
