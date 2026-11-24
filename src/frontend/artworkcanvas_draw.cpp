@@ -345,6 +345,34 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
     return true;
 }
 
+bool ArtworkCanvas::drawAssemblyLayers(QPainter &p)
+{
+    if (imageLayers.isEmpty()) return false;
+    QRectF bounds = imageLayerBounds;
+    if (bounds.isEmpty()) {
+        for (const ImageLayer &layer : imageLayers)
+            bounds = bounds.united(layer.worldRect);
+    }
+    if (bounds.isEmpty()) return false;
+
+    const QRectF area = rect().adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const qreal scale = qMin(area.width() / bounds.width(), area.height() / bounds.height());
+    const QSizeF size = bounds.size() * scale;
+    const QRectF frame(area.center() - QPointF(size.width(), size.height()) / 2, size);
+    p.save();
+    p.setClipRect(frame);
+    for (const ImageLayer &layer : imageLayers) {
+        if (!layer.visible || layer.image.isNull()) continue;
+        const QRectF target(frame.topLeft() + (layer.worldRect.topLeft() - bounds.topLeft()) * scale,
+                            layer.worldRect.size() * scale);
+        p.setOpacity(globalImageLayerOpacity * layer.opacity);
+        p.drawImage(target, layer.image);
+    }
+    p.restore();
+    if (seamVisible) drawSeamLines(p, frame, m_seamLines);
+    return true;
+}
+
 void ArtworkCanvas::drawCenteredMessage(QPainter &p, const QString &message)
 {
     p.setPen(QColor("#dddddd"));
@@ -536,7 +564,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
         p.setPen(QPen((index == selectedGridCell || isDragTarget) ? QColor("#4b9bea") : QColor("#e8c638"),
                       (index == selectedGridCell || isDragTarget) ? 3 : 1, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
-        p.drawRect(cell.adjusted(1, 1, -2, -2));  
+        p.drawRect(cell.adjusted(1, 1, -2, -2));
     }
 
     p.setPen(QColor("#eeeeee"));
