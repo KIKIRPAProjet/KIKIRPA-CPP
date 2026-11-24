@@ -315,8 +315,8 @@ void MainWindow::setupPageConnections()
 
 void MainWindow::setupPairAlignmentConnections()
 {
-    //seule ligne qui sera modifiée
-    m_pairs = FrontendUtils::defaultPairAlignments();
+    // Aucune paire tant qu'aucun calcul n'a été fait : elles arrivent avec PipelineRunnerClass::resultsReady.
+    m_pairs.clear();
     m_currentPairIndex = 0;
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
