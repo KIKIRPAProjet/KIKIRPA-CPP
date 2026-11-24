@@ -126,6 +126,23 @@ namespace {
         step.importConfig(config);
     }
 
+    void configureBothExport(StepsNs::ExportStepClass& step, const fs::path& directory) {
+        const Json config = {{"name", "export"},
+                             {"parameters", Json::array({Json{{"valueType", "string"},
+                                                               {"name", "outputDirectory"},
+                                                               {"value", directory.u8string()}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "filename"},
+                                                               {"value", "mosaic.tif"}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "format"},
+                                                               {"value", "both"}},
+                                                          Json{{"valueType", "int"},
+                                                               {"name", "previewMaxSide"},
+                                                               {"value", 300}}})}};
+        step.importConfig(config);
+    }
+
     std::vector<std::string> fileNames(const fs::path& directory) {
         std::vector<std::string> names;
         for (const fs::directory_entry& entry : fs::directory_iterator(directory))
@@ -308,5 +325,34 @@ TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
     const auto fingerprint = fixture.step.externalInputsFingerprint();
     ASSERT_TRUE(fingerprint.is_object());
-    EXPECT_TRUE(fingerprint.at("exists").get<bool>());
+    ASSERT_TRUE(fingerprint.contains("files"));
+    ASSERT_EQ(fingerprint.at("files").size(), 1);
+    EXPECT_TRUE(fingerprint.at("files").at(0).at("exists").get<bool>());
+}
+
+TEST(ExportStepTest, PublishesTiffAndJpegPreviewInBothMode) {
+    ExportFixture fixture(CV_16UC3);
+    configureBothExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    EXPECT_EQ(fixture.step.getOutput().format, "both");
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.tif"));
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.jpg"));
+}
+
+TEST(ExportStepTest, MissingJpegInBothModeInvalidatesFingerprint) {
+    ExportFixture fixture(CV_16UC3);
+    configureBothExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const Json savedFingerprint = fixture.step.externalInputsFingerprint();
+
+    fs::remove(fixture.outputDirectory / "mosaic.jpg");
+
+    StepsNs::ExportStepClass resumedStep;
+    configureBothExport(resumedStep, fixture.outputDirectory);
+    resumedStep.setDataStore(fixture.dataStore);
+    EXPECT_NE(resumedStep.externalInputsFingerprint(), savedFingerprint);
+    ASSERT_TRUE(resumedStep.execute()) << resumedStep.getResult().dump();
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.jpg"));
 }

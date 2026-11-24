@@ -26,6 +26,7 @@ namespace StepsNs {
 
     struct ExportOutput {
         std::filesystem::path imagePath;   // Image composite publiée
+        std::filesystem::path jpegPreviewPath;
         cv::Size canvasSize;               // dimensions globales en pixels
         bool isBigTiff = false;
         std::string format = "tiff";

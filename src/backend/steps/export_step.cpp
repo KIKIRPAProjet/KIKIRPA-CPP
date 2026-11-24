@@ -352,7 +352,7 @@ namespace StepsNs {
                 return false;
             }
             const cv::Size previewSize = context.preview.size();
-            output = {target.imagePath, previewSize, false, "jpeg"};
+            output = {target.imagePath, target.imagePath, previewSize, false, "jpeg"};
             result["image"] = {{"path", IONs::pathToUtf8(target.imagePath)},
                                {"format", "jpeg"},
                                {"preview", true},
@@ -368,15 +368,16 @@ namespace StepsNs {
                 result["error"] = errorMessage;
                 return false;
             }
-            const fs::path jpegName = fs::path(IONs::pathToUtf8(plan.imagePath)).stem().replace_extension(".jpg");
-            const fs::path jpegPath = nextExportPath(plan.directory, IONs::pathToUtf8(jpegName.filename()));
+            fs::path jpegCandidate = plan.imagePath;
+            jpegCandidate.replace_extension(".jpg");
+            const fs::path jpegPath = nextExportPath(plan.directory, IONs::pathToUtf8(jpegCandidate.filename()));
             ExportOutput jpegOutput;
             Json jpegResult;
             if (!exportJpegPreview(mosaic, {jpegPath, plan.previewMaxSide}, jpegOutput, jpegResult)) {
                 result = jpegResult;
                 return false;
             }
-            output = {plan.imagePath, mosaic.canvasSize, plan.isBigTiff, "both"};
+            output = {plan.imagePath, jpegOutput.imagePath, mosaic.canvasSize, plan.isBigTiff, "both"};
             result["image"] = {{"path", IONs::pathToUtf8(plan.imagePath)},
                                {"bigTiff", output.isBigTiff},
                                {"format", "tiff"},
@@ -391,7 +392,7 @@ namespace StepsNs {
                 result["error"] = errorMessage;
                 return false;
             }
-            output = {plan.imagePath, mosaic.canvasSize, plan.isBigTiff, "tiff"};
+            output = {plan.imagePath, {}, mosaic.canvasSize, plan.isBigTiff, "tiff"};
             result["image"] = {{"path", IONs::pathToUtf8(plan.imagePath)},
                                {"bigTiff", output.isBigTiff},
                                {"format", "tiff"}};
@@ -444,12 +445,39 @@ namespace StepsNs {
     // dossier : la reprise ne refait pas une copie de plus. Fichier supprimé ou modifié : l'export est refait.
     Json ExportStepClass::externalInputsFingerprint() const {
         try {
-            if (!output.imagePath.empty()) return IONs::computeFileFingerprint(output.imagePath);
-            const ExportName name = splitExportName(configuredOutputDirectory(configJson), configuredFilename(configJson));
+            Json fingerprint = Json::object({{"files", Json::array()}});
+
+            if (!output.imagePath.empty()) {
+                fingerprint["files"].push_back(IONs::computeFileFingerprint(output.imagePath));
+                if (!output.jpegPreviewPath.empty()) {
+                    fingerprint["files"].push_back(IONs::computeFileFingerprint(output.jpegPreviewPath));
+                }
+                return fingerprint;
+            }
+
+            const fs::path directory = configuredOutputDirectory(configJson);
+            const std::string format = configuredFormat(configJson);
+
+            if (format == "both") {
+                const ExportName tiffName = splitExportName(directory, configuredFilename(configJson));
+                const auto latestTiff = latestExportRank(tiffName);
+                if (latestTiff) {
+                    fs::path tiffPath = exportPath(tiffName, *latestTiff);
+                    fingerprint["files"].push_back(IONs::computeFileFingerprint(tiffPath));
+                    fs::path jpegPath = tiffPath;
+                    jpegPath.replace_extension(".jpg");
+                    fingerprint["files"].push_back(IONs::computeFileFingerprint(jpegPath));
+                }
+                return fingerprint["files"].empty() ? Json() : fingerprint;
+            }
+
+            const ExportName name = splitExportName(directory, configuredFilename(configJson));
             const auto latest = latestExportRank(name);
-            return latest ? IONs::computeFileFingerprint(exportPath(name, *latest)) : Json();
+            if (!latest) return Json();
+            fingerprint["files"].push_back(IONs::computeFileFingerprint(exportPath(name, *latest)));
+            return fingerprint;
         } catch (const std::exception&) {
-            return Json();   // dossier introuvable ou illisible : checkpoint périmé, execute() dira pourquoi
+            return Json();
         }
     }
 
