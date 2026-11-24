@@ -247,21 +247,15 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
-    connect(pipelineRunner, &PipelineRunnerClass::cancellationAvailable,
-            this, &MainWindow::showPauseRunButton);
     connect(pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, [this](bool isPaused) {
         menuBarManager->setPauseAvailable(!isPaused);
         menuBarManager->setResumeAvailable(isPaused);
-        if (isPaused)
-            removePauseRunButton();
     });
     connect(pipelineRunner, &PipelineRunnerClass::runFinished, this, [this]() {
-        removePauseRunButton();
         menuBarManager->setPauseAvailable(false);
         menuBarManager->setResumeAvailable(false);
     });
     connect(pipelineRunner, &PipelineRunnerClass::runCancelled, this, [this]() {
-        removePauseRunButton();
         menuBarManager->setPauseAvailable(false);
         menuBarManager->setResumeAvailable(false);
     });
@@ -1017,7 +1011,7 @@ void MainWindow::requestRun(int firstStep)
         return;
     }
     if (pipelineRunner->isPaused()) {
-        updateStatus(tr("Un pipeline est en pause. Reprenez-le ou annulez-le avant d'en lancer un autre."));
+        updateStatus(tr("Un pipeline est en pause. Reprenez-le ou arrêtez-le avant d'en lancer un autre."));
         return;
     }
     // Vérification préalable : au moins une tuile doit être chargée dans la grille.
@@ -1062,6 +1056,11 @@ void MainWindow::requestResume()
         updateStatus(tr("Aucun pipeline en pause à reprendre."));
         return;
     }
+    if (projectGrid->state().tilePaths.isEmpty()) {
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de reprendre le pipeline de calcul."));
+        return;
+    }
     // Reconstruire le script depuis l'état actuel de l'interface afin de prendre en compte
     // tout changement de paramètre survenu pendant la pause. Les checkpoints existants
     // détermineront automatiquement ce qui doit être recalculé ou ignoré.
@@ -1082,28 +1081,6 @@ void MainWindow::requestResume()
 void MainWindow::showComparisonDialog()
 {
     DialogHelpers::showComparisonDialog(this, pipelineRunner);
-}
-
-void MainWindow::showPauseRunButton()
-{
-    if (workspaceUI->pauseRunButton())
-        return;
-    auto *pauseRunButton = FrontendUtils::makeButton(tr("Pause"), this);
-    workspaceUI->setPauseRunButton(pauseRunButton);
-    pauseRunButton->setObjectName(QStringLiteral("pauseRunButton"));
-    statusBar()->addPermanentWidget(pauseRunButton);
-    connect(pauseRunButton, &QPushButton::clicked,
-            pipelineRunner, &PipelineRunnerClass::pauseRun);
-}
-
-void MainWindow::removePauseRunButton()
-{
-    QPushButton *pauseRunButton = workspaceUI->pauseRunButton();
-    if (!pauseRunButton)
-        return;
-    statusBar()->removeWidget(pauseRunButton);
-    pauseRunButton->deleteLater();
-    workspaceUI->setPauseRunButton(nullptr);
 }
 
 void MainWindow::updateStatus(const QString &message)

@@ -102,8 +102,6 @@ private slots:
     void showGridMessage(const QString &title, const QString &message, bool warning);
     void handleGridValidation(bool valid, int activeTileCount, const QStringList &errors);
     void showComparisonDialog();
-    void showPauseRunButton();
-    void removePauseRunButton();
 
 private:
     ProjectGrid *projectGrid = nullptr;

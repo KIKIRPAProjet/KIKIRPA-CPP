@@ -31,7 +31,7 @@ class PipelineWorkerClass : public QObject {
         // Construit et lance le pipeline à partir du script JSON fourni.
         void runPipeline(const QString& scriptJsonText, const QString& startFromStep = QString(), bool skipCompletedSteps = true, bool isResume = false);
         void requestPause();
-        // Demande l'arrêt d'urgence du pipeline en cours.
+        // Demande l'arrêt du pipeline à la fin de l'étape courante.
         void requestCancel();
 
     signals:

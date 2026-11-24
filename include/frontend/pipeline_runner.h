@@ -22,8 +22,6 @@ class PipelineRunnerClass : public QObject {
         bool isRunning() const { return running; }
         bool isPaused() const { return paused; }
         int firstStep() const { return firstStepNumber; }
-        int pausedStep() const { return pausedStepNumber; }
-        void resetPausedState() { paused = false; pausedStepNumber = 0; }
 
         void setScriptJson(const QString& scriptJsonText) { scriptJson = scriptJsonText; }
         const QString& getScriptJson() const { return scriptJson; }
@@ -38,7 +36,7 @@ class PipelineRunnerClass : public QObject {
         void pauseRun();
         // Reprend l'exécution là où elle a été interrompue en réutilisant les checkpoints.
         void resumeRun();
-        // Annule et interrompt immédiatement l'exécution.
+        // Demande l'arrêt après l'étape en cours, ou annule un pipeline déjà en pause.
         void cancelRun();
 
         void showComparison();
@@ -52,7 +50,6 @@ class PipelineRunnerClass : public QObject {
         void stepChanged(int stepNumber, const QString& stepName);
         void runFinished();
         void runCancelled();
-        void cancellationAvailable();
         void statusChanged(const QString& message);
         void comparisonRequested();
         void comparisonVisibilityChanged(bool visible);
@@ -83,6 +80,5 @@ class PipelineRunnerClass : public QObject {
         bool running = false;
         bool paused = false;
         bool comparisonVisible = false;
-        int pausedStepNumber = 0;
 
 };
