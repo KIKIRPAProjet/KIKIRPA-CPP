@@ -24,7 +24,8 @@ signals:
     void exportRequested();
     void homeRequested();
     void quitRequested();
-    void togglePanelsRequested();
+    void toggleSideBar();
+    void toggleLog();
     void zoomInRequested();
     void zoomOutRequested();
     void fitToWindowRequested();

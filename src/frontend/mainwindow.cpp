@@ -37,6 +37,7 @@
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include <QAbstractItemView>
@@ -213,6 +214,10 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                pipelineResultsStale = false;
+            });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
@@ -229,6 +234,9 @@ void MainWindow::setupPipelineConnections()
         workspaceUI->progressBar()->setValue(0);
         menuBarManager->setPauseAvailable(true);
         menuBarManager->setResumeAvailable(false);
+        if (workspaceUI->bottomTabs())
+            workspaceUI->bottomTabs()->setVisible(true);
+        sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -305,10 +313,9 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+    connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -334,6 +341,10 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::pauseRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
+        logVisible = !logVisible;
+        workspaceUI->bottomTabs()->setVisible(logVisible);
+    });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
@@ -512,6 +523,8 @@ void MainWindow::refreshPairViews()
 
 void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
+    if (pipelineResultsStale)
+        return;
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -523,7 +536,14 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
 
 void MainWindow::invalidatePipelineResults()
 {
-    applyPipelineResults(PipelineResults());
+    pipelineResultsStale = true;
+    m_pairs.clear();
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(SeamLines());
+        canvasView->setAlignmentOverview({}, {});
+    }
+    refreshPairViews();
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -1103,9 +1123,9 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
         event->accept();
         return;
     }

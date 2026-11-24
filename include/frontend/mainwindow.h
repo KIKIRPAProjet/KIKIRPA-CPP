@@ -83,6 +83,7 @@ private:
     void refreshWindowTitle();
     bool projectModified = false;
     bool switchingProject = false;
+    bool pipelineResultsStale = false;
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
@@ -115,7 +116,8 @@ private:
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 100;
-    bool panelsVisible = true;
+    bool sideBarVisible = true;
+    bool logVisible = false;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
