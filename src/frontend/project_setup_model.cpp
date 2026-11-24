@@ -254,18 +254,14 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "modelPath", IONs::pathToUtf8(setup.lightGlueModelPath));
   } else if (stepName == "manual-matches") {
     replaceParameter(stepJson, "corrections", createCorrectionsJson(setup.pipelineChoices.manualCorrections));
-  }
-
- else if (stepName == "intensity-correction") {
-     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
-     }
- else if (stepName == "fusion") {
-         // Un chemin explicite permet de vérifier le checkpoint dans un nouveau worker.
-         const fs::path mosaicDirectory =
-             fs::absolute(setup.inputDirectory).lexically_normal() / ".cache" / "mosaic";
-         replaceParameter(stepJson, "outputDirectory", IONs::pathToUtf8(mosaicDirectory));
-         }
- else if (stepName == "export") {
+  } else if (stepName == "intensity-correction") {
+    replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
+  } else if (stepName == "fusion") {
+    // Un chemin explicite permet de vérifier le checkpoint dans un nouveau worker.
+    const fs::path mosaicDirectory =
+        fs::absolute(setup.inputDirectory).lexically_normal() / ".cache" / "mosaic";
+    replaceParameter(stepJson, "outputDirectory", IONs::pathToUtf8(mosaicDirectory));
+  } else if (stepName == "export") {
     replaceParameter(
         stepJson, "outputDirectory",
         IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));

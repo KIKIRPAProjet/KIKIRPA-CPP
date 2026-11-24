@@ -150,15 +150,7 @@ void TopToolbars::handleRunButtonClicked()
         m_pipelineRunner->pauseRun();
     }
     else if (m_pipelineRunner->isPaused()) {
-        if (m_pipelineRunner->isCropRun()) {
-            // Conserver le rectangle et le script du rognage en cours.
-            m_pipelineRunner->resumeRun();
-        }
-        else {
-            const int nextStep = m_pipelineRunner->pausedStep() + 1;
-            m_pipelineRunner->resetPausedState();
-            m_mainWindow->requestRun(nextStep);
-        }
+        m_mainWindow->requestResume();
     }
     else {
         m_mainWindow->requestRun(1);
