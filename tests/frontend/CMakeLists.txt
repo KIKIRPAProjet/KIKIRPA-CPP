@@ -33,3 +33,9 @@ target_compile_features(test_frontend_preview_benchmark PRIVATE cxx_std_17)
 gtest_discover_tests(test_frontend_preview_benchmark PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
+
+add_executable(test_frontend_pipeline_results test_pipeline_results.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_results)
+target_link_libraries(test_frontend_pipeline_results PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_pipeline_results PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_pipeline_results PROPERTIES LABELS "unit")

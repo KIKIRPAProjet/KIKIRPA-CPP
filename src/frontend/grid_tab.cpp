@@ -154,7 +154,8 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
 QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
 {
     auto *captureGroup = new QGroupBox(tr("Prise de vue"), parent);
-    auto *captureForm = new QFormLayout(captureGroup);
+    auto *groupLayout = new QVBoxLayout(captureGroup);
+    auto *captureForm = new QFormLayout;
 
     m_horizontalOverlapSpin = new QSpinBox(captureGroup);
     m_horizontalOverlapSpin->setRange(0, kMaxOverlapPercent);
@@ -172,31 +173,49 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
     captureForm->addRow(tr("Recouvrement horizontal"), m_horizontalOverlapSpin);
     captureForm->addRow(tr("Recouvrement vertical"), m_verticalOverlapSpin);
     captureForm->addRow(QString(), m_linkedOverlapCheck);
+    groupLayout->addLayout(captureForm);
 
-    m_modalityCombo = new QComboBox(captureGroup);
+    auto *advancedToggle = new QPushButton(tr("Afficher les paramètres avancés"), captureGroup);
+    advancedToggle->setCheckable(true);
+    advancedToggle->setFlat(true);
+    advancedToggle->setStyleSheet(QStringLiteral("text-align:left; border:0; background:transparent; color:#9bb6d0; padding:2px 0;"));
+    groupLayout->addWidget(advancedToggle);
+
+    auto *advancedWidget = new QWidget(captureGroup);
+    advancedWidget->setVisible(false);
+    auto *advancedForm = new QFormLayout(advancedWidget);
+    advancedForm->setContentsMargins(0, 4, 0, 0);
+
+    m_modalityCombo = new QComboBox(advancedWidget);
     m_modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
                                tr("Radiographie"), tr("Autre")});
-    captureForm->addRow(tr("Modalité"), m_modalityCombo);
+    advancedForm->addRow(tr("Modalité"), m_modalityCombo);
 
-    m_scaleSpin = new QDoubleSpinBox(captureGroup);
+    m_scaleSpin = new QDoubleSpinBox(advancedWidget);
     m_scaleSpin->setRange(0.0, kMaxScale);
     m_scaleSpin->setDecimals(kScaleDecimals);
     m_scaleSpin->setSingleStep(kScaleStep);
     m_scaleSpin->setSpecialValueText(tr("À renseigner"));
     m_scaleSpin->setSuffix(tr(" mm / pixel"));
-    captureForm->addRow(tr("Échelle"), m_scaleSpin);
+    advancedForm->addRow(tr("Échelle"), m_scaleSpin);
 
-    m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
+    m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), advancedWidget);
     m_automaticUncertaintyCheck->setChecked(m_projectGrid->state().automaticUncertainty);
 
-    m_uncertaintySpin = new QDoubleSpinBox(captureGroup);
+    m_uncertaintySpin = new QDoubleSpinBox(advancedWidget);
     m_uncertaintySpin->setRange(0.0, kMaxUncertainty);
     m_uncertaintySpin->setDecimals(kUncertaintyDecimals);
     m_uncertaintySpin->setSuffix(tr(" px"));
     m_uncertaintySpin->setEnabled(!m_projectGrid->state().automaticUncertainty);
 
-    captureForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
-    captureForm->addRow(QString(), m_automaticUncertaintyCheck);
+    advancedForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
+    advancedForm->addRow(QString(), m_automaticUncertaintyCheck);
+    groupLayout->addWidget(advancedWidget);
+
+    connect(advancedToggle, &QPushButton::toggled, advancedWidget, [advancedToggle, advancedWidget](bool checked) {
+        advancedWidget->setVisible(checked);
+        advancedToggle->setText(checked ? tr("Masquer les paramètres avancés") : tr("Afficher les paramètres avancés"));
+    });
 
     return captureGroup;
 }

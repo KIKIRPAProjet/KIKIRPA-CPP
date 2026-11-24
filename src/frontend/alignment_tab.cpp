@@ -29,6 +29,7 @@
 #include <QDialog>
 #include <QDoubleSpinBox>
 #include <QDialogButtonBox>
+#include <QKeySequence>
 #include <QSignalBlocker>
 
 AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *parent)
@@ -110,6 +111,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
 
     auto *addPointButton = FrontendUtils::makeButton(tr("Ajouter un point P"), this);
     auto *deletePointButton = FrontendUtils::makeButton(tr("Supprimer Suppr"), this);
+    deletePointButton->setShortcut(QKeySequence::Delete);
     auto *adjustButton = FrontendUtils::makeButton(tr("Saisir un décalage…"), this);
     m_validateButton = FrontendUtils::makeButton(tr("Valider la paire"), this);
 
@@ -125,18 +127,22 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     auto *separatorBottom = new QFrame(this);
     separatorBottom->setFrameShape(QFrame::HLine);
     separatorBottom->setStyleSheet(QStringLiteral("color:#424242;"));
+    separatorBottom->setVisible(false);
     mainLayout->addWidget(separatorBottom);
 
-    // Résumé du projet 
+    // Résumé du projet (masqué pour alléger l'onglet Paire, déjà visible dans Projet/Grille)
     m_projectNameLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectNameLabel->setWordWrap(true);
+    m_projectNameLabel->setVisible(false);
     mainLayout->addWidget(m_projectNameLabel);
 
     m_tileCountLabel = FrontendUtils::mutedLabel(QString(), this);
+    m_tileCountLabel->setVisible(false);
     mainLayout->addWidget(m_tileCountLabel);
 
     m_projectMetadataLabel = FrontendUtils::mutedLabel(QString(), this);
     m_projectMetadataLabel->setObjectName(QStringLiteral("projectMetadataLabel"));
+    m_projectMetadataLabel->setVisible(false);
     mainLayout->addWidget(m_projectMetadataLabel);
 
     mainLayout->addStretch();
@@ -180,7 +186,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
         m_mainWindow->requestRun(4);
     });
 
-    setPairs(FrontendUtils::defaultPairAlignments(), 0);
+    setPairs({}, 0);   // les paires arrivent avec le premier calcul (MainWindow::applyPipelineResults)
 }
 
 // enregistre la liste des paires et l'index de la paire active 
@@ -195,6 +201,20 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
     rebuildPairSelector();
     if (!m_pairs.isEmpty()) {
         setCurrentPair(m_pairs.at(m_currentPairIndex));
+    } else {
+        if (m_pairTitleLabel)
+            m_pairTitleLabel->setText(tr("Aucune paire calculée"));
+        if (m_statusBadgeLabel) {
+            m_statusBadgeLabel->setText(QStringLiteral("-"));
+            m_statusBadgeLabel->setStyleSheet(QStringLiteral(
+                "background:#3a3a3a; color:#aaaaaa; border-radius:3px; padding:2px 8px;"));
+        }
+        if (m_reasonValueLabel) m_reasonValueLabel->setText(QStringLiteral("-"));
+        if (m_confidenceValueLabel) m_confidenceValueLabel->setText(QStringLiteral("-"));
+        if (m_offsetValueLabel) m_offsetValueLabel->setText(QStringLiteral("-"));
+        if (m_pointsShownValueLabel) m_pointsShownValueLabel->setText(QStringLiteral("-"));
+        if (m_errorValueLabel) m_errorValueLabel->setText(QStringLiteral("-"));
+        if (m_interventionValueLabel) m_interventionValueLabel->setText(QStringLiteral("-"));
     }
 }
 
@@ -212,14 +232,11 @@ void AlignmentTab::rebuildPairSelector()
         if (onlyDubious && !pair.isDubious())
             continue;
 
-        const QString prefix = pair.isDubious()
-            ? QStringLiteral("⚠ ")
-            : QStringLiteral("✓ ");
-        const QString statusText = pair.isDubious()
-            ? tr("douteuse")
-            : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable"));
-        const QString itemLabel = QStringLiteral("%1%2 (%3)")
-                                      .arg(prefix, pair.pairLabel(), statusText);
+        const bool failed = pair.status == FrontendUtils::PairStatus::Failed;
+        const QString statusText = failed ? tr("échec")
+            : (pair.isDubious() ? tr("douteuse")
+                                : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable")));
+        const QString itemLabel = QStringLiteral("%1 (%2)").arg(pair.pairLabel(), statusText);
         m_pairCombo->addItem(itemLabel, pair.pairIndex);
         if (pair.pairIndex == m_currentPairIndex) {
             comboIndexToSelect = m_pairCombo->count() - 1;
@@ -275,7 +292,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     m_confidenceValueLabel->setText(
         tr("%1 · NCC %2")
             .arg(QString::number(pair.meanConfidence, 'f', 2).replace('.', ','),
-                 QString::number(pair.nccScore, 'f', 2).replace('.', ',')));
+                 FrontendUtils::formatMeasure(pair.nccScore, 2)));
 
     m_offsetValueLabel->setText(
         tr("%1 ; %2 px")
@@ -288,8 +305,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
             .arg(pair.shownInliers)
             .arg(pair.shownOutliers));
 
-    m_errorValueLabel->setText(
-        tr("%1 px").arg(QString::number(pair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+    m_errorValueLabel->setText(FrontendUtils::formatMeasure(pair.optimizationErrorPx, 2, QStringLiteral(" px")));
     m_interventionValueLabel->setText(pair.intervention);
 }
 
