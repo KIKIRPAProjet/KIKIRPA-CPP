@@ -22,7 +22,7 @@ TEST(TileContoursTest, UsesTileFilenamesAndAccountsForOverlap)
         makeTile(QStringLiteral("tiles/tile_10.tif")),
         makeTile(QStringLiteral("tiles/tile_11.tif"))
     };
-    canvas.setGridState(2, 2, 0, tiles, 0);
+    canvas.setGridState(2, 2, tiles, 0);
     canvas.setOverlap(20, 20);
 
     const QVector<ArtworkCanvas::TileContour> contours =
@@ -44,7 +44,7 @@ TEST(TileContoursTest, SkipsEmptyAndPathlessTiles)
         makeTile(QString()),
         makeTile(QStringLiteral("tile_11.tif"))
     };
-    canvas.setGridState(2, 2, 0, tiles, 0);
+    canvas.setGridState(2, 2, tiles, 0);
 
     const QVector<ArtworkCanvas::TileContour> contours =
         canvas.computeTileContours(QRectF(0.0, 0.0, 1800.0, 1800.0));
