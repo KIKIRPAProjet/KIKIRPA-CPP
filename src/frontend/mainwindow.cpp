@@ -179,6 +179,10 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                pipelineResultsStale = false;
+            });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
@@ -455,6 +459,8 @@ void MainWindow::refreshPairViews()
 
 void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
+    if (pipelineResultsStale)
+        return;
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -466,7 +472,14 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
 
 void MainWindow::invalidatePipelineResults()
 {
-    applyPipelineResults(PipelineResults());
+    pipelineResultsStale = true;
+    m_pairs.clear();
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(SeamLines());
+        canvasView->setAlignmentOverview({}, {});
+    }
+    refreshPairViews();
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
