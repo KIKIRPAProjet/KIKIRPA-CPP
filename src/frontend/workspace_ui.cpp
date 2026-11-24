@@ -65,7 +65,7 @@
 #include <algorithm>
 
 namespace {
-constexpr int kSplitterHandleWidth = 5;
+constexpr int kSplitterHandleWidth = 3;
 constexpr int kLeftToolbarWidth = 42;
 constexpr int kCenterWidth = 760;
 constexpr int kRightPanelWidth = 280;
@@ -247,6 +247,13 @@ void WorkspaceUI::createWorkspace()
     contentSplitter->setSizes({kBodyHeight, kBottomTabsHeight});
 
     root->addWidget(contentSplitter, 1);
+
+    auto *bottomSeparator = new QFrame(m_workspace);
+    bottomSeparator->setFrameShape(QFrame::HLine);
+    bottomSeparator->setFrameShadow(QFrame::Plain);
+    bottomSeparator->setFixedHeight(3);
+    bottomSeparator->setStyleSheet(QStringLiteral("background-color:#202020; border:none;"));
+    root->addWidget(bottomSeparator);
 
     m_statusBar = new WorkspaceStatusBar(m_mainWindow);
     root->addWidget(m_statusBar);
