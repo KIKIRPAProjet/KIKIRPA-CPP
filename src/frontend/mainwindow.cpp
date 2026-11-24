@@ -77,6 +77,7 @@
 #endif
 
 namespace {
+constexpr int ASSEMBLY_MODE = 5;
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
@@ -229,6 +230,7 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                workspaceUI->setImageLayers({});
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
@@ -278,6 +280,8 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::imageLayersReady,
+            workspaceUI, &WorkspaceUI::setImageLayers);
     connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
@@ -343,7 +347,7 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
-   
+
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
@@ -572,6 +576,7 @@ void MainWindow::invalidatePipelineResults()
     }
     refreshPairViews();
     mosaicFilePath.clear();
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     if (auto *top = workspaceUI->topToolbars()) {
@@ -594,6 +599,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
         return;
     switchingProject = true;
     mosaicFilePath.clear();
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -654,6 +660,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     const bool resume = opening.clickedButton() == resumeButton;
     switchingProject = true;
     mosaicFilePath.clear();
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -732,7 +739,7 @@ void MainWindow::setMode(int mode)
 
         if (isGridMode) {
             tabs->setCurrentIndex(0);
-        } else if (currentMode == 2) {
+        } else if (currentMode == 2 || currentMode == ASSEMBLY_MODE) {
             tabs->setCurrentIndex(3);
         } else if (isPairMode) {
             tabs->setCurrentIndex(2);
@@ -914,11 +921,11 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
+    pipelineRunner->invalidateImageLayers();
     if (importedCount > 0 && workspaceUI->topToolbars()) {
         workspaceUI->topToolbars()->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
         workspaceUI->topToolbars()->setModeEnabled(2, true); // Débloque mode "3 Masques"
     }
-
     setMode(1);
     const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());
