@@ -1,5 +1,4 @@
-#ifndef PROJECTGRID_H
-#define PROJECTGRID_H
+#pragma once
 
 #include "project_setup_model.h"
 
@@ -109,5 +108,3 @@ private:
     int pyramidFailures = 0;
     bool pyramidCancelRequested = false;   // annulée par cancelBackgroundPyramidGeneration (lancement du calcul)
 };
-
-#endif

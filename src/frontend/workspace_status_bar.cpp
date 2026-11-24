@@ -15,7 +15,7 @@ WorkspaceStatusBar::WorkspaceStatusBar(MainWindow *mainWindow, QWidget *parent)
     statusLayout->setContentsMargins(10, 3, 10, 3);
 
     m_pairViewLabel = FrontendUtils::mutedLabel(
-        tr("Vue Paire · 1 / 4    x 1 812  y 2 310 px"), this);
+        tr("Vue Paire · 0 / 0"), this);
     statusLayout->addWidget(m_pairViewLabel);
     statusLayout->addSpacing(12);
 
@@ -42,7 +42,7 @@ WorkspaceStatusBar::WorkspaceStatusBar(MainWindow *mainWindow, QWidget *parent)
 void WorkspaceStatusBar::updatePairSummary(int currentPairOneBased, int totalPairs, int dubiousCount, int failedCount)
 {
     if (m_pairViewLabel) {
-        m_pairViewLabel->setText(tr("Vue Paire · %1 / %2    x 1 812  y 2 310 px")
+        m_pairViewLabel->setText(tr("Vue Paire · %1 / %2")
                                      .arg(currentPairOneBased)
                                      .arg(totalPairs));
     }
