@@ -325,7 +325,8 @@ namespace StepsNs {
         }
 
         bool writeJpegPreviewFile(const cv::Mat& preview, const fs::path& imagePath, std::string& errorMessage) {
-            const fs::path temporaryPath = IONs::makeTemporaryPath(imagePath).concat(".jpg");
+            fs::path temporaryPath = IONs::makeTemporaryPath(imagePath);
+            temporaryPath.replace_extension(".jpg");
             if (!IONs::writeImage(temporaryPath, preview)) {
                 std::error_code removeError;
                 fs::remove(temporaryPath, removeError);

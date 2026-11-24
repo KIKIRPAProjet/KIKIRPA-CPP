@@ -356,6 +356,6 @@ TEST(ExportStepTest, MissingJpegInBothModeInvalidatesFingerprint) {
     configureBothExport(resumedStep, fixture.outputDirectory);
     resumedStep.setDataStore(fixture.dataStore);
     EXPECT_NE(resumedStep.externalInputsFingerprint(), savedFingerprint);
-    ASSERT_TRUE(resumedStep.execute()) << resumedStep.getResult().dump();
+    ASSERT_TRUE(resumedStep.execute()) << "resume export failed: " << resumedStep.getResult().dump();
     EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.jpg"));
 }
