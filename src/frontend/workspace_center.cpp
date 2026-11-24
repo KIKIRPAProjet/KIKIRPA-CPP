@@ -124,17 +124,17 @@ void WorkspaceCenter::createCanvasAndControls()
 
     auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le recadrage"), canvasControls);
     applyCropButton->setObjectName(QStringLiteral("applyCropButton"));
-    applyCropButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    applyCropButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(applyCropButton);
 
     auto *resetCropButton = FrontendUtils::makeButton(tr("Annuler le recadrage"), canvasControls);
     resetCropButton->setObjectName(QStringLiteral("resetCropButton"));
-    resetCropButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    resetCropButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(resetCropButton);
 
     auto *exportButton = FrontendUtils::makeButton(tr("Exporter l'image…"), canvasControls, true);
     exportButton->setObjectName(QStringLiteral("exportImageButton"));
-    exportButton->setVisible(false); // Visible uniquement en mode 5 (Image finale)
+    exportButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(exportButton);
 
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);

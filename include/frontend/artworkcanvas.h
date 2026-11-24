@@ -2,6 +2,7 @@
 
 #include "projectgrid.h"
 #include "frontendutils.h"
+#include "pipeline_results.h"
 
 #include <QRect>
 #include <QStringList>
@@ -49,8 +50,16 @@ public:
 
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
-
-    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
+    // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
+    void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
+    // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
+    void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
+    {
+        m_resultTiles = tiles;
+        m_allPairs = pairs;
+        update();
+    }
+    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
@@ -105,6 +114,14 @@ private:
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
+    // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
+    bool drawMosaicPreview(QPainter &p, bool withSeams);
+    // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,
+    // ou, en mode superposé, la paire sélectionnée en grand.
+    void drawPairView(QPainter &p);
+    void drawTilesOverview(QPainter &p);
+    void drawSuperposedPair(QPainter &p);
+    void drawCenteredMessage(QPainter &p, const QString &message);
 
     bool hasActiveImages() const;
     QRect emptyImportCardRect() const;
@@ -142,6 +159,9 @@ private:
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
+    SeamLines m_seamLines;
+    QVector<ResultTile> m_resultTiles;
+    QVector<FrontendUtils::PairAlignmentInfo> m_allPairs;
     bool seamVisible = true;
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;

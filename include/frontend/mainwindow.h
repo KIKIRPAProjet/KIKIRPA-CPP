@@ -17,6 +17,7 @@ class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
+struct PipelineResults;
 
 class MainWindow : public QMainWindow
 {
@@ -63,6 +64,8 @@ private:
     void validatePair(int pairIndex);
     void applyManualPairOffset(int pairIndex, double dx, double dy);
     void refreshPairViews();
+    // Remplace les paires et les lignes de couture affichées par celles du dernier calcul (vides : tout est effacé).
+    void applyPipelineResults(const PipelineResults &results);
 
     void refreshGrid();
     void refreshGridControls();

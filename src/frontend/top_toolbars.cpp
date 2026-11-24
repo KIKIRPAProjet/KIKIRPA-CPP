@@ -47,9 +47,7 @@ void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
     modeGroup->setExclusive(true);
 
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
-        const QString label = (i == 3)
-            ? QStringLiteral("!   %1").arg(FrontendUtils::MODE_NAMES.at(i))
-            : QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
+        const QString label = QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
         auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
@@ -197,9 +195,9 @@ void TopToolbars::updateDubiousState(int dubiousCount)
 {
     if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
         if (dubiousCount > 0) {
-            alignBtn->setText(QStringLiteral("  %1 (%2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
+            alignBtn->setText(QStringLiteral("4   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
         } else {
-            alignBtn->setText(QStringLiteral("  %1").arg(FrontendUtils::MODE_NAMES.at(3)));
+            alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
     }
     if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
