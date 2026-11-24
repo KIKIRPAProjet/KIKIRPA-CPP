@@ -40,6 +40,7 @@ protected:
 
 TEST_F(ProjectSerializerTestClass, RoundTripsModeScriptAndChainChoices) {
     state.pipelineChoices.matchingStep = "sift";
+    state.pipelineChoices.manualCorrections = {{0, 1, {{500.5, 40.0}, {510.0, 300.0}}, {{20.5, 42.0}, {30.0, 302.0}}}};
     ASSERT_TRUE(ProjectSerializer::saveToFile(projectPath(), QStringLiteral("Étude"),
         directory.path(), 3, state, nullptr, script()));
     ProjectData loaded;

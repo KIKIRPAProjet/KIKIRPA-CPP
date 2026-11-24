@@ -27,6 +27,8 @@
 
 PipelineRunnerClass::PipelineRunnerClass(QObject* parent)
     : QObject(parent) {
+    // Les résultats traversent la frontière entre le thread du worker et celui de l'interface (connexion en file).
+    qRegisterMetaType<PipelineResults>();
 }
 
 PipelineRunnerClass::~PipelineRunnerClass() {
@@ -86,6 +88,7 @@ void PipelineRunnerClass::setupProgressConnections() {
 void PipelineRunnerClass::setupStateConnections() {
     connect(worker, &PipelineWorkerClass::mosaicFileReady, this, &PipelineRunnerClass::mosaicFileReady);
     connect(worker, &PipelineWorkerClass::tilePositionsReady, this, &PipelineRunnerClass::tilePositionsReady);
+    connect(worker, &PipelineWorkerClass::resultsReady, this, &PipelineRunnerClass::resultsReady);
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
     connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
         running = false;

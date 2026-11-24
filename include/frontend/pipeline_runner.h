@@ -3,6 +3,8 @@
 
 #include "artworkcanvas.h"
 
+#include "pipeline_results.h"
+
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -61,6 +63,7 @@ class PipelineRunnerClass : public QObject {
         void mosaicReady(const QImage& image);
         void mosaicFileReady(const QString& imagePath);
         void tilePositionsReady(const QVector<ArtworkCanvas::TilePosition>& positions);
+        void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
 
     private:

@@ -16,6 +16,10 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     for (const QString &name : layerNames) {
         auto *check = new QCheckBox(name);
         check->setChecked(true);
+        if (name == tr("Mosaïque")) {
+            check->setEnabled(false);
+            check->setToolTip(tr("Contrôle de visibilité bientôt disponible"));
+        }
         layersLayout->addWidget(check);
         connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
             m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
