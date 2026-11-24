@@ -16,6 +16,7 @@ namespace StepsNs {
     // Valeurs initiales des paramètres du step.
     struct ImportInput {
         std::string path = "images/";   // dossier contenant les images
+        std::string outputDirectory;   // dossier contenant les images
         // Expression régulière sur le nom du fichier : groupe 1 = colonne, groupe 2 = ligne (insensible à la casse).
         // Utilisée seulement si `tiles` est vide.
         std::string format = R"(img_C(\d+)_R(\d+)\.tif)";
@@ -42,7 +43,9 @@ namespace StepsNs {
     //     `columns` colonnes : le nom des fichiers n'est jamais exigé.
     // Dans les deux cas, l'identifiant d'une tuile est son rang dans l'ordre ligne par ligne, puis colonne par colonne
     // (0, 1, 2...), calculé par le step.
-    // Pour chaque image, il écrit un TIFF tuilé pyramidal <path>/.cache/pyramids/<nom>_<empreinte du chemin>_pyramid.tif
+    // Pour chaque image, il écrit un TIFF tuilé pyramidal
+    // <outputDirectory>/.cache/pyramids/<nom>_<empreinte du chemin>_pyramid.tif
+    // (ou <path>/.cache/pyramids si outputDirectory est vide).
     // (voir core/io/pyramid_cache.h), ou réutilise celui qui a été produit à partir de la version actuelle de l'image
     // (par un import précédent ou par l'interface) ; les steps suivants lisent la tuile à partir de lui, pas de
     // l'image d'origine. Les voisines (gauche, droite, haut, bas) sont déduites des cases. Une seule image est en

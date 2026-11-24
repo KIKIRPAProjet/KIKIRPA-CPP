@@ -33,6 +33,16 @@
 #include <QPushButton>
 #include <QtMath>
 
+namespace {
+std::filesystem::path pyramidCacheDirectoryOverride;
+
+std::filesystem::path pyramidDirectoryFor(const std::filesystem::path &source) {
+    if (!pyramidCacheDirectoryOverride.empty())
+        return pyramidCacheDirectoryOverride;
+    return IONs::pyramidCacheDirectory(source.parent_path());
+}
+}
+
 namespace FrontendUtils {
 
 const QStringList MODE_NAMES = {
@@ -215,9 +225,17 @@ QImage matToQImage(const cv::Mat &mat)
     return {};
 }
 
-// Pyramide de `sourcePath` dans le cache partagé avec le backend (core/io/pyramid_cache.h), à côté de l'image.
+// Pyramide de `sourcePath` dans le cache partagé avec le backend (core/io/pyramid_cache.h).
+// Avec un projet configuré : <dossier de sortie>/.cache/pyramids ; sans configuration : à côté de l'image.
 // Chemin vide si elle n'existe pas encore ou si elle a été produite à partir d'une autre version de l'image : l'aperçu
 // relit alors la source.
+void setPyramidCacheDirectory(const QString &directory)
+{
+    pyramidCacheDirectoryOverride = directory.isEmpty()
+        ? std::filesystem::path{}
+        : IONs::pathFromUtf8(directory.toStdString()) / ".cache" / "pyramids";
+}
+
 QString findPyramidPathForSource(const QString &sourcePath)
 {
     if (sourcePath.isEmpty())
@@ -230,8 +248,9 @@ QString findPyramidPathForSource(const QString &sourcePath)
     }
 
     const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());
+    const std::filesystem::path cacheDirectory = pyramidDirectoryFor(source);
     const std::filesystem::path pyramid =
-        IONs::pyramidCachePath(IONs::pyramidCacheDirectory(source.parent_path()), source);
+        IONs::pyramidCachePath(cacheDirectory, source);
     if (!IONs::isPyramidCacheValid(source, pyramid))
         return {};
     return QString::fromStdString(IONs::pathToUtf8(pyramid));

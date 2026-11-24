@@ -520,6 +520,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     }
     projectName = name;
     outputDirectory = selectedOutputDirectory;
+    if (outputDirectory.isEmpty())
+        outputDirectory = QDir(selectedTileDirectory).filePath(QStringLiteral("output"));
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
     projectPath.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
@@ -574,6 +577,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
+    if (outputDirectory.isEmpty())
+        outputDirectory = QDir(projectGrid->state().tileDirectory).filePath(QStringLiteral("output"));
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
     projectGrid->setState(projectData.gridState);
     if (!hasSavedGrid)
@@ -791,6 +797,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     if (outputDirectory.isEmpty()) {
         outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
 

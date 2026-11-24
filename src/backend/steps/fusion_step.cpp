@@ -71,7 +71,7 @@ namespace StepsNs {
         // le dossier temporaire du système. `tiles` ne doit pas être vide.
         fs::path resolveOutputDirectory(const Json& configJson, const DataNs::TileList& tiles) {
             fs::path configuredDirectory = configuredOutputDirectory(configJson);
-            if (!configuredDirectory.empty()) return configuredDirectory;
+            if (!configuredDirectory.empty()) return configuredDirectory / ".cache" / "mosaic";
             return tiles.front()->getSource().parent_path() / ".cache" / "mosaic";
         }
 

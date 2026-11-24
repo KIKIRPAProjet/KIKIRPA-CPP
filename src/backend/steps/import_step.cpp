@@ -57,6 +57,7 @@ namespace StepsNs {
         // Paramètres du step, relus dans la configuration.
         struct ImportParameters {
             fs::path directory;
+            fs::path outputDirectory;
             std::string format;
             int columns = 0;
             Json tiles;
@@ -218,7 +219,8 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "import";
         stepConfig.parameters = {{"string", "path", initialInput.path}, {"string", "format", initialInput.format},
-                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles}};
+                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles},
+                                 {"string", "outputDirectory", initialInput.outputDirectory}};
         stepConfig.outputs = {{"Tiles", "tiles"}};
         configJson = stepConfig;
     }
@@ -229,8 +231,15 @@ namespace StepsNs {
     // invalides ou aucune image : JSON nul (execute() échouera de toute façon).
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
-            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
-                                              getParameter("columns").get<int>(), getParameter("tiles")};
+            std::string configuredOutputDirectory;
+            try {
+                configuredOutputDirectory = getParameter("outputDirectory").get<std::string>();
+            } catch (const std::out_of_range&) {}
+            const ImportParameters parameters{
+                IONs::pathFromUtf8(getParameter("path").get<std::string>()),
+                IONs::pathFromUtf8(configuredOutputDirectory),
+                getParameter("format").get<std::string>(),
+                getParameter("columns").get<int>(), getParameter("tiles")};
             std::map<std::string, Json> filesByName;
             for (const ImageFile& imageFile : listImageFiles(parameters)) {
                 const bool listed = imageFile.cellSource == CellSource::List;
@@ -251,15 +260,25 @@ namespace StepsNs {
     bool ImportStepClass::execute() {
         try {
             // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
-            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
-                                              getParameter("columns").get<int>(), getParameter("tiles")};
+            std::string configuredOutputDirectory;
+            try {
+                configuredOutputDirectory = getParameter("outputDirectory").get<std::string>();
+            } catch (const std::out_of_range&) {}
+            const ImportParameters parameters{
+                IONs::pathFromUtf8(getParameter("path").get<std::string>()),
+                IONs::pathFromUtf8(configuredOutputDirectory),
+                getParameter("format").get<std::string>(),
+                getParameter("columns").get<int>(), getParameter("tiles")};
             if (!fs::is_directory(parameters.directory))
                 throw std::invalid_argument("not a directory: " + IONs::pathToUtf8(parameters.directory));
             std::vector<ImageFile> imageFiles = listImageFiles(parameters);
             sortAndCheckGrid(imageFiles);
             // Comment les cases ont été trouvées : liste, noms des fichiers, ou ordre des noms.
             result["placement"] = cellSourceName(imageFiles.front().cellSource);
-            const fs::path outputDirectory = prepareOutputDirectory(parameters.directory);
+            const fs::path outputDirectory = parameters.outputDirectory.empty()
+                ? prepareOutputDirectory(parameters.directory)
+                : parameters.outputDirectory / ".cache" / "pyramids";
+            fs::create_directories(outputDirectory);
             DataNs::TileList tiles;
             for (const ImageFile& imageFile : imageFiles) tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), outputDirectory));
             linkNeighbours(tiles);

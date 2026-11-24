@@ -55,11 +55,14 @@ namespace {
 
     // Step import configuré avec un dossier, une liste de tuiles (vide : cases lues dans les noms) et un nombre de
     // colonnes (0 : non donné).
-    StepsNs::ImportStepClass makeImportStep(const fs::path& directory, const Json& tiles, int columns = 0) {
+    StepsNs::ImportStepClass makeImportStep(const fs::path& directory, const Json& tiles, int columns = 0,
+                                             const fs::path& outputDirectory = {}) {
         StepsNs::ImportStepClass step;
         step.importConfig({{"parameters", {{{"valueType", "string"}, {"name", "path"}, {"value", directory.string()}},
                                            {{"valueType", "int"}, {"name", "columns"}, {"value", columns}},
-                                           {{"valueType", "json"}, {"name", "tiles"}, {"value", tiles}}}}});
+                                           {{"valueType", "json"}, {"name", "tiles"}, {"value", tiles}},
+                                           {{"valueType", "string"}, {"name", "outputDirectory"},
+                                            {"value", outputDirectory.u8string()}}}}});
         return step;
     }
 
@@ -178,6 +181,22 @@ TEST(ImportStepTest, GivesEachTileItsOwnPyramidEvenWithTheSameFileName) {
     EXPECT_NE(tiles[0]->getTiff(), tiles[1]->getTiff());
     EXPECT_TRUE(fs::is_regular_file(tiles[0]->getTiff()));
     EXPECT_TRUE(fs::is_regular_file(tiles[1]->getTiff()));
+}
+
+TEST(ImportStepTest, PlacesPyramidsInTheConfiguredOutputDirectory) {
+    const TestDirectory directory;
+    const fs::path outputDirectory = directory.path / "output";
+    writeImage(directory.path / "photo.tif");
+    StepsNs::ImportStepClass step = makeImportStep(
+        directory.path, Json::array({listedTile("photo.tif", 0, 0)}), 0, outputDirectory);
+
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    ASSERT_EQ(step.getOutput().tiles.size(), 1U);
+    const fs::path cacheDirectory = outputDirectory / ".cache" / "pyramids";
+    EXPECT_EQ(step.getOutput().tiles[0]->getTiff(),
+              IONs::pyramidCachePath(cacheDirectory, directory.path / "photo.tif"));
+    EXPECT_TRUE(fs::is_regular_file(step.getOutput().tiles[0]->getTiff()));
+    EXPECT_FALSE(fs::exists(directory.path / ".cache" / "pyramids"));
 }
 
 TEST(ImportStepTest, RejectsTwoTilesInTheSameCell) {
