@@ -107,8 +107,6 @@ QLabel *WorkspaceUI::zoomLabel() const
 
 QTabWidget *WorkspaceUI::rightTabs() const { return m_rightPanel; }
 
-QTabWidget *WorkspaceUI::bottomTabs() const { return m_bottomTabs; }
-
 GridTab *WorkspaceUI::gridtab() const
 {
     return m_rightPanel ? m_rightPanel->gridTab() : nullptr;
@@ -233,14 +231,14 @@ void WorkspaceUI::createWorkspace()
     body->setStretchFactor(2, 0);
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
-    m_bottomTabs = new LogPanel(m_mainWindow);
-    m_bottomTabs->setVisible(false);
+    m_logPanel = new LogPanel(m_mainWindow);
+    m_logPanel->setVisible(false);
 
     auto *contentSplitter = new QSplitter(Qt::Vertical);
     contentSplitter->setHandleWidth(kSplitterHandleWidth);
     contentSplitter->setChildrenCollapsible(false);
     contentSplitter->addWidget(body);
-    contentSplitter->addWidget(m_bottomTabs);
+    contentSplitter->addWidget(m_logPanel);
 
     contentSplitter->setStretchFactor(0, 1);
     contentSplitter->setStretchFactor(1, 0);
@@ -256,8 +254,8 @@ void WorkspaceUI::createWorkspace()
 
 void WorkspaceUI::appendLog(const QString &message)
 {
-    if (m_bottomTabs) {
-        m_bottomTabs->appendLog(message, "info");
+    if (m_logPanel) {
+        m_logPanel->appendLog(message, "info");
     }
 }
 

@@ -36,7 +36,7 @@ private:
     friend class AssemblyTab;
     friend class AlignmentTab;
     friend class MasksTab;
-    friend class logPanel;
+    friend class LogPanel;
     friend class LeftToolbar;
     friend class RightPanel;
     friend class TopToolbars;

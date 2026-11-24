@@ -21,6 +21,7 @@
 #include <QCheckBox>
 #include <QDateTime>
 #include <QHBoxLayout>
+#include <QSizePolicy>
 #include <QTextBrowser>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -48,7 +49,8 @@ LogPanel::LogPanel(MainWindow *mainWindow, QWidget *parent)
     textBrowser = new QTextBrowser(content);
     textBrowser->setReadOnly(true);
     layout->addWidget(textBrowser);
-    // setWidget(content);
+    addTab(content, tr("Journal"));
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     connect(infoCheckBox, &QCheckBox::toggled, this, &LogPanel::refreshLog);
     connect(warningCheckBox, &QCheckBox::toggled, this, &LogPanel::refreshLog);
