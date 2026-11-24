@@ -22,7 +22,6 @@ public:
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
 
-
 signals:
     void previousPairRequested();
     void nextDubiousPairRequested();

@@ -131,20 +131,6 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
     dimensions->addRow(tr("Colonnes"), m_gridColumnsSpin);
     layout->addLayout(dimensions);
 
-    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), container);
-    auto *orderLayout = new QVBoxLayout(orderGroup);
-    m_captureOrderCombo = new QComboBox(orderGroup);
-    m_captureOrderCombo->addItems({
-        tr("Automatique (par lignes)"),
-        tr("Serpentin vertical, bas gauche"),
-        tr("Serpentin vertical, haut droite"),
-        tr("Serpentin horizontal"),
-        tr("Par lignes"),
-        tr("Par colonnes")
-    });
-    orderLayout->addWidget(m_captureOrderCombo);
-    layout->addWidget(orderGroup);
-
     return container;
 }
 
@@ -225,14 +211,11 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
  */
 void GridTab::setupConnections()
 {
-    // Dimensions et ordre de prise de vue
+    // Dimensions de la grille
     connect(m_gridRowsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setGridRows(value); });
     connect(m_gridColumnsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setGridColumns(value); });
-    connect(m_captureOrderCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            [this](int value) { m_projectGrid->setCaptureOrder(value); });
-
     // Recouvrement
     connect(m_horizontalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setHorizontalOverlap(value); });
@@ -278,7 +261,6 @@ void GridTab::updateParameters(const ProjectGrid::State &gridState)
 {
     setSilently(m_gridRowsSpin, &QSpinBox::setValue, gridState.gridRows);
     setSilently(m_gridColumnsSpin, &QSpinBox::setValue, gridState.gridColumns);
-    setSilently(m_captureOrderCombo, &QComboBox::setCurrentIndex, gridState.captureOrder);
     setSilently(m_horizontalOverlapSpin, &QSpinBox::setValue, gridState.horizontalOverlap);
     setSilently(m_verticalOverlapSpin, &QSpinBox::setValue, gridState.verticalOverlap);
     setSilently(m_linkedOverlapCheck, &QCheckBox::setChecked, gridState.overlapsLinked);

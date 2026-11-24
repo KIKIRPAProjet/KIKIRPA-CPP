@@ -116,12 +116,6 @@ GridTab *WorkspaceUI::gridtab() const
 
 QWidget *WorkspaceUI::gridTabPage() const { return gridtab(); }
 
-QComboBox *WorkspaceUI::captureOrderCombo() const
-{
-    return gridtab() ? gridtab()->captureOrderCombo() : nullptr;
-}
-
-
 QLabel *WorkspaceUI::statusLabel() const
 {
     return m_statusBar ? m_statusBar->statusLabel() : nullptr;
@@ -151,8 +145,7 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         ArtworkCanvas *canvasView = m_centerArea->canvas();
         canvasView->setImagePaths(gridState.tilePaths);
         canvasView->setGridState(gridState.gridRows, gridState.gridColumns,
-                                 gridState.captureOrder, gridState.gridTiles,
-                                 gridState.selectedGridCell);
+            gridState.gridTiles, gridState.selectedGridCell);
     }
 
     if (m_rightPanel) {
