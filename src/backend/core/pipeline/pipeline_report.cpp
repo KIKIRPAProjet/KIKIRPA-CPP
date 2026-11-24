@@ -15,6 +15,7 @@
 #include <opencv2/core/types.hpp>
 
 #include <cstddef>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -203,27 +204,32 @@ namespace PipelineNs {
             throw std::runtime_error("report: unsupported data type '" + slot.dataType + "'");
         }
 
+        Json serializeSlot(const ConfigNs::DataSlot& slot, const StepNs::DataStoreClass& dataStore,
+                           bool includeValues) {
+            Json serializedSlot = {
+                {"key", slot.key},
+                {"dataType", slot.dataType}
+            };
+            if (!includeValues) {
+                serializedSlot["available"] = dataStore.has(slot.key);
+                return serializedSlot;
+            }
+
+            try {
+                serializedSlot["value"] = serializeData(slot, dataStore);
+            } catch (const std::exception& exception) {
+                serializedSlot["value"] = nullptr;
+                serializedSlot["note"] = std::string("Donnée non détaillée dans le rapport : ") +
+                                         exception.what();
+            }
+            return serializedSlot;
+        }
+
         Json serializeSlots(const std::vector<ConfigNs::DataSlot>& slots,
                             const StepNs::DataStoreClass& dataStore, bool includeValues) {
             Json serializedSlots = Json::array();
-            for (const ConfigNs::DataSlot& slot : slots) {
-                Json serializedSlot = {
-                    {"key", slot.key},
-                    {"dataType", slot.dataType}
-                };
-                if (!includeValues) {
-                    serializedSlot["available"] = dataStore.has(slot.key);
-                } else {
-                    try {
-                        serializedSlot["value"] = serializeData(slot, dataStore);
-                    } catch (const std::exception& exception) {
-                        serializedSlot["value"] = nullptr;
-                        serializedSlot["note"] = std::string("Donnée non détaillée dans le rapport : ") +
-                                                 exception.what();
-                    }
-                }
-                serializedSlots.push_back(std::move(serializedSlot));
-            }
+            for (const ConfigNs::DataSlot& slot : slots)
+                serializedSlots.push_back(serializeSlot(slot, dataStore, includeValues));
             return serializedSlots;
         }
 
@@ -404,7 +410,7 @@ namespace PipelineNs {
     }
 
     Json createReportConfiguration(const StepNs::StepClass& step) {
-        const Json configuration = step.getConfigJson();
+        const Json& configuration = step.getConfigJson();
         return {{"parameters", configuration.value("parameters", Json::array())}};
     }
 

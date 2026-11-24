@@ -53,6 +53,19 @@ constexpr int PATCH_SIZE = 10;
 constexpr int MODIFIED_PIXEL = 1000;
 constexpr int MOSAIC_REPORT_WIDTH = 640;
 constexpr int MOSAIC_REPORT_HEIGHT = 480;
+constexpr double REPORT_RESIDUAL_DX = 1.5;
+constexpr double REPORT_RESIDUAL_DY = -2.0;
+constexpr double REPORT_RESIDUAL_ERROR = 2.5;
+constexpr double REPORT_OVERLAP_TRANSLATION_Y = 3.0;
+constexpr float REPORT_OVERLAP_FRACTION = 0.2F;
+constexpr double REPORT_OVERLAP_PEAK_RATIO = 3.5;
+constexpr int REPORT_OVERLAP_X = 120;
+constexpr int REPORT_OVERLAP_WIDTH = 80;
+constexpr int REPORT_IMAGE_HEIGHT = 300;
+constexpr int REPORT_MATCH_POINT_COUNT = 1000;
+constexpr double REPORT_MATCH_NCC = 0.9;
+constexpr int REPORT_SECOND_TILE_ID = 9;
+constexpr double REPORT_SECOND_MATCH_NCC = 0.92;
 
 using Json = nlohmann::json;
 
@@ -139,17 +152,17 @@ public:
 
     bool execute() override {
         dataStore->add("pairResiduals", std::vector<DataNs::PairResidual>{
-            {1, 2, cv::Point2d(1.5, -2.0), 2.5}
+            {1, 2, cv::Point2d(REPORT_RESIDUAL_DX, REPORT_RESIDUAL_DY), REPORT_RESIDUAL_ERROR}
         });
         DataNs::PairOverlapEstimate overlap;
         overlap.tileIdA = 1;
         overlap.tileIdB = 2;
         overlap.direction = DataNs::Direction::Right;
-        overlap.estimate.translationBInA = cv::Point2d(120.0, 3.0);
-        overlap.estimate.overlapFraction = 0.2F;
-        overlap.estimate.peakRatio = 3.5;
-        overlap.commonAreaInA = cv::Rect(120, 0, 80, 300);
-        overlap.commonAreaInB = cv::Rect(0, 0, 80, 300);
+        overlap.estimate.translationBInA = cv::Point2d(REPORT_OVERLAP_X, REPORT_OVERLAP_TRANSLATION_Y);
+        overlap.estimate.overlapFraction = REPORT_OVERLAP_FRACTION;
+        overlap.estimate.peakRatio = REPORT_OVERLAP_PEAK_RATIO;
+        overlap.commonAreaInA = cv::Rect(REPORT_OVERLAP_X, 0, REPORT_OVERLAP_WIDTH, REPORT_IMAGE_HEIGHT);
+        overlap.commonAreaInB = cv::Rect(0, 0, REPORT_OVERLAP_WIDTH, REPORT_IMAGE_HEIGHT);
         dataStore->add("overlapEstimates", DataNs::OverlapEstimates{overlap});
         dataStore->add("unknown", std::vector<int>{1, 2, 3});
         result = {{"status", "completed"}};
@@ -173,19 +186,19 @@ public:
               })}
           }) {
         Json points = Json::array();
-        for (int pointIndex = 0; pointIndex < 1000; ++pointIndex)
+        for (int pointIndex = 0; pointIndex < REPORT_MATCH_POINT_COUNT; ++pointIndex)
             points.push_back({
                 {"a", {pointIndex, pointIndex + 1}},
                 {"b", {pointIndex + 2, pointIndex + 3}},
-                {"ncc", 0.9}
+                {"ncc", REPORT_MATCH_NCC}
             });
         result = {
             {"pairs", 1},
             {"confidence", Json::array({
                 {
                     {"idA", 4},
-                    {"idB", 9},
-                    {"ncc", 0.92},
+                    {"idB", REPORT_SECOND_TILE_ID},
+                    {"ncc", REPORT_SECOND_MATCH_NCC},
                     {"points", std::move(points)}
                 }
             })}
@@ -606,6 +619,30 @@ void verifierReprise(PipelineNs::PipelineClass& p, std::string& journal, float d
 
 }
 
+void verifierRepriseApresModification(PipelineNs::PipelineClass& p, const fs::path& dossier,
+                                      std::string& journal) {
+    // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
+    cv::Mat a = cv::imread((dossier / "img_C00_R00.tif").string(), cv::IMREAD_UNCHANGED);
+    a(cv::Rect(0, 0, PATCH_SIZE, PATCH_SIZE)).setTo(cv::Scalar(MODIFIED_PIXEL));
+    cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
+
+    journal.clear();
+    const auto log = [&](const std::string& message) { journal += message + "\n"; };
+    verifier(p.run(log), "run 3 réussi");
+    verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
+             "image modifiée : import et appariement refaits");
+}
+
+void verifierRapportReprise(const fs::path& dossier) {
+    const Json resumedReport = readJsonFile(dossier / "execution.json");
+    verifier(resumedReport.at("steps").at(0).at("status") == "skipped" &&
+                 resumedReport.at("steps").at(1).at("status") == "skipped",
+             "les étapes restaurées sont marquées comme réutilisées dans le rapport");
+    verifier(!resumedReport.at("steps").at(0).at("configuration").contains("inputs") &&
+                 !resumedReport.at("steps").at(1).at("configuration").contains("outputs"),
+             "les étapes réutilisées ne répètent pas les descripteurs de données");
+}
+
 void testerRepriseReelle() {
     std::cout << "Reprise du pipeline réel sur checkpoints\n";
     const fs::path dossier = fs::temp_directory_path() / "kikirpa_test_pipeline_reprise";
@@ -626,24 +663,8 @@ void testerRepriseReelle() {
     const float dx1 = p.getDataStore().get<std::vector<DataNs::PairMatches>>("matches").at(0).featureMatches.translationX;
 
     verifierReprise(p, journal, dx1);
-    const Json resumedReport = readJsonFile(dossier / "execution.json");
-    verifier(resumedReport.at("steps").at(0).at("status") == "skipped" &&
-                 resumedReport.at("steps").at(1).at("status") == "skipped",
-             "les étapes restaurées sont marquées comme réutilisées dans le rapport");
-    verifier(!resumedReport.at("steps").at(0).at("configuration").contains("inputs") &&
-                 !resumedReport.at("steps").at(1).at("configuration").contains("outputs"),
-             "les étapes réutilisées ne répètent pas les descripteurs de données");
-
-    // Une image source modifiée périme le checkpoint de l'import, donc de toute la suite
-    {
-        cv::Mat a = cv::imread((dossier / "img_C00_R00.tif").string(), cv::IMREAD_UNCHANGED);
-        a(cv::Rect(0, 0, PATCH_SIZE, PATCH_SIZE)).setTo(cv::Scalar(MODIFIED_PIXEL));
-        cv::imwrite((dossier / "img_C00_R00.tif").string(), a);
-    }
-    journal.clear();
-    verifier(p.run(log), "run 3 réussi");
-    verifier(journal.find("Step 1/2 OK") != std::string::npos && journal.find("Step 2/2 OK") != std::string::npos,
-             "image modifiée : import et appariement refaits");
+    verifierRapportReprise(dossier);
+    verifierRepriseApresModification(p, dossier, journal);
     fs::remove_all(dossier);
 }
 
