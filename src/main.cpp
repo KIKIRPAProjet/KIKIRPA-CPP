@@ -23,6 +23,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <QImageReader>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
