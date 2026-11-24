@@ -72,10 +72,30 @@
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
+#include <dwmapi.h>
 #endif
 
 namespace {
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+#ifdef Q_OS_WIN
+void applyWindowsDarkTitleBar(QWidget *widget)
+{
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    if (!hwnd)
+        return;
+    constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+    constexpr DWORD kDwmwaCaptionColor = 35;
+    constexpr DWORD kDwmwaTextColor = 36;
+    // Active le mode sombre natif de la barre de titre (Windows 10 2004+ et Windows 11).
+    const BOOL useDarkMode = TRUE;
+    DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &useDarkMode, sizeof(useDarkMode));
+    // Windows 11 uniquement (ignoré sans erreur sous Windows 10) : couleur exacte du QMenuBar (#242424).
+    const COLORREF captionColor = RGB(0x24, 0x24, 0x24);
+    const COLORREF textColor = RGB(0xDE, 0xDE, 0xDE);
+    DwmSetWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
+    DwmSetWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
+}
+#endif
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -84,6 +104,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     resize(1228, 780);
     setMinimumSize(920, 600);
     applyStyleSheet();
+    #ifdef Q_OS_WIN
+        applyWindowsDarkTitleBar(this);
+    #endif
 
     projectGrid = new ProjectGrid(this);
     pipelineRunner = new PipelineRunnerClass(this);
