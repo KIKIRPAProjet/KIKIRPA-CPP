@@ -429,6 +429,9 @@ PipelineResults PipelineWorkerClass::collectResults(const QSize& previewSize) {
     if (!pipeline) return results;
     const auto& dataStore = pipeline->getDataStore();
     try {
+        if (dataStore.has("mosaic")) {
+            results.mosaic = dataStore.get<DataNs::Mosaic>("mosaic");
+        }
         if (dataStore.has("tiles")) results.tiles = FrontendNs::buildResultTiles(dataStore.get<DataNs::TileList>("tiles"));
         // Sans "matches" (toutes les paires ont échoué), les raisons d'échec des steps donnent quand même les paires.
         if (dataStore.has("tiles")) {

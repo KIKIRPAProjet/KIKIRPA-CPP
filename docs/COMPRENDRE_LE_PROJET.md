@@ -212,10 +212,15 @@ Non dessinés : `dynamic-programming-dijkstra`, l'autre méthode de couture, se 
 | `final-verification` | `inputImagePath`, `outputImagePath` | — (chemins de fichiers) | `verificationReport` : `VerificationReport` | [FinalVerificationStep.md](steps/FinalVerificationStep.md) |
 | `dynamic-programming-dijkstra` | `method`, `costFunction`, `corridorRadius` | `tiles`, `positions`, `intensityCorrection` | `territories` : `Territories`, `seamlines` : `Seamlines` | [dp-dijkstrat.md](steps/dp-dijkstrat.md) |
 | `fusion` | `outputDirectory` | `tiles`, `positions`, `territories` (+ `intensityCorrection` si présente) | `mosaic` : `Mosaic` | [FusionStep.md](steps/FusionStep.md) |
+| `mosaic-crop` | `x`, `y`, `width`, `height`, `outputDirectory` | `mosaic` | `mosaic` : `Mosaic` rognée | [MosaicCropStep.md](steps/MosaicCropStep.md) |
 | `export` | `outputDirectory` | `mosaic` | aucun DataStore ; publie `mosaic.tif` | [ExportStep.md](steps/ExportStep.md) |
 
 Chaque step a aussi un compte rendu, `getResult()` : compteurs, `failures` (paires ignorées, avec la raison) et `error` en cas d'échec. Il est affiché dans la console, mais il n'est pas une sortie du pipeline.
 `final-verification` publie son rapport complet dans `getResult()` et dans le DataStore; il compare les métadonnées, pas les pixels.
+Le rognage rectangulaire est facultatif : `fusion → mosaic-crop → export`.
+Il s'applique à la mosaïque assemblée, avec un rectangle exprimé en pixels
+pleine résolution. L'image, la provenance et le masque sont rognés ensemble.
+La mosaïque obtenue remplace la clé `mosaic` uniquement après réussite.
 
 ### Les types de données, et leur JSON
 

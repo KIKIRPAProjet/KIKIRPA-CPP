@@ -5,7 +5,9 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <QRectF>
 
+#include "core/data/algorithm_types.h"
 #include "frontendutils.h"
 #include "project_setup_model.h"
 
@@ -43,6 +45,22 @@ private:
     friend class WorkspaceCenter;
     friend class WorkspaceStatusBar;
     QString mosaicFilePath;
+    // Mosaïque reçue du pipeline, avant les essais de rognage de l'interface.
+    DataNs::Mosaic originalMosaic;
+    // Résultat reçu pendant le rognage, publié dans l'interface après succès.
+    DataNs::Mosaic pendingCropMosaic;
+    // Rectangle effectivement demandé, après arrondi aux pixels pleine résolution.
+    QRectF pendingCropRectangle;
+    // Source associée à la demande, pour ignorer un résultat après changement de projet.
+    DataNs::Mosaic pendingCropSource;
+    // Script du calcul complet, conservé pour revenir au résultat non rogné.
+    QString originalPipelineScript;
+
+    // Le TIFF disponible correspond au recadrage affiché.
+    bool cropBackendReady = false;
+
+    // Ouvrir la fenêtre d'export après la réussite du rognage.
+    bool exportAfterCrop = false;
 
     void keyPressEvent(QKeyEvent *event) override;
 
@@ -87,7 +105,14 @@ private:
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
+    void requestResume();
     void showExportDialog();
+    // Lance le rognage d'un rectangle normalisé par rapport à la mosaïque originale.
+    void requestMosaicCrop(const QRectF& normalizedRectangle);
+    void beginMosaicCrop();
+    void resetMosaicCrop();
+    void handleCropFinished(bool success, const QImage& previewImage);
+    void setCropControlsEnabled(bool enabled);
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
 

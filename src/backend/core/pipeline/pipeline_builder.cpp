@@ -16,10 +16,12 @@
 #include "steps/intensity_correction_step.h"
 #include "steps/lightglue_step.h"
 #include "steps/manual_matches_step.h"
+#include "steps/mosaic_crop_step.h"
 #include "steps/phase_correlation_step.h"
 #include "steps/overlap_estimation_step.h"
 #include "steps/sift_step.h"
 #include "steps/vote_2d_step.h"
+
 
 #include <cstddef>
 #include <exception>
@@ -58,6 +60,7 @@ namespace PipelineNs {
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
                 {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
                 {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
+                {"mosaic-crop", [] { return std::make_unique<StepsNs::MosaicCropStepClass>(); }},
             };
             return registry;
         }

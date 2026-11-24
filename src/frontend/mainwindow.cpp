@@ -44,6 +44,7 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFontMetrics>
@@ -64,6 +65,7 @@
 #include <QProgressDialog>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <functional>
 #include <stdexcept>
@@ -221,17 +223,24 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
-            mosaicFilePath = imagePath;
+            if (!pipelineRunner->isCropRun())
+                mosaicFilePath = imagePath;
         });
 
     // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
     // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
-            this, [this]() {
+        this, [this]() {
+            if (!pipelineRunner->isCropRun()) {
                 mosaicFilePath.clear();
+                originalMosaic = {};
+                cropBackendReady = false;
+                exportAfterCrop = false;
                 workspaceUI->setImageLayers({});
-                projectGrid->cancelBackgroundPyramidGeneration();
-            });
+            }
+            pendingCropMosaic = {};
+            projectGrid->cancelBackgroundPyramidGeneration();
+        });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
         if (workspaceUI->bottomTabs())
@@ -274,6 +283,30 @@ void MainWindow::setupPipelineConnections()
                     // L'export est accessible via le bouton "Exporter…" dans la barre supérieure.
                 }
     });
+    connect(pipelineRunner, &PipelineRunnerClass::cropFinished,
+        this, &MainWindow::handleCropFinished);
+
+    if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+        connect(canvas, &ArtworkCanvas::cropRequested,
+            this, [this, canvas](const QRectF& rectangle) {
+                if (pipelineRunner->isRunning() || pipelineRunner->isPaused())
+                    return;
+
+                canvas->previewCrop(rectangle);
+                cropBackendReady = false;
+                exportAfterCrop = false;
+
+                updateStatus(tr(
+                    "Aperçu du rognage validé. "
+                    "Le traitement pleine résolution sera effectué à l'export."));
+            });
+    }
+
+    connect(pipelineRunner, &PipelineRunnerClass::pausedStateChanged,
+        this, [this](bool paused) {
+            if (paused && pipelineRunner->isCropRun())
+                updateStatus(tr("Rognage en pause : reprenez ou annulez le calcul."));
+        });
 }
 
 void MainWindow::setupHomePageConnections()
@@ -510,13 +543,22 @@ void MainWindow::refreshPairViews()
     }
 }
 
-void MainWindow::applyPipelineResults(const PipelineResults &results)
+void MainWindow::applyPipelineResults(const PipelineResults& results)
 {
     if (pipelineResultsStale)
         return;
+
+    if (pipelineRunner->isCropRun()) {
+        pendingCropMosaic = results.mosaic;
+        return;
+    }
+
+    originalMosaic = results.mosaic;
+    originalPipelineScript = pipelineRunner->getScriptJson();
+
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+    if (auto* canvasView = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
         canvasView->setSeamLines(results.seams);
         canvasView->setAlignmentOverview(results.tiles, results.pairs);
     }
@@ -526,6 +568,12 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
 void MainWindow::invalidatePipelineResults()
 {
     pipelineResultsStale = true;
+    originalMosaic = {};
+    originalPipelineScript.clear();
+    pendingCropMosaic = {};
+    pendingCropRectangle = {};
+    cropBackendReady = false;
+    exportAfterCrop = false;
     m_pairs.clear();
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -547,6 +595,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
         return;
     switchingProject = true;
     mosaicFilePath.clear();
+    originalMosaic = {};
+    cropBackendReady = false;
+    exportAfterCrop = false;
     pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -602,6 +653,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     const bool resume = opening.clickedButton() == resumeButton;
     switchingProject = true;
     mosaicFilePath.clear();
+    originalMosaic = {};
+    cropBackendReady = false;
+    exportAfterCrop = false;
     pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -644,6 +698,9 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
+    // Un ancien projet ouvert sur Masques revient à la page Tuiles.
+    if (mode == 2)
+        mode = 1;
     if (!switchingProject && currentMode != mode)
         markProjectModified();
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
@@ -714,8 +771,12 @@ void MainWindow::setMode(int mode)
         QStringLiteral("nextDubiousButton"))) {
         nextDubiousBtn->setVisible(isPairMode);
     }
-    // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
+    // Boutons d'export et de rognage uniquement en mode Image finale (kModeExport)
     const bool isExportMode = (currentMode == kModeExport);
+    if (auto* startCropButton = workspaceUI->workspace()->findChild<QPushButton*>(
+        QStringLiteral("startCropButton"))) {
+        startCropButton->setVisible(isExportMode);
+    }
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
                 QStringLiteral("applyCropButton"))) {
         applyCropBtn->setVisible(isExportMode);
@@ -728,11 +789,11 @@ void MainWindow::setMode(int mode)
                 QStringLiteral("exportImageButton"))) {
         exportBtn->setVisible(isExportMode);
     }
-    // Outil de recadrage dans la barre latérale uniquement visible en mode Image finale (kModeExport)
+    // Le rognage est désormais accessible depuis les commandes de l'image finale.
     if (workspaceUI && workspaceUI->leftToolbar()) {
-        workspaceUI->leftToolbar()->setToolVisible(LeftToolbar::kCropToolIndex, isExportMode);
+        workspaceUI->leftToolbar()->setToolVisible(LeftToolbar::kCropToolIndex, false);
     }
-    // Si l'on quitte le mode Image finale alors que l'outil de recadrage était actif, on désactive l'outil
+    // Si l'on quitte le mode Image finale alors que l'outil de rognage était actif, on désactive l'outil
     if (!isExportMode) {
         if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
             if (canvas->activeTool() == LeftToolbar::kCropToolIndex) {
@@ -996,6 +1057,220 @@ QString MainWindow::generatePipelineScript(int firstStep) const
     return QString::fromStdString(script.dump(2));
 }
 
+void MainWindow::setCropControlsEnabled(bool enabled)
+{
+    const QStringList buttonNames = {
+        QStringLiteral("startCropButton"),
+        QStringLiteral("applyCropButton"),
+        QStringLiteral("resetCropButton"),
+        QStringLiteral("exportImageButton"),
+        QStringLiteral("exportPipelineButton")
+    };
+
+    for (const QString& name : buttonNames) {
+        if (auto* button = workspaceUI->workspace()->findChild<QPushButton*>(name))
+            button->setEnabled(enabled);
+    }
+}
+
+void MainWindow::resetMosaicCrop()
+{
+    if (pipelineRunner->isRunning() || pipelineRunner->isPaused()) {
+        updateStatus(tr("Terminez ou annulez le calcul avant de réinitialiser le rognage."));
+        return;
+    }
+
+    if (originalMosaic.imagePath.empty()) {
+        updateStatus(tr("La mosaïque originale n'est pas disponible."));
+        return;
+    }
+
+    const QString sourcePath =
+        QString::fromStdString(IONs::pathToUtf8(originalMosaic.imagePath));
+    if (!QFileInfo(sourcePath).isFile()) {
+        updateStatus(tr("Le fichier de la mosaïque originale est introuvable."));
+        return;
+    }
+
+    cropBackendReady = false;
+    exportAfterCrop = false;
+    mosaicFilePath = sourcePath;
+    if (!originalPipelineScript.isEmpty())
+        pipelineRunner->setScriptJson(originalPipelineScript);
+
+    if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+        canvas->resetCrop();
+        canvas->cancelCropSelection();
+        canvas->setActiveTool(-1);
+    }
+
+    updateStatus(tr("Mosaïque originale restaurée."));
+}
+
+void MainWindow::beginMosaicCrop()
+{
+    if (pipelineRunner->isRunning() || pipelineRunner->isPaused()) {
+        updateStatus(tr("Terminez ou annulez le calcul avant de sélectionner un rectangle."));
+        return;
+    }
+
+    if (originalMosaic.imagePath.empty() ||
+        !QFileInfo(QString::fromStdString(
+            IONs::pathToUtf8(originalMosaic.imagePath))).isFile()) {
+        updateStatus(tr("Lancez l'assemblage avant de sélectionner une zone de rognage."));
+        return;
+    }
+
+    // Repartir de l'image entière permet d'agrandir une sélection précédente.
+    resetMosaicCrop();
+    if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+        canvas->startCropSelection();
+        updateStatus(tr("Tracez le rectangle à conserver, puis validez le rognage."));
+    }
+}
+
+void MainWindow::handleCropFinished(
+    bool success, const QImage& previewImage)
+{
+    setCropControlsEnabled(true);
+
+    const bool shouldOpenExport = exportAfterCrop;
+    exportAfterCrop = false;
+    cropBackendReady = false;
+
+    if (originalMosaic.imagePath != pendingCropSource.imagePath) {
+        pendingCropMosaic = {};
+        return;
+    }
+
+    if (!success) {
+        pendingCropMosaic = {};
+        updateStatus(tr(
+            "Export interrompu. Le rognage reste visible en aperçu. "
+            "Consultez le journal pour la cause."));
+        return;
+    }
+
+    const QString croppedPath =
+        QString::fromStdString(IONs::pathToUtf8(pendingCropMosaic.imagePath));
+
+    if (previewImage.isNull() ||
+        pendingCropMosaic.canvasSize.width <= 0 ||
+        pendingCropMosaic.canvasSize.height <= 0 ||
+        !QFileInfo(croppedPath).isFile()) {
+        pendingCropMosaic = {};
+        updateStatus(tr(
+            "Le résultat du rognage est indisponible. "
+            "L'export n'a pas été effectué."));
+        return;
+    }
+
+    auto* canvas =
+        dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas());
+    if (!canvas)
+        return;
+
+    canvas->setBackendCropPreview(previewImage, pendingCropRectangle);
+    mosaicFilePath = croppedPath;
+    cropBackendReady = true;
+    setMode(kModeExport);
+
+    updateStatus(tr("Rognage calculé. L'image peut être enregistrée."));
+
+    if (shouldOpenExport) {
+        // Laisser le runner terminer son nettoyage avant d'ouvrir le dialogue.
+        QTimer::singleShot(0, this, [this, croppedPath]() {
+            if (cropBackendReady && mosaicFilePath == croppedPath &&
+                !pipelineRunner->isRunning() &&
+                !pipelineRunner->isPaused()) {
+                showExportDialog();
+            }
+            });
+    }
+}
+
+void MainWindow::requestMosaicCrop(const QRectF& normalizedRectangle)
+{
+    if (pipelineRunner->isRunning() || pipelineRunner->isPaused()) {
+        updateStatus(tr("Terminez ou annulez le calcul courant avant de rogner."));
+        return;
+    }
+
+    const int width = originalMosaic.canvasSize.width;
+    const int height = originalMosaic.canvasSize.height;
+    if (width <= 0 || height <= 0 || originalMosaic.imagePath.empty() ||
+        originalMosaic.provenancePath.empty() || originalMosaic.maskPath.empty()) {
+        updateStatus(tr("La mosaïque complète n'est pas disponible. Relancez l'assemblage."));
+        return;
+    }
+
+    if (!std::isfinite(normalizedRectangle.x()) ||
+        !std::isfinite(normalizedRectangle.y()) ||
+        !std::isfinite(normalizedRectangle.width()) ||
+        !std::isfinite(normalizedRectangle.height())) {
+        updateStatus(tr("Le rectangle de rognage est invalide."));
+        return;
+    }
+
+    const QRectF selection =
+        normalizedRectangle.intersected(QRectF(0.0, 0.0, 1.0, 1.0));
+    if (selection.isEmpty()) {
+        updateStatus(tr("Sélectionnez une zone non vide dans la mosaïque."));
+        return;
+    }
+
+    // Bornes droite et basse exclusives ; conserver tous les pixels touchés.
+    const int left = qBound(0, static_cast<int>(
+        std::floor(selection.left() * width)), width - 1);
+    const int top = qBound(0, static_cast<int>(
+        std::floor(selection.top() * height)), height - 1);
+    const int right = qBound(left + 1, static_cast<int>(
+        std::ceil(selection.right() * width)), width);
+    const int bottom = qBound(top + 1, static_cast<int>(
+        std::ceil(selection.bottom() * height)), height);
+
+    const QRect rectangle(left, top, right - left, bottom - top);
+    pendingCropRectangle = QRectF(
+        static_cast<double>(left) / width,
+        static_cast<double>(top) / height,
+        static_cast<double>(rectangle.width()) / width,
+        static_cast<double>(rectangle.height()) / height);
+    pendingCropMosaic = {};
+    pendingCropSource = originalMosaic;
+
+    const QString sourcePath =
+        QString::fromStdString(IONs::pathToUtf8(originalMosaic.imagePath));
+    const QDir parentDirectory = QFileInfo(sourcePath).absoluteDir();
+
+    // Le step remplace uniquement un précédent résultat identifié par son
+    // marqueur, après écriture complète des trois nouveaux TIFF.
+    const QString cropDirectory =
+        parentDirectory.filePath(QStringLiteral("crop"));
+
+    if (originalPipelineScript.isEmpty()) {
+        updateStatus(tr(
+            "Le script de l'assemblage est indisponible. "
+            "Relancez l'assemblage avant de rogner."));
+        return;
+    }
+
+    // Chaque essai repart du script complet associé à la fusion originale.
+    pipelineRunner->setScriptJson(originalPipelineScript);
+
+    updateStatus(tr("Préparation du rognage en pleine résolution…"));
+    // Quitter la sélection tout en conservant le zoom et le déplacement.
+    if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+        canvas->cancelCropSelection();
+        canvas->setActiveTool(-1);
+    }
+    setCropControlsEnabled(false);
+    pipelineRunner->startCropRun(rectangle, cropDirectory);
+
+    // Une erreur de préparation peut empêcher le lancement du thread.
+    if (!pipelineRunner->isRunning())
+        setCropControlsEnabled(true);
+}
+
 void MainWindow::requestRun(int firstStep)
 {
     if (pipelineRunner->isRunning()) {
@@ -1032,6 +1307,49 @@ void MainWindow::requestRun(int firstStep)
     pipelineRunner->setScriptJson(scriptJson);
     pipelineRunner->setStartFromStepName(startStep);
     pipelineRunner->startRun(firstStep);
+}
+
+void MainWindow::requestResume()
+{
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Une exécution du pipeline est déjà en cours."));
+        return;
+    }
+    if (!pipelineRunner->isPaused()) {
+        updateStatus(tr("Aucun pipeline en pause à reprendre."));
+        return;
+    }
+
+    // Le rognage doit conserver son rectangle et son script.
+    if (pipelineRunner->isCropRun()) {
+        pipelineRunner->resumeRun();
+        return;
+    }
+
+    if (projectGrid->state().tilePaths.isEmpty()) {
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de reprendre le pipeline de calcul."));
+        return;
+    }
+
+    // Comme dans #141, reprendre le calcul normal avec les paramètres actuels.
+    QString scriptJson;
+    try {
+        scriptJson = generatePipelineScript(1);
+    }
+    catch (const std::exception& exception) {
+        QMessageBox::critical(this, tr("Erreur de configuration"),
+            tr("Impossible de reprendre : pipeline invalide : %1")
+            .arg(exception.what()));
+        return;
+    }
+
+    if (scriptJson.isEmpty())
+        return;
+
+    pipelineRunner->setScriptJson(scriptJson);
+    pipelineRunner->setStartFromStepName(QString());
+    pipelineRunner->resumeRun();
 }
 
 void MainWindow::showComparisonDialog()
@@ -1084,31 +1402,28 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         event->accept();
         return;
     }
-    // Raccourci clavier (touche C) : active l'outil de recadrage uniquement en mode Image finale (kModeExport).
+    // Raccourci clavier (touche C) : active l'outil de rognage uniquement en mode Image finale (kModeExport).
     if (event->key() == Qt::Key_C && currentMode == kModeExport) {
-        if (workspaceUI && workspaceUI->leftToolbar()) {
-            workspaceUI->leftToolbar()->selectTool(LeftToolbar::kCropToolIndex);
-            event->accept();
-            return;
-        }
+        beginMosaicCrop();
+        event->accept();
+        return;
     }
-    // Raccourci clavier (touches Entrée / Return) : valide le recadrage si une sélection existe.
+    // Raccourci clavier (touches Entrée / Return) : valide le rognage si une sélection existe.
     if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
         if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
             if (canvas->hasActiveCropSelection()) {
                 canvas->applyCrop();
-                updateStatus(tr("Recadrage validé et appliqué à l'image."));
                 event->accept();
                 return;
             }
         }
     }
-    // Raccourci clavier (touche Échap) : annule la boîte de sélection de recadrage en cours.
+    // Raccourci clavier (touche Échap) : annule la boîte de sélection de rognage en cours.
     if (event->key() == Qt::Key_Escape) {
         if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
             if (canvas->hasActiveCropSelection()) {
                 canvas->cancelCropSelection();
-                updateStatus(tr("Sélection de recadrage annulée."));
+                updateStatus(tr("Sélection de rognage annulée."));
                 event->accept();
                 return;
             }

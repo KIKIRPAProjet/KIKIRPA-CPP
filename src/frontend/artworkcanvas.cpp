@@ -667,47 +667,106 @@ void ArtworkCanvas::drawCropOverlay(QPainter &painter, const QRect &imageRect)
     painter.drawText(bannerRect, Qt::AlignCenter, tr("Entrée : Valider | Échap : Annuler"));
 }
 
-void ArtworkCanvas::applyCrop()
+void ArtworkCanvas::startCropSelection()
 {
-    if (!m_cropSelectionRect.isValid() || m_cropSelectionRect.width() < 15 || m_cropSelectionRect.height() < 15)
+    if (!isEnabled() || modeValue != kModeExport || m_mosaicPreview.isNull())
         return;
 
+    cancelCropSelection();
+    setActiveTool(kCropTool);
+    setFocus();
+    update();
+}
+
+QRectF ArtworkCanvas::selectedCropNormalizedRect() const
+{
+    if (!hasActiveCropSelection() || m_mosaicPreview.isNull())
+        return {};
+
     const QRect displayedImageRect = mosaicDisplayedRect();
-    if (displayedImageRect.isEmpty()) return;
+    if (displayedImageRect.isEmpty())
+        return {};
 
-    // Coordonnées relatives [0..1] par rapport à l'image actuellement affichée.
-    const double relativeX = static_cast<double>(m_cropSelectionRect.left() - displayedImageRect.left()) / displayedImageRect.width();
-    const double relativeY = static_cast<double>(m_cropSelectionRect.top() - displayedImageRect.top()) / displayedImageRect.height();
-    const double relativeWidth = static_cast<double>(m_cropSelectionRect.width()) / displayedImageRect.width();
-    const double relativeHeight = static_cast<double>(m_cropSelectionRect.height()) / displayedImageRect.height();
+    const QRect selection = m_cropSelectionRect.intersected(displayedImageRect);
+    if (selection.isEmpty())
+        return {};
 
-    const double clampedX = qBound(0.0, relativeX, 1.0);
-    const double clampedY = qBound(0.0, relativeY, 1.0);
-    const double clampedWidth = qBound(0.0, relativeWidth, 1.0 - clampedX);
-    const double clampedHeight = qBound(0.0, relativeHeight, 1.0 - clampedY);
+    const double relativeX =
+        static_cast<double>(selection.x() - displayedImageRect.x()) /
+        displayedImageRect.width();
+    const double relativeY =
+        static_cast<double>(selection.y() - displayedImageRect.y()) /
+        displayedImageRect.height();
+    const double relativeWidth =
+        static_cast<double>(selection.width()) / displayedImageRect.width();
+    const double relativeHeight =
+        static_cast<double>(selection.height()) / displayedImageRect.height();
 
-    if (m_isCropped) {
-        m_cropNormalizedRect = QRectF(
-            m_cropNormalizedRect.x() + clampedX * m_cropNormalizedRect.width(),
-            m_cropNormalizedRect.y() + clampedY * m_cropNormalizedRect.height(),
-            clampedWidth * m_cropNormalizedRect.width(),
-            clampedHeight * m_cropNormalizedRect.height()
-        );
-    } else {
-        m_cropNormalizedRect = QRectF(clampedX, clampedY, clampedWidth, clampedHeight);
-    }
+    const QRectF sourceRectangle = m_isCropped
+        ? m_cropNormalizedRect
+        : QRectF(0.0, 0.0, 1.0, 1.0);
 
-    // Découpe effective de l'aperçu affiché.
-    const int previewWidth = m_mosaicPreview.width();
-    const int previewHeight = m_mosaicPreview.height();
-    const int pixelX = qBound(0, qRound(clampedX * previewWidth), previewWidth - 1);
-    const int pixelY = qBound(0, qRound(clampedY * previewHeight), previewHeight - 1);
-    const int pixelWidth = qBound(1, qRound(clampedWidth * previewWidth), previewWidth - pixelX);
-    const int pixelHeight = qBound(1, qRound(clampedHeight * previewHeight), previewHeight - pixelY);
+    return QRectF(
+        sourceRectangle.x() + relativeX * sourceRectangle.width(),
+        sourceRectangle.y() + relativeY * sourceRectangle.height(),
+        relativeWidth * sourceRectangle.width(),
+        relativeHeight * sourceRectangle.height());
+}
+void ArtworkCanvas::previewCrop(const QRectF& normalizedRectangle)
+{
+    if (m_originalMosaicPreview.isNull())
+        return;
 
-    m_mosaicPreview = m_mosaicPreview.copy(pixelX, pixelY, pixelWidth, pixelHeight);
+    const QRectF rectangle = normalizedRectangle.intersected(
+        QRectF(0.0, 0.0, 1.0, 1.0));
+
+    if (rectangle.isEmpty())
+        return;
+
+    const QRect previewRectangle = QRectF(
+        rectangle.x() * m_originalMosaicPreview.width(),
+        rectangle.y() * m_originalMosaicPreview.height(),
+        rectangle.width() * m_originalMosaicPreview.width(),
+        rectangle.height() * m_originalMosaicPreview.height())
+        .toAlignedRect()
+        .intersected(m_originalMosaicPreview.rect());
+
+    if (previewRectangle.isEmpty())
+        return;
+
+    m_mosaicPreview = m_originalMosaicPreview.copy(previewRectangle);
+    m_cropNormalizedRect = rectangle;
     m_isCropped = true;
     m_cropSelectionRect = QRect();
+    m_isCropping = false;
+    m_activeHandle = CropHandle::None;
+    m_activeTool = -1;
+    update();
+}
+
+void ArtworkCanvas::applyCrop()
+{
+    if (!isEnabled())
+        return;
+
+    const QRectF selection = selectedCropNormalizedRect();
+    if (!selection.isEmpty())
+        emit cropRequested(selection);
+}
+
+void ArtworkCanvas::setBackendCropPreview(
+    const QImage& image, const QRectF& normalizedRectangle)
+{
+    if (image.isNull())
+        return;
+
+    m_mosaicPreview = image;
+    m_cropNormalizedRect = normalizedRectangle;
+    m_isCropped = true;
+    m_cropSelectionRect = QRect();
+    m_isCropping = false;
+    m_activeHandle = CropHandle::None;
+    m_activeTool = -1;
     update();
 }
 

@@ -26,6 +26,7 @@
 
 #include <QtCore/QEventLoop>
 #include <QtCore/QObject>
+#include <QtCore/QRect>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
 #include <QtCore/QPoint>
@@ -52,6 +53,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <set>
 
 namespace fs = std::filesystem;
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
@@ -603,6 +605,172 @@ TEST_F(PipelineWorkerTestClass, FullTwoByTwoGridPipelineRunUpToExport) {
     EXPECT_FALSE(mosaic.empty());
     EXPECT_GT(mosaic.cols, TILE_WIDTH);
     EXPECT_GT(mosaic.rows, TILE_HEIGHT);
+}
+
+TEST_F(PipelineWorkerTestClass, CropRunnerUsesFusionCheckpoint)
+{
+    Json script = makeScript(
+        tilesDirectory, outputDirectory, checkpointDirectory);
+
+    // Un chemin explicite rend le checkpoint de fusion vérifiable
+    // depuis le nouveau worker créé pour le rognage.
+    const fs::path fusionDirectory = rootDirectory / "fusion";
+    for (auto& step : script["pipeline"]["steps"]) {
+        if (step["name"] == "fusion") {
+            step["parameters"] = Json::array({
+                parameter("outputDirectory",
+                    IONs::pathToUtf8(fusionDirectory))
+                });
+        }
+    }
+
+    const QString scriptText = QString::fromStdString(script.dump());
+
+    PipelineWorkerClass initialWorker;
+    bool initialSuccess = false;
+    QString initialError;
+
+    QObject::connect(
+        &initialWorker, &PipelineWorkerClass::pipelineFinished,
+        [&](bool success, const QString& error, const QImage&) {
+            initialSuccess = success;
+            initialError = error;
+        });
+
+    initialWorker.runPipeline(scriptText, QString(), true, false);
+    ASSERT_TRUE(initialSuccess) << initialError.toStdString();
+
+    PipelineRunnerClass runner;
+    runner.setScriptJson(scriptText);
+
+    QEventLoop eventLoop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+
+    bool timedOut = false;
+    bool cropFinished = false;
+    bool cropSuccess = false;
+    bool normalMosaicEmitted = false;
+    QImage cropPreview;
+    PipelineResults cropResults;
+
+    QObject::connect(
+        &timeout, &QTimer::timeout, &eventLoop, [&]() {
+            timedOut = true;
+            eventLoop.quit();
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::resultsReady,
+        &eventLoop, [&](const PipelineResults& results) {
+            cropResults = results;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::mosaicReady,
+        &eventLoop, [&](const QImage&) {
+            normalMosaicEmitted = true;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::cropFinished,
+        &eventLoop, [&](bool success, const QImage& preview) {
+            cropFinished = true;
+            cropSuccess = success;
+            cropPreview = preview;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::runFinished,
+        &eventLoop, &QEventLoop::quit);
+
+    const auto listOutputFiles = [&]() {
+        std::set<fs::path> files;
+        for (const auto& entry : fs::directory_iterator(outputDirectory))
+            files.insert(entry.path().filename());
+        return files;
+        };
+
+    const auto initialOutputFiles = listOutputFiles();
+    ASSERT_FALSE(initialOutputFiles.empty());
+
+    const fs::path cropDirectory = rootDirectory / "crop";
+    const std::vector<QRect> rectangles = {
+        QRect(10, 10, 100, 80),
+        QRect(20, 15, 120, 90)
+    };
+
+    for (const QRect& rectangle : rectangles) {
+        timedOut = false;
+        cropFinished = false;
+        cropSuccess = false;
+        normalMosaicEmitted = false;
+        cropPreview = QImage();
+        cropResults = {};
+
+        // Comme l'interface, repartir du script de la fusion originale.
+        runner.setScriptJson(scriptText);
+        runner.startCropRun(
+            rectangle,
+            QString::fromStdString(IONs::pathToUtf8(cropDirectory)));
+
+        ASSERT_TRUE(runner.isRunning());
+        timeout.start(ASYNC_WAIT_TIMEOUT_MS);
+        eventLoop.exec();
+        timeout.stop();
+
+        if (timedOut)
+            runner.cancelRun();
+
+        ASSERT_FALSE(timedOut);
+        ASSERT_TRUE(cropFinished);
+        ASSERT_TRUE(cropSuccess);
+        EXPECT_FALSE(normalMosaicEmitted);
+        EXPECT_FALSE(cropPreview.isNull());
+        EXPECT_FALSE(runner.isRunning());
+        EXPECT_FALSE(runner.isPaused());
+
+        EXPECT_EQ(cropResults.mosaic.canvasSize.width, rectangle.width());
+        EXPECT_EQ(cropResults.mosaic.canvasSize.height, rectangle.height());
+
+        EXPECT_EQ(
+            cropResults.mosaic.imagePath,
+            cropDirectory / "mosaic_image.tif");
+        EXPECT_EQ(
+            cropResults.mosaic.provenancePath,
+            cropDirectory / "mosaic_provenance.tif");
+        EXPECT_EQ(
+            cropResults.mosaic.maskPath,
+            cropDirectory / "mosaic_mask.tif");
+
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.imagePath));
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.provenancePath));
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.maskPath));
+
+        // Vérifier aussi les dimensions réellement écrites dans le TIFF.
+        const cv::Mat croppedImage = IONs::readImage(
+            cropResults.mosaic.imagePath, cv::IMREAD_UNCHANGED);
+        ASSERT_FALSE(croppedImage.empty());
+        EXPECT_EQ(croppedImage.cols, rectangle.width());
+        EXPECT_EQ(croppedImage.rows, rectangle.height());
+
+        // Le rognage ne crée aucun export intermédiaire.
+        EXPECT_EQ(listOutputFiles(), initialOutputFiles);
+
+        const Json cropScript =
+            Json::parse(runner.getScriptJson().toStdString());
+        EXPECT_EQ(cropScript["run"]["startFromStep"], "mosaic-crop");
+        EXPECT_EQ(
+            cropScript["pipeline"]["steps"].back()["name"],
+            "mosaic-crop");
+
+        for (const auto& step : cropScript["pipeline"]["steps"])
+            EXPECT_NE(step["name"], "export");
+    }
+
+    // La mosaïque originale reste disponible après les deux essais.
+    EXPECT_TRUE(fs::is_regular_file(
+        fusionDirectory / "mosaic_image.tif"));
 }
 
 TEST_F(PipelineWorkerTestClass, AssemblyControlsChangeRenderedPixelsAfterFullPipeline) {

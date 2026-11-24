@@ -41,6 +41,7 @@ struct PipelineResults {
     QVector<ResultTile> tiles;
     QVector<FrontendUtils::PairAlignmentInfo> pairs;   // paires appariées, puis paires en échec
     SeamLines seams;   // vide sans couture
+    DataNs::Mosaic mosaic;// Description de la mosaïque : chemins des trois TIFF et taille pleine résolution.
 };
 Q_DECLARE_METATYPE(PipelineResults)
 

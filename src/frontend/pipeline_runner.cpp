@@ -25,6 +25,14 @@
 #include <QImage>
 #include <QThread>
 
+#include <nlohmann/json.hpp>
+
+#include <exception>
+#include <stdexcept>
+
+#include <string>
+#include <utility>
+
 PipelineRunnerClass::PipelineRunnerClass(QObject* parent)
     : QObject(parent) {
     // Les résultats traversent la frontière entre le thread du worker et celui de l'interface (connexion en file).
@@ -89,7 +97,8 @@ void PipelineRunnerClass::setupStateConnections() {
     connect(worker, &PipelineWorkerClass::mosaicFileReady, this, &PipelineRunnerClass::mosaicFileReady);
     connect(worker, &PipelineWorkerClass::imageLayersReady,
             this, [this](const QVector<ImageLayer>& layers, const QRectF& bounds) {
-        if (!imageLayersInvalidated) emit imageLayersReady(layers, bounds);
+            if (!imageLayersInvalidated && !cropRun)
+                emit imageLayersReady(layers, bounds);
     }, Qt::QueuedConnection);
     connect(worker, &PipelineWorkerClass::resultsReady, this, &PipelineRunnerClass::resultsReady);
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
@@ -109,6 +118,8 @@ void PipelineRunnerClass::setupStateConnections() {
         emit pausedStateChanged(false);
         emit stepChanged(0, tr("Annulée"));
         emit statusChanged(tr("Exécution annulée."));
+        if (cropRun)
+            emit cropFinished(false, QImage());
         emit runCancelled();
         cleanUpThread();
     });
@@ -118,7 +129,9 @@ void PipelineRunnerClass::setupStateConnections() {
             &PipelineRunnerClass::handleWorkerFinished);
 }
 
-void PipelineRunnerClass::handleWorkerFinished(bool success, const QString& errorText, const QImage& previewImage) {
+void PipelineRunnerClass::handleWorkerFinished(
+    bool success, const QString& errorText, const QImage& previewImage)
+{
     running = false;
     paused = false;
     emit pausedStateChanged(false);
@@ -126,18 +139,124 @@ void PipelineRunnerClass::handleWorkerFinished(bool success, const QString& erro
     if (success) {
         emit stepChanged(0, tr("Terminé"));
         emit statusChanged(tr("Calcul du pipeline terminé avec succès."));
-        // Émission de l'image finale pour basculer automatiquement en mode Export sur le canevas.
-        if (!previewImage.isNull()) emit mosaicReady(previewImage);
-        emit runFinished();
-    } else {
-        emit imageLayersReady({}, {});
-        emit stepChanged(0, tr("Erreur"));
-        emit statusChanged(tr("Erreur lors de l'exécution : %1").arg(errorText));
-        emit runFinished();
     }
+    else {
+        if (!cropRun)
+            emit imageLayersReady({}, {});
+
+        emit stepChanged(0, tr("Erreur"));
+        emit statusChanged(
+            tr("Erreur lors de l'exécution : %1").arg(errorText));
+    }
+
+    if (cropRun) {
+        emit cropFinished(success, previewImage);
+    }
+    else if (success && !previewImage.isNull()) {
+        emit mosaicReady(previewImage);
+    }
+
+    emit runFinished();
     cleanUpThread();
 }
+void PipelineRunnerClass::startCropRun(
+    const QRect& rectangle, const QString& cropOutputDirectory)
+{
+    if (running || paused) {
+        emit statusChanged(
+            tr("Terminez ou annulez le calcul courant avant de lancer un rognage."));
+        return;
+    }
 
+    if (rectangle.x() < 0 || rectangle.y() < 0 ||
+        rectangle.width() <= 0 || rectangle.height() <= 0 ||
+        cropOutputDirectory.trimmed().isEmpty()) {
+        emit statusChanged(tr("Rectangle ou dossier de rognage invalide."));
+        return;
+    }
+
+    try {
+        auto script = nlohmann::json::parse(scriptJson.toStdString());
+        auto& steps = script.at("pipeline").at("steps");
+        if (!steps.is_array())
+            throw std::runtime_error("pipeline.steps must be an array");
+
+        const auto run = script.value("run", nlohmann::json::object());
+        if (run.value("checkpointDirectory", std::string()).empty())
+            throw std::runtime_error("crop execution requires a checkpoint directory");
+
+        // Retirer l'ancien rognage pour qu'un nouvel essai reparte de fusion.
+        auto updatedSteps = nlohmann::json::array();
+        for (const auto& step : steps) {
+            if (step.at("name").get<std::string>() != "mosaic-crop")
+                updatedSteps.push_back(step);
+        }
+
+        int fusionIndex = -1;
+        int exportIndex = -1;
+        int stepIndex = 0;
+        for (const auto& step : updatedSteps) {
+            const auto name = step.at("name").get<std::string>();
+            if (name == "fusion") {
+                if (fusionIndex >= 0)
+                    throw std::runtime_error("multiple fusion steps are not supported");
+                fusionIndex = stepIndex;
+            }
+            if (name == "export") {
+                if (exportIndex >= 0)
+                    throw std::runtime_error("multiple export steps are not supported");
+                exportIndex = stepIndex;
+            }
+            ++stepIndex;
+        }
+
+        if (fusionIndex < 0 || exportIndex != fusionIndex + 1)
+            throw std::runtime_error("crop requires fusion immediately before export");
+
+        const auto integerParameter = [](const char* name, int value) {
+            return nlohmann::json{
+                {"name", name}, {"valueType", "int"}, {"value", value}
+            };
+            };
+
+        const nlohmann::json cropStep = {
+            {"name", "mosaic-crop"},
+            {"parameters", nlohmann::json::array({
+                integerParameter("x", rectangle.x()),
+                integerParameter("y", rectangle.y()),
+                integerParameter("width", rectangle.width()),
+                integerParameter("height", rectangle.height()),
+                {
+                    {"name", "outputDirectory"},
+                    {"valueType", "string"},
+                    {"value", cropOutputDirectory.toStdString()}
+                }
+            })}
+        };
+
+        // Le dialogue frontend publiera le TIFF à l'emplacement choisi.
+        // Ne pas créer un export intermédiaire dans le dossier du projet.
+        updatedSteps.erase(updatedSteps.begin() + exportIndex);
+        updatedSteps.insert(updatedSteps.begin() + exportIndex, cropStep);
+        steps = std::move(updatedSteps);
+
+        // La sélection correspond à la fusion déjà affichée.
+        // Refuser la reprise si une étape précédente doit être recalculée.
+        script["run"]["startFromStep"] = "mosaic-crop";
+        script["run"]["skipCompletedSteps"] = true;
+
+        scriptJson = QString::fromStdString(script.dump(2));
+        startFromStepName.clear();
+        cropRun = true;
+        startRun(exportIndex + 1, true);
+    }
+    catch (const std::exception& exception) {
+        cropRun = false;
+        emit statusChanged(
+            tr("Impossible de préparer le rognage : %1")
+            .arg(QString::fromUtf8(exception.what())));
+    }
+}
 void PipelineRunnerClass::invalidateImageLayers() {
     imageLayersInvalidated = true;
     emit imageLayersReady({}, {});
@@ -190,17 +309,25 @@ void PipelineRunnerClass::resumeRun() {
     startRun(firstStepNumber, true);
 }
 
-void PipelineRunnerClass::cancelRun() {
-    // Interrompt d'urgence le calcul en cours.
-    if (!running && !paused) return;
+void PipelineRunnerClass::cancelRun()
+{
+    if (!running && !paused)
+        return;
+
     if (worker && running) {
         emit statusChanged(tr("Interruption du calcul en cours..."));
         worker->requestCancel();
-    } else if (paused) {
+    }
+    else if (paused) {
         resetPausedState();
         emit pausedStateChanged(false);
         emit stepChanged(0, tr("Annulée"));
         emit statusChanged(tr("Exécution annulée."));
+
+        // Réactiver les commandes et abandonner l'export différé.
+        if (cropRun)
+            emit cropFinished(false, QImage());
+
         emit runCancelled();
         cleanUpThread();
     }

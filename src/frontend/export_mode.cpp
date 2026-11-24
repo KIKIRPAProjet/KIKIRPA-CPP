@@ -17,16 +17,9 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "pipeline_runner.h"
 #include "projectgrid.h"
 #include "workspace_ui.h"
-
-#include "core/io/pyramidal_tiff_reader.h"
-#include "core/io/pyramidal_tiff_writer.h"
-#include "core/io/unicode_path.h"
-
-#include <opencv2/core/mat.hpp>
-#include <opencv2/core/types.hpp>
-
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -48,6 +41,11 @@
 
 void MainWindow::showExportDialog()
 {
+    if (pipelineRunner->isRunning() || pipelineRunner->isPaused()) {
+        QMessageBox::information(this, tr("Calcul en cours"),
+            tr("Terminez ou annulez le calcul avant d'exporter."));
+        return;
+    }
     if (mosaicFilePath.isEmpty() || !QFileInfo(mosaicFilePath).isFile()) {
         QMessageBox::information(this, tr("Image non disponible"),
             tr("L'image finale n'est pas encore prête. Lancez le calcul complet avant de pouvoir l'exporter."));
@@ -55,10 +53,22 @@ void MainWindow::showExportDialog()
     }
 
     auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
-    if (canvas && !canvas->isCropped() && canvas->hasActiveCropSelection()) {
-        canvas->applyCrop();
+    if (canvas && canvas->hasActiveCropSelection()) {
+        QMessageBox::information(this, tr("Sélection non validée"),
+            tr("Validez le rognage ou annulez la sélection avant d'exporter."));
+        return;
     }
 
+    if (canvas && canvas->isCropped() && !cropBackendReady) {
+        exportAfterCrop = true;
+        requestMosaicCrop(canvas->cropNormalizedRect());
+
+        // Une erreur de préparation peut empêcher le lancement.
+        if (!pipelineRunner->isRunning())
+            exportAfterCrop = false;
+
+        return;
+    }
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Exporter le projet"));
     QVBoxLayout layout(&dialog);
@@ -160,54 +170,12 @@ void MainWindow::showExportDialog()
             ++counter;
         }
 
-        auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
-        const bool isCropped = canvas && canvas->isCropped();
-
-        if (isCropped) {
-            const QRectF normalizedCropRect = canvas->cropNormalizedRect();
-            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(mosaicFilePath.toStdString()));
-            int fullWidth = 0;
-            int fullHeight = 0;
-            std::string readError;
-            if (!reader.getLevelDimensions(0, fullWidth, fullHeight, readError)) {
-                QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("Impossible de lire les dimensions de la mosaïque source : %1")
-                        .arg(QString::fromStdString(readError)));
-                return;
-            }
-
-            const int cropX = qBound(0, static_cast<int>(normalizedCropRect.x() * fullWidth), fullWidth - 1);
-            const int cropY = qBound(0, static_cast<int>(normalizedCropRect.y() * fullHeight), fullHeight - 1);
-            const int cropWidth = qBound(1, static_cast<int>(normalizedCropRect.width() * fullWidth), fullWidth - cropX);
-            const int cropHeight = qBound(1, static_cast<int>(normalizedCropRect.height() * fullHeight), fullHeight - cropY);
-
-            cv::Rect cropRegion(cropX, cropY, cropWidth, cropHeight);
-            cv::Mat croppedImage;
-            if (!reader.readRegion(0, cropRegion, croppedImage, readError)) {
-                QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("Impossible d'extraire la zone recadrée : %1")
-                        .arg(QString::fromStdString(readError)));
-                return;
-            }
-
-            std::string writeError;
-            const auto destinationPath = IONs::pathFromUtf8(destination.toStdString());
-            if (!IONs::createPyramidalTiledTiff(croppedImage, destinationPath, writeError)) {
-                if (!IONs::writeImage(destinationPath, croppedImage)) {
-                    QMessageBox::warning(&dialog, tr("Export impossible"),
-                        tr("Impossible d'enregistrer le TIFF recadré : %1")
-                            .arg(QString::fromStdString(writeError)));
-                    return;
-                }
-            }
-        } else {
-            QFile sourceFile(mosaicFilePath);
-            if (!sourceFile.copy(destination)) {
-                QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("Impossible de copier le TIFF : %1")
-                        .arg(sourceFile.errorString()));
-                return;
-            }
+        QFile sourceFile(mosaicFilePath);
+        if (!sourceFile.copy(destination)) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("Impossible de copier le TIFF : %1")
+                .arg(sourceFile.errorString()));
+            return;
         }
 
         const QFileInfo fileInfo(destination);

@@ -7,6 +7,7 @@
 #include "projectgrid.h"
 
 #include <QButtonGroup>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -37,22 +38,48 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, 
         connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
             setExportVisible(false);
         });
+        // Réévaluer après le traitement du résultat et le nettoyage du runner.
+        const auto refreshExportVisibility = [this]() {
+            const bool canExport =
+                !m_pipelineRunner->isRunning() &&
+                !m_pipelineRunner->isPaused() &&
+                !m_mainWindow->pipelineResultsStale &&
+                QFileInfo(m_mainWindow->mosaicFilePath).isFile();
+
+            setExportVisible(canExport);
+            };
+
+        connect(m_pipelineRunner, &PipelineRunnerClass::runFinished,
+            this, refreshExportVisibility, Qt::QueuedConnection);
+
+        connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled,
+            this, refreshExportVisibility, Qt::QueuedConnection);
     }
 }
 
-void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
+void TopToolbars::createModeButtons(QWidget* stages, QHBoxLayout* stageLayout)
 {
-    auto *modeGroup = new QButtonGroup(stages);
+    auto* modeGroup = new QButtonGroup(stages);
     modeGroup->setExclusive(true);
 
+    int displayedNumber = 1;
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
-        const QString label = QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
-        auto *button = FrontendUtils::makeButton(label, stages);
+        // L'ancien mode Masques n'est plus proposé dans la navigation.
+        if (i == 2)
+            continue;
+
+        const QString label = QStringLiteral("%1   %2")
+            .arg(displayedNumber++)
+            .arg(FrontendUtils::MODE_NAMES.at(i));
+
+        auto* button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
         modeGroup->addButton(button, i);
         stageLayout->addWidget(button);
-        connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
+
+        connect(button, &QPushButton::clicked, this,
+            [this, i]() { m_mainWindow->setMode(i); });
     }
 }
 
@@ -116,20 +143,16 @@ void TopToolbars::createModesBar()
 
 void TopToolbars::handleRunButtonClicked()
 {
-    if (!m_pipelineRunner) return;
-
-    // Logique à 3 états :
-    // 1. En cours d'exécution -> demande une mise en pause propre après l'étape active.
-    // 2. En pause -> reprend l'exécution là où elle s'était arrêtée.
-    // 3. Inactif -> démarre une exécution complète depuis l'étape 1.
+    if (!m_pipelineRunner)
+        return;
 
     if (m_pipelineRunner->isRunning()) {
         m_pipelineRunner->pauseRun();
-    } else if (m_pipelineRunner->isPaused()) {
-        const int nextStep = m_pipelineRunner->pausedStep() + 1;
-        m_pipelineRunner->resetPausedState();
-        m_mainWindow->requestRun(nextStep);   
-    } else {
+    }
+    else if (m_pipelineRunner->isPaused()) {
+        m_mainWindow->requestResume();
+    }
+    else {
         m_mainWindow->requestRun(1);
     }
 }
@@ -181,9 +204,9 @@ void TopToolbars::updateDubiousState(int dubiousCount)
 {
     if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
         if (dubiousCount > 0) {
-            alignBtn->setText(QStringLiteral("4   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
+            alignBtn->setText(QStringLiteral("3   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
         } else {
-            alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
+            alignBtn->setText(QStringLiteral("3   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
     }
     if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
