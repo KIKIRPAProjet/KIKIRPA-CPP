@@ -134,7 +134,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     const QFileInfoList imageFiles = directory.entryInfoList(
         imageFilters, QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
     if (imageFiles.isEmpty()) {
-        emit messageRequested(tr("Aucune photo trouvée"),
+        emit messageRequested(tr("Aucune tuile trouvée"),
             tr("Le dossier sélectionné ne contient aucune image TIFF compatible "
                "(.tif ou .tiff)."), true);
         return;
@@ -149,8 +149,8 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     }
 
     if (paths.isEmpty()) {
-        emit messageRequested(tr("Photos déjà importées"),
-            tr("Toutes les photos de ce dossier sont déjà dans le projet."), false);
+        emit messageRequested(tr("Tuiles déjà importées"),
+            tr("Toutes les tuiles de ce dossier sont déjà dans le projet."), false);
         return;
     }
 

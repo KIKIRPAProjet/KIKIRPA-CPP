@@ -81,9 +81,6 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
  */
 void GridTab::createTileActions(QVBoxLayout *layout)
 {
-    m_importTilesButton = FrontendUtils::makeButton(tr("Importer des photos…"), m_gridTabPage);
-    layout->addWidget(m_importTilesButton);
-
     auto *tileEditLayout = new QHBoxLayout;
     m_addTileButton = FrontendUtils::makeButton(tr("Ajouter tuile…"), m_gridTabPage);
     m_removeTileButton = FrontendUtils::makeButton(tr("Supprimer tuile"), m_gridTabPage);
@@ -245,9 +242,6 @@ void GridTab::setupConnections()
     
 
     // Actions sur la tuile et la grille
-    connect(m_importTilesButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->chooseTilesDirectory();
-    });
     connect(m_addTileButton, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(
             this, tr("Choisir une tuile pour la case"), QString(),

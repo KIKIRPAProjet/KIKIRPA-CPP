@@ -43,7 +43,6 @@ private:
     ArtworkCanvas *m_canvas;
 
     QWidget *m_gridTabPage = nullptr;
-    QPushButton *m_importTilesButton = nullptr;
     QLabel *m_gridSummaryLabel = nullptr;
     QSpinBox *m_gridRowsSpin = nullptr;
     QSpinBox *m_gridColumnsSpin = nullptr;

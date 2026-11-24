@@ -78,6 +78,9 @@ void WorkspaceCenter::createProjectMode()
 void WorkspaceCenter::createCanvasAndControls()
 {
     m_canvas = new ArtworkCanvas(this);
+    m_canvas->setImportFolderCallback([this]() {
+        m_mainWindow->chooseTilesDirectory();
+    });
     static_cast<QVBoxLayout *>(layout())->addWidget(m_canvas,1);
 
     auto *canvasControls = new QWidget;

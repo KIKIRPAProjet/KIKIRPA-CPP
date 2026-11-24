@@ -566,7 +566,7 @@ void MainWindow::refreshGridControls()
 void MainWindow::chooseTilesDirectory()
 {
     const QString directoryPath = QFileDialog::getExistingDirectory(
-        this, tr("Sélectionner un dossier de photos"), QString(),
+        this, tr("Sélectionner un dossier de tuiles"), QString(),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!directoryPath.isEmpty())
         projectGrid->importTiles(directoryPath);
@@ -639,7 +639,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
     setMode(1);
-    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+    const QString msg = tr("%1 tuile(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());
     updateStatus(msg);
     workspaceUI->appendLog(msg);

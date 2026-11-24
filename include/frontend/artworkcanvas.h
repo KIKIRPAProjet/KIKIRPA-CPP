@@ -13,8 +13,10 @@
 
 class QMouseEvent;
 class QKeyEvent;
+class QResizeEvent;
 class QPaintEvent;
 class QPainter;
+class QPushButton;
 
 /**
  * Zone d'affichage centrale : œuvre, grille de tuiles, paire, masque et couture.
@@ -26,7 +28,8 @@ class ArtworkCanvas final : public QWidget
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
-    void setMode(int mode) { modeValue = mode; update(); }
+    void setMode(int mode);
+    void setImportFolderCallback(std::function<void()> callback) { importFolderCallback = std::move(callback); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
     void setImagePaths(const QStringList &paths) { imagePaths = paths; update(); }
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
@@ -54,6 +57,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void paintEvent(QPaintEvent *) override;
 
 private:
@@ -63,8 +67,12 @@ private:
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
 
+    void updateImportButtonPosition();
+
     int gridCellAt(const QPoint &point) const;
 
+    QPushButton *m_importFolderButton = nullptr;
+    std::function<void()> importFolderCallback;
     int modeValue = 4;
     int zoomPercent = 12;
     QStringList imagePaths;

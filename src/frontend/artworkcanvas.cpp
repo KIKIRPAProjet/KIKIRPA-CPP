@@ -2,8 +2,10 @@
 
 #include <QMouseEvent>
 #include <QKeyEvent>
+#include <QResizeEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPushButton>
 
 #include <utility>
 
@@ -29,10 +31,58 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+
+    m_importFolderButton = FrontendUtils::makeButton(tr("Importer un dossier de tuiles…"), this);
+    m_importFolderButton->setToolTip(tr("Importer toutes les tuiles d'un dossier dans la grille (Ctrl+I)"));
+    m_importFolderButton->setVisible(false);
+    connect(m_importFolderButton, &QPushButton::clicked, this, [this]() {
+        if (importFolderCallback)
+            importFolderCallback();
+    });
+
     const auto defaultPairs = FrontendUtils::defaultPairAlignments();
     if (!defaultPairs.isEmpty()) {
         currentPair = defaultPairs.first();
     }
+}
+
+void ArtworkCanvas::setMode(int mode)
+{
+    modeValue = mode;
+    updateImportButtonPosition();
+    update();
+}
+
+void ArtworkCanvas::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateImportButtonPosition();
+}
+
+void ArtworkCanvas::updateImportButtonPosition()
+{
+    if (!m_importFolderButton)
+        return;
+    if (modeValue != kModeGrid) {
+        m_importFolderButton->setVisible(false);
+        return;
+    }
+    m_importFolderButton->setVisible(true);
+    m_importFolderButton->adjustSize();
+
+    int activeTileCount = 0;
+    for (const auto &tile : gridTiles) {
+        if (!tile.path.isEmpty() && !tile.empty)
+            ++activeTileCount;
+    }
+    const QString text = tr("Grille %1 × %2 : %3 tuile(s), glisser pour permuter")
+                             .arg(gridRows).arg(gridColumns).arg(activeTileCount);
+    QFontMetrics fm(font());
+    const int textW = fm.horizontalAdvance(text);
+    const int x = 18 + textW + 20;
+    const int y = 8;
+    const int maxX = qMax(18, width() - m_importFolderButton->width() - 18);
+    m_importFolderButton->move(qMin(x, maxX), y);
 }
 
 //enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
@@ -50,6 +100,7 @@ void ArtworkCanvas::setGridState(int rows, int columns, int order,
     captureOrder = order;
     gridTiles = tiles;
     selectedGridCell = selectedCell;
+    updateImportButtonPosition();
     update();
 }
 
