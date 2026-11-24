@@ -53,7 +53,9 @@
 
 namespace {
 constexpr int JPEG_PREVIEW_MAX_SIDE = 6000;
+constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
 
+// NOLINTNEXTLINE(readability-function-size)
 bool writeCroppedJpegPreview(const std::filesystem::path& mosaicPath, const cv::Rect& crop,
                              const std::filesystem::path& destination, std::string& errorMessage) {
     IONs::PyramidalTiffReaderClass reader(mosaicPath);
@@ -85,7 +87,7 @@ bool writeCroppedJpegPreview(const std::filesystem::path& mosaicPath, const cv::
             if (!reader.readRegion(0, block, source16, errorMessage)) return false;
 
             cv::Mat source8;
-            source16.convertTo(source8, CV_8UC3, 1.0 / 257.0);
+            source16.convertTo(source8, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
             cv::Mat sourceBgr;
             cv::cvtColor(source8, sourceBgr, cv::COLOR_RGB2BGR);
 
@@ -111,6 +113,7 @@ bool writeCroppedJpegPreview(const std::filesystem::path& mosaicPath, const cv::
 }
 }
 
+// NOLINTNEXTLINE(readability-function-size)
 void MainWindow::showExportDialog()
 {
     if (mosaicFilePath.isEmpty() || !QFileInfo(mosaicFilePath).isFile()) {

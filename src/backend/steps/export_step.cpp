@@ -295,6 +295,7 @@ namespace StepsNs {
             return true;
         }
 
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         bool renderPreviewRow(IONs::PyramidalTiffReaderClass& reader, const cv::Size& canvasSize, int sourceY,
                               PreviewBuildContext& context) {
             for (int sourceX = 0; sourceX < canvasSize.width; sourceX += DataNs::BLOCK_SIZE) {
@@ -364,13 +365,15 @@ namespace StepsNs {
         bool exportBothFormats(const DataNs::Mosaic& mosaic, const ExportPlan& plan, ExportOutput& output,
                                Json& result) {
             std::string errorMessage;
-            if (!IONs::copyFileReplacing(mosaic.imagePath, plan.imagePath, errorMessage)) {
-                result["error"] = errorMessage;
-                return false;
+            if (!fs::exists(plan.imagePath)) {
+                if (!IONs::copyFileReplacing(mosaic.imagePath, plan.imagePath, errorMessage)) {
+                    result["error"] = errorMessage;
+                    return false;
+                }
             }
             fs::path jpegCandidate = plan.imagePath;
             jpegCandidate.replace_extension(".jpg");
-            const fs::path jpegPath = nextExportPath(plan.directory, IONs::pathToUtf8(jpegCandidate.filename()));
+            const fs::path jpegPath = jpegCandidate;
             ExportOutput jpegOutput;
             Json jpegResult;
             if (!exportJpegPreview(mosaic, {jpegPath, plan.previewMaxSide}, jpegOutput, jpegResult)) {
@@ -400,6 +403,7 @@ namespace StepsNs {
             return true;
         }
 
+        // NOLINTNEXTLINE(readability-function-size)
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
             TiffHeader header;
             std::string errorMessage;
@@ -415,7 +419,18 @@ namespace StepsNs {
                 result["error"] = "unsupported export format '" + format + "'";
                 return false;
             }
-            const ExportPlan plan{directory, nextExportPath(directory, configuredFilename(config)),
+            fs::path plannedImagePath = nextExportPath(directory, configuredFilename(config));
+            if (format == "both") {
+                const ExportName name = splitExportName(directory, configuredFilename(config));
+                const auto latest = latestExportRank(name);
+                if (latest) {
+                    fs::path latestTiffPath = exportPath(name, *latest);
+                    fs::path latestJpegPath = latestTiffPath;
+                    latestJpegPath.replace_extension(".jpg");
+                    if (!fs::exists(latestJpegPath)) plannedImagePath = latestTiffPath;
+                }
+            }
+            const ExportPlan plan{directory, plannedImagePath,
                                   configuredPreviewMaxSide(config), header.isBigTiff};
             if (format == "jpeg") {
                 return exportJpegPreview(mosaic, {plan.imagePath, plan.previewMaxSide}, output, result);
@@ -443,6 +458,7 @@ namespace StepsNs {
     // nextExportPath) est là, inchangé. Après execute(), c'est le fichier qui vient d'être écrit ; avant (reprise d'un
     // run), on le retrouve sur le disque d'après les paramètres. Les deux coïncident tant que personne ne touche au
     // dossier : la reprise ne refait pas une copie de plus. Fichier supprimé ou modifié : l'export est refait.
+    // NOLINTNEXTLINE(readability-function-size)
     Json ExportStepClass::externalInputsFingerprint() const {
         try {
             Json fingerprint = Json::object({{"files", Json::array()}});

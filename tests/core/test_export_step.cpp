@@ -35,6 +35,9 @@ namespace {
     // Deux blocs : un complet et un bloc de bord.
     constexpr int CANVAS_WIDTH = DataNs::BLOCK_SIZE + 88;
     constexpr int CANVAS_HEIGHT = 300;
+    constexpr int JPEG_PREVIEW_SIDE = 300;
+    constexpr int PIXEL_TOLERANCE = 5;
+    constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
     constexpr double LEFT_VALUE = 100.0;
     constexpr double RIGHT_VALUE = 3000.0;
 
@@ -305,15 +308,15 @@ TEST(ExportStepTest, PublishesJpegPreviewAsEightBitImage) {
     const cv::Mat published = IONs::readImage(output.imagePath, cv::IMREAD_COLOR);
     ASSERT_FALSE(published.empty());
     EXPECT_EQ(published.type(), CV_8UC3);
-    EXPECT_LE(published.cols, 300);
-    EXPECT_LE(published.rows, 300);
+    EXPECT_LE(published.cols, JPEG_PREVIEW_SIDE);
+    EXPECT_LE(published.rows, JPEG_PREVIEW_SIDE);
     
     // Le pixel (0,0) subit une division par 257.0 pour passer de 16-bit à 8-bit.
     // L'export JPEG convertit également de RGB (ordre initial) vers BGR (OpenCV)
     const cv::Vec3b& pixel = published.at<cv::Vec3b>(0, 0);
-    EXPECT_NEAR(pixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / 257.0)), 5); // Canal Bleu (ancien Rouge)
-    EXPECT_NEAR(pixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / 257.0)), 5); // Canal Vert (inchangé)
-    EXPECT_NEAR(pixel[2], static_cast<int>(std::round(LEFT_VALUE / 257.0)), 5);       // Canal Rouge (ancien Bleu)
+    EXPECT_NEAR(pixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE); // Canal Bleu (ancien Rouge)
+    EXPECT_NEAR(pixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE); // Canal Vert (inchangé)
+    EXPECT_NEAR(pixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE);       // Canal Rouge (ancien Bleu)
 }
 
 // L'empreinte suit le fichier publié : le checkpoint de l'export se périme si ce fichier disparaît.
