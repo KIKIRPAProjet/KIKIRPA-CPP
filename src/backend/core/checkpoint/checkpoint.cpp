@@ -113,7 +113,7 @@ namespace CheckpointNs {
         // Le manifest enregistre de quoi décider plus tard si le checkpoint est encore bon (voir valid) : nom, paramètres,
         // empreinte des entrées externes, sorties sauvegardées et indicateur de complétude.
         const Json manifest = {{"step", stepConfig.name}, {"parameters", step.getConfigJson().value("parameters", Json::array())},
-                            {"inputs", step.externalInputsFingerprint()}, {"outputs", outputs}, {"complete", complete}};
+                            {"inputs", step.externalInputsFingerprint()}, {"outputs", outputs}, {"result", step.getResult()}, {"complete", complete}};
         writeAtomic(directory / "manifest.json", manifest.dump(2));   // en dernier : sa présence marque le checkpoint complet
         return complete;
     }
@@ -143,6 +143,13 @@ namespace CheckpointNs {
             serializer->second.loader(dataStore, key, directory);
             return;
         }
+    }
+
+    void CheckpointClass::loadResult(size_t stepIndex, StepNs::StepClass& step) const {
+        const fs::path directory = stepDir(stepIndex, step.getConfigJson().value("name", ""));
+        const Json manifest = readManifest(directory);
+        if (!manifest.is_object()) throw std::runtime_error("missing or corrupted " + IONs::pathToUtf8(directory / "manifest.json"));
+        step.restoreResult(manifest.value("result", Json()));
     }
 
     void CheckpointClass::removeFrom(size_t firstStepIndex) const {
