@@ -9,9 +9,12 @@
 #include <tiff.h>
 #include <tiffio.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <limits>
 #include <string>
 #include <utility>
@@ -222,7 +225,103 @@ namespace IONs {
             return true;
         }
 
+        // Les deux fonctions qui suivent lisent une image à BANDES. Le cache, lui, est toujours tuilé : elles ne
+        // servent qu'à lire une région directement dans l'image de l'œuvre, qui est l'organisation habituelle des
+        // TIFF d'acquisition.
+
+        // Chemin ordinaire : libtiff décode les bandes que la région recoupe. Coût proportionnel à la hauteur
+        // d'une bande, donc inutilisable sur une image compressée d'une seule bande de plusieurs milliers de
+        // lignes : c'est à l'appelant de le savoir avant de choisir ce fichier (voir la sonde du lecteur de tuile).
+        bool readStrips(TIFF* tiffFile, const cv::Rect& region, const ImageMetadata& image, cv::Mat& output,
+                        std::string& errorMessage) {
+            uint32_t rowsPerStrip = 0;
+            if (!TIFFGetField(tiffFile, TIFFTAG_ROWSPERSTRIP, &rowsPerStrip) || rowsPerStrip == 0) {
+                errorMessage = "cannot read TIFF rows per strip";
+                return false;
+            }
+            const tmsize_t stripSize = TIFFStripSize(tiffFile);
+            if (stripSize <= 0) {
+                errorMessage = "cannot determine TIFF strip size";
+                return false;
+            }
+            const size_t pixelSize = CV_ELEM_SIZE(image.type);
+            const size_t imageRowBytes = static_cast<size_t>(image.width) * pixelSize;
+            const size_t copiedBytes = static_cast<size_t>(region.width) * pixelSize;
+            std::vector<std::uint8_t> strip(static_cast<size_t>(stripSize));
+
+            const int stripHeight = static_cast<int>(rowsPerStrip);
+            for (int firstRow = region.y; firstRow < region.y + region.height;) {
+                const int stripIndex = firstRow / stripHeight;
+                const int stripFirstRow = stripIndex * stripHeight;
+                const tmsize_t decodedBytes = TIFFReadEncodedStrip(
+                    tiffFile, static_cast<tstrip_t>(stripIndex), strip.data(), stripSize);
+                if (decodedBytes <= 0) {
+                    errorMessage = "cannot read TIFF strip";
+                    return false;
+                }
+                const int lastRow = std::min(region.y + region.height, stripFirstRow + stripHeight);
+                for (int row = firstRow; row < lastRow; ++row) {
+                    const size_t sourceOffset = (static_cast<size_t>(row - stripFirstRow)) * imageRowBytes +
+                                               static_cast<size_t>(region.x) * pixelSize;
+                    if (sourceOffset + copiedBytes > static_cast<size_t>(decodedBytes)) {
+                        errorMessage = "TIFF strip is shorter than its declared rows";
+                        return false;
+                    }
+                    std::memcpy(output.ptr(row - region.y), strip.data() + sourceOffset, copiedBytes);
+                }
+                firstRow = lastRow;
+            }
+            return true;
+        }
+
+        // Une image non compressée à canaux entrelacés se lit par simple décalage : l'octet d'une ligne se calcule.
+        // On lit alors exactement les lignes de la région, même quand l'image n'a qu'une seule bande de plusieurs
+        // milliers de lignes — le cas des TIFF du KIKIRPA, où readStrips aurait décodé l'image entière à chaque
+        // région. L'ordre des octets doit être celui de la machine, sinon les valeurs 16 bits sortiraient inversées.
+        bool canReadRowsByOffset(TIFF* tiffFile) {
+            uint16_t compression = COMPRESSION_NONE;
+            return TIFFGetField(tiffFile, TIFFTAG_COMPRESSION, &compression) &&
+                   compression == COMPRESSION_NONE && TIFFIsByteSwapped(tiffFile) == 0;
+        }
+
+        // false seulement si la lecture échoue vraiment ; `unsupported` dit que ce chemin ne s'applique pas et que
+        // l'appelant doit passer par les bandes (fichier illisible en parallèle, décalages absents).
+        bool readRowsByOffset(const std::filesystem::path& tiffPath, TIFF* tiffFile, const cv::Rect& region,
+                              const ImageMetadata& image, cv::Mat& output, bool& unsupported,
+                              std::string& errorMessage) {
+            unsupported = true;
+            uint32_t rowsPerStrip = 0;
+            std::uint64_t* stripOffsets = nullptr;
+            if (!TIFFGetField(tiffFile, TIFFTAG_ROWSPERSTRIP, &rowsPerStrip) || rowsPerStrip == 0 ||
+                !TIFFGetField(tiffFile, TIFFTAG_STRIPOFFSETS, &stripOffsets) || stripOffsets == nullptr)
+                return false;
+            std::ifstream stream(tiffPath, std::ios::binary);
+            if (!stream) return false;   // le fichier est déjà ouvert par libtiff : si le partage le refuse, on
+                                         // retombe sur les bandes au lieu d'échouer.
+            unsupported = false;
+
+            const size_t pixelSize = CV_ELEM_SIZE(image.type);
+            const size_t imageRowBytes = static_cast<size_t>(image.width) * pixelSize;
+            const size_t copiedBytes = static_cast<size_t>(region.width) * pixelSize;
+            const int stripHeight = static_cast<int>(rowsPerStrip);
+            for (int row = region.y; row < region.y + region.height; ++row) {
+                const int stripIndex = row / stripHeight;
+                const std::uint64_t offset = stripOffsets[stripIndex] +
+                    static_cast<std::uint64_t>(row - stripIndex * stripHeight) * imageRowBytes +
+                    static_cast<std::uint64_t>(region.x) * pixelSize;
+                stream.seekg(static_cast<std::streamoff>(offset));
+                stream.read(reinterpret_cast<char*>(output.ptr(row - region.y)),
+                            static_cast<std::streamsize>(copiedBytes));
+                if (!stream) {
+                    errorMessage = "cannot read TIFF rows at their offset";
+                    return false;
+                }
+            }
+            return true;
+        }
+
         bool readOpenedRegion(
+            const std::filesystem::path& tiffPath,
             TIFF* tiffFile,
             const ReadRequest& request,
             cv::Mat& output,
@@ -238,9 +337,22 @@ namespace IONs {
                 return false;
             }
 
+            output.create(request.region.height, request.region.width, image.type);
+            // Trois organisations possibles : tuilée (le cache, et certaines sources), non compressée à bandes
+            // (lecture par décalage), et compressée à bandes (décodage des bandes recoupées).
+            if (!TIFFIsTiled(tiffFile)) {
+                if (canReadRowsByOffset(tiffFile)) {
+                    bool unsupported = false;
+                    if (readRowsByOffset(tiffPath, tiffFile, request.region, image, output, unsupported,
+                                         errorMessage))
+                        return true;
+                    if (!unsupported) return false;
+                }
+                return readStrips(tiffFile, request.region, image, output, errorMessage);
+            }
+
             TileMetadata tile;
             if (!getTileMetadata(tiffFile, image.type, tile, errorMessage)) return false;
-            output.create(request.region.height, request.region.width, image.type);
             std::vector<std::uint8_t> tileBuffer(static_cast<size_t>(tile.size));
             RegionReadContext context{
                 tiffFile, request.region, tile, output, tileBuffer, errorMessage};
@@ -282,7 +394,7 @@ namespace IONs {
         }
 
         const ReadRequest request{level, cv::Rect(0, 0, image.width, image.height)};
-        const bool success = readOpenedRegion(tiffFile, request, output, errorMessage);
+        const bool success = readOpenedRegion(tiffPath, tiffFile, request, output, errorMessage);
         TIFFClose(tiffFile);
         if (!success) output.release();
         return success;
@@ -365,7 +477,7 @@ namespace IONs {
         }
 
         const ReadRequest request{level, region};
-        const bool success = readOpenedRegion(tiffFile, request, output, errorMessage);
+        const bool success = readOpenedRegion(tiffPath, tiffFile, request, output, errorMessage);
         TIFFClose(tiffFile);
         if (!success) output.release();
         return success;

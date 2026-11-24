@@ -10,9 +10,11 @@ namespace IONs {
     // Cache des TIFF pyramidaux des images importées, partagé par le step import et par l'interface (vignettes et
     // génération en arrière-plan) : une seule règle de nommage et de validité pour les deux.
     //
-    // - Nom : <dossier du cache>/<nom de l'image>_<empreinte du chemin complet>_pyramid.tif. L'empreinte rend le nom
-    //   propre à une source : photo.tif et photo.tiff, ou deux images de même nom dans deux dossiers, n'ont jamais le
-    //   même cache, quelle que soit leur case dans la grille.
+    // - Nom : <dossier du cache>/<nom de l'image>_<empreinte du chemin canonique>_pyramid.tif. L'empreinte rend le
+    //   nom propre à une source : photo.tif et photo.tiff, ou deux images de même nom dans deux dossiers, n'ont
+    //   jamais le même cache, quelle que soit leur case dans la grille. Elle porte sur le chemin **canonique**
+    //   (fs::canonical) : liens, « .. », casse et lecteur réseau monté ramené à son chemin UNC sont donc résolus,
+    //   et un même fichier atteint de deux façons n'a qu'un seul cache.
     // - Provenance : à côté, <pyramide>.source.json décrit ce qui a été converti et comment :
     //     { "source": { chemin, existence, taille, date }, "formatVersion": <entier>, "lastRead": <secondes> }
     //   `source` est l'empreinte de l'image lue juste avant la conversion : une source remplacée, même par un
@@ -58,7 +60,9 @@ namespace IONs {
     // et renvoient le nombre de fichiers supprimés (la pyramide et sa provenance comptent pour deux). Une pyramide
     // dont la provenance est absente ou illisible est gardée : on ne peut pas prouver qu'elle est inutile.
 
-    // Pyramides dont la source enregistrée n'existe plus : image renommée, retirée, ou cache d'un dossier déplacé.
+    // Pyramides inutilisables : source enregistrée disparue (image renommée ou retirée), ou nom qui n'est plus
+    // celui que sa source produirait (dossier déplacé, ou clé écrite avant un changement de la règle de nommage) :
+    // dans les deux cas plus personne ne retrouvera ce fichier.
     std::size_t removeOrphanPyramids(const std::filesystem::path& cacheDirectory);
 
     // Pyramides dont le dernier emploi dépasse `maximumAgeDays`. Zéro ou négatif : ne supprime rien.

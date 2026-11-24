@@ -61,10 +61,16 @@ namespace IONs {
                    text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
         }
 
-        // Chemin absolu normalisé : la même source donne la même clé, qu'elle vienne du script (backend) ou de Qt
-        // (séparateurs '/' sous Windows).
+        // Clé d'une source : son chemin **canonique**, pour qu'un même fichier atteint de plusieurs façons n'ait
+        // qu'un seul cache. fs::canonical résout les liens, les « .. », les séparateurs, la casse réelle du disque
+        // et, sous Windows, ramène un lecteur réseau monté à son chemin UNC : les mêmes images vues par Z:\oeuvre\
+        // et par \\serveur\partage\oeuvre\ donnent donc la même clé, au lieu de deux caches complets (919 Mio
+        // par image en double). Il faut pour cela que le fichier existe : sinon (source disparue, ou clé d'un
+        // chemin qu'on vérifie) on retombe sur la normalisation purement lexicale, qui ne lit pas le disque.
         fs::path normalizedSource(const fs::path& sourcePath) {
             std::error_code errorCode;
+            const fs::path canonicalPath = fs::canonical(sourcePath, errorCode);
+            if (!errorCode) return canonicalPath;
             const fs::path absolutePath = fs::absolute(sourcePath, errorCode);
             return (errorCode ? sourcePath : absolutePath).lexically_normal();
         }
@@ -205,8 +211,9 @@ namespace IONs {
         // Le suffixe EXACT est indispensable : makeTemporaryPath fabrique « ….tif.<horloge>.<n>.tmp », et un test
         // par « le nom contient _pyramid.tif » attraperait un fichier en cours de publication par un autre
         // processus.
-        std::size_t removePyramidsIf(const fs::path& cacheDirectory,
-                                     const std::function<bool(const nlohmann::json&)>& shouldRemove) {
+        std::size_t removePyramidsIf(
+            const fs::path& cacheDirectory,
+            const std::function<bool(const fs::path&, const nlohmann::json&)>& shouldRemove) {
             std::size_t removedCount = 0;
             std::error_code errorCode;
             // Avec error_code, un dossier absent donne une plage vide au lieu de lever.
@@ -214,7 +221,8 @@ namespace IONs {
                 if (!entry.is_regular_file(errorCode)) continue;
                 if (!endsWith(pathToUtf8(entry.path().filename()), PYRAMID_SUFFIX)) continue;
                 const nlohmann::json provenance = readProvenance(entry.path());
-                if (!provenance.is_object() || !shouldRemove(provenance)) continue;   // dans le doute, on garde
+                if (!provenance.is_object() || !shouldRemove(entry.path(), provenance))
+                    continue;   // dans le doute, on garde
                 std::error_code removeError;
                 if (fs::remove(entry.path(), removeError)) ++removedCount;
                 if (fs::remove(provenancePath(entry.path()), removeError)) ++removedCount;
@@ -280,22 +288,28 @@ namespace IONs {
     }
 
     std::size_t removeOrphanPyramids(const fs::path& cacheDirectory) {
-        return removePyramidsIf(cacheDirectory, [](const nlohmann::json& provenance) {
+        return removePyramidsIf(cacheDirectory, [&cacheDirectory](const fs::path& pyramidPath,
+                                                                  const nlohmann::json& provenance) {
             // Le nom du fichier ne permet pas de retrouver la source : pathHash est à sens unique. Seule la
             // provenance garde le chemin.
             const auto source = provenance.find("source");
             if (source == provenance.end() || !source->is_object()) return false;
             const auto path = source->find("path");
             if (path == source->end() || !path->is_string()) return false;
+            const fs::path recordedSource = pathFromUtf8(path->get<std::string>());
             std::error_code errorCode;
-            return !fs::exists(pathFromUtf8(path->get<std::string>()), errorCode);
+            if (!fs::exists(recordedSource, errorCode)) return true;   // la source a disparu
+            // Clé périmée : ce fichier ne porte plus le nom que sa propre source produirait aujourd'hui, donc
+            // personne ne le retrouvera. Arrive quand la clé change de règle (chemin enregistré avant la
+            // canonicalisation) ou quand le dossier de l'œuvre a été déplacé.
+            return pyramidCachePath(cacheDirectory, recordedSource).filename() != pyramidPath.filename();
         });
     }
 
     std::size_t removeStalePyramids(const fs::path& cacheDirectory, int maximumAgeDays) {
         if (maximumAgeDays <= 0) return 0;
         const std::int64_t limit = static_cast<std::int64_t>(maximumAgeDays) * SECONDS_PER_DAY;
-        return removePyramidsIf(cacheDirectory, [limit](const nlohmann::json& provenance) {
+        return removePyramidsIf(cacheDirectory, [limit](const fs::path&, const nlohmann::json& provenance) {
             const auto field = provenance.find("lastRead");
             if (field == provenance.end() || !field->is_number_integer()) return false;   // date inconnue : on garde
             return nowInSeconds() - field->get<std::int64_t>() > limit;
@@ -303,6 +317,6 @@ namespace IONs {
     }
 
     std::size_t removeAllPyramids(const fs::path& cacheDirectory) {
-        return removePyramidsIf(cacheDirectory, [](const nlohmann::json&) { return true; });
+        return removePyramidsIf(cacheDirectory, [](const fs::path&, const nlohmann::json&) { return true; });
     }
 }

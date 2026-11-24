@@ -305,3 +305,45 @@ TEST(PyramidCacheTest, SweepingAMissingDirectoryIsNotAnError) {
     EXPECT_EQ(IONs::removeStalePyramids(cache, 15), 0U);
     EXPECT_EQ(IONs::removeAllPyramids(cache), 0U);
 }
+
+// Un même fichier atteint de plusieurs façons (détour par « .. », séparateurs, casse du lecteur sous Windows) doit
+// donner UNE seule clé de cache : sinon on écrit deux pyramides complètes pour les mêmes pixels.
+TEST(PyramidCacheTest, TheSameFileReachedTwoWaysHasOneCacheKey) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    ASSERT_TRUE(fs::create_directories(directory.path / "detour"));
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+
+    const fs::path throughParent = directory.path / "detour" / ".." / "a.tif";
+    EXPECT_EQ(IONs::pyramidCachePath(cache, throughParent), IONs::pyramidCachePath(cache, source));
+
+    // Le cache écrit par un chemin est réutilisé par l'autre, sans relire l'image.
+    const IONs::PyramidCacheEntry created = prepare(source, cache);
+    const IONs::PyramidCacheEntry reused = prepare(throughParent, cache);
+    EXPECT_TRUE(reused.reused);
+    EXPECT_EQ(reused.pyramidPath, created.pyramidPath);
+    EXPECT_TRUE(IONs::isPyramidCacheValid(throughParent, created.pyramidPath));
+}
+
+// Une pyramide dont le nom ne correspond plus à la clé de sa propre source est inatteignable : personne ne la
+// retrouvera, même si l'image est toujours là. C'est le cas d'un cache écrit avant un changement de règle de nommage,
+// ou d'un dossier d'œuvre déplacé.
+TEST(PyramidCacheTest, PyramidWithAnOutdatedKeyIsRemoved) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+
+    // Même fichier, même provenance valide, mais rangé sous un autre nom que celui de sa clé.
+    fs::path misnamed = cache / "a_00000000_pyramid.tif";
+    ASSERT_TRUE(fs::copy_file(entry.pyramidPath, misnamed));
+    fs::path misnamedProvenance = misnamed;
+    misnamedProvenance += ".source.json";
+    ASSERT_TRUE(fs::copy_file(provenanceOf(entry.pyramidPath), misnamedProvenance));
+
+    EXPECT_EQ(IONs::removeOrphanPyramids(cache), 2U);
+    EXPECT_FALSE(fs::exists(misnamed));
+    EXPECT_TRUE(fs::exists(entry.pyramidPath));   // celle qui porte la bonne clé reste
+}

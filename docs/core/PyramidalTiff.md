@@ -132,6 +132,25 @@ positives. Elle doit être entièrement contenue dans le niveau demandé : le re
 tronque pas automatiquement. En cas de succès, `output` a exactement la taille de `region`
 et le type du niveau lu.
 
+## Lire une région d'une image à bandes
+
+Le reader ne sert pas qu'à relire le cache : depuis le 24/11/2026, il lit aussi une région d'un TIFF **à bandes**,
+l'organisation habituelle des images d'acquisition. Il choisit tout seul, d'après les tags du fichier :
+
+| Organisation | Comment la région est lue | Coût |
+|---|---|---|
+| tuilée | `TIFFReadEncodedTile` sur les tuiles recoupées | une tuile de 512 × 512 |
+| à bandes, **non compressée**, canaux entrelacés, ordre des octets de la machine | lecture **par décalage** : l'octet d'une ligne se calcule depuis `StripOffsets` | les lignes de la région, rien de plus |
+| à bandes, compressée | `TIFFReadEncodedStrip` sur les bandes recoupées | une bande entière par bande recoupée |
+
+La lecture par décalage existe pour un cas précis : `data/02-Philadelphia` est non compressé et n'a **qu'une
+seule bande de 8 700 lignes**. Par `TIFFReadEncodedStrip`, chaque région aurait coûté le décodage des 578 Mio de
+l'image entière. Si le fichier ne peut pas être ouvert une seconde fois pour cette lecture, le reader retombe sur
+les bandes au lieu d'échouer.
+
+Reste un cas sans solution : une image compressée **à une seule bande**. Il n'y a rien à en tirer région par
+région, et c'est à l'appelant de ne pas le tenter.
+
 ## Lecture par tuiles
 
 Le reader n'a pas besoin de charger tout le niveau en mémoire. Il :
