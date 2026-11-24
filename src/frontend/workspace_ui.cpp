@@ -121,10 +121,6 @@ QComboBox *WorkspaceUI::captureOrderCombo() const
     return gridtab() ? gridtab()->captureOrderCombo() : nullptr;
 }
 
-QComboBox *WorkspaceUI::arrangementCombo() const
-{
-    return m_topToolbars ? m_topToolbars->arrangementCombo() : nullptr;
-}
 
 QLabel *WorkspaceUI::statusLabel() const
 {

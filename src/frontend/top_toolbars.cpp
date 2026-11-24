@@ -7,14 +7,13 @@
 #include "projectgrid.h"
 
 #include <QButtonGroup>
-#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 
-TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent)
-    : QWidget(parent), m_mainWindow(mainWindow), m_projectGrid(projectGrid), m_pipelineRunner(pipelineRunner)
+TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, PipelineRunnerClass *pipelineRunner, QWidget *parent)
+    : QWidget(parent), m_mainWindow(mainWindow), m_pipelineRunner(pipelineRunner)
 {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -163,18 +162,6 @@ void TopToolbars::createOptionsBar()
     modeLabel->setObjectName(QStringLiteral("modeDescription"));
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
-
-    m_arrangementCombo = new QComboBox;
-    m_arrangementCombo->addItems({tr("Automatique (par lignes)"),
-                                tr("Serpentin vertical, bas gauche"),
-                                tr("Serpentin vertical, haut droite"),
-                                tr("Serpentin horizontal"), tr("Par lignes"), tr("Par colonnes")});
-    m_arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
-    optionsLayout->addWidget(m_arrangementCombo);
-    connect(m_arrangementCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [this](int value) {
-        m_projectGrid->setCaptureOrder(value);
-        m_mainWindow->updateStatus(tr("Ordre de prise de vue : %1").arg(m_arrangementCombo->currentText()));
-    });
 
     static_cast<QVBoxLayout *>(layout())->addWidget(modeOptions);
 }

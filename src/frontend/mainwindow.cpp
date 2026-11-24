@@ -650,7 +650,6 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
