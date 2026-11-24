@@ -37,6 +37,7 @@
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include <QAbstractItemView>
@@ -72,18 +73,41 @@
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
+#include <dwmapi.h>
 #endif
 
 namespace {
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+#ifdef Q_OS_WIN
+void applyWindowsDarkTitleBar(QWidget *widget)
+{
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    if (!hwnd)
+        return;
+    constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+    constexpr DWORD kDwmwaCaptionColor = 35;
+    constexpr DWORD kDwmwaTextColor = 36;
+    // Active le mode sombre natif de la barre de titre (Windows 10 2004+ et Windows 11).
+    const BOOL useDarkMode = TRUE;
+    DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &useDarkMode, sizeof(useDarkMode));
+    // Windows 11 uniquement (ignoré sans erreur sous Windows 10) : couleur exacte du QMenuBar (#242424).
+    const COLORREF captionColor = RGB(0x24, 0x24, 0x24);
+    const COLORREF textColor = RGB(0xDE, 0xDE, 0xDE);
+    DwmSetWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
+    DwmSetWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
+}
+#endif
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle(tr("KIK-IRPA Assemblage"));
+    refreshWindowTitle();
     resize(1228, 780);
     setMinimumSize(920, 600);
     applyStyleSheet();
+    #ifdef Q_OS_WIN
+        applyWindowsDarkTitleBar(this);
+    #endif
 
     projectGrid = new ProjectGrid(this);
     pipelineRunner = new PipelineRunnerClass(this);
@@ -150,12 +174,27 @@ void MainWindow::applyStyleSheet()
 
 void MainWindow::setupProjectGridConnections()
 {
-    connect(projectGrid, &ProjectGrid::gridUpdated,
-            this, &MainWindow::refreshProjectInfo);
+    connect(projectGrid, &ProjectGrid::gridUpdated, this, [this]() {
+        if (!switchingProject)
+            markProjectModified();
+        refreshProjectInfo();
+    });
+    connect(projectGrid, &ProjectGrid::gridChanged, this, [this]() {
+        if (!switchingProject)
+            invalidatePipelineResults();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
-            this, &MainWindow::refreshProjectInfo);
+            this, [this](bool) {
+                if (!switchingProject)
+                    markProjectModified();
+                refreshProjectInfo();
+            });
     connect(projectGrid, &ProjectGrid::referenceImageLoaded,
-            this, &MainWindow::refreshProjectInfo);
+            this, [this]() {
+                if (!switchingProject)
+                    markProjectModified();
+                refreshProjectInfo();
+            });
     connect(projectGrid, &ProjectGrid::messageRequested,
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
@@ -176,6 +215,10 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                pipelineResultsStale = false;
+            });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
@@ -192,7 +235,7 @@ void MainWindow::setupPipelineConnections()
         workspaceUI->progressBar()->setValue(0);
         if (workspaceUI->bottomTabs())
             workspaceUI->bottomTabs()->setVisible(true);
-        panelsVisible = true;
+        sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -257,10 +300,9 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+    connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -282,10 +324,17 @@ void MainWindow::setupMenuConnections()
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
+        logVisible = !logVisible;
+        workspaceUI->bottomTabs()->setVisible(logVisible);
+    });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
+    });
+    connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
+        DialogHelpers::showCreditsDialog(this);
     });
 }
 
@@ -456,6 +505,8 @@ void MainWindow::refreshPairViews()
 
 void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
+    if (pipelineResultsStale)
+        return;
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -465,10 +516,29 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
     refreshPairViews();
 }
 
+void MainWindow::invalidatePipelineResults()
+{
+    pipelineResultsStale = true;
+    m_pairs.clear();
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(SeamLines());
+        canvasView->setAlignmentOverview({}, {});
+    }
+    refreshPairViews();
+    mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
+}
+
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    if (!confirmDiscardUnsavedChanges())
+        return;
+    switchingProject = true;
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -494,10 +564,15 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     } else {
         updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tileCount));
     }
+    switchingProject = false;
+    projectModified = false;
+    refreshWindowTitle();
 }
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (!confirmDiscardUnsavedChanges())
+        return;
     if (pipelineRunner->isRunning()) {
         updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
         return;
@@ -517,6 +592,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
         return;
     const bool resume = opening.clickedButton() == resumeButton;
+    switchingProject = true;
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -545,6 +621,9 @@ void MainWindow::applyLoadedProject(const QString &path)
         pipelineRunner->setStartFromStepName(QString());
         pipelineRunner->startRun(1, true);
     }
+    switchingProject = false;
+    projectModified = false;
+    refreshWindowTitle();
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -556,6 +635,8 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
+    if (!switchingProject && currentMode != mode)
+        markProjectModified();
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (QTabWidget *tabs = workspaceUI->rightTabs()) {
@@ -612,16 +693,16 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     const bool isPairMode = (currentMode == 3);
-    if (auto *overlayBtn = workspaceUI->workspace()->findChild<QWidget *>(
-                QStringLiteral("pairOverlayButton"))) {
+    if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("pairOverlayButton"))) {
         overlayBtn->setVisible(isPairMode);
     }
-    if (auto *prevPairBtn = workspaceUI->workspace()->findChild<QWidget *>(
-                QStringLiteral("prevPairButton"))) {
+    if (auto* prevPairBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("prevPairButton"))) {
         prevPairBtn->setVisible(isPairMode);
     }
-    if (auto *nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget *>(
-                QStringLiteral("nextDubiousButton"))) {
+    if (auto* nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("nextDubiousButton"))) {
         nextDubiousBtn->setVisible(isPairMode);
     }
     // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
@@ -663,6 +744,7 @@ void MainWindow::setMode(int mode)
 
 void MainWindow::refreshProjectInfo()
 {
+    refreshWindowTitle();
     workspaceUI->updateFromGridState(projectName, projectGrid->state());
 
     const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
@@ -754,9 +836,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         return;
     }
 
-    updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3, ordre « %4 ».")
-                     .arg(activeTileCount).arg(gridState.gridRows).arg(gridState.gridColumns)
-                     .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
+    updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3.")
+        .arg(activeTileCount)
+        .arg(gridState.gridRows)
+        .arg(gridState.gridColumns));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
             .arg(QString::fromStdString(IONs::pathToUtf8(scriptPath))));
@@ -773,13 +856,18 @@ void MainWindow::handleTilesImported(const QString &directory, int importedCount
 
 void MainWindow::saveProject()
 {
+    saveProjectToFile();
+}
+
+bool MainWindow::saveProjectToFile()
+{
     const ProjectGrid::State &gridState = projectGrid->state();
     QString path = projectPath;
     if (path.isEmpty())
         path = QFileDialog::getSaveFileName(this, tr("Enregistrer le projet"),
             projectName + QStringLiteral(".kikproj"), tr("Projet KIK-IRPA (*.kikproj);;JSON (*.json)"));
     if (path.isEmpty())
-        return;
+        return false;
     QString errorMessage;
     nlohmann::json backendScript;
     try {
@@ -793,7 +881,7 @@ void MainWindow::saveProject()
             path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
-        return;
+        return false;
     }
     projectPath = path;
     projectCreated = true;
@@ -801,6 +889,50 @@ void MainWindow::saveProject()
         projectCreated, projectPath, projectName, gridState.tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
+    projectModified = false;
+    refreshWindowTitle();
+    return true;
+}
+
+bool MainWindow::confirmDiscardUnsavedChanges()
+{
+    if (!projectModified)
+        return true;
+
+    QMessageBox question(this);
+    question.setIcon(QMessageBox::Question);
+    question.setWindowTitle(tr("Projet modifié"));
+    question.setText(tr("Le projet contient des modifications non enregistrées."));
+    question.setInformativeText(tr("Voulez-vous enregistrer les modifications avant de continuer ?"));
+    QPushButton *saveButton = question.addButton(tr("Enregistrer"), QMessageBox::AcceptRole);
+    QPushButton *discardButton = question.addButton(tr("Ne pas enregistrer"), QMessageBox::DestructiveRole);
+    question.addButton(tr("Annuler"), QMessageBox::RejectRole);
+    question.setDefaultButton(saveButton);
+    question.exec();
+
+    if (question.clickedButton() == saveButton)
+        return saveProjectToFile();
+    if (question.clickedButton() == discardButton)
+        return true;
+    return false;
+}
+
+void MainWindow::markProjectModified()
+{
+    if (switchingProject)
+        return;
+    projectModified = true;
+    refreshWindowTitle();
+}
+
+void MainWindow::refreshWindowTitle()
+{
+    const QString baseTitle = tr("KIK-IRPA Assemblage");
+    const QString title = projectCreated
+        ? projectName + QStringLiteral("[*] - ") + baseTitle
+        : baseTitle + QStringLiteral("[*]");
+    setWindowTitle(title);
+    setWindowModified(projectModified);
 }
 
 FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
@@ -936,9 +1068,9 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
         event->accept();
         return;
     }
@@ -983,6 +1115,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
     // Si la fermeture a déjà été ordonnée et que le worker s'est arrêté, on accepte la fermeture
     if (isClosing) {
         event->accept();
+        return;
+    }
+
+    if (!confirmDiscardUnsavedChanges()) {
+        event->ignore();
         return;
     }
 
