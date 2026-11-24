@@ -32,7 +32,7 @@ namespace {
 
     TEST(PyramidalTiffReaderClass, ReadsRegionAcrossTilesAndReducedLevel) {
         // Crée une image assez grande pour que la région traverse plusieurs tuiles TIFF.
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_test.tif";
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_test.tif";
         cv::Mat source(SOURCE_HEIGHT, SOURCE_WIDTH, CV_16UC3);
         // Chaque pixel contient ses coordonnées : cela permet de vérifier précisément la copie.
         for (int y = 0; y < source.rows; ++y) {
@@ -43,8 +43,8 @@ namespace {
 
         // Écrit la pyramide puis crée le lecteur associé au fichier.
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
-        IONs::PyramidalTiffReaderClass reader(PATH);
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, testPath, error)) << error;
+        IONs::PyramidalTiffReaderClass reader(testPath);
 
         // Lit une région du niveau original, en traversant plusieurs tuiles.
         cv::Mat region;
@@ -53,14 +53,14 @@ namespace {
         // Vérifie la taille, le type et les pixels aux deux coins de la région.
         ASSERT_EQ(region.type(), source.type());
         ASSERT_EQ(region.size(), cv::Size(REGION_WIDTH, REGION_HEIGHT));
-        const cv::Vec<uint16_t, 3> FIRST_PIXEL{REGION_X, REGION_Y, BLUE_CHANNEL};
-        const cv::Vec<uint16_t, 3> LAST_PIXEL{
+        const cv::Vec<uint16_t, 3> firstPixel{REGION_X, REGION_Y, BLUE_CHANNEL};
+        const cv::Vec<uint16_t, 3> lastPixel{
             REGION_X + REGION_WIDTH - 1, REGION_Y + REGION_HEIGHT - 1, BLUE_CHANNEL};
-        const auto ACTUAL_FIRST_PIXEL = region.at<cv::Vec<uint16_t, 3>>(0, 0);
-        const auto ACTUAL_LAST_PIXEL = region.at<cv::Vec<uint16_t, 3>>(
+        const auto actualFirstPixel = region.at<cv::Vec<uint16_t, 3>>(0, 0);
+        const auto actualLastPixel = region.at<cv::Vec<uint16_t, 3>>(
             REGION_HEIGHT - 1, REGION_WIDTH - 1);
-        EXPECT_EQ(ACTUAL_FIRST_PIXEL, FIRST_PIXEL);
-        EXPECT_EQ(ACTUAL_LAST_PIXEL, LAST_PIXEL);
+        EXPECT_EQ(actualFirstPixel, firstPixel);
+        EXPECT_EQ(actualLastPixel, lastPixel);
 
         // Vérifie aussi qu'une région peut être lue dans un niveau réduit.
         cv::Mat reduced;
@@ -125,34 +125,34 @@ namespace {
         EXPECT_FALSE(error.empty());
 
         // Supprime le fichier temporaire créé pour le test.
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(testPath);
     }
 
     // Image à 4 canaux (RGBA) : le canal alpha est déclaré par TIFFTAG_EXTRASAMPLES. Passer la valeur au lieu d'un
     // tableau faisait planter libtiff.
     TEST(PyramidalTiffReaderClass, WritesAndReadsFourChannelImage) {
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_rgba_test.tif";
         const cv::Mat source(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC4, cv::Scalar(10, 20, 30, 255));
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, testPath, error)) << error;
 
         cv::Mat region;
-        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(PATH).readRegion(
+        ASSERT_TRUE(IONs::PyramidalTiffReaderClass(testPath).readRegion(
             0, cv::Rect(0, 0, BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE), region, error)) << error;
         ASSERT_EQ(region.type(), CV_8UC4);
         EXPECT_EQ(region.at<cv::Vec4b>(0, 0), cv::Vec4b(10, 20, 30, 255));
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(testPath);
     }
 
     TEST(PyramidalTiffReaderClass, RejectsRegionOutsideLevel) {
         // Crée une petite pyramide pour tester le contrôle des limites.
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_bounds_test.tif";
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_bounds_test.tif";
         cv::Mat source = cv::Mat::zeros(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC1);
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, testPath, error)) << error;
 
         // Demande une région qui dépasse l'image : la lecture doit échouer.
-        IONs::PyramidalTiffReaderClass reader(PATH);
+        IONs::PyramidalTiffReaderClass reader(testPath);
         cv::Mat output;
         EXPECT_FALSE(reader.readRegion(
             0,
@@ -163,20 +163,20 @@ namespace {
         EXPECT_FALSE(error.empty());
 
         // Supprime le fichier temporaire même après le test de l'erreur.
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(testPath);
     }
 
     TEST(PyramidalTiffReaderClass, ReadsMetadataSuccessfully) {
         // Crée une image basique pour le test
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_metadata_test.tif";
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_pyramidal_reader_metadata_test.tif";
         cv::Mat source = cv::Mat::zeros(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC1);
         std::string error;
         
         // Génération du TIFF
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, testPath, error)) << error;
 
         // Instanciation du lecteur
-        IONs::PyramidalTiffReaderClass reader(PATH);
+        IONs::PyramidalTiffReaderClass reader(testPath);
         
         std::vector<uint8_t> iccProfile;
         double scaleX = 0.0;
@@ -193,13 +193,13 @@ namespace {
         // L'important est que la fonction n'ait pas échoué.
         
         // Nettoyage
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(testPath);
     }
 
     TEST(PyramidalTiffReaderClass, FailsOnMissingFile) {
         // On donne un chemin vers un fichier qui n'existe pas
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_non_existent_file.tif";
-        IONs::PyramidalTiffReaderClass reader(PATH);
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_non_existent_file.tif";
+        IONs::PyramidalTiffReaderClass reader(testPath);
         
         cv::Mat output;
         std::string error;
@@ -213,12 +213,12 @@ namespace {
 
     TEST(PyramidalTiffReaderClass, RejectsInvalidArguments) {
         // Setup : Création d'une image basique et valide
-        const auto PATH = std::filesystem::temp_directory_path() / "kikirpa_invalid_args_test.tif";
+        const auto testPath = std::filesystem::temp_directory_path() / "kikirpa_invalid_args_test.tif";
         cv::Mat source = cv::Mat::zeros(BOUNDS_IMAGE_SIZE, BOUNDS_IMAGE_SIZE, CV_8UC1);
         std::string error;
-        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, PATH, error)) << error;
+        ASSERT_TRUE(IONs::createPyramidalTiledTiff(source, testPath, error)) << error;
 
-        IONs::PyramidalTiffReaderClass reader(PATH);
+        IONs::PyramidalTiffReaderClass reader(testPath);
         cv::Mat output;
 
         // Cas 1 : Niveau de pyramide négatif
@@ -234,11 +234,12 @@ namespace {
         EXPECT_FALSE(error.empty());
 
         // Nettoyage
-        std::filesystem::remove(PATH);
+        std::filesystem::remove(testPath);
     }
 
     TEST(PyramidalTiffWriterClass, WriteFailureCleansUpWithoutLeavingCorruptedOrTemporaryFile) {
-        cv::Mat validImage = cv::Mat::zeros(64, 64, CV_8UC3);
+        constexpr int TEST_TILE_DIM = 64;
+        cv::Mat validImage = cv::Mat::zeros(TEST_TILE_DIM, TEST_TILE_DIM, CV_8UC3);
         std::string errorMessage;
 
         // Cas 1 : Image vide -> échec immédiat, aucun fichier créé

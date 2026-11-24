@@ -333,6 +333,7 @@ PyramidalViewport readPyramidalViewport(
     return result;
 }
 
+// NOLINTBEGIN(readability-magic-numbers)
 int nextZoomIn(int currentZoom)
 {
     static const int steps[] = {
@@ -359,6 +360,7 @@ int nextZoomOut(int currentZoom)
     }
     return 1;
 }
+// NOLINTEND(readability-magic-numbers)
 
 }
 

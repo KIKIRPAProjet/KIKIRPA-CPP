@@ -36,7 +36,7 @@ namespace IONs {
             // Récupère les dimensions d'un niveau donné.
             bool getLevelDimensions(
                 int level,
-                int& width,
+                int& width, // NOLINT(bugprone-easily-swappable-parameters)
                 int& height,
                 std::string& errorMessage
             ) const;
@@ -53,6 +53,7 @@ namespace IONs {
             // Lit la zone visible. origin est en pixels pleine résolution; viewportSize est en
             // pixels écran; zoomPercent est un facteur d'affichage (100 = 1 pixel source par
             // pixel écran). Une partie du viewport hors image est tronquée.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool readViewport(
                 const cv::Point2d& origin,
                 const cv::Size& viewportSize,
@@ -63,6 +64,7 @@ namespace IONs {
 
             // `region` est exprimée dans le repère du niveau demandé et doit y être entièrement contenue.
             // `output` reçoit exactement ses dimensions et son type.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool readRegion(
                 int level,
                 const cv::Rect& region,
@@ -72,6 +74,7 @@ namespace IONs {
 
             // Récupère le profil ICC (si présent) et les échelles de résolution (X et Y).
             // Laisse scaleX et scaleY à 1.0 et iccProfile vide si non trouvés, mais renvoie true.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool readMetadata(
                 std::vector<uint8_t>& iccProfile,
                 double& scaleX,

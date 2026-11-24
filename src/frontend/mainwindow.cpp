@@ -82,7 +82,7 @@ constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
-    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId()); // NOLINT(performance-no-int-to-ptr)
     if (!hwnd)
         return;
     constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;

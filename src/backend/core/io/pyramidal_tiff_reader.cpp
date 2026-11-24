@@ -9,6 +9,8 @@
 #include <tiff.h>
 #include <tiffio.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -64,6 +66,7 @@ namespace IONs {
             std::string& errorMessage;
         };
 
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         void copyTilePixels(
             const RegionReadContext& context,
             const cv::Rect& copiedRect,
@@ -183,6 +186,7 @@ namespace IONs {
             return true;
         }
 
+        // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
         void copyTilePixels(
             const RegionReadContext& context,
             const cv::Rect& copiedRect,
@@ -290,7 +294,7 @@ namespace IONs {
 
     bool PyramidalTiffReaderClass::getLevelDimensions(
         int level,
-        int& width,
+        int& width, // NOLINT(bugprone-easily-swappable-parameters)
         int& height,
         std::string& errorMessage
     ) const {
@@ -341,6 +345,7 @@ namespace IONs {
         return 1;
     }
 
+    // NOLINTNEXTLINE(readability-function-size)
     bool PyramidalTiffReaderClass::readPyramidDimensions(
         std::vector<cv::Size>& dimensions,
         std::string& errorMessage
@@ -395,6 +400,7 @@ namespace IONs {
         return true;
     }
 
+    // NOLINTNEXTLINE(readability-function-size,bugprone-easily-swappable-parameters)
     bool PyramidalTiffReaderClass::readViewport(
         const cv::Point2d& origin,
         const cv::Size& viewportSize,
@@ -480,6 +486,7 @@ namespace IONs {
         return true;
     }
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     bool PyramidalTiffReaderClass::readRegion(
         int level,
         const cv::Rect& region,
@@ -510,6 +517,7 @@ namespace IONs {
         return success;
     }
 
+    // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
     bool PyramidalTiffReaderClass::readMetadata(
         std::vector<uint8_t>& iccProfile,
         double& scaleX,
