@@ -86,8 +86,8 @@ public:
     }
 
     void setFusedMosaicVisible(bool visible) { fusedMosaicVisible = visible; update(); }
-    void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
-                      int selectedCell);
+    void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
+        int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped);
     void toggleComparison() { comparison = !comparison; update(); }
@@ -163,8 +163,8 @@ private:
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
-    // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawAssemblyLayers(QPainter &p);
+    // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawMosaicPreview(QPainter &p, bool withSeams);
     // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,
     // ou, en mode superposé, la paire sélectionnée en grand.
@@ -206,7 +206,6 @@ private:
     std::function<void(int, int)> cellsSwappedCallback;
     int gridRows = 3;
     int gridColumns = 2;
-    int captureOrder = 0;
     int selectedGridCell = 0;
     int dragStartCell = -1;
     int dragTargetCell = -1;
