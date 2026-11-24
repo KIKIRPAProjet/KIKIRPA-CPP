@@ -16,11 +16,11 @@
 #include "workspace_ui.h"
 #include "artworkcanvas.h"
 #include "homepage.h"
+#include "logpanel.h"
 #include "mainwindow.h"
 #include "projectgrid.h"
 #include "pipeline_runner.h"
 #include "grid_tab.h"
-#include "bottom_tabs.h"
 #include "workspace_status_bar.h"
 #include "workspace_center.h"
 #include "left_toolbar.h"
@@ -233,7 +233,7 @@ void WorkspaceUI::createWorkspace()
     body->setStretchFactor(2, 0);
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
-    m_bottomTabs = new BottomTabs(m_mainWindow);
+    m_bottomTabs = new LogPanel(m_mainWindow);
     m_bottomTabs->setVisible(false);
 
     auto *contentSplitter = new QSplitter(Qt::Vertical);
@@ -257,7 +257,7 @@ void WorkspaceUI::createWorkspace()
 void WorkspaceUI::appendLog(const QString &message)
 {
     if (m_bottomTabs) {
-        m_bottomTabs->appendLog(message);
+        m_bottomTabs->appendLog(message, "info");
     }
 }
 
