@@ -358,7 +358,7 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
     if (image.isNull()) {
         const cv::Mat mat = IONs::readImage(IONs::pathFromUtf8(path.toStdString()), 1 /* IMREAD_COLOR */);
         if (!mat.empty()) {
-            image = matToQImage(mat);
+            image = FrontendUtils::matToQImage(mat);
         }
     }
     if (!image.isNull() && (image.width() > maximumSize.width() || image.height() > maximumSize.height()))
