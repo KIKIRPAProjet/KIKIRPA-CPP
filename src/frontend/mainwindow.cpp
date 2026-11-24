@@ -341,8 +341,11 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
-               "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
+            tr("KIK-IRPA Assemblage, version 1.0.0\n\n"
+               "Assemblage de photographies d'œuvres d'art en une image haute résolution.\n\n"
+               "Réalisé pour l'Institut royal du Patrimoine artistique (KIK-IRPA) "
+               "par des étudiants de l'Université de Mons "
+               "(Faculté Polytechnique et Faculté des Sciences)."));
     });
     connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
         DialogHelpers::showCreditsDialog(this);
