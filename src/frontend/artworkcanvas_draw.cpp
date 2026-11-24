@@ -26,8 +26,11 @@ constexpr int kMinCellWidthForFileName = 145;
 constexpr qreal kArrowLength = 16.0;
 constexpr qreal kArrowAngleDegrees = 28.0;
 
-constexpr int kPreviewMaxDimension = 2048;   // côté max des aperçus mis en cache : nets quand on zoome
-
+// Côté des aperçus mis en cache : la taille affichée (zoom compris), arrondie à la puissance de deux supérieure,
+// entre ces deux bornes. Une grille de 50 tuiles tient alors en quelques dizaines de Mo, et zoomer de 10 % ne
+// relit pas l'image.
+constexpr int kPreviewMinDimension = 256;
+constexpr int kPreviewMaxDimension = 2048;
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
 constexpr int LABEL_BAND = 20;   // bande au-dessus de chaque tuile pour son nom : le nom ne cache pas l'image
@@ -60,6 +63,16 @@ void strokePath(QPainter &p, const QPainterPath &path, const QColor &color, qrea
     pen.setCosmetic(true);   // même épaisseur à l'écran quel que soit le zoom
     p.setPen(pen);
     p.drawPath(path);
+}
+
+// Côté d'aperçu à lire pour le rectangle r dessiné avec ce facteur d'écran (zoom de la vue × densité de l'écran).
+int previewBucket(const QRect &r, qreal screenScale)
+{
+    const int needed = qCeil(qMax(r.width(), r.height()) * screenScale);
+    int bucket = kPreviewMinDimension;
+    while (bucket < needed && bucket < kPreviewMaxDimension)
+        bucket *= 2;
+    return bucket;
 }
 
 // Coutures en vecteur, mises à l'échelle de l'image affichée.
@@ -534,14 +547,25 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
+        // Taille à lire : celle qui sera vraiment affichée, zoom de la vue et densité de l'écran compris.
+    const QTransform &world = p.worldTransform();
+    const qreal screenScale = qMax(qAbs(world.m11()), qAbs(world.m12())) * devicePixelRatioF();
+    const int bucket = previewBucket(r, screenScale);
+    const QString key = QStringLiteral("%1|%2|%3|%4").arg(path).arg(bucket).arg(rotation).arg(flipped ? 1 : 0);
+
     QImage image;
-    if (const QImage *cached = m_imageCache.object(path)) {
+    if (const QImage *cached = m_imageCache.object(key)) {
         image = *cached;
     } else {
-        image = readPreviewImage(path, QSize(kPreviewMaxDimension, kPreviewMaxDimension));
+        image = readPreviewImage(path, QSize(bucket, bucket));
         if (!image.isNull()) {
+            // Miroir et rotation appliqués une fois, à la mise en cache, et non à chaque dessin.
+            if (flipped)
+                image = image.mirrored(true, false);
+            if (rotation != 0)
+                image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
             const qsizetype cost = std::max<qsizetype>(1, image.sizeInBytes());
-            m_imageCache.insert(path, new QImage(image), cost);
+            m_imageCache.insert(key, new QImage(image), cost);
         }
     }
     if (image.isNull()) {
@@ -550,10 +574,6 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
         return;
     }
-    if (flipped)
-        image = image.mirrored(true, false);
-    if (rotation != 0)
-        image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
 
     const QSize targetSize = image.size().scaled(r.size(), Qt::KeepAspectRatio);
     const QRect targetRect(r.left() + (r.width() - targetSize.width()) / 2,
