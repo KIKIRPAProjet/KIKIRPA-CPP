@@ -2,9 +2,14 @@
 // Tests unitaires de PipelineWorkerClass et PipelineRunnerClass :
 // Couvre l'exécution complète, la pause puis la reprise, l'arrêt (annulation),
 // et l'intégration asynchrone multi-thread sur deux tuiles générées.
+#include "artworkcanvas.h"
+#include "image_layer.h"
+#include "mainwindow.h"
+#include "pipeline_results.h"
 #include "pipeline_worker.h"
 #include "pipeline_runner.h"
 #include "project_serializer.h"
+#include "projectgrid.h"
 
 #include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
@@ -23,13 +28,23 @@
 #include <QtCore/QObject>
 #include <QtCore/QRect>
 #include <QtCore/QString>
+#include <QtCore/QStringList>
+#include <QtCore/QPoint>
+#include <QtCore/QVector>
 #include <QtCore/QTimer>
 #include <QtCore/qglobal.h>
+#include <QtGui/QColor>
 #include <QtGui/QImage>
+#include <QtGui/QMouseEvent>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QComboBox>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QSlider>
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -126,6 +141,37 @@ namespace {
             {"pipeline", {{"steps", steps}}},
             {"run", {{"checkpointDirectory", IONs::pathToUtf8(checkpointDirectory)}}}
         };
+    }
+
+    constexpr int FIRST_TIFF_GRAY = 220;
+    constexpr int SECOND_TIFF_GRAY = 144;
+    constexpr int CANVAS_GRAY = 0x48;
+    constexpr int HALF_OPACITY = 50;
+    constexpr int DOUBLE_ZOOM = 200;
+    constexpr int CROP_TOOL = 9;
+
+    // Les plages unies sont en dehors du recouvrement texturé utilisé pour calculer la translation.
+    void writeGrayPatch(const fs::path& path, int x, int gray) {
+        constexpr int patchWidth = 112;
+        constexpr int patchHeight = 112;
+        constexpr int patchTop = (TILE_HEIGHT - patchHeight) / 2;
+        cv::Mat tile = IONs::readImage(path, cv::IMREAD_UNCHANGED);
+        tile(cv::Rect(x, patchTop, patchWidth, patchHeight)).setTo(cv::Scalar(gray * 256));
+        IONs::writeImage(path, tile);
+    }
+
+    int grayAt(const QImage& image, const QPoint& point) {
+        const QColor color = image.pixelColor(point);
+        EXPECT_EQ(color.red(), color.green());
+        EXPECT_EQ(color.green(), color.blue());
+        return color.red();
+    }
+
+    void sendMouse(ArtworkCanvas& canvas, QEvent::Type type, QPoint point,
+                   Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent event(type, QPointF(point), QPointF(canvas.mapToGlobal(point)),
+                          button, buttons, Qt::NoModifier);
+        QApplication::sendEvent(&canvas, &event);
     }
 
     class PipelineWorkerTestClass : public ::testing::Test {
@@ -725,6 +771,168 @@ TEST_F(PipelineWorkerTestClass, CropRunnerUsesFusionCheckpoint)
     // La mosaïque originale reste disponible après les deux essais.
     EXPECT_TRUE(fs::is_regular_file(
         fusionDirectory / "mosaic_image.tif"));
+}
+
+TEST_F(PipelineWorkerTestClass, AssemblyControlsChangeRenderedPixelsAfterFullPipeline) {
+    constexpr int firstPatchLeft = 124;
+    constexpr int secondPatchLeft = 164;
+    const auto firstPath = tilesDirectory / "img_C00_R00.tif";
+    const auto secondPath = tilesDirectory / "img_C01_R00.tif";
+    writeGrayPatch(firstPath, firstPatchLeft, FIRST_TIFF_GRAY);
+    writeGrayPatch(secondPath, secondPatchLeft, SECOND_TIFF_GRAY);
+
+    MainWindow window;
+    auto *runner = window.findChild<PipelineRunnerClass *>();
+    auto *canvas = window.findChild<ArtworkCanvas *>();
+    ASSERT_NE(runner, nullptr);
+    ASSERT_NE(canvas, nullptr);
+    auto *grid = window.findChild<ProjectGrid *>();
+    ASSERT_NE(grid, nullptr);
+    grid->createNewProject(QString::fromStdString(IONs::pathToUtf8(tilesDirectory)),
+                           {QString::fromStdString(IONs::pathToUtf8(firstPath)),
+                            QString::fromStdString(IONs::pathToUtf8(secondPath))});
+    runner->setScriptJson(QString::fromStdString(makeScript(tilesDirectory, outputDirectory, checkpointDirectory).dump()));
+
+    PipelineResults results;
+    QVector<ImageLayer> layers;
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(runner, &PipelineRunnerClass::runFinished, &loop, &QEventLoop::quit);
+    QObject::connect(runner, &PipelineRunnerClass::imageLayersReady, &loop,
+                     [&](const QVector<ImageLayer>& emitted) { layers = emitted; });
+    QObject::connect(runner, &PipelineRunnerClass::resultsReady, &loop,
+                     [&](const PipelineResults& emitted) { results = emitted; });
+
+    timer.start(ASYNC_WAIT_TIMEOUT_MS);
+    runner->startRun();
+    loop.exec();
+    ASSERT_FALSE(runner->isRunning());
+    ASSERT_TRUE(fs::exists(outputDirectory / "mosaic.tif"));
+    ASSERT_EQ(results.tiles.size(), 2);
+    ASSERT_EQ(layers.size(), 2);
+    ASSERT_FALSE(results.seams.isEmpty());
+    constexpr double pyramidScale = 8.0;
+    EXPECT_NEAR((layers[1].worldRect.left() - layers[0].worldRect.left()) * pyramidScale, TILE_SHIFT, 2.0);
+    EXPECT_NEAR((layers[1].worldRect.top() - layers[0].worldRect.top()) * pyramidScale, 0.0, 2.0);
+
+    auto *assembly = window.findChild<QPushButton *>(QStringLiteral("mode5"));
+    auto *global = window.findChild<QSlider *>(QStringLiteral("globalOpacitySlider"));
+    auto *individual = window.findChild<QSlider *>(QStringLiteral("layerOpacitySlider"));
+    auto *selector = window.findChild<QComboBox *>(QStringLiteral("layerSelector"));
+    auto *visible = window.findChild<QCheckBox *>(QStringLiteral("layerVisibilityCheck"));
+    ASSERT_NE(assembly, nullptr);
+    ASSERT_NE(global, nullptr);
+    ASSERT_NE(individual, nullptr);
+    ASSERT_NE(selector, nullptr);
+    ASSERT_NE(visible, nullptr);
+
+    ASSERT_TRUE(assembly->isEnabled());
+    assembly->click();
+    canvas->setFixedSize(768, 400);
+    canvas->resetView();
+    window.show();
+    QApplication::processEvents();
+
+    const QPoint firstPixel(canvas->width() / 4, canvas->height() / 2);
+    const QPoint secondPixel(canvas->width() * 3 / 4, firstPixel.y());
+    const QImage opaque = canvas->grab().toImage();
+    EXPECT_EQ(grayAt(opaque, firstPixel), FIRST_TIFF_GRAY);
+    EXPECT_EQ(grayAt(opaque, secondPixel), SECOND_TIFF_GRAY);
+
+    selector->setCurrentIndex(selector->findData(layers[1].id));
+    individual->setValue(HALF_OPACITY);
+    const QImage individualHalf = canvas->grab().toImage();
+    EXPECT_EQ(grayAt(individualHalf, firstPixel), FIRST_TIFF_GRAY);
+    EXPECT_NEAR(grayAt(individualHalf, secondPixel), (SECOND_TIFF_GRAY + CANVAS_GRAY) / 2.0, 1);
+
+    global->setValue(HALF_OPACITY);
+    const QImage globalHalf = canvas->grab().toImage();
+    EXPECT_NEAR(grayAt(globalHalf, firstPixel), (FIRST_TIFF_GRAY + CANVAS_GRAY) / 2.0, 1);
+    EXPECT_NEAR(grayAt(globalHalf, secondPixel), (SECOND_TIFF_GRAY + 3 * CANVAS_GRAY) / 4.0, 1);
+
+    visible->click();
+    const QImage hidden = canvas->grab().toImage();
+    EXPECT_EQ(grayAt(hidden, secondPixel), CANVAS_GRAY);
+    EXPECT_EQ(grayAt(hidden, firstPixel), grayAt(globalHalf, firstPixel));
+
+    global->setValue(global->maximum());
+    canvas->setZoom(DOUBLE_ZOOM);
+    const QPoint zoomedProbe(canvas->width() / 8, firstPixel.y());
+    EXPECT_NE(grayAt(opaque, zoomedProbe), FIRST_TIFF_GRAY);
+    EXPECT_EQ(grayAt(canvas->grab().toImage(), zoomedProbe), FIRST_TIFF_GRAY);
+}
+
+TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
+    MainWindow window;
+    auto *runner = window.findChild<PipelineRunnerClass *>();
+    auto *canvas = window.findChild<ArtworkCanvas *>();
+    ASSERT_NE(runner, nullptr);
+    ASSERT_NE(canvas, nullptr);
+    auto *grid = window.findChild<ProjectGrid *>();
+    ASSERT_NE(grid, nullptr);
+    grid->createNewProject(QString::fromStdString(IONs::pathToUtf8(tilesDirectory)),
+                           {QString::fromStdString(IONs::pathToUtf8(tilesDirectory / "img_C00_R00.tif")),
+                            QString::fromStdString(IONs::pathToUtf8(tilesDirectory / "img_C01_R00.tif"))});
+    runner->setScriptJson(QString::fromStdString(makeScript(tilesDirectory, outputDirectory, checkpointDirectory).dump()));
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(runner, &PipelineRunnerClass::runFinished, &loop, &QEventLoop::quit);
+    timer.start(ASYNC_WAIT_TIMEOUT_MS);
+    runner->startRun();
+    loop.exec();
+    ASSERT_FALSE(canvas->mosaicPreview().isNull());
+
+    canvas->setFixedSize(768, 400);
+    canvas->resetView();
+    window.show();
+    QApplication::processEvents();
+    const QImage originalMosaic = canvas->mosaicPreview();
+
+    auto selectMode = [&](const char *name) {
+        auto *button = window.findChild<QPushButton *>(QString::fromLatin1(name));
+        ASSERT_NE(button, nullptr);
+        ASSERT_TRUE(button->isEnabled());
+        button->click();
+    };
+    selectMode("mode5");
+    const QImage withSeams = canvas->grab().toImage();
+    canvas->setSeamVisible(false);
+    const QImage withoutSeams = canvas->grab().toImage();
+    EXPECT_NE(withSeams, withoutSeams);
+
+    auto *fused = window.findChild<QCheckBox *>(QStringLiteral("fusedMosaicCheck"));
+    ASSERT_NE(fused, nullptr);
+    fused->click();
+    const QImage fusedWithoutSeams = canvas->grab().toImage();
+    selectMode("mode4");
+    EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
+    selectMode("mode3");
+    EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
+    selectMode("mode6");
+    EXPECT_EQ(canvas->mosaicPreview(), originalMosaic);
+
+    canvas->setActiveTool(CROP_TOOL);
+    canvas->setZoom(DOUBLE_ZOOM);
+    const QPoint center(canvas->width() / 2, canvas->height() / 2);
+    const QPoint delta(100, 60);
+    sendMouse(*canvas, QEvent::MouseButtonPress, center - delta, Qt::LeftButton, Qt::LeftButton);
+    sendMouse(*canvas, QEvent::MouseMove, center + delta, Qt::NoButton, Qt::LeftButton);
+    sendMouse(*canvas, QEvent::MouseButtonRelease, center + delta, Qt::LeftButton, Qt::NoButton);
+    ASSERT_TRUE(canvas->hasActiveCropSelection());
+    canvas->applyCrop();
+    ASSERT_TRUE(canvas->isCropped());
+    EXPECT_LT(canvas->mosaicPreview().width(), originalMosaic.width());
+    EXPECT_LT(canvas->mosaicPreview().height(), originalMosaic.height());
+    const QRectF normalizedCrop = canvas->cropNormalizedRect();
+    EXPECT_NEAR(normalizedCrop.center().x(), 0.5, 0.01);
+    EXPECT_NEAR(normalizedCrop.center().y(), 0.5, 0.01);
+    EXPECT_NEAR(normalizedCrop.width(), (delta.x() + 1.0) / (canvas->width() - 48), 0.01);
+    canvas->resetCrop();
+    EXPECT_EQ(canvas->mosaicPreview(), originalMosaic);
 }
 
 int main(int argc, char** argv) {

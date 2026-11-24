@@ -79,6 +79,7 @@
 #endif
 
 namespace {
+constexpr int ASSEMBLY_MODE = 5;
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
@@ -229,16 +230,17 @@ void MainWindow::setupPipelineConnections()
     // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
     // crée les pyramides manquantes, sans que deux images pleine résolution soient lues en même temps.
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
-            this, [this]() {
+        this, [this]() {
             if (!pipelineRunner->isCropRun()) {
                 mosaicFilePath.clear();
                 originalMosaic = {};
                 cropBackendReady = false;
                 exportAfterCrop = false;
+                workspaceUI->setImageLayers({});
             }
             pendingCropMosaic = {};
             projectGrid->cancelBackgroundPyramidGeneration();
-            });
+        });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
         if (workspaceUI->bottomTabs())
@@ -268,6 +270,8 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::imageLayersReady,
+            workspaceUI, &WorkspaceUI::setImageLayers);
     connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
@@ -351,7 +355,7 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
-   
+
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
@@ -594,6 +598,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     originalMosaic = {};
     cropBackendReady = false;
     exportAfterCrop = false;
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -651,6 +656,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     originalMosaic = {};
     cropBackendReady = false;
     exportAfterCrop = false;
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -719,7 +725,7 @@ void MainWindow::setMode(int mode)
 
         if (isGridMode) {
             tabs->setCurrentIndex(0);
-        } else if (currentMode == 2) {
+        } else if (currentMode == 2 || currentMode == ASSEMBLY_MODE) {
             tabs->setCurrentIndex(3);
         } else if (isPairMode) {
             tabs->setCurrentIndex(2);
@@ -911,6 +917,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
+    pipelineRunner->invalidateImageLayers();
     setMode(1);
     const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());

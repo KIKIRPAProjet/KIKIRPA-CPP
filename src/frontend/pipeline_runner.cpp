@@ -95,6 +95,11 @@ void PipelineRunnerClass::setupProgressConnections() {
 // Branche les signaux de fin ou d'interruption du worker (mise en pause, annulation, succès final avec la mosaïque ou erreur) pour actualiser l'état global et libérer le thread.
 void PipelineRunnerClass::setupStateConnections() {
     connect(worker, &PipelineWorkerClass::mosaicFileReady, this, &PipelineRunnerClass::mosaicFileReady);
+    connect(worker, &PipelineWorkerClass::imageLayersReady,
+            this, [this](const QVector<ImageLayer>& layers, const QRectF& bounds) {
+            if (!imageLayersInvalidated && !cropRun)
+                emit imageLayersReady(layers, bounds);
+    }, Qt::QueuedConnection);
     connect(worker, &PipelineWorkerClass::resultsReady, this, &PipelineRunnerClass::resultsReady);
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
     connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
@@ -136,8 +141,12 @@ void PipelineRunnerClass::handleWorkerFinished(
         emit statusChanged(tr("Calcul du pipeline terminé avec succès."));
     }
     else {
+        if (!cropRun)
+            emit imageLayersReady({}, {});
+
         emit stepChanged(0, tr("Erreur"));
-        emit statusChanged(tr("Erreur lors de l'exécution : %1").arg(errorText));
+        emit statusChanged(
+            tr("Erreur lors de l'exécution : %1").arg(errorText));
     }
 
     if (cropRun) {
@@ -150,7 +159,6 @@ void PipelineRunnerClass::handleWorkerFinished(
     emit runFinished();
     cleanUpThread();
 }
-
 void PipelineRunnerClass::startCropRun(
     const QRect& rectangle, const QString& cropOutputDirectory)
 {
@@ -249,6 +257,10 @@ void PipelineRunnerClass::startCropRun(
             .arg(QString::fromUtf8(exception.what())));
     }
 }
+void PipelineRunnerClass::invalidateImageLayers() {
+    imageLayersInvalidated = true;
+    emit imageLayersReady({}, {});
+}
 
 void PipelineRunnerClass::startRun(int firstStep, bool isResume) {
     if (running) {
@@ -260,6 +272,7 @@ void PipelineRunnerClass::startRun(int firstStep, bool isResume) {
     progress = 0;
     running = true;
     paused = false;
+    imageLayersInvalidated = false;
 
     cleanUpThread();
 

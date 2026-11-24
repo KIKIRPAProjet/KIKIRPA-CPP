@@ -1,6 +1,7 @@
 #pragma once
 
 #include "projectgrid.h"
+#include "image_layer.h"
 #include "frontendutils.h"
 #include "pipeline_results.h"
 
@@ -37,6 +38,54 @@ public:
 
     void setMode(int mode) { modeValue = mode; update(); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
+    void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {})
+    {
+        imageLayers = layers;
+        imageLayerBounds = bounds;
+        globalImageLayerOpacity = 1.0;
+        update();
+    }
+
+    // Facteur de rendu commun aux couches TIFF en mode Assemblage.
+    void setGlobalImageLayerOpacity(qreal opacity)
+    {
+        globalImageLayerOpacity = qBound(qreal(0), opacity, qreal(1));
+        update();
+    }
+
+    // Renvoie les réglages courants de la couche ou nullptr si elle n'existe plus.
+    const ImageLayer *findImageLayer(const QString &id) const
+    {
+        for (const ImageLayer &layer : imageLayers) {
+            if (layer.id == id)
+                return &layer;
+        }
+        return nullptr;
+    }
+
+    void setImageLayerOpacity(const QString &id, qreal opacity)
+    {
+        for (ImageLayer &layer : imageLayers) {
+            if (layer.id == id) {
+                layer.opacity = qBound(qreal(0), opacity, qreal(1));
+                update();
+                return;
+            }
+        }
+    }
+
+    void setImageLayerVisible(const QString &id, bool visible)
+    {
+        for (ImageLayer &layer : imageLayers) {
+            if (layer.id == id) {
+                layer.visible = visible;
+                update();
+                return;
+            }
+        }
+    }
+
+    void setFusedMosaicVisible(bool visible) { fusedMosaicVisible = visible; update(); }
     void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
         int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
@@ -128,6 +177,7 @@ private:
     void drawPainting(QPainter &p, const QRect &r);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
+    bool drawAssemblyLayers(QPainter &p);
     // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawMosaicPreview(QPainter &p, bool withSeams);
     // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,
@@ -160,6 +210,10 @@ private:
     int modeValue = 4;
     int zoomPercent = 100;
     QStringList imagePaths;
+    QVector<ImageLayer> imageLayers;
+    QRectF imageLayerBounds;
+    qreal globalImageLayerOpacity = 1.0;
+    bool fusedMosaicVisible = false;
     QVector<GridTile> gridTiles;
     QVector<QRect> gridCellRects;
     std::function<void(int)> selectionChangedCallback;
