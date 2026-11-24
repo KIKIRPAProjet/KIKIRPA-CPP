@@ -100,6 +100,17 @@ namespace StepsNs {
             return cleanName.empty() ? "mosaic.tif" : cleanName;
         }
 
+        // Lecture défensive, comme les autres paramètres : une configuration incomplète garde le défaut.
+        bool configuredRemoveMosaicCache(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) return false;
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "removeMosaicCache" && parameter.contains("value") &&
+                    parameter["value"].is_boolean())
+                    return parameter["value"].get<bool>();
+            }
+            return false;
+        }
+
         std::string configuredFilename(const Json& configJson) {
             if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
                 return "mosaic.tif";
@@ -219,6 +230,23 @@ namespace StepsNs {
             return false;
         }
 
+        // Les trois TIFF du cache de la mosaïque, et leur dossier s'il ne reste rien dedans. Jamais le fichier
+        // qui vient d'être publié : avec un dossier de sortie qui tombe sur le cache, la destination peut être
+        // l'un des trois, et copyFileReplacing n'a alors rien copié — le supprimer détruirait l'export lui-même.
+        // Ne lève pas : un cache qu'on n'arrive pas à supprimer ne doit pas faire échouer un export réussi.
+        std::size_t removeMosaicCacheFiles(const DataNs::Mosaic& mosaic, const fs::path& exportedPath) {
+            std::size_t removedCount = 0;
+            std::error_code errorCode;
+            for (const fs::path& path : {mosaic.imagePath, mosaic.provenancePath, mosaic.maskPath}) {
+                if (path.empty() || fs::equivalent(path, exportedPath, errorCode)) continue;
+                if (fs::remove(path, errorCode)) ++removedCount;
+            }
+            // fs::remove sur un dossier ne réussit que s'il est vide : il peut contenir autre chose.
+            if (removedCount > 0 && !mosaic.imagePath.empty())
+                fs::remove(mosaic.imagePath.parent_path(), errorCode);
+            return removedCount;
+        }
+
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
             TiffHeader header;
             std::string errorMessage;
@@ -237,6 +265,9 @@ namespace StepsNs {
             output = {imagePath, mosaic.canvasSize, header.isBigTiff};
             result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
+            // Après la copie seulement : la mosaïque n'est jetable que lorsqu'elle est publiée ailleurs.
+            if (configuredRemoveMosaicCache(config))
+                result["removedMosaicCacheFiles"] = removeMosaicCacheFiles(mosaic, imagePath);
             return true;
         }
 
@@ -246,7 +277,8 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "export";
         stepConfig.parameters = {{"string", "outputDirectory", initialInput.outputDirectory},
-                                 {"string", "filename", initialInput.filename}};
+                                 {"string", "filename", initialInput.filename},
+                                 {"bool", "removeMosaicCache", initialInput.removeMosaicCache}};
         stepConfig.inputs = {{"Mosaic", "mosaic"}};
         configJson = stepConfig;
     }

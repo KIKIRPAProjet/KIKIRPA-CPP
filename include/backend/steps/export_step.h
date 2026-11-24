@@ -17,6 +17,9 @@ namespace StepsNs {
         std::string outputDirectory;
         // Nom du fichier de sortie. Vide : "mosaic.tif".
         std::string filename;
+        // Supprimer le cache de la mosaïque (les trois TIFF de `fusion`) après un export réussi. Faux par
+        // défaut : voir le header pour ce que ça coûte à une reprise.
+        bool removeMosaicCache = false;
     };
 
     struct ExportOutput {
@@ -30,8 +33,19 @@ namespace StepsNs {
     // par la mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
     // " (1)", " (2)"... Le checkpoint du step reste valable tant que ce dernier export est là, inchangé.
     //
-    // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide = mosaic.tif).
+    // Avec removeMosaicCache, les trois TIFF de `fusion` (<dossier des images>/.cache/mosaic) sont supprimés après
+    // une copie réussie, et leur dossier s'il ne reste rien : l'image publiée est une copie exacte de la mosaïque,
+    // et `fusion` sait la refaire. Sur une grille 10 x 10, c'est 40 à 60 Gio récupérés. Jamais le fichier qui vient
+    // d'être publié : si le dossier de sortie tombe sur le cache, la destination peut être l'un des trois, et
+    // copyFileReplacing n'a alors rien copié. Deux conséquences à connaître, et la raison du défaut à faux :
+    //   - une **reprise** (`--resume`) refait `fusion`, dont l'empreinte porte sur ces trois fichiers, puis refait
+    //     l'export, qui écrit une copie de plus (" (1)") ;
+    //   - l'aperçu de la mosaïque de l'interface n'a plus rien à lire.
+    //
+    // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide =
+    // mosaic.tif), removeMosaicCache (bool, faux par défaut).
     // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou nom incrémenté (ni provenance ni masque).
+    // getResult() : "image", "canvasSize" et, avec removeMosaicCache, "removedMosaicCacheFiles".
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 
