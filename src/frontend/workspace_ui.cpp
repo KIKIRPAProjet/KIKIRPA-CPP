@@ -163,7 +163,7 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         m_rightPanel->updateGridState(gridState);
     }
 
-    m_mainWindow->setWindowTitle(projectName + QStringLiteral(" : KIK-IRPA Assemblage"));
+    // Le titre de la fenêtre principale est géré par MainWindow (avec setWindowModified).
 }
 
 /**

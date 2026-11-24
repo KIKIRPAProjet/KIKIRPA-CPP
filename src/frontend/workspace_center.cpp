@@ -58,6 +58,7 @@ void WorkspaceCenter::createProjectMode()
             return;
         }
         m_mainWindow->projectName = newName;
+        m_mainWindow->markProjectModified();
         m_mainWindow->refreshProjectInfo();
         m_mainWindow->updateStatus(
             tr("Projet renommé : %1").arg(m_mainWindow->projectName));

@@ -79,7 +79,7 @@ constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
-    setWindowTitle(tr("KIK-IRPA Assemblage"));
+    refreshWindowTitle();
     resize(1228, 780);
     setMinimumSize(920, 600);
     applyStyleSheet();
@@ -138,12 +138,23 @@ void MainWindow::applyStyleSheet()
 
 void MainWindow::setupProjectGridConnections()
 {
-    connect(projectGrid, &ProjectGrid::gridUpdated,
-            this, &MainWindow::refreshProjectInfo);
+    connect(projectGrid, &ProjectGrid::gridUpdated, this, [this]() {
+        if (!switchingProject)
+            markProjectModified();
+        refreshProjectInfo();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
-            this, &MainWindow::refreshProjectInfo);
+            this, [this](bool) {
+                if (!switchingProject)
+                    markProjectModified();
+                refreshProjectInfo();
+            });
     connect(projectGrid, &ProjectGrid::referenceImageLoaded,
-            this, &MainWindow::refreshProjectInfo);
+            this, [this]() {
+                if (!switchingProject)
+                    markProjectModified();
+                refreshProjectInfo();
+            });
     connect(projectGrid, &ProjectGrid::messageRequested,
             this, &MainWindow::showGridMessage);
     connect(projectGrid, &ProjectGrid::statusRequested,
@@ -453,6 +464,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
+    if (!confirmDiscardUnsavedChanges())
+        return;
+    switchingProject = true;
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -478,10 +492,15 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     } else {
         updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tileCount));
     }
+    switchingProject = false;
+    projectModified = false;
+    refreshWindowTitle();
 }
 
 void MainWindow::applyLoadedProject(const QString &path)
 {
+    if (!confirmDiscardUnsavedChanges())
+        return;
     if (pipelineRunner->isRunning()) {
         updateStatus(tr("Attendez la fin ou la mise en pause du calcul avant d'ouvrir un projet."));
         return;
@@ -501,6 +520,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
         return;
     const bool resume = opening.clickedButton() == resumeButton;
+    switchingProject = true;
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
@@ -529,6 +549,9 @@ void MainWindow::applyLoadedProject(const QString &path)
         pipelineRunner->setStartFromStepName(QString());
         pipelineRunner->startRun(1, true);
     }
+    switchingProject = false;
+    projectModified = false;
+    refreshWindowTitle();
 }
 
 void MainWindow::openCurrentProjectFromHome()
@@ -540,6 +563,8 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
+    if (!switchingProject && currentMode != mode)
+        markProjectModified();
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
@@ -617,6 +642,7 @@ void MainWindow::setMode(int mode)
 
 void MainWindow::refreshProjectInfo()
 {
+    refreshWindowTitle();
     workspaceUI->updateFromGridState(projectName, projectGrid->state());
 }
 
@@ -714,13 +740,18 @@ void MainWindow::handleTilesImported(const QString &directory, int importedCount
 
 void MainWindow::saveProject()
 {
+    saveProjectToFile();
+}
+
+bool MainWindow::saveProjectToFile()
+{
     const ProjectGrid::State &gridState = projectGrid->state();
     QString path = projectPath;
     if (path.isEmpty())
         path = QFileDialog::getSaveFileName(this, tr("Enregistrer le projet"),
             projectName + QStringLiteral(".kikproj"), tr("Projet KIK-IRPA (*.kikproj);;JSON (*.json)"));
     if (path.isEmpty())
-        return;
+        return false;
     QString errorMessage;
     nlohmann::json backendScript;
     try {
@@ -734,7 +765,7 @@ void MainWindow::saveProject()
             path, projectName, outputDirectory, currentMode, gridState, &errorMessage, backendScript)) {
         QMessageBox::warning(this, tr("Enregistrement impossible"),
             tr("Le projet n'a pas pu être enregistré : %1").arg(errorMessage));
-        return;
+        return false;
     }
     projectPath = path;
     projectCreated = true;
@@ -742,6 +773,50 @@ void MainWindow::saveProject()
         projectCreated, projectPath, projectName, gridState.tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet enregistré : %1").arg(QFileInfo(path).fileName()));
+    projectModified = false;
+    refreshWindowTitle();
+    return true;
+}
+
+bool MainWindow::confirmDiscardUnsavedChanges()
+{
+    if (!projectModified)
+        return true;
+
+    QMessageBox question(this);
+    question.setIcon(QMessageBox::Question);
+    question.setWindowTitle(tr("Projet modifié"));
+    question.setText(tr("Le projet contient des modifications non enregistrées."));
+    question.setInformativeText(tr("Voulez-vous enregistrer les modifications avant de continuer ?"));
+    QPushButton *saveButton = question.addButton(tr("Enregistrer"), QMessageBox::AcceptRole);
+    QPushButton *discardButton = question.addButton(tr("Ne pas enregistrer"), QMessageBox::DestructiveRole);
+    question.addButton(tr("Annuler"), QMessageBox::RejectRole);
+    question.setDefaultButton(saveButton);
+    question.exec();
+
+    if (question.clickedButton() == saveButton)
+        return saveProjectToFile();
+    if (question.clickedButton() == discardButton)
+        return true;
+    return false;
+}
+
+void MainWindow::markProjectModified()
+{
+    if (switchingProject)
+        return;
+    projectModified = true;
+    refreshWindowTitle();
+}
+
+void MainWindow::refreshWindowTitle()
+{
+    const QString baseTitle = tr("KIK-IRPA Assemblage");
+    const QString title = projectCreated
+        ? projectName + QStringLiteral("[*] - ") + baseTitle
+        : baseTitle + QStringLiteral("[*]");
+    setWindowTitle(title);
+    setWindowModified(projectModified);
 }
 
 FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
@@ -930,6 +1005,11 @@ void MainWindow::closeEvent(QCloseEvent *event)
     // Si la fermeture a déjà été ordonnée et que le worker s'est arrêté, on accepte la fermeture
     if (isClosing) {
         event->accept();
+        return;
+    }
+
+    if (!confirmDiscardUnsavedChanges()) {
+        event->ignore();
         return;
     }
 
