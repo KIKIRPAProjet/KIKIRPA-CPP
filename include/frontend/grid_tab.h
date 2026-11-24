@@ -48,8 +48,6 @@ private:
     QSpinBox *m_gridColumnsSpin = nullptr;
     QComboBox *m_captureOrderCombo = nullptr;
     QLabel *m_selectedGridTileLabel = nullptr;
-    QPushButton *m_rotateTileButton = nullptr;
-    QPushButton *m_flipTileButton = nullptr;
     QPushButton *m_emptyCellButton = nullptr;
     QSpinBox *m_horizontalOverlapSpin = nullptr;
     QSpinBox *m_verticalOverlapSpin = nullptr;

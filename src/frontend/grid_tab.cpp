@@ -76,17 +76,10 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
 }
 
 /**
- * Construit les boutons d'action sur la tuile sélectionnée (pivoter, retourner, case vide).
+ * Construit les boutons d'action sur la tuile sélectionnée (case vide).
  */
 void GridTab::createTileActions(QVBoxLayout *layout)
 {
-    auto *tileActions = new QHBoxLayout;
-    m_rotateTileButton = FrontendUtils::makeButton(tr("Pivoter 90°"), m_gridTabPage);
-    m_flipTileButton = FrontendUtils::makeButton(tr("Retourner"), m_gridTabPage);
-    tileActions->addWidget(m_rotateTileButton);
-    tileActions->addWidget(m_flipTileButton);
-    layout->addLayout(tileActions);
-
     m_emptyCellButton = FrontendUtils::makeButton(tr("Marquer une case vide"), m_gridTabPage);
     layout->addWidget(m_emptyCellButton);
 }
@@ -252,10 +245,6 @@ void GridTab::setupConnections()
             [this](double value) { m_projectGrid->setUncertaintyMargin(value); });
 
     // Actions sur la tuile et la grille
-    connect(m_rotateTileButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::rotateSelectedTile);
-    connect(m_flipTileButton, &QPushButton::clicked,
-            m_projectGrid, &ProjectGrid::flipSelectedTile);
     connect(m_emptyCellButton, &QPushButton::clicked,
             m_projectGrid, &ProjectGrid::toggleSelectedCellEmpty);
     connect(m_importReferenceButton, &QPushButton::clicked, this,
@@ -341,13 +330,10 @@ void GridTab::updateSelectionLabel(const ProjectGrid::State &gridState)
             tile.empty ? tr("Case sélectionnée : %1 (vide)").arg(label)
                        : tr("Case sélectionnée : %1").arg(label));
     } else {
-        const QString state = tile.empty ? tr("vide")
-                                         : (tile.flipped ? tr("retournée") : tr("normale"));
+        const QString fileName = QFileInfo(tile.path).fileName();
         m_selectedGridTileLabel->setText(
-            tr("Sélection : %1 · %2 · %3° · %4")
-                .arg(label, QFileInfo(tile.path).fileName())
-                .arg(tile.rotation)
-                .arg(state));
+            tile.empty ? tr("Sélection : %1 · %2 (vide)").arg(label,fileName)
+            :tr("Sélection : %1 · %2").arg(label, fileName));
     }
 
     const bool canRestore = hasSelection && tile.empty;

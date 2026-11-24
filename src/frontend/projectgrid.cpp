@@ -228,13 +228,7 @@ void ProjectGrid::compareReferenceImage()
             tr("L'image de référence ou la tuile sélectionnée ne peut pas être lue."), true);
         return;
     }
-
-    const GridTile selectedTile = gridState.gridTiles.at(gridState.selectedGridCell);
-    if (selectedTile.flipped)
-        tile = tile.mirrored(true, false);
-    if (selectedTile.rotation != 0)
-        tile = tile.transformed(QTransform().rotate(selectedTile.rotation),
-                                Qt::SmoothTransformation);
+    
     emit comparisonReady(gridState.referenceImagePath, tilePath, reference, tile);
 }
 
@@ -399,34 +393,6 @@ void ProjectGrid::setUncertaintyMargin(double margin)
 {
     gridState.uncertaintyMargin = margin;
     gridState.gridValidated = false;
-    emit gridUpdated();
-}
-
-void ProjectGrid::rotateSelectedTile()
-{
-    const int cell = gridState.selectedGridCell;
-    if (cell < 0 || cell >= gridState.gridTiles.size() ||
-        gridState.gridTiles.at(cell).path.isEmpty() || gridState.gridTiles.at(cell).empty) {
-        emit statusRequested(tr("Sélectionnez d'abord une tuile non vide."));
-        return;
-    }
-    gridState.gridTiles[cell].rotation = (gridState.gridTiles.at(cell).rotation + 90) % 360;
-    gridState.gridValidated = false;
-    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
-    emit gridUpdated();
-}
-
-void ProjectGrid::flipSelectedTile()
-{
-    const int cell = gridState.selectedGridCell;
-    if (cell < 0 || cell >= gridState.gridTiles.size() ||
-        gridState.gridTiles.at(cell).path.isEmpty() || gridState.gridTiles.at(cell).empty) {
-        emit statusRequested(tr("Sélectionnez d'abord une tuile non vide."));
-        return;
-    }
-    gridState.gridTiles[cell].flipped = !gridState.gridTiles.at(cell).flipped;
-    gridState.gridValidated = false;
-    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
