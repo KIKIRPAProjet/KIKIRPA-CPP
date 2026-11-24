@@ -39,8 +39,8 @@ public:
 
     void setMode(int mode) { modeValue = mode; update(); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
-    void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
-                      int selectedCell);
+    void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
+        int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped);
     void toggleComparison() { comparison = !comparison; update(); }
@@ -188,7 +188,6 @@ private:
     std::function<void(int, int)> cellsSwappedCallback;
     int gridRows = 3;
     int gridColumns = 2;
-    int captureOrder = 0;
     int selectedGridCell = 0;
     int dragStartCell = -1;
     int dragTargetCell = -1;

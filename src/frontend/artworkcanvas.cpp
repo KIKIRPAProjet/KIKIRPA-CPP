@@ -53,15 +53,13 @@ void ArtworkCanvas::setCurrentPair(
     currentPair = pair;
     update();
 }
-
 QTransform ArtworkCanvas::viewTransform() const
 {
     const qreal scale = zoomPercent / 100.0;
     const QPointF viewCenter(width() / 2.0, height() / 2.0);
 
     QTransform transform;
-    transform.translate(
-        viewCenter.x() + m_panOffset.x(),
+    transform.translate(viewCenter.x() + m_panOffset.x(),
         viewCenter.y() + m_panOffset.y());
     transform.scale(scale, scale);
     transform.translate(-viewCenter.x(), -viewCenter.y());
@@ -76,16 +74,11 @@ void ArtworkCanvas::resetView()
     update();
 }
 
-void ArtworkCanvas::setGridState(
-    int rows,
-    int columns,
-    int order,
-    const QVector<GridTile> &tiles,
-    int selectedCell)
+void ArtworkCanvas::setGridState(int rows, int columns,
+    const QVector<GridTile>& tiles, int selectedCell)
 {
     gridRows = rows;
     gridColumns = columns;
-    captureOrder = order;
     gridTiles = tiles;
     selectedGridCell = selectedCell;
     update();

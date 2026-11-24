@@ -15,9 +15,13 @@ file(GLOB_RECURSE frontend_headers CONFIGURE_DEPENDS
 
 # Crée une bibliothèque statique regroupant les fonctionnalités du frontend.
 # Elle contient notamment les composants de l'interface graphique.
-add_library(kikirpa_frontend STATIC ${frontend_sources} ${frontend_headers})
+add_library(kikirpa_frontend STATIC
+    ${frontend_sources}
+    ${frontend_headers}
+    
+)
 
-set_target_properties(kikirpa_frontend PROPERTIES AUTOMOC ON)
+set_target_properties(kikirpa_frontend PROPERTIES AUTOMOC ON )
 
 # Impose la norme C++17 aux cibles qui utilisent cette bibliothèque.
 # PUBLIC permet également de transmettre cette exigence aux cibles dépendantes.
@@ -50,3 +54,6 @@ target_link_libraries(kikirpa_frontend PUBLIC
     Qt6::Concurrent
     Qt6::Gui
 )
+if(WIN32)
+    target_link_libraries(kikirpa_frontend PRIVATE dwmapi)
+endif()
