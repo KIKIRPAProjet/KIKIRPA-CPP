@@ -201,20 +201,24 @@ void TopToolbars::updateDubiousState(int dubiousCount)
 
 void TopToolbars::setModeEnabled(int modeIndex, bool enabled)
 {
-    if (!m_modeGroup) return;
+    if (!m_modeGroup) {
+        return;
+    }
     if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
         button->setEnabled(enabled);
         if (enabled) {
             button->setToolTip(tr("Afficher la vue %1").arg(FrontendUtils::MODE_NAMES.at(modeIndex)));
         } else {
-            button->setToolTip(QString()); // Aucune infobulle tant qu'il est désactivé
+            button->setToolTip(QString());
         }
     }
 }
 
 bool TopToolbars::isModeEnabled(int modeIndex) const
 {
-    if (!m_modeGroup) return false;
+    if (!m_modeGroup) {
+        return false;
+    }
     if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
         return button->isEnabled();
     }
@@ -223,9 +227,11 @@ bool TopToolbars::isModeEnabled(int modeIndex) const
 
 void TopToolbars::resetModesAvailability()
 {
-    if (!m_modeGroup) return;
-    for (QAbstractButton *btn : m_modeGroup->buttons()) {
-        int id = m_modeGroup->id(btn);
-        btn->setEnabled(id == 0); // Seul le mode 0 reste actif
+    if (!m_modeGroup) {
+        return;
+    }
+    for (QAbstractButton *button : m_modeGroup->buttons()) {
+        const int modeIndex = m_modeGroup->id(button);
+        button->setEnabled(modeIndex == 0);
     }
 }

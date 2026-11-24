@@ -275,18 +275,22 @@ void PipelineWorkerClass::handleLogMessage(const QString& message, int totalStep
     // Décode le format standard des messages backend : "Step X/Y OK" ou "Step X/Y failed"
     // La progression n'est pas temporisée : elle reflète l'achèvement effectif de chaque algorithme.
     const QRegularExpressionMatch match = STEP_PROGRESS_REGEX.match(message);
-    if (!match.hasMatch()) return;
+    if (!match.hasMatch()) {
+        return;
+    }
 
     const int stepIndex = match.captured(1).toInt();
-    const int total = match.captured(2).toInt();
+    const int stepCount = match.captured(2).toInt();
     const QString status = match.captured(3);
 
-    emit progressChanged((stepIndex * 100) / qMax(1, total));
+    emit progressChanged((stepIndex * 100) / qMax(1, stepCount));
     if (status.compare(QLatin1String("OK"), Qt::CaseInsensitive) == 0) {
         const QImage preview = (stepIndex >= 5) ? generatePreviewImage() : QImage();
         emit resultsReady(collectResults(preview.size()));
-        emit stepCompleted(stepIndex, total, QString());
-        if (stepIndex < total) emit stepStarted(stepIndex + 1, total, QString());
+        emit stepCompleted(stepIndex, stepCount, QString());
+        if (stepIndex < stepCount) {
+            emit stepStarted(stepIndex + 1, stepCount, QString());
+        }
     }
 }
 

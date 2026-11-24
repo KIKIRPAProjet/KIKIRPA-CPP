@@ -218,9 +218,15 @@ void MainWindow::setupPipelineConnections()
                             top->setModeEnabled(1, true); // 2 Tuiles
                             top->setModeEnabled(2, true); // 3 Masques
                         }
-                        if (stepNumber >= 2) top->setModeEnabled(3, true); // 4 Alignement (après appariement)
-                        if (stepNumber >= 5) top->setModeEnabled(4, true); // 5 Ligne de couture (après GraphCut)
-                        if (stepNumber >= 6) top->setModeEnabled(5, true); // 6 Assemblage (après fusion)
+                        if (stepNumber >= 2) {
+                            top->setModeEnabled(3, true); // 4 Alignement (après appariement)
+                        }
+                        if (stepNumber >= 5) {
+                            top->setModeEnabled(4, true); // 5 Ligne de couture (après GraphCut)
+                        }
+                        if (stepNumber >= 6) {
+                            top->setModeEnabled(5, true); // 6 Assemblage (après fusion)
+                        }
                     }
                 }
     });
