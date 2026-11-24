@@ -17,7 +17,7 @@
 #include "frontendutils.h"
 
 #include "core/io/pyramid_cache.h"
-#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <opencv2/core/hal/interface.h>
@@ -240,12 +240,14 @@ QString findPyramidPathForSource(const QString &sourcePath)
     return QString::fromStdString(IONs::pathToUtf8(pyramid));
 }
 
-QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
+QImage readPyramidalPreview(const QString &sourcePath, const QString &pyramidPath, const QSize &maximumSize)
 {
     if (pyramidPath.isEmpty())
         return {};
 
-    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    // Par le lecteur de tuile : les niveaux sont ceux de la pyramide, que le cache contienne le niveau 0 ou non.
+    const IONs::TilePixelReaderClass reader(IONs::pathFromUtf8(sourcePath.toStdString()),
+                                            IONs::pathFromUtf8(pyramidPath.toStdString()));
     const int levelCount = reader.getLevelCount();
     if (levelCount <= 0)
         return {};
@@ -341,7 +343,7 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
     const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
     if (!pyramidPath.isEmpty()) {
-        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
+        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(path, pyramidPath, maximumSize);
         if (!pyramidPreview.isNull())
             return pyramidPreview;
     }

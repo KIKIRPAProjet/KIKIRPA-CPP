@@ -21,7 +21,10 @@ Un TIFF pyramidal contient plusieurs versions de la même image :
 | `2`    | quart de la largeur et de la hauteur    |
 | `3`    | huitième de la largeur et de la hauteur |
 
-Le nombre de niveaux est défini par `DataNs::LEVEL_COUNT`. Chaque niveau est stocké en tuiles
+Le nombre de niveaux à écrire est donné par `levelCount` (0 = `DataNs::LEVEL_COUNT`) : le cache d'import en demande
+un de moins quand le niveau 0 reste dans l'image de l'œuvre, et lui passe alors la demi-résolution
+([TilePixelReader.md](TilePixelReader.md)). Le nombre de niveaux d'une pyramide complète est défini par
+`DataNs::LEVEL_COUNT`. Chaque niveau est stocké en tuiles
 de `DataNs::BLOCK_SIZE` pixels de côté. Le writer utilise actuellement une taille de 512 × 512
 pixels et une compression **Deflate avec prédicteur horizontal** (`COMPRESSION_ADOBE_DEFLATE` et
 `PREDICTOR_HORIZONTAL`). Les dimensions des niveaux réduits sont calculées par division

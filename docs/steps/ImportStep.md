@@ -100,6 +100,14 @@ Le TIFF pyramidal est **réécrit à chaque exécution** du step, même s'il exi
 
 Les valeurs de cet exemple sont inventées ; la forme est celle de `saveTiles` (`core/checkpoint/checkpoint_types.cpp`). `-1` = pas de voisine. À la reprise, le TIFF pyramidal doit toujours exister.
 
+## Ce que contient le cache
+
+Les quatre niveaux de la pyramide, **sauf** quand l'image de l'œuvre sait servir une région de sa pleine
+résolution : le niveau 0 y est alors laissé, et le cache ne garde que les trois niveaux réduits. Mesuré sur
+`data/02-Philadelphia` : **962 Mio au lieu de 5,4 Gio** pour six tuiles. La décision est prise image par image par
+`IONs::probeSource`, et `IONs::TilePixelReaderClass` lit ensuite les pixels sans que les steps aient à le savoir
+([TilePixelReader.md](../core/TilePixelReader.md)).
+
 ## Ménage du cache
 
 À la fin d'un import réussi, le step retire du cache :

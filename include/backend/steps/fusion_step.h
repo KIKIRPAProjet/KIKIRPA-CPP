@@ -37,7 +37,9 @@ namespace StepsNs {
     // Une tuile placée dans la mosaïque, avec tout ce qu'il faut pour en tirer les pixels d'un bloc.
     struct PlacedTile {
         int tileId = 0;                         // TileClass::getId(), écrit dans la provenance
+        std::filesystem::path sourcePath;       // image de l'œuvre : elle porte le niveau 0 quand elle sait le servir
         std::filesystem::path tiffPath;         // TIFF pyramidal de la tuile ; seul le niveau 0 est lu
+        bool levelZeroInSource = false;         // décidé une fois par tuile, pas à chaque bloc
         cv::Rect mosaicRect;                    // place de la tuile dans la mosaïque (repère des territoires)
         double gain = 1.0;                      // correction : pixels divisés par gain · exp(fieldStrength · r²)
         double fieldStrength = 0.0;

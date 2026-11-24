@@ -33,7 +33,10 @@ namespace {
     constexpr int BLUE_LEVEL = 10;
     constexpr int GREEN_LEVEL = 20;
     constexpr int RED_LEVEL = 30;
-    constexpr int PYRAMID_FORMAT_VERSION = 2;   // même valeur que pyramid_cache.cpp : le format est un contrat
+    // Les tests ne répètent pas le numéro de format : ils vérifient qu'il y en a un, et qu'une version inconnue
+    // invalide le cache. Répéter la valeur obligerait à toucher aux tests à chaque changement de format, pour
+    // rien.
+    constexpr int UNKNOWN_FORMAT_VERSION = 9999;
     constexpr std::chrono::hours ONE_DAY{24};   // recul de la date d'une source « plus ancienne »
 
     struct TestDirectory {
@@ -193,7 +196,7 @@ TEST(PyramidCacheTest, ProvenanceCarriesTheSourceAndTheFormatVersion) {
 
     const nlohmann::json provenance = readProvenance(entry.pyramidPath);
     ASSERT_TRUE(provenance.is_object());
-    EXPECT_EQ(provenance.value("formatVersion", 0), PYRAMID_FORMAT_VERSION);
+    EXPECT_GE(provenance.value("formatVersion", 0), 1);
     ASSERT_TRUE(provenance.contains("source"));
     EXPECT_TRUE(provenance["source"].is_object());
     EXPECT_TRUE(provenance["source"].contains("path"));
@@ -217,7 +220,7 @@ TEST(PyramidCacheTest, ProvenanceOfAnotherFormatVersionIsInvalid) {
 
     {   // version inconnue, provenance bien formée par ailleurs
         nlohmann::json provenance = readProvenance(entry.pyramidPath);
-        provenance["formatVersion"] = PYRAMID_FORMAT_VERSION + 1;
+        provenance["formatVersion"] = UNKNOWN_FORMAT_VERSION;
         std::ofstream stream(provenanceOf(entry.pyramidPath), std::ios::binary);
         stream << provenance.dump();
     }

@@ -21,8 +21,12 @@ namespace IONs {
     //   fichier plus ancien, invalide son cache. `formatVersion` décrit le fichier produit (ordre des canaux,
     //   compression) : un cache écrit par une autre version est invalide, donc réécrit, au lieu d'être relu de
     //   travers. Le cache n'est valable que si les deux concordent. `lastRead` est la date du dernier emploi de
-    //   la pyramide : elle ne sert qu'au ménage sur l'âge et n'entre jamais dans la comparaison de validité,
-    //   pas plus qu'un champ ajouté plus tard (emplacement du niveau 0).
+    //   la pyramide : elle ne sert qu'au ménage sur l'âge et n'entre jamais dans la comparaison de validité.
+    // - Niveau 0 : le fichier de cache ne le contient que si l'image de l'œuvre ne sait pas servir une région de
+    //   sa pleine résolution (sonde `probeSource`, core/io/tile_pixel_reader.h). Sinon il ne garde que les niveaux
+    //   réduits, et son premier niveau est le niveau 1 de la pyramide. Cette mise en page **n'est pas écrite dans
+    //   la provenance** : elle se lit dans le nombre de niveaux du fichier, pour qu'une provenance momentanément
+    //   absente ne fasse pas interpréter les pixels à la mauvaise échelle. `TilePixelReaderClass` s'en charge.
     // - Canaux : le TIFF du cache contient ce qu'il déclare, donc du **RGB** (RGBA avec un canal alpha), et non
     //   l'ordre BGR d'OpenCV. La conversion est faite à l'écriture, une fois, au lieu d'être défaite par chaque
     //   lecteur.
@@ -42,10 +46,11 @@ namespace IONs {
     // existant a été réutilisé.
     struct PyramidCacheEntry {
         std::filesystem::path pyramidPath;
-        int width = 0;
+        int width = 0;    // pleine résolution, même quand le fichier de cache ne la contient pas
         int height = 0;
         int type = 0;
         bool reused = false;
+        bool levelZeroInSource = false;   // le cache ne contient que les niveaux réduits
     };
 
     // Réutilise la pyramide de `sourcePath` si elle est valide (sans lire la source), sinon lit la source et la

@@ -9,6 +9,7 @@
 #include "core/step/data_store.h"
 #include "core/io/unicode_path.h"
 #include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tile_pixel_reader.h"
 #include "frontendutils.h"
 
 #include <filesystem>
@@ -80,7 +81,8 @@ namespace {
         const auto& tiffPath = tile.getTiff();
         if (!tiffPath.empty() && std::filesystem::exists(tiffPath)) {
             // Utilise le TIFF pyramidal : le plus petit niveau encore au moins aussi large que la tuile dessinée.
-            IONs::PyramidalTiffReaderClass reader(tiffPath);
+            // Par le lecteur de tuile : les niveaux sont ceux de TileClass, que le cache porte le niveau 0 ou non.
+            const IONs::TilePixelReaderClass reader(tile.getSource(), tiffPath);
             const double drawnWidth = tile.getLevel(0).width * scale;
             int chosenLevel = 0;
             for (int level = DataNs::LEVEL_COUNT - 1; level > 0; --level) {
@@ -185,7 +187,7 @@ namespace {
         if (tiles.empty()) return QImage();
         const auto& firstTile = tiles.front();
         if (!firstTile->getTiff().empty() && std::filesystem::exists(firstTile->getTiff())) {
-            IONs::PyramidalTiffReaderClass reader(firstTile->getTiff());
+            const IONs::TilePixelReaderClass reader(firstTile->getSource(), firstTile->getTiff());
             cv::Mat levelMat;
             std::string err;
             const int level = qMin(2, DataNs::LEVEL_COUNT - 1);
