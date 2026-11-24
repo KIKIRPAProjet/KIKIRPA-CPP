@@ -68,6 +68,12 @@ la pleine résolution. Des pixels à la mauvaise échelle, **sans aucune erreur*
 D'où la règle : la mise en page d'un fichier se lit dans le fichier. Changer `DataNs::LEVEL_COUNT` oblige donc à
 incrémenter `PYRAMID_FORMAT_VERSION`, ce qui réécrit les caches.
 
+Et quand le cache n'est **pas lisible** à cet instant — un remplacement en cours dans un autre fil, ou un fichier
+absent — `getLevelCount()` rend 0, et la décision retombe sur la sonde de la source, qui est précisément ce qui a
+décidé de la mise en page à l'écriture. **Jamais** sur « le cache contient son niveau 0 » : ce défaut-là ferait
+lire les niveaux réduits comme la pleine résolution. C'est ce que faisait la première version, et c'est ce qui a
+fait échouer le test de concurrence une fois sur deux.
+
 ## Un niveau entier : `readTileLevel`
 
 `readTileLevel(sourcePath, pyramidPath, level)` rend **tous** les pixels d'un niveau, **en RGB**, pris au meilleur

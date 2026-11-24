@@ -14,6 +14,9 @@ namespace IONs {
 
     // Renomme `temporaryPath` en `destinationPath`, en remplaçant un fichier existant.
     // Renvoie false avec la cause dans errorMessage ; le temporaire est alors laissé à l'appelant.
+    // Un échec est retenté deux fois à quelques millisecondes : sous Windows, un lecteur qui tient la destination
+    // ouverte fait échouer le remplacement. C'est la même course que celle décrite dans openTiff, vue de l'autre
+    // côté ; les deux doivent réessayer, sinon le perdant change mais il y a toujours un perdant.
     bool replaceFile(const std::filesystem::path& temporaryPath, const std::filesystem::path& destinationPath,
                      std::string& errorMessage);
 

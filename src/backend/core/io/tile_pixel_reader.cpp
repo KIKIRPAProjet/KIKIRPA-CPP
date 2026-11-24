@@ -13,6 +13,8 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <limits>
 #include <string>
 #include <utility>
@@ -56,6 +58,16 @@ namespace IONs {
                    planarConfig == PLANARCONFIG_CONTIG && sampleFormat == SAMPLEFORMAT_UINT;
         }
 
+        // Les deux premiers octets d'un TIFF : « II » (petit-boutien) ou « MM » (gros-boutien). Les lire évite de
+        // demander à libtiff d'ouvrir un JPEG ou un PNG, ce qu'il refuse en écrivant sur la sortie d'erreur — et
+        // ce qu'openTiff réessaierait, puisqu'il ne sait pas distinguer un conflit d'accès d'un mauvais format.
+        bool hasTiffMagic(const fs::path& path) {
+            std::ifstream stream(path, std::ios::binary);
+            char magic[2] = {};
+            if (!stream.read(magic, sizeof(magic))) return false;
+            return (magic[0] == 'I' && magic[1] == 'I') || (magic[0] == 'M' && magic[1] == 'M');
+        }
+
         // Une région se lit-elle sans décoder toute l'image ? Voir le détail dans core/io/pyramidal_tiff_reader.cpp,
         // qui choisit le même chemin de lecture à partir des mêmes tags.
         bool servesRegionsCheaply(TIFF* tiffFile) {
@@ -73,9 +85,7 @@ namespace IONs {
 
     SourceRegionSupport probeSource(const fs::path& sourcePath) {
         SourceRegionSupport support;
-        if (sourcePath.empty()) return support;
-        // Un fichier qui n'est pas un TIFF (JPEG, PNG) n'ouvre pas : libtiff l'écrit sur la sortie d'erreur et on
-        // répond simplement « non », le cache gardera son niveau 0.
+        if (sourcePath.empty() || !hasTiffMagic(sourcePath)) return support;
         TIFF* tiffFile = openTiff(sourcePath, "r");
         if (tiffFile == nullptr) return support;
 
@@ -100,7 +110,13 @@ namespace IONs {
     // incrémenter PYRAMID_FORMAT_VERSION, ce qui réécrit les caches (voir core/io/pyramid_cache.cpp).
     bool TilePixelReaderClass::decideLevelZeroFromSource() const {
         if (sourcePath.empty()) return false;
-        return PyramidalTiffReaderClass(pyramidPath).getLevelCount() == DataNs::LEVEL_COUNT - 1;
+        const int cachedLevels = PyramidalTiffReaderClass(pyramidPath).getLevelCount();
+        if (cachedLevels > 0) return cachedLevels == DataNs::LEVEL_COUNT - 1;
+        // Cache illisible à cet instant — un remplacement en cours dans un autre fil, ou un fichier absent. On
+        // retombe sur la sonde de la source, qui est précisément ce qui a décidé de la mise en page à l'écriture,
+        // et **jamais** sur « le cache contient son niveau 0 » : ce défaut-là ferait lire les niveaux réduits
+        // comme la pleine résolution, donc des pixels à la mauvaise échelle sans erreur.
+        return probeSource(sourcePath).servesRegionsCheaply;
     }
 
     TilePixelReaderClass::TilePixelReaderClass(fs::path source, fs::path pyramid)

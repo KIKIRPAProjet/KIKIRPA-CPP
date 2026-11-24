@@ -21,6 +21,11 @@ namespace IONs {
     std::string pathToUtf8(const std::filesystem::path& path);
 
     // TIFFOpen pour tout chemin : TIFFOpenW sous Windows. Renvoie nullptr si le fichier ne s'ouvre pas.
+    // En **lecture**, une ouverture qui échoue sur un fichier existant est retentée deux fois à quelques
+    // millisecondes : une publication (replaceFile) en cours dans un autre fil tient le fichier le temps d'un
+    // battement. Un fichier absent, ou une ouverture en écriture, échouent tout de suite. Conséquence à connaître :
+    // sur un fichier qui n'est pas un TIFF, l'échec coûte deux tentatives de plus et autant de lignes de libtiff
+    // sur la sortie d'erreur — à qui le sait d'avance de vérifier le format avant d'appeler (voir probeSource).
     TIFF* openTiff(const std::filesystem::path& path, const char* mode);
 
     // cv::imread pour tout chemin. Image vide si le fichier est absent ou illisible, comme cv::imread.
