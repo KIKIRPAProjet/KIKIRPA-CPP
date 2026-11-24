@@ -112,8 +112,7 @@ private:
     void drawEmptyState(QPainter &p);
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
-    void drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                   int rotation = 0, bool flipped = false);
+    void drawPhoto(QPainter &p, const QRect &r, const QString &path);
     // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawMosaicPreview(QPainter &p, bool withSeams);
     // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,

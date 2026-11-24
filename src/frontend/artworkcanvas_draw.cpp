@@ -393,7 +393,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
         }
 
         if (!tile.path.isEmpty()) {
-            drawPhoto(p, cell, tile.path, tile.rotation, tile.flipped);
+            drawPhoto(p, cell, tile.path);
             if (tile.empty)
                 p.fillRect(cell, QColor(20, 20, 20, 170));
         } else {
@@ -492,14 +492,13 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
     p.drawRect(r);
 }
 
-void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
-                              int rotation, bool flipped)
+void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path)
 {
         // Taille à lire : celle qui sera vraiment affichée, zoom de la vue et densité de l'écran compris.
     const QTransform &world = p.worldTransform();
     const qreal screenScale = qMax(qAbs(world.m11()), qAbs(world.m12())) * devicePixelRatioF();
     const int bucket = previewBucket(r, screenScale);
-    const QString key = QStringLiteral("%1|%2|%3|%4").arg(path).arg(bucket).arg(rotation).arg(flipped ? 1 : 0);
+    const QString key = QStringLiteral("%1|%2").arg(path).arg(bucket);
 
     QImage image;
     if (const QImage *cached = m_imageCache.object(key)) {
@@ -507,11 +506,6 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
     } else {
         image = readPreviewImage(path, QSize(bucket, bucket));
         if (!image.isNull()) {
-            // Miroir et rotation appliqués une fois, à la mise en cache, et non à chaque dessin.
-            if (flipped)
-                image = image.mirrored(true, false);
-            if (rotation != 0)
-                image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
             const qsizetype cost = std::max<qsizetype>(1, image.sizeInBytes());
             m_imageCache.insert(key, new QImage(image), cost);
         }

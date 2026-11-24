@@ -13,8 +13,6 @@ class QImage;
 struct GridTile
 {
     QString path;
-    int rotation = 0;
-    bool flipped = false;
     bool empty = false;
 };
 
@@ -76,8 +74,6 @@ public:
     void setAutomaticUncertainty(bool automatic);
     void setUncertaintyMargin(double margin);
     void setPipelineChoices(const FrontendNs::PipelineChoices &choices);
-    void rotateSelectedTile();
-    void flipSelectedTile();
     void toggleSelectedCellEmpty();
     // Arrête la préparation des pyramides en arrière-plan après l'image en cours, par exemple quand le calcul démarre :
     // l'import du backend crée lui-même les pyramides manquantes, sans deux lectures d'image en même temps.

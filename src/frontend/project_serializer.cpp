@@ -214,9 +214,6 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
             const QJsonObject cell = cellValue.toObject();
             GridTile tile;
             tile.path = cell.value(QStringLiteral("path")).toString();
-            const int savedRotation = cell.value(QStringLiteral("rotation")).toInt();
-            tile.rotation = ((savedRotation % 360) + 360) % 360;
-            tile.flipped = cell.value(QStringLiteral("flipped")).toBool();
             tile.empty = cell.value(QStringLiteral("empty")).toBool();
             gridState.gridTiles.append(tile);
         }
@@ -270,8 +267,6 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     for (const GridTile &tile : gridState.gridTiles) {
         QJsonObject cell;
         cell.insert(QStringLiteral("path"), tile.path);
-        cell.insert(QStringLiteral("rotation"), tile.rotation);
-        cell.insert(QStringLiteral("flipped"), tile.flipped);
         cell.insert(QStringLiteral("empty"), tile.empty);
         grid.append(cell);
     }
