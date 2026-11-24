@@ -43,15 +43,19 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
 
 void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
 {
-    auto *modeGroup = new QButtonGroup(stages);
-    modeGroup->setExclusive(true);
+    m_modeGroup = new QButtonGroup(stages);
+    m_modeGroup->setExclusive(true);
 
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
         const QString label = QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
         auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
-        modeGroup->addButton(button, i);
+        
+        // Seul le mode 0 (1 Projet) est actif au démarrage
+        button->setEnabled(i == 0);
+
+        m_modeGroup->addButton(button, i);
         stageLayout->addWidget(button);
         connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
     }
@@ -195,5 +199,36 @@ void TopToolbars::updateDubiousState(int dubiousCount)
     }
     if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
         nextDubiousBtn->setEnabled(dubiousCount > 0);
+    }
+}
+
+void TopToolbars::setModeEnabled(int modeIndex, bool enabled)
+{
+    if (!m_modeGroup) return;
+    if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
+        button->setEnabled(enabled);
+        if (enabled) {
+            button->setToolTip(tr("Afficher la vue %1").arg(FrontendUtils::MODE_NAMES.at(modeIndex)));
+        } else {
+            button->setToolTip(QString()); // Aucune infobulle tant qu'il est désactivé
+        }
+    }
+}
+
+bool TopToolbars::isModeEnabled(int modeIndex) const
+{
+    if (!m_modeGroup) return false;
+    if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
+        return button->isEnabled();
+    }
+    return false;
+}
+
+void TopToolbars::resetModesAvailability()
+{
+    if (!m_modeGroup) return;
+    for (QAbstractButton *btn : m_modeGroup->buttons()) {
+        int id = m_modeGroup->id(btn);
+        btn->setEnabled(id == 0); // Seul le mode 0 reste actif
     }
 }

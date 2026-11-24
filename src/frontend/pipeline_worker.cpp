@@ -283,6 +283,8 @@ void PipelineWorkerClass::handleLogMessage(const QString& message, int totalStep
 
     emit progressChanged((stepIndex * 100) / qMax(1, total));
     if (status.compare(QLatin1String("OK"), Qt::CaseInsensitive) == 0) {
+        const QImage preview = (stepIndex >= 5) ? generatePreviewImage() : QImage();
+        emit resultsReady(collectResults(preview.size()));
         emit stepCompleted(stepIndex, total, QString());
         if (stepIndex < total) emit stepStarted(stepIndex + 1, total, QString());
     }
