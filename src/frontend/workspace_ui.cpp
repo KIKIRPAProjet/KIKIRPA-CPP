@@ -146,6 +146,7 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
         canvasView->setImagePaths(gridState.tilePaths);
         canvasView->setGridState(gridState.gridRows, gridState.gridColumns,
             gridState.gridTiles, gridState.selectedGridCell);
+        canvasView->setOverlap(gridState.horizontalOverlap, gridState.verticalOverlap);
     }
 
     if (m_rightPanel) {

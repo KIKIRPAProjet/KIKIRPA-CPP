@@ -16,14 +16,18 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     for (const QString &name : layerNames) {
         auto *check = new QCheckBox(name);
         check->setChecked(true);
-        if (name == tr("Tuiles") || name == tr("Mosaïque")) {
+        if (name == tr("Mosaïque")) {
             check->setEnabled(false);
             check->setToolTip(tr("Contrôle de visibilité bientôt disponible"));
         }
         layersLayout->addWidget(check);
         connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
             m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
-            if (name == tr("Masques")) {
+            if (name == tr("Tuiles")) {
+                m_mainWindow->tileContoursVisible = checked;
+                m_canvas->setTileContoursVisible(checked);
+            }
+            else if (name == tr("Masques")) {
                 m_mainWindow->maskVisible = checked;
                 m_canvas->setMaskVisible(checked);
             }
@@ -34,6 +38,10 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
                 m_canvas->setAlignmentErrorVisible(checked);
             }
         });
+        if (name == tr("Tuiles"))
+            check->setChecked(m_mainWindow->tileContoursVisible);
+        else if (name == tr("Masques"))
+            check->setChecked(m_mainWindow->maskVisible);
     }
     layersLayout->addStretch();
 }

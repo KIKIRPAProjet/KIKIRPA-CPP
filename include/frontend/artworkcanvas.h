@@ -5,6 +5,8 @@
 #include "pipeline_results.h"
 
 #include <QRect>
+#include <QRectF>
+#include <QMetaType>
 #include <QStringList>
 #include <QVector>
 #include <QWidget>
@@ -64,6 +66,38 @@ public:
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
+    struct TilePosition
+    {
+        QString tileId;
+        double x = 0.0;
+        double y = 0.0;
+        double width = 0.0;
+        double height = 0.0;
+    };
+
+    struct TileContour
+    {
+        QString tileId;
+        QRectF rect;
+    };
+
+    void setTileContoursVisible(bool visible) { tileContoursVisible = visible; update(); }
+    bool isTileContoursVisible() const { return tileContoursVisible; }
+    void toggleTileContours() { tileContoursVisible = !tileContoursVisible; update(); }
+    void setOverlap(int horizontal, int vertical)
+    {
+        horizontalOverlapPercent = horizontal;
+        verticalOverlapPercent = vertical;
+        update();
+    }
+    void setTilePositions(const QVector<TilePosition> &positions)
+    {
+        tilePositions = positions;
+        update();
+    }
+    const QVector<TilePosition> &getTilePositions() const { return tilePositions; }
+    QVector<TileContour> computeTileContours(const QRectF &mosaicRect) const;
+
     // Active un outil de dessin ou d'édition (par exemple l'outil de recadrage).
     void setActiveTool(int tool) { m_activeTool = tool; update(); }
 
@@ -112,6 +146,8 @@ private:
     void drawEmptyState(QPainter &p);
     void drawGrid(QPainter &p);
     void drawPainting(QPainter &p, const QRect &r);
+
+    void drawTileContours(QPainter &p, const QRect &mosaicRect);
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
     // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
@@ -165,6 +201,10 @@ private:
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;
     FrontendUtils::PairAlignmentInfo currentPair;
+    bool tileContoursVisible = true;
+    int horizontalOverlapPercent = 20;
+    int verticalOverlapPercent = 20;
+    QVector<TilePosition> tilePositions;
 
     QPointF m_panOffset;
     QPoint m_lastPanPos;
@@ -186,3 +226,6 @@ private:
     QPoint m_cropDragStart;
     QRect m_cropRectAtDragStart;
 };
+
+Q_DECLARE_METATYPE(ArtworkCanvas::TilePosition)
+Q_DECLARE_METATYPE(QVector<ArtworkCanvas::TilePosition>)

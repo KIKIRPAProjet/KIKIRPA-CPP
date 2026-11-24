@@ -9,6 +9,10 @@ target_compile_features(test_frontend_project_serializer PRIVATE cxx_std_17)
 gtest_discover_tests(test_frontend_project_serializer PROPERTIES LABELS "unit")
 gtest_discover_tests(test_frontend_project_setup)
 
+add_executable(test_frontend_tile_contours test_tile_contours.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_tile_contours)
+target_link_libraries(test_frontend_tile_contours PRIVATE kikirpa_frontend GTest::gtest)
+target_compile_features(test_frontend_tile_contours PRIVATE cxx_std_17)
 add_executable(test_frontend_pipeline_worker test_pipeline_worker.cpp)
 kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_worker)
 target_link_libraries(test_frontend_pipeline_worker PRIVATE kikirpa_frontend GTest::gtest)
@@ -22,6 +26,10 @@ kikirpa_copy_onnxruntime_dlls(test_frontend_preview_benchmark)
 target_link_libraries(test_frontend_preview_benchmark PRIVATE kikirpa_frontend GTest::gtest_main)
 target_compile_features(test_frontend_preview_benchmark PRIVATE cxx_std_17)
 gtest_discover_tests(test_frontend_preview_benchmark PROPERTIES
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
+gtest_discover_tests(test_frontend_tile_contours PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 

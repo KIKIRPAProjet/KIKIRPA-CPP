@@ -1,6 +1,8 @@
 // include/frontend/pipeline_runner.h
 #pragma once
 
+#include "artworkcanvas.h"
+
 #include "pipeline_results.h"
 
 #include <QImage>
@@ -60,6 +62,7 @@ class PipelineRunnerClass : public QObject {
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
         void mosaicFileReady(const QString& imagePath);
+        void tilePositionsReady(const QVector<ArtworkCanvas::TilePosition>& positions);
         void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
 

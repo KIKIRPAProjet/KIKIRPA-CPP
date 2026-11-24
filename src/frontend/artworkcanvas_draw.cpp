@@ -495,7 +495,7 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
-        // Taille à lire : celle qui sera vraiment affichée, zoom de la vue et densité de l'écran compris.
+    // Taille à lire : celle qui sera vraiment affichée, zoom et densité de l’écran compris.
     const QTransform &world = p.worldTransform();
     const qreal screenScale = qMax(qAbs(world.m11()), qAbs(world.m12())) * devicePixelRatioF();
     const int bucket = previewBucket(r, screenScale);

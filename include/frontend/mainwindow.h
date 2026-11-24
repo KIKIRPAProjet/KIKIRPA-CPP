@@ -118,6 +118,7 @@ private:
     bool sideBarVisible = true;
     bool logVisible = false;
     bool maskVisible = true;
+    bool tileContoursVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
     bool isClosing = false;

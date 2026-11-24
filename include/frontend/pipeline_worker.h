@@ -1,6 +1,8 @@
 // include/frontend/pipeline_worker.h
 #pragma once
 
+#include "artworkcanvas.h"
+
 #include "pipeline_results.h"
 
 #include <QImage>
@@ -44,6 +46,7 @@ class PipelineWorkerClass : public QObject {
         void pipelineFinished(bool success, const QString& errorMessage, const QImage& previewImage);
         void pipelineCancelled();
         void mosaicFileReady(const QString& imagePath);
+        void tilePositionsReady(const QVector<ArtworkCanvas::TilePosition>& positions);
         // Paires et lignes de couture calculées, émis avant pipelineFinished ou pipelinePaused.
         void resultsReady(const PipelineResults& results);
 

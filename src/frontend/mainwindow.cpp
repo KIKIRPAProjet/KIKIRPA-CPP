@@ -228,6 +228,8 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+                    canvas->setTilePositions({});
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
@@ -269,6 +271,11 @@ void MainWindow::setupPipelineConnections()
                     updateStatus(tr("Mosaïque finale générée."));
                     // L'export est accessible via le bouton "Exporter…" dans la barre supérieure.
                 }
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::tilePositionsReady,
+            this, [this](const QVector<ArtworkCanvas::TilePosition>& positions) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas()))
+            canvas->setTilePositions(positions);
     });
 }
 
@@ -318,7 +325,6 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
-   
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
@@ -540,8 +546,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
         return;
     switchingProject = true;
     mosaicFilePath.clear();
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         canvasView->setMosaicPreview(QImage());
+        canvasView->setTilePositions({});
+	}
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
@@ -594,8 +602,10 @@ void MainWindow::applyLoadedProject(const QString &path)
     const bool resume = opening.clickedButton() == resumeButton;
     switchingProject = true;
     mosaicFilePath.clear();
-    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())){
         canvasView->setMosaicPreview(QImage());
+        canvasView->setTilePositions({});
+}
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
