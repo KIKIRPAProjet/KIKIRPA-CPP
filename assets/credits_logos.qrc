@@ -1,7 +1,0 @@
-<RCC>
-    <qresource prefix="/">
-        <file>logos/umons.png</file>
-        <file>logos/polytech.png</file>
-        <file>logos/faculte_sciences.png</file>
-    </qresource>
-</RCC>
