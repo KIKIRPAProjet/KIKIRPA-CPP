@@ -81,6 +81,8 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *helpMenu = menuBar->addMenu(tr("Aide"));
     connect(helpMenu->addAction(tr("À propos")),
             &QAction::triggered, this, &MenuBarManager::aboutRequested);
+    connect(helpMenu->addAction(tr("Crédits…")),
+            &QAction::triggered, this, &MenuBarManager::creditsRequested);
 }
 
 void MenuBarManager::setResumeAvailable(bool available)

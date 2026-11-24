@@ -33,6 +33,7 @@ signals:
     void pauseRunRequested();
     void comparisonRequested();
     void aboutRequested();
+    void creditsRequested();
 
 private:
     QAction *m_resumeAction = nullptr;

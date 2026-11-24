@@ -312,6 +312,9 @@ void MainWindow::setupMenuConnections()
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
                "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
     });
+    connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
+        DialogHelpers::showCreditsDialog(this);
+    });
 }
 
 void MainWindow::setupPageConnections()
