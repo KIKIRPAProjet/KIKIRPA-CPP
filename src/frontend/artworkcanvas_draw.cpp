@@ -5,13 +5,10 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QImage>
-#include <QLineF>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
-#include <QPolygonF>
 #include <QTransform>
-#include <QtMath>
 
 #include <map>
 #include <utility>
@@ -21,13 +18,13 @@ namespace {
 constexpr int kGridGapX = 18;
 constexpr int kGridGapY = 20;
 constexpr int kLabelBarHeight = 21;
-constexpr int kBadgeSize = 24;
 constexpr int kMinCellWidthForFileName = 145;
-constexpr qreal kArrowLength = 16.0;
-constexpr qreal kArrowAngleDegrees = 28.0;
 
-constexpr int kPreviewMaxDimension = 2048;   // côté max des aperçus mis en cache : nets quand on zoome
-
+// Côté des aperçus mis en cache : la taille affichée (zoom compris), arrondie à la puissance de deux supérieure,
+// entre ces deux bornes. Une grille de 50 tuiles tient alors en quelques dizaines de Mo, et zoomer de 10 % ne
+// relit pas l'image.
+constexpr int kPreviewMinDimension = 256;
+constexpr int kPreviewMaxDimension = 2048;
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
 constexpr int LABEL_BAND = 20;   // bande au-dessus de chaque tuile pour son nom : le nom ne cache pas l'image
@@ -60,6 +57,16 @@ void strokePath(QPainter &p, const QPainterPath &path, const QColor &color, qrea
     pen.setCosmetic(true);   // même épaisseur à l'écran quel que soit le zoom
     p.setPen(pen);
     p.drawPath(path);
+}
+
+// Côté d'aperçu à lire pour le rectangle r dessiné avec ce facteur d'écran (zoom de la vue × densité de l'écran).
+int previewBucket(const QRect &r, qreal screenScale)
+{
+    const int needed = qCeil(qMax(r.width(), r.height()) * screenScale);
+    int bucket = kPreviewMinDimension;
+    while (bucket < needed && bucket < kPreviewMaxDimension)
+        bucket *= 2;
+    return bucket;
 }
 
 // Coutures en vecteur, mises à l'échelle de l'image affichée.
@@ -361,23 +368,6 @@ void ArtworkCanvas::drawGrid(QPainter &p)
     gridCellRects.clear();
     gridCellRects.reserve(cellCount);
 
-    const QVector<int> orderCells = captureOrderCells(rows, columns, captureOrder);
-    QVector<int> captureNumbers(cellCount, 0);
-    QVector<QPointF> routePoints;
-    int sequence = 0;
-    for (const int cellIndex : orderCells) {
-        if (cellIndex >= gridTiles.size())
-            continue;
-        const GridTile &tile = gridTiles.at(cellIndex);
-        if (tile.path.isEmpty() || tile.empty)
-            continue;
-        captureNumbers[cellIndex] = ++sequence;
-        const int row = cellIndex / columns;
-        const int column = cellIndex % columns;
-        routePoints.append(QPointF(left + column * (cellW + gapX) + cellW / 2.0,
-                                   top + row * (cellH + gapY) + cellH / 2.0));
-    }
-
     int activeTileCount = 0;
     for (int index = 0; index < qMin(cellCount, static_cast<int>(gridTiles.size())); ++index) {
         const GridTile &tile = gridTiles.at(index);
@@ -442,36 +432,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
         p.setPen(QPen((index == selectedGridCell || isDragTarget) ? QColor("#4b9bea") : QColor("#e8c638"),
                       (index == selectedGridCell || isDragTarget) ? 3 : 1, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
-        p.drawRect(cell.adjusted(1, 1, -2, -2));
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor("#4b8bd6"));
-        p.drawEllipse(QRect(cell.left() + 7, cell.top() + 7, kBadgeSize, kBadgeSize));
-        p.setPen(Qt::white);
-        p.drawText(QRect(cell.left() + 7, cell.top() + 7, kBadgeSize, kBadgeSize),
-                   Qt::AlignCenter, QString::number(captureNumbers.at(index)));
-    }
-
-    if (routePoints.size() > 1) {
-        p.save();
-        QPen routePen(QColor(244, 204, 74, 225), 3, Qt::DashLine, Qt::RoundCap,
-                      Qt::RoundJoin);
-        p.setPen(routePen);
-        for (int index = 1; index < routePoints.size(); ++index)
-            p.drawLine(routePoints.at(index - 1), routePoints.at(index));
-
-        const QPointF end = routePoints.last();
-        const QLineF finalSegment(routePoints.at(routePoints.size() - 2), end);
-        const qreal angle = qAtan2(finalSegment.dy(), finalSegment.dx());
-        const qreal arrowAngle = qDegreesToRadians(kArrowAngleDegrees);
-        const QPointF leftWing(
-            end.x() - kArrowLength * qCos(angle + arrowAngle),
-            end.y() - kArrowLength * qSin(angle + arrowAngle));
-        const QPointF rightWing(
-            end.x() - kArrowLength * qCos(angle - arrowAngle),
-            end.y() - kArrowLength * qSin(angle - arrowAngle));
-        p.setBrush(routePen.color());
-        p.drawPolygon(QPolygonF() << end << leftWing << rightWing);
-        p.restore();
+        p.drawRect(cell.adjusted(1, 1, -2, -2));  
     }
 
     p.setPen(QColor("#eeeeee"));
@@ -540,14 +501,25 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
+        // Taille à lire : celle qui sera vraiment affichée, zoom de la vue et densité de l'écran compris.
+    const QTransform &world = p.worldTransform();
+    const qreal screenScale = qMax(qAbs(world.m11()), qAbs(world.m12())) * devicePixelRatioF();
+    const int bucket = previewBucket(r, screenScale);
+    const QString key = QStringLiteral("%1|%2|%3|%4").arg(path).arg(bucket).arg(rotation).arg(flipped ? 1 : 0);
+
     QImage image;
-    if (const QImage *cached = m_imageCache.object(path)) {
+    if (const QImage *cached = m_imageCache.object(key)) {
         image = *cached;
     } else {
-        image = readPreviewImage(path, QSize(kPreviewMaxDimension, kPreviewMaxDimension));
+        image = readPreviewImage(path, QSize(bucket, bucket));
         if (!image.isNull()) {
+            // Miroir et rotation appliqués une fois, à la mise en cache, et non à chaque dessin.
+            if (flipped)
+                image = image.mirrored(true, false);
+            if (rotation != 0)
+                image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
             const qsizetype cost = std::max<qsizetype>(1, image.sizeInBytes());
-            m_imageCache.insert(path, new QImage(image), cost);
+            m_imageCache.insert(key, new QImage(image), cost);
         }
     }
     if (image.isNull()) {
@@ -556,10 +528,6 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
         return;
     }
-    if (flipped)
-        image = image.mirrored(true, false);
-    if (rotation != 0)
-        image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
 
     const QSize targetSize = image.size().scaled(r.size(), Qt::KeepAspectRatio);
     const QRect targetRect(r.left() + (r.width() - targetSize.width()) / 2,

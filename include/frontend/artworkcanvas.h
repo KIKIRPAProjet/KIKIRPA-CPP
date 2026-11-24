@@ -41,8 +41,8 @@ public:
     void setMode(int mode);
     void setImportFolderCallback(std::function<void()> callback) { importFolderCallback = std::move(callback); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
-    void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
-                      int selectedCell);
+    void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
+        int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped,
                           std::function<void(int)> cellDoubleClicked = nullptr,
@@ -165,7 +165,6 @@ private:
     std::function<void()> cellDeleteRequestedCallback;
     int gridRows = 3;
     int gridColumns = 2;
-    int captureOrder = 0;
     int selectedGridCell = 0;
     int dragStartCell = -1;
     int dragTargetCell = -1;
