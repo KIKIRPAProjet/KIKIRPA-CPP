@@ -25,6 +25,9 @@ namespace StepsNs {
         // Liste des tuiles : [ { "file": "a.tif", "row": 0, "column": 0 }, ... ]. Vide : les tuiles sont les fichiers de
         // `path`, et leur case vient de leur nom (`format`) ou de l'ordre des noms (`columns`).
         Json tiles = Json::array();
+        // Âge maximal, en jours, des pyramides gardées dans le cache après un import réussi. 0 ou négatif : ne rien
+        // supprimer sur l'âge. Les orphelines, dont l'image source a disparu, sont retirées dans tous les cas.
+        int cacheMaxAgeDays = 15;
     };
 
     // Sortie du step.
@@ -48,9 +51,16 @@ namespace StepsNs {
     // l'image d'origine. Les voisines (gauche, droite, haut, bas) sont déduites des cases. Une seule image est en
     // mémoire à la fois.
     //
-    // Nom : "import".   Paramètres : path (string), format (string), columns (int), tiles (json).
+    // À la fin d'un import réussi, il fait le ménage dans le cache : les pyramides dont la source a disparu, et
+    // celles qui n'ont pas servi depuis `cacheMaxAgeDays` jours. Le ménage a lieu à la fin, et non au début, parce
+    // que les pyramides de ce run viennent d'être employées : aucune n'est périmée, il n'y a donc pas de liste
+    // d'exclusion à tenir. Un échec de ménage ne fait pas échouer l'import.
+    //
+    // Nom : "import".   Paramètres : path (string), format (string), columns (int), tiles (json),
+    //                               cacheMaxAgeDays (int).
     // Entrées : aucune.   Sortie : "Tiles" (clé "tiles").
-    // getResult() : "tiles" (nombre de tuiles) et "placement" ("list", "fileName" ou "nameOrder"), ou "error".
+    // getResult() : "tiles" (nombre de tuiles), "placement" ("list", "fileName" ou "nameOrder") et
+    //               "removedCachedFiles" (fichiers retirés du cache à la fin), ou "error".
     // execute() renvoie false avec la cause dans getResult()["error"] si le dossier n'existe pas, si le format est
     // invalide (il doit avoir 2 groupes), si aucun nom ne correspond à `format` et que `columns` n'est pas donné, si le
     // dossier n'a aucun TIFF, si la liste `tiles` est mal formée, si deux tuiles occupent la même case, ou si une image
@@ -60,7 +70,8 @@ namespace StepsNs {
         public:
             explicit ImportStepClass(const ImportInput& initialInput = {});
             bool execute() override;
-            // Nom, taille et date des fichiers source : une image ajoutée, retirée ou modifiée périme le checkpoint.
+            // Nom, taille et date des fichiers source, et présence de leur pyramide : une image ajoutée, retirée ou
+            // modifiée périme le checkpoint, et un cache supprimé aussi, pour que l'import le reconstruise.
             Json externalInputsFingerprint() const override;
             const ImportOutput& getOutput() const { return output; }
 

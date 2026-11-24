@@ -17,7 +17,7 @@ Premier step de tout pipeline. Il crée la fiche de chaque tuile (`DataNs::TileC
 - **Écrit** dans `tiles` une fiche par image, dans l'ordre ligne puis colonne. Une fiche ne contient aucun pixel : seulement l'identifiant, la case, les chemins de la source et du TIFF pyramidal, les dimensions, le type OpenCV et les voisines (voir « Ce que contient une fiche »).
 - **Écrit aussi sur le disque**, hors du DataStore, un TIFF pyramidal par image : `<path>/.cache/pyramids/<nom>_<empreinte>_pyramid.tif`, où l'empreinte (8 chiffres hexadécimaux) est calculée sur le chemin complet de l'image. Le nom est donc unique même pour deux images de même nom (`a.tif` et `a.tiff`, ou deux dossiers différents dans la liste), et ne dépend pas de la case : une grille réorganisée réutilise ses pyramides. À côté, `<pyramide>.source.json` garde la provenance (chemin, taille, date de la source). Les règles sont dans `core/io/pyramid_cache.h`, partagé avec l'interface, qui prépare les mêmes fichiers en arrière-plan dès l'import des tuiles.
 
-`getResult()` : `tiles` (nombre de tuiles créées) et `placement` (d'où viennent les cases : `list`, `fileName` ou `nameOrder`), ou `error`.
+`getResult()` : `tiles` (nombre de tuiles créées), `placement` (d'où viennent les cases : `list`, `fileName` ou `nameOrder`) et `removedCachedFiles` (fichiers retirés du cache par le ménage de fin), ou `error`.
 
 ## Paramètres
 
@@ -27,6 +27,7 @@ Premier step de tout pipeline. Il crée la fiche de chaque tuile (`DataNs::TileC
 | `tiles` | json | `[]` | **liste des tuiles** : pour chacune, son fichier et sa case (voir ci-dessous). Vide : on utilise `format` |
 | `format` | string | `img_C(\d+)_R(\d+)\.tif` | utilisé seulement si `tiles` est vide : expression régulière sur le **nom complet** du fichier, insensible à la casse, **groupe 1 = colonne, groupe 2 = ligne** |
 | `columns` | int | `0` | utilisé seulement si `tiles` est vide **et** qu'aucun nom ne correspond à `format` : nombre de colonnes de la grille, que les images remplissent dans l'ordre de leurs noms. `0` = non donné |
+| `cacheMaxAgeDays` | int | `15` | âge maximal, en jours, des pyramides gardées dans le cache après un import réussi. `0` ou négatif : ne rien supprimer sur l'âge |
 
 ### Trois façons de placer les tuiles
 
@@ -99,9 +100,22 @@ Le TIFF pyramidal est **réécrit à chaque exécution** du step, même s'il exi
 
 Les valeurs de cet exemple sont inventées ; la forme est celle de `saveTiles` (`core/checkpoint/checkpoint_types.cpp`). `-1` = pas de voisine. À la reprise, le TIFF pyramidal doit toujours exister.
 
+## Ménage du cache
+
+À la fin d'un import réussi, le step retire du cache :
+
+- les pyramides dont l'image source **n'existe plus** (renommée, retirée, ou cache d'un dossier déplacé) : le chemin de la source est lu dans la provenance, puisque le nom du fichier ne permet pas de le retrouver ;
+- celles qui **n'ont pas servi** depuis `cacheMaxAgeDays` jours, d'après le champ `lastRead` de leur provenance, posé à chaque réemploi.
+
+Le ménage a lieu **à la fin**, et non au début : les pyramides de ce run viennent d'être employées, donc aucune n'est périmée et il n'y a pas de liste d'exclusion à tenir. Au début, une pyramide inutilisée depuis plus de `cacheMaxAgeDays` jours aurait été supprimée puis reconstruite aussitôt. Un échec de ménage ne fait pas échouer l'import : les fonctions de `core/io/pyramid_cache.h` ne lèvent pas.
+
+L'interface a le même ménage à la demande, par le bouton « Libérer l'espace du cache » de l'onglet Grille, qui vide tout après confirmation et reste grisé pendant un calcul.
+
 ## Empreinte et reprise
 
-`externalInputsFingerprint()` liste, pour chaque image retenue, son nom (son chemin complet avec la liste `tiles`), sa taille et sa date. Ajouter, retirer ou modifier une image périme le checkpoint de l'import, et tous les steps suivants sont refaits. Modifier la liste `tiles` change les paramètres du step, ce qui périme aussi le checkpoint.
+`externalInputsFingerprint()` liste, pour chaque image retenue, son nom (son chemin complet avec la liste `tiles`), sa taille, sa date et la **présence** de sa pyramide. Ajouter, retirer ou modifier une image périme le checkpoint de l'import, et tous les steps suivants sont refaits. Modifier la liste `tiles` change les paramètres du step, ce qui périme aussi le checkpoint.
+
+Le cache compte dans l'empreinte pour que sa suppression soit **réparable** : sans ça, un cache effacé laissait le checkpoint valable, et la reprise échouait au chargement de `tiles` (« missing pyramidal TIFF »). Seule la présence du fichier est prise, jamais sa taille ni sa date : l'interface réécrit les pyramides à l'identique avec une date neuve, et le checkpoint serait périmé à chaque passage de sa tâche de fond.
 
 Un checkpoint écrit avant l'ajout des paramètres `tiles` et `columns` est jugé périmé (ses paramètres diffèrent) : l'import et la suite sont refaits.
 
@@ -121,4 +135,4 @@ Un checkpoint écrit avant l'ajout des paramètres `tiles` et `columns` est jug�
 
 ## Tests
 
-`tests/steps/test_import_step.cpp` : liste avec des noms libres (identifiant, fichier, case, voisines), ordre de la liste sans effet, case lue dans le nom avec `format`, images rangées dans l'ordre des noms quand aucun nom ne donne la case, priorité des noms sur cet ordre, `columns` demandé quand il manque, TIFF pyramidaux distincts pour deux images de même nom, deux tuiles dans la même case, fichier absent, entrée mal formée, empreinte qui suit les fichiers de la liste. Le step est aussi exécuté en début de pipeline par les tests des steps qui le suivent (`tests/steps/test_sift_step.cpp`, `test_lightglue_step.cpp`, `tests/intensity_correction/test_intensity_correction.cpp`), et son enregistrement est vérifié par `tests/core/test_pipeline.cpp`.
+`tests/steps/test_import_step.cpp` : liste avec des noms libres (identifiant, fichier, case, voisines), ordre de la liste sans effet, case lue dans le nom avec `format`, images rangées dans l'ordre des noms quand aucun nom ne donne la case, priorité des noms sur cet ordre, `columns` demandé quand il manque, TIFF pyramidaux distincts pour deux images de même nom, deux tuiles dans la même case, fichier absent, entrée mal formée, empreinte qui suit les fichiers de la liste, empreinte qui suit la présence de la pyramide mais pas sa date, et ménage des orphelines à la fin du run. Le step est aussi exécuté en début de pipeline par les tests des steps qui le suivent (`tests/steps/test_sift_step.cpp`, `test_lightglue_step.cpp`, `tests/intensity_correction/test_intensity_correction.cpp`), et son enregistrement est vérifié par `tests/core/test_pipeline.cpp`.

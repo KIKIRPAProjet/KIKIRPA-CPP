@@ -15,12 +15,14 @@
 #include <opencv2/imgproc.hpp>
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <ios>
 #include <string>
 #include <system_error>
@@ -43,6 +45,21 @@ namespace IONs {
         constexpr std::uint32_t FNV_OFFSET_BASIS = 2166136261U;
         constexpr std::uint32_t FNV_PRIME = 16777619U;
         constexpr std::size_t HASH_TEXT_SIZE = 9;   // 8 chiffres hexadécimaux et le zéro final
+
+        // Horloge murale : elle survit à un redémarrage, contrairement à steady_clock, et c'est bien d'un âge en
+        // jours qu'il s'agit. L'époque n'a pas besoin d'être celle d'Unix : écriture et comparaison utilisent la même.
+        std::int64_t nowInSeconds() {
+            return std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::system_clock::now().time_since_epoch()).count();
+        }
+
+        constexpr std::int64_t SECONDS_PER_DAY = 24 * 60 * 60;
+        constexpr const char* PYRAMID_SUFFIX = "_pyramid.tif";
+
+        bool endsWith(const std::string& text, const std::string& suffix) {
+            return text.size() >= suffix.size() &&
+                   text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+        }
 
         // Chemin absolu normalisé : la même source donne la même clé, qu'elle vienne du script (backend) ou de Qt
         // (séparateurs '/' sous Windows).
@@ -81,10 +98,13 @@ namespace IONs {
             return nlohmann::json::parse(stream, nullptr, false);
         }
 
-        // Contenu du .source.json : voir la règle dans core/io/pyramid_cache.h. Les deux champs sont comparés par
-        // isPyramidCacheValid ; tout champ ajouté ici devra rester hors de cette comparaison.
+        // Contenu du .source.json : voir la règle dans core/io/pyramid_cache.h. Seuls `source` et `formatVersion`
+        // sont comparés par isPyramidCacheValid ; `lastRead`, comme tout champ ajouté ici plus tard, reste hors
+        // de cette comparaison. Une pyramide qui vient d'être écrite compte comme employée maintenant.
         nlohmann::json makeProvenance(const nlohmann::json& fingerprint) {
-            return nlohmann::json::object({{"source", fingerprint}, {"formatVersion", PYRAMID_FORMAT_VERSION}});
+            return nlohmann::json::object({{"source", fingerprint},
+                                           {"formatVersion", PYRAMID_FORMAT_VERSION},
+                                           {"lastRead", nowInSeconds()}});
         }
 
         // Lecture défensive : la provenance est un fichier sur disque, un champ peut manquer ou avoir le mauvais
@@ -152,6 +172,56 @@ namespace IONs {
             return true;
         }
 
+        // Rafraîchit `lastRead` sans toucher au reste de la provenance : lire, modifier, réécrire par le
+        // temporaire. Un jour de granularité : assez fin pour une politique en jours, et ça évite de réécrire la
+        // provenance à chaque vignette que l'interface demande — ce chemin est déjà en course avec la publication
+        // atomique. Un échec est sans conséquence (le cache reste valable), il n'est donc pas remonté.
+        void touchProvenance(const fs::path& pyramidPath) {
+            nlohmann::json provenance = readProvenance(pyramidPath);
+            if (!provenance.is_object()) return;
+            const auto field = provenance.find("lastRead");
+            const std::int64_t recorded =
+                field != provenance.end() && field->is_number_integer() ? field->get<std::int64_t>() : 0;
+            const std::int64_t now = nowInSeconds();
+            if (now - recorded < SECONDS_PER_DAY) return;
+            provenance["lastRead"] = now;
+
+            const fs::path destination = provenancePath(pyramidPath);
+            const fs::path temporary = makeTemporaryPath(destination);
+            bool written = false;
+            {
+                std::ofstream stream(temporary, std::ios::binary);
+                stream << provenance.dump();
+                written = static_cast<bool>(stream);
+            }
+            std::string ignoredError;
+            if (!written || !replaceFile(temporary, destination, ignoredError)) {
+                std::error_code removeError;
+                fs::remove(temporary, removeError);
+            }
+        }
+
+        // Parcourt les pyramides du cache et supprime celles que `shouldRemove` désigne, avec leur provenance.
+        // Le suffixe EXACT est indispensable : makeTemporaryPath fabrique « ….tif.<horloge>.<n>.tmp », et un test
+        // par « le nom contient _pyramid.tif » attraperait un fichier en cours de publication par un autre
+        // processus.
+        std::size_t removePyramidsIf(const fs::path& cacheDirectory,
+                                     const std::function<bool(const nlohmann::json&)>& shouldRemove) {
+            std::size_t removedCount = 0;
+            std::error_code errorCode;
+            // Avec error_code, un dossier absent donne une plage vide au lieu de lever.
+            for (const fs::directory_entry& entry : fs::directory_iterator(cacheDirectory, errorCode)) {
+                if (!entry.is_regular_file(errorCode)) continue;
+                if (!endsWith(pathToUtf8(entry.path().filename()), PYRAMID_SUFFIX)) continue;
+                const nlohmann::json provenance = readProvenance(entry.path());
+                if (!provenance.is_object() || !shouldRemove(provenance)) continue;   // dans le doute, on garde
+                std::error_code removeError;
+                if (fs::remove(entry.path(), removeError)) ++removedCount;
+                if (fs::remove(provenancePath(entry.path()), removeError)) ++removedCount;
+            }
+            return removedCount;
+        }
+
     }
 
     fs::path pyramidCacheDirectory(const fs::path& imagesDirectory) {
@@ -197,6 +267,7 @@ namespace IONs {
                 return false;
             }
             if (isPyramidCacheValid(sourcePath, entry.pyramidPath) && readPyramidShape(entry, errorMessage)) {
+                touchProvenance(entry.pyramidPath);
                 entry.reused = true;
                 return true;
             }
@@ -208,4 +279,30 @@ namespace IONs {
         }
     }
 
+    std::size_t removeOrphanPyramids(const fs::path& cacheDirectory) {
+        return removePyramidsIf(cacheDirectory, [](const nlohmann::json& provenance) {
+            // Le nom du fichier ne permet pas de retrouver la source : pathHash est à sens unique. Seule la
+            // provenance garde le chemin.
+            const auto source = provenance.find("source");
+            if (source == provenance.end() || !source->is_object()) return false;
+            const auto path = source->find("path");
+            if (path == source->end() || !path->is_string()) return false;
+            std::error_code errorCode;
+            return !fs::exists(pathFromUtf8(path->get<std::string>()), errorCode);
+        });
+    }
+
+    std::size_t removeStalePyramids(const fs::path& cacheDirectory, int maximumAgeDays) {
+        if (maximumAgeDays <= 0) return 0;
+        const std::int64_t limit = static_cast<std::int64_t>(maximumAgeDays) * SECONDS_PER_DAY;
+        return removePyramidsIf(cacheDirectory, [limit](const nlohmann::json& provenance) {
+            const auto field = provenance.find("lastRead");
+            if (field == provenance.end() || !field->is_number_integer()) return false;   // date inconnue : on garde
+            return nowInSeconds() - field->get<std::int64_t>() > limit;
+        });
+    }
+
+    std::size_t removeAllPyramids(const fs::path& cacheDirectory) {
+        return removePyramidsIf(cacheDirectory, [](const nlohmann::json&) { return true; });
+    }
 }

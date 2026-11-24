@@ -1,7 +1,7 @@
 // tests/core/test_pyramid_cache.cpp
 // Cache des TIFF pyramidaux partagé par l'import et l'interface : nom propre à chaque source, validité par empreinte
-// exacte de la source et par version du format, réutilisation sans relire l'image, et canaux dans l'ordre que le
-// TIFF déclare (RGB, et non l'ordre BGR de cv::imread).
+// exacte de la source et par version du format, réutilisation sans relire l'image, canaux dans l'ordre que le TIFF
+// déclare (RGB, et non l'ordre BGR de cv::imread), et ménage : orphelines, périmées, ou tout le cache.
 #include "core/io/pyramid_cache.h"
 
 #include "core/io/file_fingerprint.h"
@@ -16,6 +16,7 @@
 #include <opencv2/core/types.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <ios>
@@ -72,6 +73,20 @@ namespace {
     nlohmann::json readProvenance(const fs::path& pyramidPath) {
         std::ifstream stream(provenanceOf(pyramidPath), std::ios::binary);
         return nlohmann::json::parse(stream, nullptr, false);
+    }
+
+    std::int64_t nowInSeconds() {
+        return std::chrono::duration_cast<std::chrono::seconds>(
+                   std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
+    // Fait passer la pyramide pour employée il y a `days` jours : même horloge que pyramid_cache.cpp.
+    void setLastReadDaysAgo(const fs::path& pyramidPath, int days) {
+        nlohmann::json provenance = readProvenance(pyramidPath);
+        ASSERT_TRUE(provenance.is_object());
+        provenance["lastRead"] = nowInSeconds() - static_cast<std::int64_t>(days) * 24 * 60 * 60;
+        std::ofstream stream(provenanceOf(pyramidPath), std::ios::binary);
+        stream << provenance.dump();
     }
 
     IONs::PyramidCacheEntry prepare(const fs::path& source, const fs::path& cacheDirectory) {
@@ -207,4 +222,86 @@ TEST(PyramidCacheTest, ProvenanceOfAnotherFormatVersionIsInvalid) {
         stream << provenance.dump();
     }
     EXPECT_FALSE(IONs::isPyramidCacheValid(source, entry.pyramidPath));
+}
+
+// Une pyramide dont la source a disparu est supprimée avec sa provenance ; celle dont la source est là ne bouge pas.
+TEST(PyramidCacheTest, OrphanPyramidIsRemovedAndTheOthersAreKept) {
+    const TestDirectory directory;
+    const fs::path kept = directory.path / "garde.tif";
+    const fs::path gone = directory.path / "parti.tif";
+    writeGreyImage(kept, IMAGE_SIZE);
+    writeGreyImage(gone, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry keptEntry = prepare(kept, cache);
+    const IONs::PyramidCacheEntry goneEntry = prepare(gone, cache);
+
+    ASSERT_TRUE(fs::remove(gone));
+    EXPECT_EQ(IONs::removeOrphanPyramids(cache), 2U);   // la pyramide et sa provenance
+    EXPECT_FALSE(fs::exists(goneEntry.pyramidPath));
+    EXPECT_TRUE(fs::exists(keptEntry.pyramidPath));
+    EXPECT_TRUE(IONs::isPyramidCacheValid(kept, keptEntry.pyramidPath));
+}
+
+// Un temporaire de publication (…_pyramid.tif.<horloge>.<n>.tmp) appartient à une écriture en cours, peut-être dans un
+// autre processus : le ménage ne doit jamais y toucher, même quand il vide tout.
+TEST(PyramidCacheTest, TemporaryFileOfAPublicationIsNeverRemoved) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+
+    fs::path temporary = entry.pyramidPath;
+    temporary += ".1234.0.tmp";
+    {
+        std::ofstream stream(temporary, std::ios::binary);
+        stream << "ecriture en cours";
+    }
+
+    EXPECT_EQ(IONs::removeAllPyramids(cache), 2U);
+    EXPECT_FALSE(fs::exists(entry.pyramidPath));
+    EXPECT_TRUE(fs::exists(temporary));
+}
+
+// Le ménage sur l'âge regarde le dernier emploi, pas la date du fichier.
+TEST(PyramidCacheTest, StalePyramidIsRemovedAndZeroDisablesTheSweep) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+    setLastReadDaysAgo(entry.pyramidPath, 20);
+
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 0), 0U);    // désactivé
+    EXPECT_EQ(IONs::removeStalePyramids(cache, -1), 0U);   // désactivé aussi
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 30), 0U);   // pas encore périmée
+    EXPECT_TRUE(fs::exists(entry.pyramidPath));
+
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 15), 2U);
+    EXPECT_FALSE(fs::exists(entry.pyramidPath));
+}
+
+// Réemployer une pyramide rafraîchit sa date : c'est ce qui empêche le ménage de supprimer un cache qui sert tous les
+// jours. Et écrire cette date ne doit surtout pas invalider le cache qu'on vient de valider.
+TEST(PyramidCacheTest, ReusingAPyramidRefreshesLastReadWithoutInvalidatingIt) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry created = prepare(source, cache);
+    setLastReadDaysAgo(created.pyramidPath, 20);
+
+    EXPECT_TRUE(prepare(source, cache).reused);
+    EXPECT_TRUE(IONs::isPyramidCacheValid(source, created.pyramidPath));
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 15), 0U);   // plus périmée : elle vient de servir
+    EXPECT_TRUE(fs::exists(created.pyramidPath));
+}
+
+// Un cache qu'on n'arrive pas à inspecter ne doit pas faire échouer l'import : aucune des trois ne lève.
+TEST(PyramidCacheTest, SweepingAMissingDirectoryIsNotAnError) {
+    const TestDirectory directory;
+    const fs::path cache = directory.path / "aucun-cache";
+    EXPECT_EQ(IONs::removeOrphanPyramids(cache), 0U);
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 15), 0U);
+    EXPECT_EQ(IONs::removeAllPyramids(cache), 0U);
 }
