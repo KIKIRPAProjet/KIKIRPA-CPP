@@ -72,9 +72,11 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
         if (m_pipelineRunner) m_pipelineRunner->cancelRun();
     });
 
-    auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
-    stageLayout->addWidget(compare);
-    connect(compare, &QPushButton::clicked, m_pipelineRunner, &PipelineRunnerClass::showComparison);
+    auto* saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    saveButton->setObjectName(QStringLiteral("saveProjectButton"));
+    stageLayout->addWidget(saveButton);
+    connect(saveButton, &QPushButton::clicked,
+        m_mainWindow, &MainWindow::saveProject);
 
     auto *save = FrontendUtils::makeButton(tr("Enregistrer"), stages);
     save->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
@@ -85,7 +87,8 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     m_exportButton->setObjectName(QStringLiteral("exportPipelineButton"));
     m_exportButton->setVisible(false);
     stageLayout->addWidget(m_exportButton);
-    connect(m_exportButton, &QPushButton::clicked, m_mainWindow, &MainWindow::showExportDialog);
+    connect(m_exportButton, &QPushButton::clicked,
+        m_mainWindow, &MainWindow::showExportDialog);
 }
 
 void TopToolbars::createModesBar()
