@@ -259,11 +259,7 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "corrections", createCorrectionsJson(setup.pipelineChoices.manualCorrections));
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
-  } else if (stepName == "fusion") {
-    replaceParameter(
-        stepJson, "outputDirectory",
-        IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
-  } else if (stepName == "export") {
+  } else if (stepName == "fusion" || stepName == "export") {
     replaceParameter(
         stepJson, "outputDirectory",
         IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));

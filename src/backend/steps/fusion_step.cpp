@@ -303,8 +303,9 @@ namespace StepsNs {
     // processus) n'a pas d'empreinte : son checkpoint est périmé et fusion est refait.
     Json FusionStepClass::externalInputsFingerprint() const {
         const fs::path configuredDirectory = configuredOutputDirectory(configJson);
-        const DataNs::Mosaic mosaic = configuredDirectory.empty() ? output.value
-                                                                  : makeMosaicPaths(configuredDirectory, {});
+        const DataNs::Mosaic mosaic = configuredDirectory.empty()
+            ? output.value
+            : makeMosaicPaths(configuredDirectory / ".cache" / "mosaic", {});
         if (mosaic.imagePath.empty()) return Json();
         return Json::array({IONs::computeFileFingerprint(mosaic.imagePath),
                             IONs::computeFileFingerprint(mosaic.provenancePath),
