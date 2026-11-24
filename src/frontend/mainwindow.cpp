@@ -316,7 +316,7 @@ void MainWindow::setupPageConnections()
 void MainWindow::setupPairAlignmentConnections()
 {
     //seule ligne qui sera modifiée
-    m_pairs = FrontendUtils::defaultPairAlignments(); 
+    m_pairs = FrontendUtils::defaultPairAlignments();
     m_currentPairIndex = 0;
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
