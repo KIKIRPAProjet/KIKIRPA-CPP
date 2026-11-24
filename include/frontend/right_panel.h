@@ -1,15 +1,12 @@
 #pragma once
 
 #include <QTabWidget>
-#include <QVector>
 #include "projectgrid.h"
-#include "image_layer.h"
 
 class MainWindow;
 class WorkspaceCenter;
 class GridTab;
 class AlignmentTab;
-class MasksTab;
 class AssemblyTab;
 
 class RightPanel : public QTabWidget
@@ -25,7 +22,6 @@ public:
 
     void updateGridState(const ProjectGrid::State &gridState);
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
-    void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
     void setActiveStep(int stepNumber);
 
 private:
@@ -35,7 +31,6 @@ private:
 
     GridTab *m_gridTab = nullptr;
     AlignmentTab *m_alignmentTab = nullptr;
-    MasksTab *m_masksTab = nullptr;
     AssemblyTab *m_assemblyTab = nullptr;
     int m_alignmentTabIndex = -1;   // index de l'onglet Paire (sa page est une zone de défilement)
 };

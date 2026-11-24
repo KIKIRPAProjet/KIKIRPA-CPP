@@ -41,12 +41,11 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
     m_gridTab = new GridTab(m_mainWindow, m_projectGrid, canvas, this);
     m_alignmentTab = new AlignmentTab(m_mainWindow, canvas, this);
     m_assemblyTab = new AssemblyTab(m_mainWindow, m_projectGrid, this);
-    m_masksTab = new MasksTab(m_mainWindow, canvas, this);
 
     addTab(m_gridTab, tr("Grille"));   // GridTab est déjà une zone de défilement
     addTab(makeScrollable(m_assemblyTab, this), tr("Chaîne"));
     m_alignmentTabIndex = addTab(makeScrollable(m_alignmentTab, this), tr("Paire"));
-    addTab(makeScrollable(m_masksTab, this), tr("Calques"));
+    addTab(makeScrollable(new MasksTab(m_mainWindow, canvas, this), this), tr("Calques"));
 }
 
 //affichage de l'onglet pair
@@ -71,13 +70,6 @@ void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid
 {
     if (m_alignmentTab) {
         m_alignmentTab->updateInfo(projectName, gridState);
-    }
-}
-
-void RightPanel::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
-{
-    if (m_masksTab) {
-        m_masksTab->setImageLayers(layers, bounds);
     }
 }
 

@@ -154,12 +154,6 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
 
     // Le titre de la fenêtre principale est géré par MainWindow (avec setWindowModified).
 }
-void WorkspaceUI::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
-{
-    if (m_rightPanel) {
-        m_rightPanel->setImageLayers(layers, bounds);
-    }
-}
 
 /**
  * Met à jour les informations du projet dans l'interface utilisateur.

@@ -473,11 +473,15 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
+    if (!hasActiveImages()) {
+        drawEmptyState(p);
+        return;
+    }
+
     // Assemblage et Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
     if (modeValue == kModeAssembly || modeValue == MODE_SEAM) {
         beginViewTransform();
-        const bool layersDrawn = modeValue == kModeAssembly && !fusedMosaicVisible && drawAssemblyLayers(p);
-        const bool drawn = layersDrawn || drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
+        const bool drawn = drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
         p.restore();
         if (drawn) {
             p.setPen(QColor("#dddddd"));
@@ -486,11 +490,6 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
             return;
         }
     }
-    if (!hasActiveImages()) {
-        drawEmptyState(p);
-        return;
-    }
-
     if (modeValue == MODE_SEAM) {
         drawCenteredMessage(p, tr("Lancez l'assemblage pour afficher les lignes de couture calculées."));
         return;
