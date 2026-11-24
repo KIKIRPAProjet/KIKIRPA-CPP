@@ -494,16 +494,18 @@ Tout ce qu'il faut existe déjà côté backend :
 |---|---|
 | construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
-| lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
+| lancer sans geler la fenêtre | `PipelineRunnerClass` et `PipelineWorkerClass`, qui exécutent `pipeline.run(logger)` dans un thread de travail |
 | afficher le journal | le `logger` reçoit chaque message (`Step 2/7 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
-| mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
-| reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
+| mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps et l'état est sauvegardé |
+| reprendre | relancer le pipeline en réutilisant les checkpoints; les steps déjà terminés sont ignorés |
+| annuler l'exécution | `PipelineRunnerClass::cancelRun()` demande un arrêt propre après l'étape courante; contrairement à la pause, l'interface ne propose pas de reprise depuis cet état |
+| repartir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
 | afficher l'avancement et l'état sauvegardé | `run.json` (`status`, `completedSteps`), réécrit après chaque step |
 | afficher les résultats | **après** la fin de `run()`, `pipeline.getDataStore()`, ou à tout moment les `<clé>.json` des checkpoints. Le DataStore n'est pas protégé contre les accès concurrents : ne pas le lire pendant le run |
 | dessiner la vraie seamline | les polygones de `territories` : leurs bords sont les coutures |
 | dessiner le placement des tuiles | `positions` et les dimensions de chaque tuile (`tiles`) |
 
-C'est ce que fait #132 (`src/frontend/pipeline_worker.cpp`). La reprise y suit la ligne de commande : `setScriptPath(<checkpoints>/run.json)` avant `run()`, puis relire `completedSteps` dans ce fichier pour reprendre (voir `prepareRunState` dans `src/main.cpp`).
+C'est ce que fait #132 (`src/frontend/pipeline_worker.cpp`). La reprise y suit la ligne de commande : `setScriptPath(<checkpoints>/run.json)` avant `run()`, puis relire `completedSteps` dans ce fichier pour reprendre (voir `prepareRunState` dans `src/main.cpp`). La pause est donc la voie à utiliser pour interrompre un assemblage et le reprendre depuis l'interface ensuite.
 
 ---
 

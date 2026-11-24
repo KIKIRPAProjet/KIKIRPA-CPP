@@ -2,6 +2,7 @@
 
 #include <QObject>
 
+class QAction;
 class QMenuBar;
 
 class MenuBarManager : public QObject
@@ -12,6 +13,8 @@ public:
     explicit MenuBarManager(QObject *parent = nullptr);
 
     void setupMenus(QMenuBar *menuBar);
+    void setResumeAvailable(bool available);
+    void setPauseAvailable(bool available);
 
 signals:
     void newProjectRequested();
@@ -27,7 +30,13 @@ signals:
     void zoomOutRequested();
     void fitToWindowRequested();
     void runRequested(int startStep);
+    void resumeRequested();
+    void pauseRunRequested();
     void comparisonRequested();
     void aboutRequested();
     void creditsRequested();
+
+private:
+    QAction *m_resumeAction = nullptr;
+    QAction *m_pauseAction = nullptr;
 };

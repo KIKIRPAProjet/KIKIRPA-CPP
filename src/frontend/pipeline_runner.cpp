@@ -56,7 +56,6 @@ void PipelineRunnerClass::setupProgressConnections() {
     // Relais des notifications de début de calcul et d'avancement vers l'interface.
     connect(worker, &PipelineWorkerClass::started, this, [this]() {
         emit runStarted();
-        emit cancellationAvailable();
         emit statusChanged(tr("Exécution asynchrone du pipeline backend..."));
     });
 
@@ -96,7 +95,6 @@ void PipelineRunnerClass::setupStateConnections() {
     connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
         running = false;
         paused = true;
-        pausedStepNumber = atStep;
         emit pausedStateChanged(true);
         emit statusChanged(tr("Pipeline en pause après l'étape %1 (%2).").arg(atStep).arg(name));
         cleanUpThread();
@@ -191,13 +189,13 @@ void PipelineRunnerClass::resumeRun() {
 }
 
 void PipelineRunnerClass::cancelRun() {
-    // Interrompt d'urgence le calcul en cours.
+    // Demande l'arrêt après l'étape courante, ou annule un pipeline déjà en pause.
     if (!running && !paused) return;
     if (worker && running) {
-        emit statusChanged(tr("Interruption du calcul en cours..."));
+        emit statusChanged(tr("Arrêt après l'étape en cours…"));
         worker->requestCancel();
     } else if (paused) {
-        resetPausedState();
+        paused = false;
         emit pausedStateChanged(false);
         emit stepChanged(0, tr("Annulée"));
         emit statusChanged(tr("Exécution annulée."));

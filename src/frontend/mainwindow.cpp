@@ -234,6 +234,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
+        menuBarManager->setPauseAvailable(true);
+        menuBarManager->setResumeAvailable(false);
         if (workspaceUI->bottomTabs())
             workspaceUI->bottomTabs()->setVisible(true);
         sideBarVisible = true;
@@ -247,12 +249,18 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
-    connect(pipelineRunner, &PipelineRunnerClass::cancellationAvailable,
-            this, &MainWindow::showCancelRunButton);
-    connect(pipelineRunner, &PipelineRunnerClass::runFinished,
-            this, &MainWindow::removeCancelRunButton);
-    connect(pipelineRunner, &PipelineRunnerClass::runCancelled,
-            this, &MainWindow::removeCancelRunButton);
+    connect(pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, [this](bool isPaused) {
+        menuBarManager->setPauseAvailable(!isPaused);
+        menuBarManager->setResumeAvailable(isPaused);
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::runFinished, this, [this]() {
+        menuBarManager->setPauseAvailable(false);
+        menuBarManager->setResumeAvailable(false);
+    });
+    connect(pipelineRunner, &PipelineRunnerClass::runCancelled, this, [this]() {
+        menuBarManager->setPauseAvailable(false);
+        menuBarManager->setResumeAvailable(false);
+    });
     connect(pipelineRunner, &PipelineRunnerClass::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
     connect(pipelineRunner, &PipelineRunnerClass::comparisonVisibilityChanged,
@@ -325,6 +333,10 @@ void MainWindow::setupMenuConnections()
 
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
+    connect(menuBarManager, &MenuBarManager::resumeRequested,
+            this, &MainWindow::requestResume);
+    connect(menuBarManager, &MenuBarManager::pauseRunRequested,
+            pipelineRunner, &PipelineRunnerClass::pauseRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
@@ -545,6 +557,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
 {
     if (!confirmDiscardUnsavedChanges())
         return;
+    // Un calcul en pause appartient au projet précédent : l'annuler avant de changer de contexte.
+    if (pipelineRunner->isPaused())
+        pipelineRunner->cancelRun();
     switchingProject = true;
     mosaicFilePath.clear();
     pipelineRunner->invalidateImageLayers();
@@ -600,6 +615,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
         return;
     const bool resume = opening.clickedButton() == resumeButton;
+    // Un calcul en pause appartient au projet précédent : l'annuler seulement lorsque le changement est confirmé.
+    if (pipelineRunner->isPaused())
+        pipelineRunner->cancelRun();
     switchingProject = true;
     mosaicFilePath.clear();
     pipelineRunner->invalidateImageLayers();
@@ -1002,6 +1020,10 @@ void MainWindow::requestRun(int firstStep)
         updateStatus(tr("Une exécution du pipeline est déjà en cours."));
         return;
     }
+    if (pipelineRunner->isPaused()) {
+        updateStatus(tr("Un pipeline est en pause. Reprenez-le ou arrêtez-le avant d'en lancer un autre."));
+        return;
+    }
     // Vérification préalable : au moins une tuile doit être chargée dans la grille.
     if (projectGrid->state().tilePaths.isEmpty()) {
         QMessageBox::warning(this, tr("Aucune tuile importée"),
@@ -1034,31 +1056,41 @@ void MainWindow::requestRun(int firstStep)
     pipelineRunner->startRun(firstStep);
 }
 
+void MainWindow::requestResume()
+{
+    if (pipelineRunner->isRunning()) {
+        updateStatus(tr("Une exécution du pipeline est déjà en cours."));
+        return;
+    }
+    if (!pipelineRunner->isPaused()) {
+        updateStatus(tr("Aucun pipeline en pause à reprendre."));
+        return;
+    }
+    if (projectGrid->state().tilePaths.isEmpty()) {
+        QMessageBox::warning(this, tr("Aucune tuile importée"),
+            tr("Veuillez importer des tuiles avant de reprendre le pipeline de calcul."));
+        return;
+    }
+    // Reconstruire le script depuis l'état actuel de l'interface afin de prendre en compte
+    // tout changement de paramètre survenu pendant la pause. Les checkpoints existants
+    // détermineront automatiquement ce qui doit être recalculé ou ignoré.
+    QString scriptJson;
+    try {
+        scriptJson = generatePipelineScript(1);
+    } catch (const std::exception &exception) {
+        QMessageBox::critical(this, tr("Erreur de configuration"),
+            tr("Impossible de reprendre : pipeline invalide : %1").arg(exception.what()));
+        return;
+    }
+    if (scriptJson.isEmpty()) return;
+    pipelineRunner->setScriptJson(scriptJson);
+    pipelineRunner->setStartFromStepName(QString());
+    pipelineRunner->resumeRun();
+}
+
 void MainWindow::showComparisonDialog()
 {
     DialogHelpers::showComparisonDialog(this, pipelineRunner);
-}
-
-void MainWindow::showCancelRunButton()
-{
-    if (workspaceUI->cancelRunButton())
-        return;
-    auto *cancelRunButton = FrontendUtils::makeButton(tr("Annuler"), this);
-    workspaceUI->setCancelRunButton(cancelRunButton);
-    cancelRunButton->setObjectName(QStringLiteral("cancelRunButton"));
-    statusBar()->addPermanentWidget(cancelRunButton);
-    connect(cancelRunButton, &QPushButton::clicked,
-            pipelineRunner, &PipelineRunnerClass::cancelRun);
-}
-
-void MainWindow::removeCancelRunButton()
-{
-    QPushButton *cancelRunButton = workspaceUI->cancelRunButton();
-    if (!cancelRunButton)
-        return;
-    statusBar()->removeWidget(cancelRunButton);
-    cancelRunButton->deleteLater();
-    workspaceUI->setCancelRunButton(nullptr);
 }
 
 void MainWindow::updateStatus(const QString &message)

@@ -17,6 +17,15 @@ gtest_discover_tests(test_frontend_pipeline_worker PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 
+add_executable(test_frontend_pipeline_cancel_resume test_pipeline_cancel_resume.cpp)
+kikirpa_copy_onnxruntime_dlls(test_frontend_pipeline_cancel_resume)
+target_link_libraries(test_frontend_pipeline_cancel_resume PRIVATE kikirpa_frontend GTest::gtest_main)
+target_compile_features(test_frontend_pipeline_cancel_resume PRIVATE cxx_std_17)
+gtest_discover_tests(test_frontend_pipeline_cancel_resume PROPERTIES
+    LABELS "unit"
+    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 add_executable(test_frontend_preview_benchmark test_preview_benchmark.cpp)
 kikirpa_copy_onnxruntime_dlls(test_frontend_preview_benchmark)
 target_link_libraries(test_frontend_preview_benchmark PRIVATE kikirpa_frontend GTest::gtest_main)

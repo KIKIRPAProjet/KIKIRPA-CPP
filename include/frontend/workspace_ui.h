@@ -9,7 +9,6 @@
 class QComboBox;
 class QLabel;
 class QProgressBar;
-class QPushButton;
 class QStackedWidget;
 class QTabWidget;
 class QWidget;
@@ -58,8 +57,6 @@ public:
     QLabel *currentStepLabel() const;
     QProgressBar *progressBar() const;
 
-    QPushButton *cancelRunButton() const { return m_cancelRunButton; }
-    void setCancelRunButton(QPushButton *button) { m_cancelRunButton = button; }
     void appendLog(const QString &message);
     void setActiveStep(int stepNumber);
 
@@ -80,5 +77,4 @@ private:
     LeftToolbar *m_leftToolbar = nullptr;
     RightPanel *m_rightPanel = nullptr;
     TopToolbars *m_topToolbars = nullptr;
-    QPushButton *m_cancelRunButton = nullptr;
 };

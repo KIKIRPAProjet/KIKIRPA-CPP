@@ -87,6 +87,7 @@ private:
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
+    void requestResume();
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
@@ -101,8 +102,6 @@ private slots:
     void showGridMessage(const QString &title, const QString &message, bool warning);
     void handleGridValidation(bool valid, int activeTileCount, const QStringList &errors);
     void showComparisonDialog();
-    void showCancelRunButton();
-    void removeCancelRunButton();
 
 private:
     ProjectGrid *projectGrid = nullptr;
