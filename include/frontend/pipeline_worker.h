@@ -1,12 +1,14 @@
 // include/frontend/pipeline_worker.h
 #pragma once
 
+#include "image_layer.h"
 #include "pipeline_results.h"
 
 #include <QImage>
 #include <QObject>
 #include <QString>
 #include <QMutex>
+#include <QVector>
 
 #include <atomic>
 #include <memory>
@@ -42,6 +44,7 @@ class PipelineWorkerClass : public QObject {
         void logMessageReceived(const QString& message, const QString& severity);
         void pipelinePaused(int lastCompletedStepIndex, const QString& lastCompletedStepName);
         void pipelineFinished(bool success, const QString& errorMessage, const QImage& previewImage);
+        void imageLayersReady(const QVector<ImageLayer>& layers, const QRectF& bounds);
         void pipelineCancelled();
         void mosaicFileReady(const QString& imagePath);
         // Paires et lignes de couture calculées, émis avant pipelineFinished ou pipelinePaused.
@@ -53,6 +56,7 @@ class PipelineWorkerClass : public QObject {
         void handleLogMessage(const QString& message, int totalSteps);
         // Analyse l'état de sortie de run() et émet le signal approprié.
         void processExecutionResult(bool success, const std::string& executionError);
+        QVector<ImageLayer> collectImageLayers(QRectF& bounds);
         // Construit l'image d'aperçu à partir des données du DataStore.
         QImage generatePreviewImage();
         // Paires et lignes de couture du DataStore ; previewSize vide : pas de calque de couture.

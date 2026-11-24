@@ -1,8 +1,10 @@
 #pragma once
 
+#include "image_layer.h"
 #include "projectgrid.h"
 
 #include <QObject>
+#include <QVector>
 
 class QComboBox;
 class QLabel;
@@ -32,6 +34,7 @@ public:
 
     void updateFromGridState(const QString &projectName,
                              const ProjectGrid::State &gridState);
+    void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
 
     HomePage *homePage() const { return m_homePage; }
     QStackedWidget *pages() const { return m_pages; }
