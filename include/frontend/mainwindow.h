@@ -107,7 +107,8 @@ private:
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 100;
-    bool panelsVisible = true;
+    bool sideBarVisible = true;
+    bool logVisible = false;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;

@@ -37,6 +37,7 @@
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include <QAbstractItemView>
@@ -191,7 +192,7 @@ void MainWindow::setupPipelineConnections()
         workspaceUI->progressBar()->setValue(0);
         if (workspaceUI->bottomTabs())
             workspaceUI->bottomTabs()->setVisible(true);
-        panelsVisible = true;
+        sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -256,10 +257,9 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+    connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -281,6 +281,10 @@ void MainWindow::setupMenuConnections()
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
+        logVisible = !logVisible;
+        workspaceUI->bottomTabs()->setVisible(logVisible);
+    });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage : prototype d'interface.\n"
@@ -936,9 +940,9 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
         event->accept();
         return;
     }
