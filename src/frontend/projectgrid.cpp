@@ -123,6 +123,7 @@ void ProjectGrid::initializeGridFromPaths()
     }
     gridState.selectedGridCell = 0;
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
     startBackgroundPyramidGeneration();
 }
@@ -182,6 +183,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     }
 
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
     emit tilesImported(directoryPath, paths.size());
     startBackgroundPyramidGeneration();
@@ -292,6 +294,7 @@ void ProjectGrid::swapGridTiles(int first, int second)
     std::swap(gridState.gridTiles[first], gridState.gridTiles[second]);
     gridState.selectedGridCell = second;
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -309,6 +312,7 @@ void ProjectGrid::setGridRows(int rows)
     gridState.selectedGridCell = qMin(gridState.selectedGridCell,
                                     gridState.gridRows * gridState.gridColumns - 1);
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -320,6 +324,7 @@ void ProjectGrid::setGridColumns(int columns)
     gridState.selectedGridCell = qMin(gridState.selectedGridCell,
                                     gridState.gridRows * gridState.gridColumns - 1);
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -327,6 +332,7 @@ void ProjectGrid::setCaptureOrder(int order)
 {
     gridState.captureOrder = qBound(0, order, 5);
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -406,6 +412,7 @@ void ProjectGrid::rotateSelectedTile()
     }
     gridState.gridTiles[cell].rotation = (gridState.gridTiles.at(cell).rotation + 90) % 360;
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -419,6 +426,7 @@ void ProjectGrid::flipSelectedTile()
     }
     gridState.gridTiles[cell].flipped = !gridState.gridTiles.at(cell).flipped;
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 
@@ -433,6 +441,7 @@ void ProjectGrid::toggleSelectedCellEmpty()
         gridState.gridTiles.append(GridTile{});
     gridState.gridTiles[cell].empty = !gridState.gridTiles.at(cell).empty;
     gridState.gridValidated = false;
+    gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
 }
 

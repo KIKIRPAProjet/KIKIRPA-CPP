@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QObject>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QVBoxLayout>
 
@@ -79,11 +81,18 @@ HomePage::HomePage(QWidget *parent)
     recentLayout->addWidget(new QLabel(tr("Projets récents"), recentArea));
     recentEmptyLabel = FrontendUtils::mutedLabel(tr("Aucun projet récent."), recentArea);
     recentLayout->addWidget(recentEmptyLabel);
-    auto *cardsContainer = new QWidget(recentArea);
+
+    auto *cardsScroll = new QScrollArea(recentArea);
+    cardsScroll->setWidgetResizable(true);
+    cardsScroll->setFrameShape(QFrame::NoFrame);
+    cardsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    cardsScroll->setMinimumHeight(130);
+    auto *cardsContainer = new QWidget(cardsScroll);
     recentCardsLayout = new QHBoxLayout(cardsContainer);
     recentCardsLayout->setContentsMargins(0, 0, 0, 0);
     recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    recentLayout->addWidget(cardsContainer);
+    cardsScroll->setWidget(cardsContainer);   // sinon la zone de défilement, hors mise en page, recouvre les titres
+    recentLayout->addWidget(cardsScroll);
     // Au milieu de l'espace libre : le logo en grand, gris et sans fond (resources/logo/logo_home.png).
     recentLayout->addStretch(1);
     recentLayout->addWidget(FrontendUtils::logoLabel(400, recentArea, QStringLiteral(":/logo/logo_home.png")),

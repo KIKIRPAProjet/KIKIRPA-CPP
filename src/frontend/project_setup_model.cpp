@@ -219,6 +219,15 @@ Json createProjectJson(const ProjectSetup &setup) {
           {"grid", createGridJson(setup)}};
 }
 
+// Paramètre "corrections" de manual-matches : [{tileIdA, tileIdB, pointsInA: [[x, y], ...], pointsInB}, ...].
+Json createCorrectionsJson(const std::vector<ManualCorrection> &corrections) {
+  Json json = Json::array();
+  for (const ManualCorrection &correction : corrections)
+    json.push_back({{"tileIdA", correction.tileIdA}, {"tileIdB", correction.tileIdB},
+                    {"pointsInA", correction.pointsInA}, {"pointsInB", correction.pointsInB}});
+  return json;
+}
+
 // Configuration d'un step du script : valeurs par défaut du registre, puis les réglages tirés du projet.
 Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
   Json stepJson = PipelineNs::createStep(stepName)->getConfigJson();
@@ -243,6 +252,8 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);
     replaceParameter(stepJson, "railMargin", setup.railMargin);
     replaceParameter(stepJson, "modelPath", IONs::pathToUtf8(setup.lightGlueModelPath));
+  } else if (stepName == "manual-matches") {
+    replaceParameter(stepJson, "corrections", createCorrectionsJson(setup.pipelineChoices.manualCorrections));
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
   } else if (stepName == "export") {
@@ -275,6 +286,8 @@ std::vector<std::string> pipelineStepNames(const PipelineChoices &choices) {
   names.push_back(choices.matchingStep);
   if (usesVote2D(choices))
     names.emplace_back("vote-2d");
+  if (!choices.manualCorrections.empty())
+    names.emplace_back("manual-matches");   // après le rejet des aberrants : une correction n'est pas rejetée
   names.emplace_back("absolute-pos");
   names.emplace_back("intensity-correction");
   names.push_back(choices.seamStep);
