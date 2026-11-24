@@ -1,13 +1,20 @@
 # MosaicCropStepClass
+L’interface valide immédiatement l’aperçu. À l’export, elle exécute
+`mosaic-crop` depuis le checkpoint de fusion, puis ouvre la fenêtre
+d’enregistrement qui copie le TIFF vers la destination choisie.
 
-Code : [mosaic_crop_step.h](../../include/backend/steps/mosaic_crop_step.h) /
-[mosaic_crop_step.cpp](../../src/backend/steps/mosaic_crop_step.cpp),
-namespace `StepsNs`.
+Le step `export` n’est pas exécuté dans ce parcours frontend, afin d’éviter
+une copie intermédiaire. Les scripts backend peuvent toujours utiliser
+`fusion → mosaic-crop → export`.
 
-Rogne un rectangle dans la mosaïque assemblée. Ce step est facultatif et
-se place après `fusion`, avant `export` :
+Les essais successifs réutilisent le dossier `crop`, avec remplacement
+protégé du précédent résultat. Les anciens dossiers `crop-<uuid>` créés
+par les versions précédentes ne sont pas nettoyés automatiquement.
 
-    fusion → mosaic-crop → export
+L’accès au mode Masques est retiré de la navigation. L’onglet Calques et
+les masques utilisés par le backend restent présents.
+
+Le rectangle sélectionné n’est pas conservé après réouverture du projet.
 
 ## Entrées et sorties
 
@@ -100,25 +107,10 @@ dans le même dossier de sortie.
 - Le rectangle sélectionné dans l'interface n'est actuellement pas enregistré
   dans le fichier projet. Il doit être redéfini après réouverture.
 
-  ## Utilisation depuis l'interface
 
-Dans l'onglet Image finale, le bouton Rogner permet de sélectionner un
-rectangle. Valider le recadrage modifie uniquement l'aperçu en mémoire,
-sans lire ni écrire les TIFF pleine résolution.
+## Utilisation depuis l'interface
 
-Le bouton Exporter convertit le rectangle normalisé en coordonnées pleine
-résolution à partir de `mosaic.canvasSize`, puis lance
-`mosaic-crop → export` depuis le checkpoint de fusion.
-Si ce checkpoint n'est plus valide, le calcul est refusé.
-
-Après réussite, la fenêtre d'enregistrement s'ouvre. Un nouvel export du
-même recadrage réutilise le TIFF calculé tant qu'il est disponible.
-
-Réinitialiser restaure la mosaïque originale. Une modification de la grille
-invalide également les résultats et le recadrage.
-
-Chaque nouveau calcul de rognage utilise un dossier distinct. Les résultats
-des essais précédents ne sont pas automatiquement supprimés.
+Le bouton Exporter convertit le rectangle normalisé en coordonnées pleine résolution et exécute mosaic-crop depuis le checkpoint de fusion. Après réussite, la fenêtre d’enregistrement copie le TIFF rogné vers la destination choisie. Ce parcours ne lance  pas le step export, afin d’éviter une copie intermédiaire supplémentaire. Les scripts backend peuvent toujours utiliser fusion → mosaic-crop → export.
 
 ## Tests
 

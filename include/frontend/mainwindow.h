@@ -105,6 +105,7 @@ private:
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
+    void requestResume();
     void showExportDialog();
     // Lance le rognage d'un rectangle normalisé par rapport à la mosaïque originale.
     void requestMosaicCrop(const QRectF& normalizedRectangle);

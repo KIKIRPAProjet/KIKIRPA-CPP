@@ -55,7 +55,7 @@ void MainWindow::showExportDialog()
     auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
     if (canvas && canvas->hasActiveCropSelection()) {
         QMessageBox::information(this, tr("Sélection non validée"),
-            tr("Validez le recadrage ou annulez la sélection avant d'exporter."));
+            tr("Validez le rognage ou annulez la sélection avant d'exporter."));
         return;
     }
 

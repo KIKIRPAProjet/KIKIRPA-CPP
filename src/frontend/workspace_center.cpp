@@ -128,7 +128,7 @@ void WorkspaceCenter::createCanvasAndControls()
     startCropButton->setToolTip(tr("Tracer un rectangle sur la mosaïque à conserver"));
     startCropButton->setVisible(false);
     canvasControlsLayout->addWidget(startCropButton);
-    auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le recadrage"), canvasControls);
+    auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le rognage"), canvasControls);
     applyCropButton->setObjectName(QStringLiteral("applyCropButton"));
     applyCropButton->setVisible(false); // Visible uniquement en mode Image finale
     canvasControlsLayout->addWidget(applyCropButton);

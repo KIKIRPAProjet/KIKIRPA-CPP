@@ -38,6 +38,7 @@
 #include <system_error>
 #include <thread>
 #include <vector>
+#include <set>
 
 namespace fs = std::filesystem;
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
@@ -637,42 +638,93 @@ TEST_F(PipelineWorkerTestClass, CropRunnerUsesFusionCheckpoint)
         &runner, &PipelineRunnerClass::runFinished,
         &eventLoop, &QEventLoop::quit);
 
-    const QRect rectangle(10, 10, 100, 80);
+    const auto listOutputFiles = [&]() {
+        std::set<fs::path> files;
+        for (const auto& entry : fs::directory_iterator(outputDirectory))
+            files.insert(entry.path().filename());
+        return files;
+        };
+
+    const auto initialOutputFiles = listOutputFiles();
+    ASSERT_FALSE(initialOutputFiles.empty());
+
     const fs::path cropDirectory = rootDirectory / "crop";
+    const std::vector<QRect> rectangles = {
+        QRect(10, 10, 100, 80),
+        QRect(20, 15, 120, 90)
+    };
 
-    runner.startCropRun(
-        rectangle,
-        QString::fromStdString(IONs::pathToUtf8(cropDirectory)));
+    for (const QRect& rectangle : rectangles) {
+        timedOut = false;
+        cropFinished = false;
+        cropSuccess = false;
+        normalMosaicEmitted = false;
+        cropPreview = QImage();
+        cropResults = {};
 
-    ASSERT_TRUE(runner.isRunning());
-    timeout.start(ASYNC_WAIT_TIMEOUT_MS);
-    eventLoop.exec();
-    timeout.stop();
+        // Comme l'interface, repartir du script de la fusion originale.
+        runner.setScriptJson(scriptText);
+        runner.startCropRun(
+            rectangle,
+            QString::fromStdString(IONs::pathToUtf8(cropDirectory)));
 
-    if (timedOut)
-        runner.cancelRun();
+        ASSERT_TRUE(runner.isRunning());
+        timeout.start(ASYNC_WAIT_TIMEOUT_MS);
+        eventLoop.exec();
+        timeout.stop();
 
-    ASSERT_FALSE(timedOut);
-    ASSERT_TRUE(cropFinished);
-    ASSERT_TRUE(cropSuccess);
-    EXPECT_FALSE(normalMosaicEmitted);
-    EXPECT_FALSE(cropPreview.isNull());
-    EXPECT_FALSE(runner.isRunning());
-    EXPECT_FALSE(runner.isPaused());
+        if (timedOut)
+            runner.cancelRun();
 
-    EXPECT_EQ(cropResults.mosaic.canvasSize.width, rectangle.width());
-    EXPECT_EQ(cropResults.mosaic.canvasSize.height, rectangle.height());
-    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.imagePath));
-    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.provenancePath));
-    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.maskPath));
+        ASSERT_FALSE(timedOut);
+        ASSERT_TRUE(cropFinished);
+        ASSERT_TRUE(cropSuccess);
+        EXPECT_FALSE(normalMosaicEmitted);
+        EXPECT_FALSE(cropPreview.isNull());
+        EXPECT_FALSE(runner.isRunning());
+        EXPECT_FALSE(runner.isPaused());
 
-    // Le résultat original reste disponible.
+        EXPECT_EQ(cropResults.mosaic.canvasSize.width, rectangle.width());
+        EXPECT_EQ(cropResults.mosaic.canvasSize.height, rectangle.height());
+
+        EXPECT_EQ(
+            cropResults.mosaic.imagePath,
+            cropDirectory / "mosaic_image.tif");
+        EXPECT_EQ(
+            cropResults.mosaic.provenancePath,
+            cropDirectory / "mosaic_provenance.tif");
+        EXPECT_EQ(
+            cropResults.mosaic.maskPath,
+            cropDirectory / "mosaic_mask.tif");
+
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.imagePath));
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.provenancePath));
+        EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.maskPath));
+
+        // Vérifier aussi les dimensions réellement écrites dans le TIFF.
+        const cv::Mat croppedImage = IONs::readImage(
+            cropResults.mosaic.imagePath, cv::IMREAD_UNCHANGED);
+        ASSERT_FALSE(croppedImage.empty());
+        EXPECT_EQ(croppedImage.cols, rectangle.width());
+        EXPECT_EQ(croppedImage.rows, rectangle.height());
+
+        // Le rognage ne crée aucun export intermédiaire.
+        EXPECT_EQ(listOutputFiles(), initialOutputFiles);
+
+        const Json cropScript =
+            Json::parse(runner.getScriptJson().toStdString());
+        EXPECT_EQ(cropScript["run"]["startFromStep"], "mosaic-crop");
+        EXPECT_EQ(
+            cropScript["pipeline"]["steps"].back()["name"],
+            "mosaic-crop");
+
+        for (const auto& step : cropScript["pipeline"]["steps"])
+            EXPECT_NE(step["name"], "export");
+    }
+
+    // La mosaïque originale reste disponible après les deux essais.
     EXPECT_TRUE(fs::is_regular_file(
         fusionDirectory / "mosaic_image.tif"));
-
-    const Json cropScript =
-        Json::parse(runner.getScriptJson().toStdString());
-    EXPECT_EQ(cropScript["run"]["startFromStep"], "mosaic-crop");
 }
 
 int main(int argc, char** argv) {

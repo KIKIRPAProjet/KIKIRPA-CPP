@@ -226,6 +226,9 @@ void PipelineRunnerClass::startCropRun(
             })}
         };
 
+        // Le dialogue frontend publiera le TIFF à l'emplacement choisi.
+        // Ne pas créer un export intermédiaire dans le dossier du projet.
+        updatedSteps.erase(updatedSteps.begin() + exportIndex);
         updatedSteps.insert(updatedSteps.begin() + exportIndex, cropStep);
         steps = std::move(updatedSteps);
 
