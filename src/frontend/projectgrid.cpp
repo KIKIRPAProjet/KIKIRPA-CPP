@@ -495,6 +495,7 @@ void ProjectGrid::startBackgroundPyramidGeneration()
     pyramidSuccesses = 0;
     pyramidFailures = 0;
     if (tasks.isEmpty()) {
+        emit pyramidLoadingChanged(false);
         if (reusedCount > 0) {
             const QString cachedMessage = tr("Vignettes optimisées déjà présentes (%1 tuiles réutilisées).")
                 .arg(reusedCount);
@@ -507,6 +508,7 @@ void ProjectGrid::startBackgroundPyramidGeneration()
     const QString startMessage = tr("Préparation des vignettes optimisées (0/%1)...").arg(pyramidTotal);
     emit statusRequested(startMessage);
     emit logRequested(startMessage);
+    emit pyramidLoadingChanged(true);
     pyramidWatcher.setFuture(QtConcurrent::run(generatePyramids, tasks));
 }
 
@@ -542,9 +544,11 @@ void ProjectGrid::handlePyramidGenerationFinished()
 {
     const int processed = pyramidSuccesses + pyramidFailures;
     if (pyramidWatcher.isCanceled()) {
-        if (pyramidCancelRequested)
+        if (pyramidCancelRequested) {
             emit logRequested(tr("Préparation des vignettes interrompue (%1/%2) : le calcul prépare les pyramides restantes.")
                                   .arg(processed).arg(pyramidTotal));
+            emit pyramidLoadingChanged(false);
+        }
         return;
     }
     const QString finalMessage = pyramidFailures == 0
@@ -552,4 +556,5 @@ void ProjectGrid::handlePyramidGenerationFinished()
         : tr("%1 vignettes optimisées, %2 échec(s).").arg(pyramidSuccesses).arg(pyramidFailures);
     emit statusRequested(finalMessage);
     emit logRequested(finalMessage);
+    emit pyramidLoadingChanged(false);
 }

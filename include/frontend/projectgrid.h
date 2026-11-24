@@ -87,6 +87,7 @@ public:
 signals:
     void gridUpdated();
     void gridChanged();
+    void pyramidLoadingChanged(bool loading);
     void gridValidated(bool valid);
     void gridValidationCompleted(bool valid, int activeTileCount, const QStringList &errors);
     void referenceImageLoaded(const QString &path);

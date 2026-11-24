@@ -174,6 +174,10 @@ void MainWindow::applyStyleSheet()
 
 void MainWindow::setupProjectGridConnections()
 {
+    connect(projectGrid, &ProjectGrid::pyramidLoadingChanged, this, [this](bool loading) {
+        if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+            canvasView->setPyramidLoading(loading);
+    });
     connect(projectGrid, &ProjectGrid::gridUpdated, this, [this]() {
         if (!switchingProject)
             markProjectModified();
