@@ -193,6 +193,9 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
+            if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                canvas->setMosaicFilePath(imagePath);
+            }
         });
 
     // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
@@ -200,6 +203,9 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                    canvas->setMosaicFilePath(QString());
+                }
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
@@ -277,12 +283,12 @@ void MainWindow::setupMenuConnections()
         workspaceUI->bottomTabs()->setVisible(panelsVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
-        zoomPercent = qMin(1600, zoomPercent + 10);
+        zoomPercent = FrontendUtils::nextZoomIn(zoomPercent);
         workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
-        zoomPercent = qMax(5, zoomPercent - 10);
+        zoomPercent = FrontendUtils::nextZoomOut(zoomPercent);
         workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
@@ -865,6 +871,9 @@ bool MainWindow::confirmDiscardUnsavedChanges()
     return false;
 }
 
+#ifdef _MSC_VER
+__declspec(noinline)
+#endif
 void MainWindow::markProjectModified()
 {
     if (switchingProject)
@@ -873,6 +882,9 @@ void MainWindow::markProjectModified()
     refreshWindowTitle();
 }
 
+#ifdef _MSC_VER
+__declspec(noinline)
+#endif
 void MainWindow::refreshWindowTitle()
 {
     const QString baseTitle = tr("KIK-IRPA Assemblage");

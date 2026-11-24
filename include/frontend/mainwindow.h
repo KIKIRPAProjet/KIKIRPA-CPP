@@ -26,6 +26,7 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override = default;
+    void markProjectModified();
 
 public slots:
     void updateProgress(const QString &stepName, int percentage);
@@ -78,7 +79,6 @@ private:
     void saveProject();
     bool saveProjectToFile();
     bool confirmDiscardUnsavedChanges();
-    void markProjectModified();
     void refreshWindowTitle();
     bool projectModified = false;
     bool switchingProject = false;

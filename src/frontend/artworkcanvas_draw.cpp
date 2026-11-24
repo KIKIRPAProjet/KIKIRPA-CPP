@@ -1,5 +1,7 @@
 #include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
 
 #include <QFileInfo>
 #include <QFont>
@@ -15,6 +17,7 @@
 #include <algorithm>
 
 namespace {
+using FrontendUtils::kModeGrid;
 constexpr int kGridGapX = 18;
 constexpr int kGridGapY = 20;
 constexpr int kLabelBarHeight = 21;
@@ -24,7 +27,7 @@ constexpr int kMinCellWidthForFileName = 145;
 // entre ces deux bornes. Une grille de 50 tuiles tient alors en quelques dizaines de Mo, et zoomer de 10 % ne
 // relit pas l'image.
 constexpr int kPreviewMinDimension = 128;
-constexpr int kPreviewMaxDimension = 8192;
+constexpr int kPreviewMaxDimension = 16384;
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
 constexpr int LABEL_BAND = 20;   // bande au-dessus de chaque tuile pour son nom : le nom ne cache pas l'image
@@ -223,12 +226,111 @@ void drawTileLabel(QPainter &p, const QRectF &tileRect, const QString &name, boo
 
 bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
 {
-    if (m_mosaicPreview.isNull())
+    if (m_mosaicPreview.isNull() && m_mosaicFilePath.isEmpty())
         return false;
-    const QPoint topLeft((width() - m_mosaicPreview.width()) / 2,
-                         (height() - m_mosaicPreview.height()) / 2);
-    const QRectF imageRect(topLeft, m_mosaicPreview.size());
-    p.drawImage(imageRect, m_mosaicPreview);
+
+    const QRect displayRect = mosaicDisplayedRect();
+    if (displayRect.isEmpty())
+        return false;
+    const QRectF imageRect(displayRect);
+
+    // 1. Fond : afficher immédiatement l'aperçu léger (m_mosaicPreview)
+    // À moins de 100% de zoom, cet aperçu léger suffit amplement et assure une fluidité totale sans lag.
+    QImage baseImage = m_mosaicPreview;
+    if (baseImage.isNull() && !m_mosaicFilePath.isEmpty()) {
+        const QString baseKey = QStringLiteral("mosaic_base|%1").arg(m_mosaicFilePath);
+        if (const QImage *cached = m_imageCache.object(baseKey)) {
+            baseImage = *cached;
+        } else {
+            baseImage = readPreviewImage(m_mosaicFilePath, QSize(1200, 1200));
+            if (!baseImage.isNull()) {
+                m_imageCache.insert(baseKey, new QImage(baseImage), std::max<qsizetype>(1, baseImage.sizeInBytes()));
+            }
+        }
+    }
+
+    if (!baseImage.isNull()) {
+        p.drawImage(imageRect, baseImage);
+    }
+
+    // 2. Affinage par viewport : UNIQUEMENT quand zoomPercent >= 100% !
+    // Dès qu'on zoome à 100% ou plus, on lit les tuiles pleine résolution (niveau 0) de la zone visible.
+    // À moins de 100% de zoom, on ne lit rien de lourd sur le disque : la navigation reste à 60+ FPS.
+    if (zoomPercent >= 100 && !m_mosaicFilePath.isEmpty() && QFileInfo::exists(m_mosaicFilePath)) {
+        const QTransform &world = p.worldTransform();
+        const QRectF visibleLocal = world.inverted().mapRect(QRectF(rect()));
+        const QRectF visibleInImage = visibleLocal.intersected(imageRect);
+
+        if (!visibleInImage.isEmpty()) {
+            const qreal screenScale = qMax(qAbs(world.m11()), qAbs(world.m12())) * devicePixelRatioF();
+
+            int tiffWidth = 0;
+            int tiffHeight = 0;
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(m_mosaicFilePath.toStdString()));
+            std::string err;
+            if (reader.getLevelDimensions(0, tiffWidth, tiffHeight, err) && tiffWidth > 0 && tiffHeight > 0) {
+                // Dimensions réelles récupérées
+            } else {
+                tiffWidth = qRound(imageRect.width());
+                tiffHeight = qRound(imageRect.height());
+            }
+
+            const double scaleToTiffX = static_cast<double>(tiffWidth) / imageRect.width();
+            const double scaleToTiffY = static_cast<double>(tiffHeight) / imageRect.height();
+
+            // Alignement sur grille de 256 px pour éviter les recalculs / cache-miss à chaque pixel de déplacement
+            constexpr int kChunk = 256;
+            const double rawOriginX = (visibleInImage.x() - imageRect.x()) * scaleToTiffX;
+            const double rawOriginY = (visibleInImage.y() - imageRect.y()) * scaleToTiffY;
+            const double originX = std::max(0.0, std::floor(rawOriginX / kChunk) * kChunk);
+            const double originY = std::max(0.0, std::floor(rawOriginY / kChunk) * kChunk);
+            const double boundRight = std::min<double>(tiffWidth, std::ceil((rawOriginX + visibleInImage.width() * scaleToTiffX) / kChunk) * kChunk);
+            const double boundBottom = std::min<double>(tiffHeight, std::ceil((rawOriginY + visibleInImage.height() * scaleToTiffY) / kChunk) * kChunk);
+            const double chunkW = std::max(1.0, boundRight - originX);
+            const double chunkH = std::max(1.0, boundBottom - originY);
+
+            const QPointF origin(originX, originY);
+            const QSize vpScreen(qMax(1, qRound(chunkW / scaleToTiffX * screenScale)),
+                                 qMax(1, qRound(chunkH / scaleToTiffY * screenScale)));
+
+            const QString vpKey = QStringLiteral("mosaic_vp|%1|%2|%3|%4|%5|%6")
+                .arg(m_mosaicFilePath)
+                .arg(qRound(origin.x()))
+                .arg(qRound(origin.y()))
+                .arg(vpScreen.width())
+                .arg(vpScreen.height())
+                .arg(zoomPercent);
+
+            QImage vpImage;
+            QRectF vpTarget;
+            if (const QImage *cached = m_imageCache.object(vpKey)) {
+                vpImage = *cached;
+                vpTarget = QRectF(imageRect.x() + originX / scaleToTiffX,
+                                  imageRect.y() + originY / scaleToTiffY,
+                                  chunkW / scaleToTiffX,
+                                  chunkH / scaleToTiffY);
+            } else if (!m_panning) {
+                // Pendant le glisser à la souris (m_panning), on ne bloque pas le fil GUI avec des lectures
+                // synchrones : le fond déjà en mémoire glisse à 120 FPS et la zone nette se charge dès relâchement
+                const auto vp = FrontendUtils::readPyramidalViewport(
+                    m_mosaicFilePath, origin, vpScreen, zoomPercent);
+                if (vp.isValid && !vp.image.isNull()) {
+                    vpImage = vp.image;
+                    vpTarget = QRectF(imageRect.x() + vp.fullResolutionRegion.x() / scaleToTiffX,
+                                      imageRect.y() + vp.fullResolutionRegion.y() / scaleToTiffY,
+                                      vp.fullResolutionRegion.width() / scaleToTiffX,
+                                      vp.fullResolutionRegion.height() / scaleToTiffY);
+                    const qsizetype cost = std::max<qsizetype>(1, vpImage.sizeInBytes());
+                    m_imageCache.insert(vpKey, new QImage(vpImage), cost);
+                }
+            }
+
+            if (!vpImage.isNull()) {
+                p.drawImage(vpTarget, vpImage);
+            }
+        }
+    }
+
     if (withSeams) drawSeamLines(p, imageRect, m_seamLines);
     return true;
 }
@@ -528,5 +630,70 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
     p.save();
     p.setClipRect(r);
     p.drawImage(targetRect, image);
+
+    // Si on est en mode fort zoom hors grille (ex. Alignement / Paires / Masques) : affiner la zone visible avec le viewport pyramidal dès 100%
+    if (modeValue != kModeGrid && zoomPercent >= 100) {
+        const QRectF visibleLocal = world.inverted().mapRect(QRectF(rect()));
+        const QRectF visibleInTile = visibleLocal.intersected(QRectF(targetRect));
+        if (!visibleInTile.isEmpty()) {
+            const QString pyrPath = FrontendUtils::findPyramidPathForSource(path);
+            const QString pathToRead = !pyrPath.isEmpty() ? pyrPath : path;
+            if (QFileInfo::exists(pathToRead)) {
+                IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pathToRead.toStdString()));
+                int w0 = 0;
+                int h0 = 0;
+                std::string err;
+                if (reader.getLevelDimensions(0, w0, h0, err) && w0 > 0 && h0 > 0) {
+                    const double scaleX = static_cast<double>(w0) / targetRect.width();
+                    const double scaleY = static_cast<double>(h0) / targetRect.height();
+                    constexpr int kChunk = 256;
+                    const double rawOriginX = (visibleInTile.x() - targetRect.left()) * scaleX;
+                    const double rawOriginY = (visibleInTile.y() - targetRect.top()) * scaleY;
+                    const double originX = std::max(0.0, std::floor(rawOriginX / kChunk) * kChunk);
+                    const double originY = std::max(0.0, std::floor(rawOriginY / kChunk) * kChunk);
+                    const double boundRight = std::min<double>(w0, std::ceil((rawOriginX + visibleInTile.width() * scaleX) / kChunk) * kChunk);
+                    const double boundBottom = std::min<double>(h0, std::ceil((rawOriginY + visibleInTile.height() * scaleY) / kChunk) * kChunk);
+                    const double chunkW = std::max(1.0, boundRight - originX);
+                    const double chunkH = std::max(1.0, boundBottom - originY);
+
+                    const QPointF origin(originX, originY);
+                    const QSize vpScreen(qMax(1, qRound(chunkW / scaleX * screenScale)),
+                                         qMax(1, qRound(chunkH / scaleY * screenScale)));
+
+                    const QString vpKey = QStringLiteral("tile_vp|%1|%2|%3|%4|%5|%6|%7|%8")
+                        .arg(path).arg(qRound(origin.x())).arg(qRound(origin.y()))
+                        .arg(vpScreen.width()).arg(vpScreen.height())
+                        .arg(zoomPercent).arg(rotation).arg(flipped ? 1 : 0);
+
+                    QImage vpImage;
+                    QRectF vpTarget;
+                    if (const QImage *cached = m_imageCache.object(vpKey)) {
+                        vpImage = *cached;
+                        vpTarget = QRectF(targetRect.left() + originX / scaleX,
+                                          targetRect.top() + originY / scaleY,
+                                          chunkW / scaleX,
+                                          chunkH / scaleY);
+                    } else if (!m_panning) {
+                        const auto vp = FrontendUtils::readPyramidalViewport(
+                            pathToRead, origin, vpScreen, zoomPercent);
+                        if (vp.isValid && !vp.image.isNull()) {
+                            vpImage = vp.image;
+                            if (flipped) vpImage = vpImage.mirrored(true, false);
+                            if (rotation != 0) vpImage = vpImage.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
+                            vpTarget = QRectF(targetRect.left() + vp.fullResolutionRegion.x() / scaleX,
+                                              targetRect.top() + vp.fullResolutionRegion.y() / scaleY,
+                                              vp.fullResolutionRegion.width() / scaleX,
+                                              vp.fullResolutionRegion.height() / scaleY);
+                            m_imageCache.insert(vpKey, new QImage(vpImage), std::max<qsizetype>(1, vpImage.sizeInBytes()));
+                        }
+                    }
+                    if (!vpImage.isNull()) {
+                        p.drawImage(vpTarget, vpImage);
+                    }
+                }
+            }
+        }
+    }
+
     p.restore();
 }

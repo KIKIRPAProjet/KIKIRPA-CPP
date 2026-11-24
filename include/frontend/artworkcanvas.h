@@ -50,6 +50,9 @@ public:
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     // Définit et mémorise l'aperçu de la mosaïque assemblée pour le mode Image finale.
     void setMosaicPreview(const QImage &image);
+    void setMosaicFilePath(const QString &path);
+    const QString &mosaicFilePath() const { return m_mosaicFilePath; }
+    QSize mosaicFullDimensions() const { return m_mosaicFullDimensions; }
 
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
@@ -161,6 +164,8 @@ private:
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
+    QString m_mosaicFilePath;
+    QSize m_mosaicFullDimensions;
     SeamLines m_seamLines;
     QVector<ResultTile> m_resultTiles;
     QVector<FrontendUtils::PairAlignmentInfo> m_allPairs;
@@ -172,6 +177,8 @@ private:
     QPointF m_panOffset;
     QPoint m_lastPanPos;
     bool m_panning = false;
+    QPoint m_panStartPos;
+    int m_clickedGridCell = -1;
     bool m_emptyCardHovered = false;
     QCache<QString, QImage> m_imageCache;
 

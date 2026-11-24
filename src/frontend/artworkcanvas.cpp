@@ -1,5 +1,8 @@
 // src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
+#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/unicode_path.h"
+#include <QFileInfo>
 
 #include <QEvent>
 #include <QKeyEvent>
@@ -18,7 +21,7 @@ constexpr int kMinImageWidth = 130;
 constexpr int kMinImageHeight = 180;
 constexpr double kPairAspect = 0.78;
 constexpr double kSingleAspect = 0.70;
-constexpr int kMinZoomPercent = 5;
+constexpr int kMinZoomPercent = 1;
 constexpr int kMaxZoomPercent = 1600;
 constexpr double kZoomWheelFactor = 1.15;
 constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour le cache d'aperçus
@@ -62,6 +65,12 @@ void ArtworkCanvas::setZoom(int zoom)
 {
     const int newZoom = qBound(kMinZoomPercent, zoom, kMaxZoomPercent);
     if (newZoom != zoomPercent) {
+        if (zoomPercent > 0) {
+            const qreal oldScale = zoomPercent / 100.0;
+            const qreal newScale = newZoom / 100.0;
+            // Préserver le centre de la vue (centre de la fenêtre) lors du zoom
+            m_panOffset = m_panOffset * (newScale / oldScale);
+        }
         zoomPercent = newZoom;
         emit zoomChanged(zoomPercent);
         update();
@@ -85,10 +94,11 @@ void ArtworkCanvas::fitToWindow()
     int fitZoom = 100;
 
     if (modeValue == kModeExport || modeValue == kModeAssembly || modeValue == MODE_SEAM) {
-        if (!m_mosaicPreview.isNull() && m_mosaicPreview.width() > 0 && m_mosaicPreview.height() > 0) {
+        const QSize displaySize = !m_mosaicFullDimensions.isEmpty() ? m_mosaicFullDimensions : m_mosaicPreview.size();
+        if (displaySize.width() > 0 && displaySize.height() > 0) {
             const QRect target = rect().adjusted(24, 24, -24, -24);
-            const double scaleX = static_cast<double>(target.width()) / m_mosaicPreview.width();
-            const double scaleY = static_cast<double>(target.height()) / m_mosaicPreview.height();
+            const double scaleX = static_cast<double>(target.width()) / displaySize.width();
+            const double scaleY = static_cast<double>(target.height()) / displaySize.height();
             const double fitScale = std::min(scaleX, scaleY);
             fitZoom = qBound(kMinZoomPercent, qRound(fitScale * 100.0), kMaxZoomPercent);
         }
@@ -194,6 +204,7 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         if (dragStartCell >= 0) {
             dragTargetCell = dragStartCell;
             selectedGridCell = dragStartCell;
+            m_panning = false;
             setCursor(Qt::ClosedHandCursor);
             if (selectionChangedCallback)
                 selectionChangedCallback(selectedGridCell);
@@ -201,6 +212,15 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
             event->accept();
             return;
         }
+
+        // Clic hors tuile (sur le fond) : déplacement panoramique au maintien du clic gauche
+        dragStartCell = -1;
+        dragTargetCell = -1;
+        m_panning = true;
+        m_lastPanPos = event->pos();
+        setCursor(Qt::ClosedHandCursor);
+        event->accept();
+        return;
     }
 
     if (modeValue == kModeExport && m_activeTool == kCropTool && event->button() == Qt::LeftButton) {
@@ -271,6 +291,12 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
         return;
     }
     if (m_panning) {
+        if (!(event->buttons() & (Qt::LeftButton | Qt::MiddleButton))) {
+            m_panning = false;
+            unsetCursor();
+            update();
+            return;
+        }
         m_panOffset += event->pos() - m_lastPanPos;
         m_lastPanPos = event->pos();
         update();
@@ -387,20 +413,32 @@ void ArtworkCanvas::leaveEvent(QEvent *event)
 void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
 {
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
-        const int targetCell = gridCellAt(event->pos());
-        if (dragStartCell >= 0 && targetCell >= 0 && targetCell != dragStartCell) {
-            if (cellsSwappedCallback)
-                cellsSwappedCallback(dragStartCell, targetCell);
+        if (dragStartCell >= 0) {
+            const int targetCell = gridCellAt(event->pos());
+            if (targetCell >= 0 && targetCell != dragStartCell) {
+                if (cellsSwappedCallback)
+                    cellsSwappedCallback(dragStartCell, targetCell);
+            }
+            dragStartCell = -1;
+            dragTargetCell = -1;
+            unsetCursor();
+            update();
+            event->accept();
+            return;
         }
-        dragStartCell = -1;
-        dragTargetCell = -1;
-        unsetCursor();
-        event->accept();
-        return;
+        if (m_panning) {
+            m_panning = false;
+            unsetCursor();
+            update();
+            event->accept();
+            return;
+        }
     }
-    if (m_panning) {
+
+    if (m_panning && (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton)) {
         m_panning = false;
         unsetCursor();
+        update();
         event->accept();
         return;
     }
@@ -487,10 +525,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     };
 
     if (modeValue == kModeExport) {
-        if (!m_mosaicPreview.isNull()) {
+        if (!m_mosaicPreview.isNull() || !m_mosaicFilePath.isEmpty()) {
             const QRect displayedRect = mosaicDisplayedRect();
             beginViewTransform();
-            p.drawImage(QRectF(displayedRect), m_mosaicPreview);
+            drawMosaicPreview(p, false);
 
             // Surcouche interactive de recadrage si l'outil est sélectionné
             if (m_activeTool == kCropTool) {
@@ -640,6 +678,9 @@ void ArtworkCanvas::setMosaicPreview(const QImage &image) {
     m_isCropped = false;
     m_cropNormalizedRect = QRectF(0, 0, 1, 1);
     m_cropSelectionRect = QRect();
+    if (m_mosaicFullDimensions.isEmpty() && !image.isNull()) {
+        m_mosaicFullDimensions = image.size();
+    }
     if (!image.isNull()) {
         fitToWindow();
     } else {
@@ -647,12 +688,31 @@ void ArtworkCanvas::setMosaicPreview(const QImage &image) {
     }
 }
 
+void ArtworkCanvas::setMosaicFilePath(const QString &path)
+{
+    m_mosaicFilePath = path;
+    if (!path.isEmpty() && QFileInfo::exists(path)) {
+        IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(path.toStdString()));
+        int w = 0;
+        int h = 0;
+        std::string err;
+        if (reader.getLevelDimensions(0, w, h, err) && w > 0 && h > 0) {
+            m_mosaicFullDimensions = QSize(w, h);
+        }
+    } else if (m_mosaicPreview.isNull()) {
+        m_mosaicFullDimensions = QSize();
+    }
+    fitToWindow();
+    update();
+}
+
 QRect ArtworkCanvas::mosaicDisplayedRect() const
 {
-    if (m_mosaicPreview.isNull()) return QRect();
-    return QRect((width() - m_mosaicPreview.width()) / 2,
-                 (height() - m_mosaicPreview.height()) / 2,
-                 m_mosaicPreview.width(), m_mosaicPreview.height());
+    const QSize displaySize = !m_mosaicFullDimensions.isEmpty() ? m_mosaicFullDimensions : m_mosaicPreview.size();
+    if (displaySize.isEmpty()) return QRect();
+    return QRect((width() - displaySize.width()) / 2,
+                 (height() - displaySize.height()) / 2,
+                 displaySize.width(), displaySize.height());
 }
 
 void ArtworkCanvas::drawCropOverlay(QPainter &painter, const QRect &imageRect)

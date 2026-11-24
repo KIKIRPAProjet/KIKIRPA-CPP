@@ -13,6 +13,7 @@
 #include <QImageReader>
 #include <QDir>
 #include <QApplication>
+#include <QMouseEvent>
 
 #include <chrono>
 #include <filesystem>
@@ -163,6 +164,11 @@ TEST(ArtworkCanvasZoomTest, ZoomInGridAndOneToOnePixel) {
     EXPECT_EQ(canvas.zoom(), 100);
     canvas.setZoom(250);
     EXPECT_EQ(canvas.zoom(), 250);
+    // Dézoom minimal (1%)
+    canvas.setZoom(1);
+    EXPECT_EQ(canvas.zoom(), 1);
+    canvas.setZoom(0);
+    EXPECT_EQ(canvas.zoom(), 1);
 
     // 2. Mode Image finale : vérification du zoom 100% = 1 pixel image pour 1 pixel écran
     const QImage testMosaic(2000, 1000, QImage::Format_RGB888);
@@ -178,6 +184,52 @@ TEST(ArtworkCanvasZoomTest, ZoomInGridAndOneToOnePixel) {
     const QRect displayedRect = canvas.mosaicDisplayedRect();
     EXPECT_EQ(displayedRect.width(), testMosaic.width());
     EXPECT_EQ(displayedRect.height(), testMosaic.height());
+}
+
+TEST(ArtworkCanvasZoomTest, GridPanOnLeftClickHoldAndRelease) {
+    ensureQApplication();
+    ArtworkCanvas canvas;
+    canvas.resize(800, 600);
+    canvas.setMode(1); // kModeGrid
+    canvas.setZoom(200);
+
+    // Initialisation avec des tuiles
+    QVector<GridTile> tiles(4);
+    tiles[0].path = QStringLiteral("dummy1.tif");
+    tiles[1].path = QStringLiteral("dummy2.tif");
+    canvas.setGridState(2, 2, tiles, 0);
+
+    // Vérification du glisser-déposer de tuiles (survol et échange)
+    int swappedFrom = -1;
+    int swappedTo = -1;
+    canvas.setGridCallbacks([](int) {}, [&](int a, int b) {
+        swappedFrom = a;
+        swappedTo = b;
+    });
+
+    // Clic et glisser sur une tuile
+    QMouseEvent pressTile(QEvent::MouseButtonPress, QPointF(200, 200), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &pressTile);
+    QMouseEvent moveTile(QEvent::MouseMove, QPointF(400, 200), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &moveTile);
+    QMouseEvent releaseTile(QEvent::MouseButtonRelease, QPointF(400, 200), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &releaseTile);
+
+    // 1. Clic gauche enfoncé sur le fond hors tuile (par ex. (10, 10) dans la marge)
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(10, 10), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &press);
+
+    // 2. Déplacement avec clic gauche maintenu sur le fond
+    QMouseEvent moveWhileHeld(QEvent::MouseMove, QPointF(50, 30), Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &moveWhileHeld);
+
+    // 3. Relâchement du clic gauche (MouseButtonRelease) : doit quitter immédiatement le panning
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(50, 30), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &release);
+
+    // 4. Déplacement de la souris sans bouton enfoncé : ne doit PLUS modifier la vue
+    QMouseEvent moveAfterRelease(QEvent::MouseMove, QPointF(80, 80), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(&canvas, &moveAfterRelease);
 }
 
 TEST(PyramidalPreviewQuality, ZoomLevelSelectionScalesQuality) {
@@ -204,6 +256,20 @@ TEST(PyramidalPreviewQuality, ZoomLevelSelectionScalesQuality) {
     EXPECT_FALSE(highRes.isNull());
     EXPECT_EQ(highRes.width(), 2000);
     EXPECT_EQ(highRes.height(), 1500);
+
+    // Lecture par viewport : à 100% de zoom, lit au niveau 0 pleine résolution
+    const auto vp100 = FrontendUtils::readPyramidalViewport(pyramidPathQt, QPointF(100, 100), QSize(300, 200), 100.0);
+    EXPECT_TRUE(vp100.isValid);
+    EXPECT_EQ(vp100.level, 0);
+    EXPECT_FALSE(vp100.image.isNull());
+    EXPECT_EQ(vp100.image.width(), 300);
+    EXPECT_EQ(vp100.image.height(), 200);
+
+    // Lecture par viewport : à 25% de zoom, choisit un niveau réduit
+    const auto vp25 = FrontendUtils::readPyramidalViewport(pyramidPathQt, QPointF(0, 0), QSize(100, 75), 25.0);
+    EXPECT_TRUE(vp25.isValid);
+    EXPECT_EQ(vp25.level, 2);
+    EXPECT_FALSE(vp25.image.isNull());
 
     fs::remove_all(tempDir, ec);
 }

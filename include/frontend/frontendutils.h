@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPointF>
 #include <QRect>
+#include <QRectF>
 #include <QSize>
 #include <QString>
 #include <QStringList>
@@ -30,6 +31,14 @@ namespace cv {
 namespace FrontendUtils {
 
 extern const QStringList MODE_NAMES;
+
+constexpr int kModeGrid = 1;
+constexpr int kModeMasks = 2;
+constexpr int kModePair = 3;
+constexpr int MODE_SEAM = 4;
+constexpr int kModeSeam = 4;
+constexpr int kModeAssembly = 5;
+constexpr int kModeExport = 6;
 
 struct PipelineStepInfo {
     std::string technicalName;
@@ -112,6 +121,27 @@ PairAlignmentInfo pairInfoFromBackend(int pairIndex,
 
 // Valeur mesurée avec `decimals` décimales (virgule) suivie de `suffix`, ou « non disponible ».
 QString formatMeasure(const std::optional<double> &value, int decimals, const QString &suffix = QString());
+
+struct PyramidalViewport {
+    QImage image;
+    QRectF fullResolutionRegion;
+    int level = 0;
+    bool isValid = false;
+};
+
+QString findPyramidPathForSource(const QString &sourcePath);
+QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize);
+QImage matToQImage(const cv::Mat &mat);
+
+PyramidalViewport readPyramidalViewport(
+    const QString &path,
+    const QPointF &originInFullResolution,
+    const QSize &viewportScreenSize,
+    double zoomPercent
+);
+
+int nextZoomIn(int currentZoom);
+int nextZoomOut(int currentZoom);
 
 }
 

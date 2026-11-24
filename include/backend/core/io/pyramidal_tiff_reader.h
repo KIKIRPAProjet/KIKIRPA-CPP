@@ -12,6 +12,13 @@
 
 namespace IONs {
 
+    struct PyramidViewportRegion {
+        int level = 0;                           // niveau lu, 0 = résolution d'origine
+        cv::Rect region;                         // rectangle lu dans les coordonnées de `level`
+        cv::Rect2d fullResolutionRegion;         // rectangle couvert, dans le niveau 0
+        cv::Mat pixels;                          // pixels correspondant à `region`
+    };
+
     // Lecteur d'un TIFF pyramidal produit par createPyramidalTiledTiff.
     // Chaque lecture ouvre et ferme le fichier afin que les appels restent indépendants.
     class PyramidalTiffReaderClass {
@@ -36,6 +43,23 @@ namespace IONs {
 
             // Nombre total de niveaux dans la pyramide (1 si non pyramidal).
             int getLevelCount() const;
+
+            // Dimensions des niveaux présents dans le TIFF, du niveau 0 aux niveaux réduits.
+            bool readPyramidDimensions(
+                std::vector<cv::Size>& dimensions,
+                std::string& errorMessage
+            ) const;
+
+            // Lit la zone visible. origin est en pixels pleine résolution; viewportSize est en
+            // pixels écran; zoomPercent est un facteur d'affichage (100 = 1 pixel source par
+            // pixel écran). Une partie du viewport hors image est tronquée.
+            bool readViewport(
+                const cv::Point2d& origin,
+                const cv::Size& viewportSize,
+                double zoomPercent,
+                PyramidViewportRegion& output,
+                std::string& errorMessage
+            ) const;
 
             // `region` est exprimée dans le repère du niveau demandé et doit y être entièrement contenue.
             // `output` reçoit exactement ses dimensions et son type.
