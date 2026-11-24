@@ -22,10 +22,12 @@
 #include "dialog_helpers.h"
 #include "frontendutils.h"
 #include "homepage.h"
+#include "left_toolbar.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
 #include "projectgrid.h"
+#include "pipeline_results.h"
 #include "pipeline_runner.h"
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
@@ -59,6 +61,7 @@
 #include <QtMath>
 #include <QProgressDialog>
 
+#include <algorithm>
 #include <filesystem>
 #include <functional>
 #include <stdexcept>
@@ -69,6 +72,10 @@
 #include <wincodec.h>
 #include <windows.h>
 #endif
+
+namespace {
+constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -195,13 +202,15 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
+            this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                     canvas->setMosaicPreview(image);
-                    setMode(5); // 5 = Mode "Export", forcera l'affichage de l'image
+                    setMode(kModeExport); // Image finale : forcera l'affichage de l'image
                     updateStatus(tr("Mosaïque finale générée."));
-                    QTimer::singleShot(0, this, &MainWindow::showExportDialog);
+                    // L'export est accessible via le bouton "Exporter…" dans la barre supérieure.
                 }
     });
 }
@@ -275,19 +284,9 @@ void MainWindow::setupPageConnections()
 
 void MainWindow::setupPairAlignmentConnections()
 {
-    //seule ligne qui sera modifiée
-    m_pairs = FrontendUtils::defaultPairAlignments(); 
+    // Aucune paire tant qu'aucun calcul n'a été fait : elles arrivent avec PipelineRunnerClass::resultsReady.
+    m_pairs.clear();
     m_currentPairIndex = 0;
-
-    /* À décommenter lors de la connexion au backend (remplace defaultPairAlignments() après le run) ---
-    // Lorsque le DataStoreClass du pipeline contient la clé "matches" :
-    // m_pairs.clear();
-    // const auto &backendPairs = dataStore.get<std::vector<DataNs::PairMatches>>("matches");
-    // for (int i = 0; i < static_cast<int>(backendPairs.size()); ++i) {
-    //     m_pairs.append(FrontendUtils::pairInfoFromBackend(
-    //         i, tileNameA, tileNameB, backendPairs[i]));
-    // }
-    */
 
     if (RightPanel *right = workspaceUI->rightPanel()) {
         if (AlignmentTab *alignTab = right->alignmentTab()) {
@@ -369,6 +368,8 @@ void MainWindow::validatePair(int pairIndex)
 }
 
 //met à jours les variables après modification manuelle
+// La correction devient une donnée du projet : le step manual-matches remplace les points de la paire, puis le calcul
+// repart de ce step (l'import et l'appariement sont repris de leurs checkpoints).
 void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
 {
     if (pairIndex < 0 || pairIndex >= m_pairs.size())
@@ -380,16 +381,27 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
                             .arg(QString::number(dx, 'f', 1).replace('.', ','),
                                  QString::number(dy, 'f', 1).replace('.', ','));
     refreshPairViews();
+
+    FrontendNs::PipelineChoices choices = projectGrid->state().pipelineChoices;
+    choices.manualCorrections =
+        FrontendNs::withCorrection(choices.manualCorrections, FrontendNs::manualCorrectionFor(pair, dx, dy));
+    projectGrid->setPipelineChoices(choices);
+    const auto steps = FrontendUtils::pipelineSteps(choices);
+    const auto manualStep = std::find_if(steps.begin(), steps.end(), [](const FrontendUtils::PipelineStepInfo &step) {
+        return step.technicalName == "manual-matches";
+    });
+    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pair.pairLabel()));
+    if (manualStep != steps.end())
+        requestRun(static_cast<int>(manualStep - steps.begin()) + 1);
 }
 
 //comptage du nombre de paire douteuse et en échec, mise à jour des tables 
 void MainWindow::refreshPairViews()
 {
-    if (m_pairs.isEmpty())
-        return;
-
-    m_currentPairIndex = qBound(0, m_currentPairIndex, m_pairs.size() - 1);
-    const auto &currentPair = m_pairs.at(m_currentPairIndex);
+    // Sans paire (aucun calcul fait), les vues sont vidées : le canevas invite à lancer l'assemblage.
+    m_currentPairIndex = m_pairs.isEmpty() ? 0 : qBound(0, m_currentPairIndex, static_cast<int>(m_pairs.size()) - 1);
+    const FrontendUtils::PairAlignmentInfo currentPair =
+        m_pairs.isEmpty() ? FrontendUtils::PairAlignmentInfo() : m_pairs.at(m_currentPairIndex);
 
     int dubiousCount = 0;
     int failedCount = 0;
@@ -415,10 +427,10 @@ void MainWindow::refreshPairViews()
     }
 
     if (WorkspaceStatusBar *status = workspaceUI->workspaceStatusBar()) {
-        status->updatePairSummary(m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
+        status->updatePairSummary(m_pairs.isEmpty() ? 0 : m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
     }
 
-    if (currentMode == 3) {
+    if (currentMode == 3 && !m_pairs.isEmpty()) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
             label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
@@ -426,11 +438,29 @@ void MainWindow::refreshPairViews()
     }
 }
 
+void MainWindow::applyPipelineResults(const PipelineResults &results)
+{
+    m_pairs = results.pairs;
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(results.seams);
+        canvasView->setAlignmentOverview(results.tiles, results.pairs);
+    }
+    refreshPairViews();
+}
+
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
                                       const QString &selectedOutputDirectory,
                                       const QStringList &newTilePaths)
 {
     mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
+        top->setExportVisible(false);
+    }
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -472,6 +502,13 @@ void MainWindow::applyLoadedProject(const QString &path)
         return;
     const bool resume = opening.clickedButton() == resumeButton;
     mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
+        top->setExportVisible(false);
+    }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
@@ -503,7 +540,7 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
-    currentMode = qBound(0, mode, 5);
+    currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
         const int gridIndex = workspaceUI->rightTabs()->indexOf(workspaceUI->gridTabPage());
@@ -523,8 +560,10 @@ void MainWindow::setMode(int mode)
     const QStringList descriptions = {
         tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
         tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
-        tr("Vue Paire : points de contrôle et correction"), tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
-        tr("Export : TIFF 16 bits, profil ICC conservé")
+        tr("Vue Paire : points de contrôle et correction"),
+        tr("Ligne de couture : frontières entre les tuiles, calculées par l'assemblage"),
+        tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
+        tr("Image finale : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
         label->setText(descriptions.at(currentMode));
@@ -537,6 +576,33 @@ void MainWindow::setMode(int mode)
     if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
+    }
+
+    // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
+    const bool isExportMode = (currentMode == kModeExport);
+    if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("applyCropButton"))) {
+        applyCropBtn->setVisible(isExportMode);
+    }
+    if (auto *resetCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("resetCropButton"))) {
+        resetCropBtn->setVisible(isExportMode);
+    }
+    if (auto *exportBtn = workspaceUI->workspace()->findChild<QPushButton *>(
+                QStringLiteral("exportImageButton"))) {
+        exportBtn->setVisible(isExportMode);
+    }
+    // Outil de recadrage dans la barre latérale uniquement visible en mode Image finale (kModeExport)
+    if (workspaceUI && workspaceUI->leftToolbar()) {
+        workspaceUI->leftToolbar()->setToolVisible(LeftToolbar::kCropToolIndex, isExportMode);
+    }
+    // Si l'on quitte le mode Image finale alors que l'outil de recadrage était actif, on désactive l'outil
+    if (!isExportMode) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->activeTool() == LeftToolbar::kCropToolIndex) {
+                canvas->setActiveTool(-1);
+            }
+        }
     }
     if (currentMode == 1)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
@@ -823,6 +889,36 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         selectNextDubiousPair();
         event->accept();
         return;
+    }
+    // Raccourci clavier (touche C) : active l'outil de recadrage uniquement en mode Image finale (kModeExport).
+    if (event->key() == Qt::Key_C && currentMode == kModeExport) {
+        if (workspaceUI && workspaceUI->leftToolbar()) {
+            workspaceUI->leftToolbar()->selectTool(LeftToolbar::kCropToolIndex);
+            event->accept();
+            return;
+        }
+    }
+    // Raccourci clavier (touches Entrée / Return) : valide le recadrage si une sélection existe.
+    if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->hasActiveCropSelection()) {
+                canvas->applyCrop();
+                updateStatus(tr("Recadrage validé et appliqué à l'image."));
+                event->accept();
+                return;
+            }
+        }
+    }
+    // Raccourci clavier (touche Échap) : annule la boîte de sélection de recadrage en cours.
+    if (event->key() == Qt::Key_Escape) {
+        if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr)) {
+            if (canvas->hasActiveCropSelection()) {
+                canvas->cancelCropSelection();
+                updateStatus(tr("Sélection de recadrage annulée."));
+                event->accept();
+                return;
+            }
+        }
     }
     QMainWindow::keyPressEvent(event);
 }
