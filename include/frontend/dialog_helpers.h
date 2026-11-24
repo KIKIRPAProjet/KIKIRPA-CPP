@@ -1,5 +1,4 @@
-#ifndef DIALOG_HELPERS_H
-#define DIALOG_HELPERS_H
+#pragma once
 
 #include <QString>
 
@@ -16,5 +15,3 @@ void showComparisonDialog(QWidget *parent, PipelineRunnerClass *pipelineRunner);
 bool confirmRunRestart(QWidget *parent, int firstStep);
 void showCreditsDialog(QWidget *parent);
 }
-
-#endif

@@ -1,5 +1,4 @@
-#ifndef MENUBAR_MANAGER_H
-#define MENUBAR_MANAGER_H
+#pragma once
 
 #include <QObject>
 
@@ -22,17 +21,12 @@ signals:
     void exportRequested();
     void homeRequested();
     void quitRequested();
-    void undoRequested();
-    void redoRequested();
     void togglePanelsRequested();
     void zoomInRequested();
     void zoomOutRequested();
     void fitToWindowRequested();
-    void modeChangeRequested(int mode);
     void runRequested(int startStep);
     void comparisonRequested();
     void aboutRequested();
     void creditsRequested();
 };
-
-#endif
