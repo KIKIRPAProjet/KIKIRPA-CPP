@@ -15,7 +15,7 @@ Premier step de tout pipeline. Il crée la fiche de chaque tuile (`DataNs::TileC
 
 - **Lit** les images données par la liste `tiles`, ou, si elle est vide, les images du dossier `path`. Le step n'a aucune entrée dans le DataStore : c'est le premier.
 - **Écrit** dans `tiles` une fiche par image, dans l'ordre ligne puis colonne. Une fiche ne contient aucun pixel : seulement l'identifiant, la case, les chemins de la source et du TIFF pyramidal, les dimensions, le type OpenCV et les voisines (voir « Ce que contient une fiche »).
-- **Écrit aussi sur le disque**, hors du DataStore, un TIFF pyramidal par image : `<path>/.cache/pyramids/<id>_<nom>_pyramid.tif`. L'`id` en tête rend le nom unique, même pour deux images de même nom (`a.tif` et `a.tiff`, ou deux dossiers différents dans la liste).
+- **Écrit aussi sur le disque**, hors du DataStore, un TIFF pyramidal par image : `<path>/.cache/pyramids/<nom>_<empreinte>_pyramid.tif`, où l'empreinte (8 chiffres hexadécimaux) est calculée sur le chemin complet de l'image. Le nom est donc unique même pour deux images de même nom (`a.tif` et `a.tiff`, ou deux dossiers différents dans la liste), et ne dépend pas de la case : une grille réorganisée réutilise ses pyramides. À côté, `<pyramide>.source.json` garde la provenance (chemin, taille, date de la source). Les règles sont dans `core/io/pyramid_cache.h`, partagé avec l'interface, qui prépare les mêmes fichiers en arrière-plan dès l'import des tuiles.
 
 `getResult()` : `tiles` (nombre de tuiles créées) et `placement` (d'où viennent les cases : `list`, `fileName` ou `nameOrder`), ou `error`.
 
@@ -36,7 +36,7 @@ Le nom des fichiers n'est **jamais exigé** : il sert seulement s'il donne la ca
 
 ```json
 { "name": "import", "parameters": [
-    { "valueType": "string", "name": "path",  "value": "D:/oeuvres/VanDerVeken" },
+    { "valueType": "string", "name": "path",  "value": "D:/oeuvres/Polyptik" },
     { "valueType": "json",   "name": "tiles", "value": [
         { "file": "2_no filter f8 v30 20cm.tif", "row": 0, "column": 0 },
         { "file": "3_no filter f8 v30 20cm.tif", "row": 0, "column": 1 },
@@ -55,7 +55,7 @@ Le nom des fichiers n'est **jamais exigé** : il sert seulement s'il donne la ca
 
 ```json
 { "name": "import", "parameters": [
-    { "valueType": "string", "name": "path",    "value": "D:/oeuvres/VanDerVeken" },
+    { "valueType": "string", "name": "path",    "value": "D:/oeuvres/Polyptik" },
     { "valueType": "int",    "name": "columns", "value": 2 } ] }
 ```
 
@@ -65,7 +65,7 @@ Avec `1_….tif`, `2_….tif`, `3_….tif` et `4_….tif`, on obtient `1` et `2`
 
 1. Liste les images et leur case : celles de `tiles`, sinon les fichiers du dossier qui correspondent à `format`, sinon toutes les images TIFF du dossier, rangées dans l'ordre de leurs noms sur `columns` colonnes.
 2. Les trie **ligne par ligne, puis colonne par colonne**. L'identifiant d'une tuile (`TileClass::getId()`) est sa place dans cet ordre : 0, 1, 2… C'est cet identifiant que les autres steps utilisent (`tileIdA`, `tileIdB`, `tileId` des positions…). Deux tuiles dans la même case font échouer le step.
-3. Pour chaque image : la lit en entier (`cv::imread`, `IMREAD_UNCHANGED`, ce qui garde les 16 bits), écrit `<path>/.cache/pyramids/<id>_<nom>_pyramid.tif`, crée la fiche avec sa case (`setGridPosition`), puis libère l'image. **Une seule image est en mémoire à la fois.**
+3. Pour chaque image : si sa pyramide existe et que sa provenance est **identique** à l'empreinte actuelle de la source (même chemin, même taille, même date), la réutilise sans lire l'image (dimensions et type lus dans la pyramide). Sinon, lit l'image en entier (`cv::imread`, `IMREAD_UNCHANGED`, ce qui garde les 16 bits), écrit la pyramide (fichier temporaire puis renommage) et sa provenance, puis libère l'image. Une source remplacée, même par un fichier plus ancien, refait donc sa pyramide. Crée ensuite la fiche avec sa case (`setGridPosition`). **Une seule image est en mémoire à la fois.**
 4. Relie les voisines (gauche, droite, haut, bas) d'après les cases. Une case vide de la grille donne une voisine nulle.
 
 Le TIFF pyramidal est **réécrit à chaque exécution** du step, même s'il existe déjà. Seule la reprise par checkpoint évite de refaire l'import.
@@ -89,10 +89,10 @@ Le TIFF pyramidal est **réécrit à chaque exécution** du step, même s'il exi
 ```json
 [
   { "id": 0, "source": "D:/oeuvre/tuiles/2_no filter.tif", "row": 0, "column": 0,
-    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/0_2_no filter_pyramid.tif",
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/2_no filter_3f1c9a07_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": -1, "right": 1, "top": -1, "bottom": 2 },
   { "id": 1, "source": "D:/oeuvre/tuiles/3_no filter.tif", "row": 0, "column": 1,
-    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/1_3_no filter_pyramid.tif",
+    "tiff": "D:/oeuvre/tuiles/.cache/pyramids/3_no filter_8b42d5e1_pyramid.tif",
     "width": 9000, "height": 7000, "type": 18, "left": 0, "right": -1, "top": -1, "bottom": 3 }
 ]
 ```

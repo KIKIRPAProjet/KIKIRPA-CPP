@@ -1,6 +1,8 @@
 // include/frontend/pipeline_runner.h
 #pragma once
 
+#include "pipeline_results.h"
+
 #include <QImage>
 #include <QObject>
 #include <QString>
@@ -57,6 +59,8 @@ class PipelineRunnerClass : public QObject {
         void logMessage(const QString& message);
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
+        void mosaicFileReady(const QString& imagePath);
+        void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
 
     private:

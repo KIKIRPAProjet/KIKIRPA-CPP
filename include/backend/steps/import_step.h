@@ -42,9 +42,11 @@ namespace StepsNs {
     //     `columns` colonnes : le nom des fichiers n'est jamais exigé.
     // Dans les deux cas, l'identifiant d'une tuile est son rang dans l'ordre ligne par ligne, puis colonne par colonne
     // (0, 1, 2...), calculé par le step.
-    // Pour chaque image, il écrit un TIFF tuilé pyramidal <path>/.cache/pyramids/<id>_<nom>_pyramid.tif (voir
-    // createPyramidalTiledTiff) ; les steps suivants lisent la tuile à partir de lui, pas de l'image d'origine. Les
-    // voisines (gauche, droite, haut, bas) sont déduites des cases. Une seule image est en mémoire à la fois.
+    // Pour chaque image, il écrit un TIFF tuilé pyramidal <path>/.cache/pyramids/<nom>_<empreinte du chemin>_pyramid.tif
+    // (voir core/io/pyramid_cache.h), ou réutilise celui qui a été produit à partir de la version actuelle de l'image
+    // (par un import précédent ou par l'interface) ; les steps suivants lisent la tuile à partir de lui, pas de
+    // l'image d'origine. Les voisines (gauche, droite, haut, bas) sont déduites des cases. Une seule image est en
+    // mémoire à la fois.
     //
     // Nom : "import".   Paramètres : path (string), format (string), columns (int), tiles (json).
     // Entrées : aucune.   Sortie : "Tiles" (clé "tiles").

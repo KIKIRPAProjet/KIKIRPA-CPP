@@ -45,7 +45,7 @@ namespace fs = std::filesystem;
 namespace StitchingNs::TestsNs {
 
 constexpr double FRACTIONAL_POINT_COUNT = 2.5;
-constexpr int PHASE_PARAMETER_COUNT = 15;
+constexpr int PHASE_PARAMETER_COUNT = 17;
 constexpr int TEXTURE_SEED = 12345;
 constexpr double PIXEL_MINIMUM = 2000.0;
 constexpr double PIXEL_MAXIMUM = 60000.0;
@@ -336,7 +336,7 @@ void testerRegistre() {
     std::cout << "Registre des steps\n";
     const std::set<std::string> attendus = {
         "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification", "fusion",
-        "graphcut", "import", "intensity-correction", "lightglue", "overlap-estimation",
+        "graphcut", "import", "intensity-correction", "lightglue", "manual-matches", "overlap-estimation",
         "phase-correlation", "sift", "vote-2d"};
     const auto noms = PipelineNs::getRegisteredStepNames();
     const std::set<std::string> enregistres(noms.begin(), noms.end());
@@ -365,7 +365,7 @@ void testerDefaults() {
     }
     verifier(path == "ailleurs/", "option fournie : valeur remplacée");
     verifier(format == StepsNs::ImportInput{}.format, "option absente : valeur par défaut gardée");
-    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 15 options");
+    verifier(p.getSteps()[1]->getConfigJson().at("parameters").size() == PHASE_PARAMETER_COUNT, "phase-correlation garde ses 17 options");
 
     std::cout << "Aller-retour exportConfig -> buildPipeline\n";
     const PipelineNs::PipelineClass copie = PipelineNs::buildPipeline(p.exportConfig());

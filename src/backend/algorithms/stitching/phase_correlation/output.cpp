@@ -106,10 +106,7 @@ namespace PhaseCorrelationNs {
                    "(ratio " + formatNumber(diagnostic.unconstrainedPeakRatio, 2) + "): weakly textured area, repetitive "
                    "pattern or very wrong nominal overlap";
 
-        // Recouvrement réel estimé : la bande nominale commence à `origin` ; le pic la décale de `alongShift`
-        const double tileLength = isBottom ? pair.imageA.rows : pair.imageA.cols;
-        const double stripStart = isBottom ? strips.origin.y : strips.origin.x;
-        const double actualOverlapFraction = (tileLength - stripStart - alongShift) / tileLength;
+        const double actualOverlapFraction = findOutOfMarginPeak(diagnostic, pair, strips, parameters)->overlapFraction;
         return "translation outside the rail margin: " + offsetText + " (ratio " +
                formatNumber(diagnostic.unconstrainedPeakRatio, 2) + "). Increase the rail margin (Parameters::railMargin, "
                "'marge' in the step, >= " +
@@ -117,6 +114,17 @@ namespace PhaseCorrelationNs {
                " px) or give the actual overlap (about " + formatNumber(actualOverlapFraction * 100, 0) + " % instead of " +
                formatNumber(context.overlapFraction * 100, 0) + " %). To check: on a repetitive pattern, this peak may be "
                "wrong";
+    }
+
+    std::optional<OutOfMarginPeak> OutputClass::findOutOfMarginPeak(const Diagnostic& diagnostic, const OrientedPair& pair,
+                                                                    const Strips& strips, const Parameters& parameters) {
+        if (!diagnostic.isOutsideMargin || diagnostic.unconstrainedPeakRatio < parameters.minimumPeakRatio) return std::nullopt;
+        // Recouvrement réel : la bande nominale commence à `origin` ; le pic la décale de `alongShift`
+        const bool isBottom = pair.direction == Direction::Bottom;
+        const double alongShift = isBottom ? diagnostic.unconstrainedPeak.y : diagnostic.unconstrainedPeak.x;
+        const double tileLength = isBottom ? pair.imageA.rows : pair.imageA.cols;
+        const double stripStart = isBottom ? strips.origin.y : strips.origin.x;
+        return OutOfMarginPeak{(tileLength - stripStart - alongShift) / tileLength, diagnostic.unconstrainedPeakRatio};
     }
 
     std::string OutputClass::describeCommonAreaFailure(cv::Point2d translation, const Parameters& parameters) {

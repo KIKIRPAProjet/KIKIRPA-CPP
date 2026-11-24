@@ -12,7 +12,7 @@ Première installation sur un poste, pas à pas, avec les problèmes courants : 
 | libtiff | oui | TIFF tuilés pyramidaux (`core/io/pyramidal_tiff_writer`) |
 | nlohmann_json 3 | oui | téléchargé automatiquement (`FetchContent`) s'il n'est pas installé |
 | ONNX Runtime 1.20.1 | oui | LightGlue ; téléchargé automatiquement à la configuration |
-| Qt 6 (Widgets, Concurrent) | oui | GUI (`kikirpa_frontend`) |
+| Qt 6 (Widgets, Concurrent, plugins imageformats) | oui | GUI (`kikirpa_frontend`) et lecture des TIFF |
 | GoogleTest | oui, sauf avec `-DBUILD_TESTING=OFF` | tests unitaires (`ctest`) |
 | Clang et clang-tidy | non | vérifications statiques des sources C++ (`ENABLE_CLANG_TIDY=ON`) |
 
@@ -32,9 +32,9 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 4. **Qt 6 binaire avec aqt**. Installer Python si nécessaire, puis exécuter :
    ```bat
    python -m pip install --user aqtinstall
-   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt --archives qtbase
+   python -m aqt install-qt windows desktop 6.10.3 win64_msvc2022_64 -O C:\Qt -m qtimageformats --archives qtbase qtimageformats
    ```
-   Cette commande installe Qt Widgets et Concurrent sans les compiler depuis les sources.
+   Cette commande installe Qt Widgets, Concurrent et le plugin Qt Image Formats requis pour les fichiers TIFF.
 5. **Variables d'environnement** utilisateur, une seule fois, puis rouvrir le terminal ou l'IDE :
    ```bat
    setx KIKIRPA_VCPKG_ROOT C:\vcpkg
@@ -58,7 +58,7 @@ Les binaires officiels d'OpenCV pour Windows ne se lient **qu'avec MSVC**, pas a
 Installer les dépendances une seule fois :
 
 ```bash
-brew install cmake opencv@4 libtiff qtbase googletest
+brew install cmake opencv@4 libtiff qtbase qtimageformats googletest
 ```
 
 La formule `opencv` de Homebrew installe désormais OpenCV 5, qui n'est pas encore
@@ -84,7 +84,7 @@ Pour l'exécution locale de l'application ou en cas de problème lié aux plugin
 
 ```bash
 sudo apt-get install build-essential cmake ninja-build libopencv-dev libtiff-dev nlohmann-json3-dev \
-    qt6-base-dev libgtest-dev
+    qt6-base-dev qt6-image-formats-plugins libgtest-dev
 cmake --preset linux
 cmake --build --preset linux
 ctest --preset linux
@@ -122,7 +122,12 @@ modifie par rapport à `main`, et fait échouer le job si un diagnostic est émi
 
 ## ONNX Runtime et modèle LightGlue
 
-Rien à installer : à la première configuration, CMake télécharge l'archive officielle d'ONNX Runtime 1.20.1 dans `build/.../_deps`, en vérifiant son empreinte SHA256. Si les tests sont activés, il télécharge aussi le modèle de test (environ 63 Mo) dans `build/.../models`. Une connexion internet est donc nécessaire la première fois.
+Sous Windows, rien à installer : à la première configuration, CMake télécharge ONNX Runtime 1.20.1 dans `build/.../_deps`, en vérifiant son empreinte. Si les tests sont activés, il télécharge aussi le modèle de test (environ 63 Mo) dans `build/.../models`. Une connexion internet est donc nécessaire la première fois.
+
+> **Depuis le 17/11/2026, les archives d'ONNX Runtime ne sont plus sur GitHub** (404).
+> - Windows : CMake télécharge à la place le paquet NuGet officiel de Microsoft, `Microsoft.ML.OnnxRuntime` 1.20.1 (environ 108 Mo, empreinte SHA512 vérifiée). Rien ne change pour l'utilisateur.
+> - Linux et macOS : la configuration échoue tant qu'on ne fournit pas une installation d'ONNX Runtime avec `-DONNXRUNTIME_ROOT=<dossier>`, un dossier qui contient `include/` et `lib/` (par exemple une archive 1.20.1 déjà extraite).
+> - La CI Linux installe le paquet Debian trixie (`libonnxruntime-dev`, version **1.21.0**) et configure avec `-DONNXRUNTIME_ROOT=/usr`. C'est une autre version que sous Windows : les résultats LightGlue peuvent différer légèrement. À ne pas reproduire sur un poste de développement (dépôt Debian ajouté à Ubuntu).
 
 Pour travailler hors ligne, indiquer des fichiers déjà présents :
 

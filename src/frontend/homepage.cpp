@@ -25,6 +25,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QJsonArray>
@@ -36,6 +37,7 @@
 #include <QMessageBox>
 #include <QObject>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QVBoxLayout>
 
@@ -50,9 +52,15 @@ HomePage::HomePage(QWidget *parent)
     side->setStyleSheet(QStringLiteral("background:#202020;"));
     auto *sideLayout = new QVBoxLayout(side);
     sideLayout->setContentsMargins(20, 24, 20, 20);
+    // En haut à gauche : le logo du projet suivi du nom de l'application.
+    auto *brandRow = new QHBoxLayout;
+    brandRow->setSpacing(10);
+    brandRow->addWidget(FrontendUtils::logoLabel(40, side));
     auto *brand = new QLabel(tr("KIK-IRPA Assemblage"), side);
     brand->setStyleSheet(QStringLiteral("font-size:18px;font-weight:600;color:#d5d5d5;"));
-    sideLayout->addWidget(brand);
+    brand->setWordWrap(true); // la colonne fait 245 px : à côté du logo, le nom passe sur deux lignes
+    brandRow->addWidget(brand, 1);
+    sideLayout->addLayout(brandRow);
     sideLayout->addSpacing(14);
     sideLayout->addWidget(FrontendUtils::mutedLabel(
         tr("Assemblage de tuiles haute résolution\n"
@@ -64,7 +72,7 @@ HomePage::HomePage(QWidget *parent)
     sideLayout->addWidget(open);
     sideLayout->addStretch();
     sideLayout->addWidget(FrontendUtils::mutedLabel(
-        tr("Manuel d'utilisation · Raccourcis clavier · À propos"), side));
+        tr("À propos"), side));
     layout->addWidget(side);
 
     auto *recentArea = new QWidget(this);
@@ -73,12 +81,23 @@ HomePage::HomePage(QWidget *parent)
     recentLayout->addWidget(new QLabel(tr("Projets récents"), recentArea));
     recentEmptyLabel = FrontendUtils::mutedLabel(tr("Aucun projet récent."), recentArea);
     recentLayout->addWidget(recentEmptyLabel);
-    auto *cardsContainer = new QWidget(recentArea);
+
+    auto *cardsScroll = new QScrollArea(recentArea);
+    cardsScroll->setWidgetResizable(true);
+    cardsScroll->setFrameShape(QFrame::NoFrame);
+    cardsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    cardsScroll->setMinimumHeight(130);
+    auto *cardsContainer = new QWidget(cardsScroll);
     recentCardsLayout = new QHBoxLayout(cardsContainer);
     recentCardsLayout->setContentsMargins(0, 0, 0, 0);
     recentCardsLayout->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    recentLayout->addWidget(cardsContainer);
-    recentLayout->addStretch();
+    cardsScroll->setWidget(cardsContainer);   // sinon la zone de défilement, hors mise en page, recouvre les titres
+    recentLayout->addWidget(cardsScroll);
+    // Au milieu de l'espace libre : le logo en grand, gris et sans fond (resources/logo/logo_home.png).
+    recentLayout->addStretch(1);
+    recentLayout->addWidget(FrontendUtils::logoLabel(400, recentArea, QStringLiteral(":/logo/logo_home.png")),
+                            0, Qt::AlignHCenter);
+    recentLayout->addStretch(1);
     layout->addWidget(recentArea, 1);
 
     connect(newProject, &QPushButton::clicked, this, &HomePage::createProject);
@@ -223,11 +242,6 @@ void HomePage::createProject()
     if (selectedTileDirectory.isEmpty())
         return;
 
-    const QString selectedOutputDirectory = QFileDialog::getExistingDirectory(
-        this, tr("Choisir le dossier de sortie"));
-    if (selectedOutputDirectory.isEmpty())
-        return;
-
     const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
         {QStringLiteral("*.tif"), QStringLiteral("*.tiff")},
         QDir::Files, QDir::Name);
@@ -236,7 +250,7 @@ void HomePage::createProject()
         tilePaths.append(tileFile.absoluteFilePath());
 
     emit projectCreationRequested(name, selectedTileDirectory,
-                                  selectedOutputDirectory, tilePaths);
+                                  QString(), tilePaths);
 }
 
 void HomePage::openProject()

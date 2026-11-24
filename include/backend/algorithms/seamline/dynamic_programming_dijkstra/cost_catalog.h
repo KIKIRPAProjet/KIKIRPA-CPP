@@ -16,7 +16,7 @@
 // (terme couleur, terme gradient, coût traité). Seul `treated` est utilisé par les solveurs ;
 // les deux premiers termes servent à l'illustration.
 //
-// ⚠️ Ces cartes ne servent qu'à CHOISIR le chemin. L'image finale reste un « hard-cut » de pixels
+// Ces cartes ne servent qu'à CHOISIR le chemin. L'image finale reste un « hard-cut » de pixels
 //    réels : aucun flou ni aucune égalisation n'est appliqué aux pixels de la mosaïque.
 //
 // Exemple : fonction de référence, bruit, norme euclidienne, sigmoïde, rappel vers le centre.

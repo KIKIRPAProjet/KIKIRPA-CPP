@@ -9,6 +9,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -163,6 +164,174 @@ TEST_F(ProjectSetupTestClass, AcceptsFreeFileNames) {
   const FrontendNs::Json script = model.createBackendScript();
   const FrontendNs::Json &importStep = script.at("pipeline").at("steps").at(0);
   EXPECT_EQ(parameterValue(importStep, "tiles").size(), 4);
+}
+
+// --- Méthodes choisies dans l'onglet Chaîne ---
+
+std::vector<std::string> stepNames(const FrontendNs::Json &script) {
+  std::vector<std::string> names;
+  for (const FrontendNs::Json &step : script.at("pipeline").at("steps"))
+    names.push_back(step.at("name").get<std::string>());
+  return names;
+}
+
+// Les méthodes par défaut donnent le même script qu'avant leur ajout.
+TEST_F(ProjectSetupTestClass, DefaultChoicesKeepThePreviousPipeline) {
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(model.createBackendScript()), expected);
+}
+
+// Recouvrement réel et SIFT (avec son Vote 2D automatique) : les étapes sont ajoutées à leur place, et le backend
+// accepte le script.
+TEST_F(ProjectSetupTestClass, ChoicesAddOverlapEstimationMatcherAndVote) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.estimateOverlap = true;
+  setup.pipelineChoices.matchingStep = "sift";
+  setup.pipelineChoices.intensityMethod = "gain";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "overlap-estimation", "sift", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  EXPECT_DOUBLE_EQ(parameterValue(script.at("pipeline").at("steps").at(2), "overlap"), 0.2);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(5), "method"), "gain");
+}
+
+// Recouvrements horizontal et vertical, et marge d'incertitude du rail : transmis à l'appariement. La marge de
+// phase-correlation est en px du niveau analysé (ici niveau 1 : divisée par 2).
+TEST_F(ProjectSetupTestClass, PassesBothOverlapsAndRailMarginToPhaseCorrelation) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.overlap = 0.21;
+  setup.verticalOverlap = 0.26;
+  setup.railMargin = 700.0;
+  setup.pyramidLevel = 1;
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  const FrontendNs::Json &phaseStep = script.at("pipeline").at("steps").at(1);
+  ASSERT_EQ(phaseStep.at("name"), "phase-correlation");
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "overlap"), 0.21);
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "verticalOverlap"), 0.26);
+  EXPECT_DOUBLE_EQ(parameterValue(phaseStep, "marge"), 350.0);
+}
+
+TEST_F(ProjectSetupTestClass, PassesBothOverlapsAndRailMarginToOverlapEstimationAndSift) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.verticalOverlap = 0.26;
+  setup.railMargin = 700.0;
+  setup.pipelineChoices.estimateOverlap = true;
+  setup.pipelineChoices.matchingStep = "sift";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+  for (const int index : {1, 2}) {
+    const FrontendNs::Json &step = script.at("pipeline").at("steps").at(index);
+    EXPECT_DOUBLE_EQ(parameterValue(step, "overlap"), 0.2) << step.at("name");
+    EXPECT_DOUBLE_EQ(parameterValue(step, "verticalOverlap"), 0.26) << step.at("name");
+    EXPECT_DOUBLE_EQ(parameterValue(step, "railMargin"), 700.0) << step.at("name");
+  }
+}
+
+TEST_F(ProjectSetupTestClass, ReportsInvalidVerticalOverlap) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.verticalOverlap = 0.0;
+  model.setSetup(setup);
+  const auto errors = model.validate();
+  EXPECT_TRUE(std::any_of(errors.begin(), errors.end(), [](const std::string &error) {
+    return error.find("vertical") != std::string::npos;
+  }));
+}
+
+// Le Vote 2D n'est jamais ajouté avec la corrélation de phase.
+TEST_F(ProjectSetupTestClass, PhaseCorrelationNeverGetsVote2D) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "phase-correlation";
+  model.setSetup(setup);
+
+  const std::vector<std::string> names = stepNames(model.createBackendScript());
+  EXPECT_EQ(std::find(names.begin(), names.end(), "vote-2d"), names.end());
+}
+
+// LightGlue : Vote 2D automatique, et le modèle téléchargé dans le dossier de build par CMake.
+TEST_F(ProjectSetupTestClass, LightGlueGetsVote2DAndTheBuildModel) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "lightglue", "vote-2d", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath"), FrontendNs::LIGHTGLUE_MODEL_PATH);
+}
+
+// Corrections manuelles (onglet Paire) : manual-matches est ajouté après l'appariement, avant le positionnement, avec
+// les points saisis ; le backend accepte le script.
+TEST_F(ProjectSetupTestClass, ManualCorrectionsAddManualMatchesBeforePositioning) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.manualCorrections = {{0, 1, {{500.0, 40.0}}, {{20.0, 40.0}}}};
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "phase-correlation", "manual-matches", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  const FrontendNs::Json &corrections = parameterValue(script.at("pipeline").at("steps").at(2), "corrections");
+  ASSERT_EQ(corrections.size(), 1U);
+  EXPECT_EQ(corrections.at(0).at("tileIdB"), 1);
+  EXPECT_EQ(corrections.at(0).at("pointsInA"), FrontendNs::Json::parse("[[500.0, 40.0]]"));
+}
+
+// Couture par programmation dynamique : remplace graphcut, et le backend accepte le script (territoires pour la fusion).
+TEST_F(ProjectSetupTestClass, DynamicProgrammingReplacesGraphCut) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.seamStep = "dynamic-programming-dijkstra";
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "phase-correlation", "absolute-pos", "intensity-correction",
+                                          "dynamic-programming-dijkstra", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  EXPECT_NO_THROW(static_cast<void>(PipelineNs::buildPipeline(script)));
+}
+
+// Le chemin du modèle fixé par l'interface (absolu, tiré du dossier de l'exécutable) est celui du script.
+TEST_F(ProjectSetupTestClass, LightGlueUsesTheModelPathOfTheSetup) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.matchingStep = "lightglue";
+  setup.lightGlueModelPath = root / "bin" / FrontendNs::LIGHTGLUE_MODEL_PATH;
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const fs::path written(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath").get<std::string>());
+  EXPECT_TRUE(written.is_absolute());
+  EXPECT_EQ(written, setup.lightGlueModelPath);
+}
+
+// Une méthode inconnue lue dans un projet reprend sa valeur par défaut ; les méthodes connues sont gardées.
+TEST(PipelineChoicesTest, UnknownMethodsFallBackToTheDefaults) {
+  FrontendNs::PipelineChoices read;
+  read.estimateOverlap = true;
+  read.matchingStep = "manual-matches";
+  read.intensityMethod = "gain";
+  read.seamStep = "voronoi";
+
+  const FrontendNs::PipelineChoices valid = FrontendNs::validatedChoices(read);
+  const FrontendNs::PipelineChoices defaults;
+  EXPECT_TRUE(valid.estimateOverlap);
+  EXPECT_EQ(valid.matchingStep, defaults.matchingStep);
+  EXPECT_EQ(valid.intensityMethod, "gain");
+  EXPECT_EQ(valid.seamStep, defaults.seamStep);
+
+  FrontendNs::PipelineChoices known;
+  known.matchingStep = "lightglue";
+  known.seamStep = "dynamic-programming-dijkstra";
+  EXPECT_EQ(FrontendNs::validatedChoices(known), known);
 }
 
 } // namespace

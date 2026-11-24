@@ -10,6 +10,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `sift` | `tiles` | `matches` | [SiftStep.md](SiftStep.md) |
 | `lightglue` | `tiles`, le modèle ONNX `modelPath` | `matches` | [LightGlueStep.md](LightGlueStep.md) |
 | `vote-2d` | `matches` | `matches` | [Vote2DStep.md](Vote2DStep.md) |
+| `manual-matches` | `tiles`, `matches`, les corrections `corrections` | `matches` | [ManualMatchesStep.md](ManualMatchesStep.md) |
 | `absolute-pos` | `tiles`, `matches` | `positions` | [AbsolutePosStep.md](AbsolutePosStep.md) |
 | `intensity-correction` | `tiles`, `matches` | `intensityCorrection` | [IntensityCorrectionStep.md](IntensityCorrectionStep.md) |
 | `graphcut` | `tiles`, `positions` | `territories` | [GraphCutStep.md](GraphCutStep.md) |
@@ -18,7 +19,7 @@ Une fiche par step. Chacune commence par **Entrées et sorties** : les clés que
 | `fusion` | `tiles` (TIFF pyramidaux, région par région), `positions`, `territories`, `intensityCorrection` si présente | `mosaic` (trois TIFF écrits bloc par bloc) | [FusionStep.md](FusionStep.md) |
 | `export` | `mosaic` | `mosaic.tif` dans `outputDirectory` | [ExportStep.md](ExportStep.md) |
 
-`overlap-estimation` mesure le recouvrement réel de chaque paire : c'est la première passe commune aux trois méthodes d'appariement, qui la font encore chacune en interne. `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
+`overlap-estimation` mesure le recouvrement réel de chaque paire : c'est la première passe commune aux trois méthodes d'appariement. Placé avant elles, il leur donne leur point de départ ; sans lui, chacune la fait elle-même. `phase-correlation`, `sift` et `lightglue` sont trois façons de produire `matches` : un pipeline en utilise une seule. `graphcut` et `dynamic-programming-dijkstra` sont deux méthodes de couture.
 
 - Le schéma de l'enchaînement, et le JSON de chaque type de donnée : [COMPRENDRE_LE_PROJET.md §4](../COMPRENDRE_LE_PROJET.md#4-ce-que-chaque-step-reçoit-et-produit).
 - **Ajouter un step**, avec un exemple complet (code, test, enregistrement, fiche) : [AJOUTER_UN_STEP.md](AJOUTER_UN_STEP.md).

@@ -1,5 +1,4 @@
-#ifndef RIGHT_PANEL_H
-#define RIGHT_PANEL_H
+#pragma once
 
 #include <QTabWidget>
 #include "projectgrid.h"
@@ -33,6 +32,5 @@ private:
     GridTab *m_gridTab = nullptr;
     AlignmentTab *m_alignmentTab = nullptr;
     AssemblyTab *m_assemblyTab = nullptr;
+    int m_alignmentTabIndex = -1;   // index de l'onglet Paire (sa page est une zone de défilement)
 };
-
-#endif // RIGHT_PANEL_H
