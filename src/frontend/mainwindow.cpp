@@ -1046,15 +1046,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
             }
         }
     }
-    // Raccourci clavier (touche Retour arrière <-- ou Suppr) : supprime la tuile sélectionnée en mode Tuiles
-    if (currentMode == 1 && (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
-        QWidget *focused = focusWidget();
-        if (!qobject_cast<QLineEdit*>(focused) && !qobject_cast<QAbstractSpinBox*>(focused)) {
-            projectGrid->removeSelectedTile();
-            event->accept();
-            return;
-        }
-    }
     QMainWindow::keyPressEvent(event);
 }
 

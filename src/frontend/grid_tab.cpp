@@ -247,7 +247,7 @@ void GridTab::setupConnections()
     connect(m_addTileButton, &QPushButton::clicked, this, [this]() {
         const QString path = QFileDialog::getOpenFileName(
             this, tr("Choisir une tuile pour la case"), QString(),
-            tr("Images (*.tif *.tiff *.png *.jpg *.jpeg *.bmp);;Tous les fichiers (*)"));
+            tr("Images TIFF (*.tif *.tiff);;Tous les fichiers (*)"));
         if (!path.isEmpty())
             m_projectGrid->addTileToSelectedCell(path);
     });
@@ -265,8 +265,6 @@ void GridTab::setupConnections()
             m_projectGrid, &ProjectGrid::compareReferenceImage);
     connect(m_validateGridButton, &QPushButton::clicked,
             m_projectGrid, &ProjectGrid::validateGrid);
-
-    m_removeTileButton->setShortcut(QKeySequence(Qt::Key_Backspace));
 
     m_canvas->setGridCallbacks(
         [this](int cell) { m_projectGrid->setSelectedGridCell(cell); },

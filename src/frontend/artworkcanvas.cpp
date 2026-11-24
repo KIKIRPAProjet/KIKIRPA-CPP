@@ -78,19 +78,10 @@ void ArtworkCanvas::updateImportButtonPosition()
     m_importFolderButton->setVisible(true);
     m_importFolderButton->adjustSize();
 
-    int activeTileCount = 0;
-    for (const auto &tile : gridTiles) {
-        if (!tile.path.isEmpty() && !tile.empty)
-            ++activeTileCount;
-    }
-    const QString text = tr("Grille %1 × %2 : %3 tuile(s), glisser pour permuter")
-                             .arg(gridRows).arg(gridColumns).arg(activeTileCount);
-    QFontMetrics fm(font());
-    const int textW = fm.horizontalAdvance(text);
-    const int x = 18 + textW + 20;
+    // Emplacement fixe dans le coin supérieur droit du canevas
+    const int x = qMax(18, width() - m_importFolderButton->width() - 18);
     const int y = 8;
-    const int maxX = qMax(18, width() - m_importFolderButton->width() - 18);
-    m_importFolderButton->move(qMin(x, maxX), y);
+    m_importFolderButton->move(x, y);
 }
 
 //enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
