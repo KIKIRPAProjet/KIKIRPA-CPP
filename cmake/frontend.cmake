@@ -54,3 +54,6 @@ target_link_libraries(kikirpa_frontend PUBLIC
     Qt6::Concurrent
     Qt6::Gui
 )
+if(WIN32)
+    target_link_libraries(kikirpa_frontend PRIVATE dwmapi)
+endif()
