@@ -334,6 +334,7 @@ void MainWindow::showExportDialog()
 
         const QFileInfo fileInfo(destination);
         outputDirectory = fileInfo.absolutePath();
+        markProjectModified();
 
         updateStatus(tr("TIFF exporté : %1")
                          .arg(fileInfo.absoluteFilePath()));
