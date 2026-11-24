@@ -75,6 +75,7 @@ private:
                                  const QImage &referenceImage, const QImage &tileImage);
     void setMode(int mode);
     void refreshProjectInfo();
+    void invalidatePipelineResults();
     void saveProject();
     bool saveProjectToFile();
     bool confirmDiscardUnsavedChanges();
@@ -82,6 +83,7 @@ private:
     void refreshWindowTitle();
     bool projectModified = false;
     bool switchingProject = false;
+    bool pipelineResultsStale = false;
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);

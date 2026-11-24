@@ -111,7 +111,7 @@ void DialogHelpers::showComparisonDialog(QWidget *parent,
     dialog.exec();
 }
 
-bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep)
+bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep, int stepCount)
 {
     QDialog confirmation(parent);
     confirmation.setWindowTitle(
@@ -125,7 +125,7 @@ bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep)
         reused->addItem(translate(" Étape %1 : résultat conservé").arg(step));
     layout->addWidget(reused);
     auto *recalculated = new QListWidget(&confirmation);
-    for (int step = firstStep; step <= 8; ++step)
+    for (int step = firstStep; step <= stepCount; ++step)
         recalculated->addItem(translate("Étape %1 : résultat recalculé").arg(step));
     layout->addWidget(recalculated);
     layout->addWidget(FrontendUtils::mutedLabel(

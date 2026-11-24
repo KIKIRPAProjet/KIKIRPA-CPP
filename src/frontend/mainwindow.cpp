@@ -55,6 +55,7 @@
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QInputDialog>
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -154,6 +155,10 @@ void MainWindow::setupProjectGridConnections()
             markProjectModified();
         refreshProjectInfo();
     });
+    connect(projectGrid, &ProjectGrid::gridChanged, this, [this]() {
+        if (!switchingProject)
+            invalidatePipelineResults();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
             this, [this](bool) {
                 if (!switchingProject)
@@ -186,6 +191,10 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                pipelineResultsStale = false;
+            });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
@@ -467,6 +476,8 @@ void MainWindow::refreshPairViews()
 
 void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
+    if (pipelineResultsStale)
+        return;
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -474,6 +485,22 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
         canvasView->setAlignmentOverview(results.tiles, results.pairs);
     }
     refreshPairViews();
+}
+
+void MainWindow::invalidatePipelineResults()
+{
+    pipelineResultsStale = true;
+    m_pairs.clear();
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(SeamLines());
+        canvasView->setAlignmentOverview({}, {});
+    }
+    refreshPairViews();
+    mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
 }
 
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
@@ -942,8 +969,35 @@ void MainWindow::requestRun(int firstStep)
             tr("Veuillez importer des tuiles avant de lancer le pipeline de calcul."));
         return;
     }
+
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
+    if (firstStep == 0) {
+        QStringList stepNames;
+        stepNames.reserve(static_cast<int>(steps.size()));
+        for (const auto &step : steps)
+            stepNames.append(step.displayName);
+        if (stepNames.isEmpty())
+            return;
+
+        bool selected = false;
+        const QString chosen = QInputDialog::getItem(
+            this, tr("Relancer à partir de…"),
+            tr("Étape de départ :"), stepNames, 0, false, &selected);
+        if (!selected)
+            return;
+
+        const int stepIndex = stepNames.indexOf(chosen);
+        if (stepIndex < 0)
+            return;
+        firstStep = stepIndex + 1;
+    }
+
+    if (firstStep < 1 || firstStep > static_cast<int>(steps.size())) {
+        updateStatus(tr("Étape de relance invalide."));
+        return;
+    }
     // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
-    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep)) {
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep, static_cast<int>(steps.size()))) {
         return;
     }
 
@@ -957,7 +1011,6 @@ void MainWindow::requestRun(int firstStep)
     }
     if (scriptJson.isEmpty()) return;
 
-    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
     const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(steps.size()))
         ? QString::fromStdString(steps[static_cast<std::size_t>(firstStep - 1)].technicalName)
         : QString();
