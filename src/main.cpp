@@ -8,6 +8,7 @@
 #include <QtCore/QString>
 #include <QtCore/qtimer.h>
 #include <QtGui/QIcon>
+#include <QtGui/QImageReader>
 #include <QtWidgets/QApplication>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -44,6 +45,8 @@ namespace {
     constexpr int EXIT_INVALID_USAGE = 2;   // ligne de commande ou script invalide : rien n'a été exécuté
     constexpr int EXIT_IO_ERROR = 3;        // script ou état de reprise illisible, dossier inaccessible
 
+    // Pas de limite sur la taille des fichiers tiffs, ça évite les bugs sur les trop grosses images
+    constexpr int TIFF_MAX_SIZE = 0;
     constexpr const char* USAGE =
         "Usage:\n"
         "  stitching                                    open the graphical interface\n"
@@ -269,6 +272,8 @@ namespace {
 
     int runFrontend(int argumentCount, char** arguments) {
         QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
+        // Les images haute résolution (TIFF d'art KIK-IRPA) dépassent facilement la limite par défaut de 256 Mo.
+        QImageReader::setAllocationLimit(TIFF_MAX_SIZE);
         QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
         QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
         // Icône de toutes les fenêtres (barre de titre, barre des tâches, Alt+Tab) ; resources/resources.qrc.

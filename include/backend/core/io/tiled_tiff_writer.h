@@ -39,7 +39,7 @@ namespace IONs {
             // déclarés RGB : l'appelant fournit des blocs déjà en RGB (pas en BGR d'OpenCV).
             // Crée le dossier de destination si besoin. Renvoie false avec la cause dans errorMessage.
             bool open(const std::filesystem::path& outputPath, cv::Size imageSize, int imageType,
-                      std::string& errorMessage);
+                      std::string& errorMessage, const std::vector<std::uint8_t>& iccProfile = {});
 
             // Écrit le bloc dont le coin haut-gauche est `blockOrigin` (multiple de BLOCK_SIZE, dans l'image).
             // `block` a le type donné à open() et la taille du bloc : BLOCK_SIZE, ou moins sur les bords droit et bas.

@@ -176,6 +176,11 @@ void MainWindow::showExportDialog()
                 return;
             }
 
+            std::vector<uint8_t> iccProfile;
+            double scaleX = 1.0, scaleY = 1.0;
+            std::string metaReadError;
+            reader.readMetadata(iccProfile, scaleX, scaleY, metaReadError);
+
             const int cropX = qBound(0, static_cast<int>(normalizedCropRect.x() * fullWidth), fullWidth - 1);
             const int cropY = qBound(0, static_cast<int>(normalizedCropRect.y() * fullHeight), fullHeight - 1);
             const int cropWidth = qBound(1, static_cast<int>(normalizedCropRect.width() * fullWidth), fullWidth - cropX);
@@ -192,7 +197,7 @@ void MainWindow::showExportDialog()
 
             std::string writeError;
             const auto destinationPath = IONs::pathFromUtf8(destination.toStdString());
-            if (!IONs::createPyramidalTiledTiff(croppedImage, destinationPath, writeError)) {
+            if (!IONs::createPyramidalTiledTiff(croppedImage, destinationPath, writeError, iccProfile)) {
                 if (!IONs::writeImage(destinationPath, croppedImage)) {
                     QMessageBox::warning(&dialog, tr("Export impossible"),
                         tr("Impossible d'enregistrer le TIFF recadré : %1")

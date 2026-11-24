@@ -29,7 +29,8 @@ namespace IONs {
         constexpr int PYRAMID_LEVELS = DataNs::LEVEL_COUNT;
 
         // Configure les tags du répertoire TIFF courant (un par niveau de la pyramide). TIFFSetField renvoie 0 en cas d'échec.
-        bool setDirectoryFields(TIFF* tiffFile, const cv::Mat& levelImage, std::string& errorMessage) {
+        bool setDirectoryFields(TIFF* tiffFile, const cv::Mat& levelImage, std::string& errorMessage,
+                                const std::vector<std::uint8_t>& iccProfile = {}) {
             const int depth = levelImage.depth();
             const int channels = levelImage.channels();
             const int bitsPerSample = depth == CV_8U ? 8 : depth == CV_16U ? 16 : 0;
@@ -64,6 +65,13 @@ namespace IONs {
             if (channels == 4 && !TIFFSetField(tiffFile, TIFFTAG_EXTRASAMPLES, 1, extraSamples)) {
                 errorMessage = "cannot configure TIFF alpha channel";
                 return false;
+            }
+
+            if (!iccProfile.empty()) {
+                if (!TIFFSetField(tiffFile, TIFFTAG_ICCPROFILE, static_cast<uint32_t>(iccProfile.size()), iccProfile.data())) {
+                    errorMessage = "cannot configure TIFF ICC profile";
+                    return false;
+                }
             }
 
             return true;
@@ -117,7 +125,8 @@ namespace IONs {
     bool createPyramidalTiledTiff(
         const cv::Mat& image,
         const std::filesystem::path& outputPath,
-        std::string& errorMessage
+        std::string& errorMessage,
+        const std::vector<std::uint8_t>& iccProfile
     ) {
         // 1. Contrôle de l'image ; 2. création du dossier et ouverture du TIFF ; 3. écriture des niveaux ; 4. fermeture,
         // et suppression du fichier si une étape a échoué.
@@ -160,7 +169,7 @@ namespace IONs {
             }
 
             // Niveau 0 : l'image d'origine.
-            if (!setDirectoryFields(tiffFile, image, errorMessage) || !writeLevel(tiffFile, image, errorMessage)) {
+            if (!setDirectoryFields(tiffFile, image, errorMessage, iccProfile) || !writeLevel(tiffFile, image, errorMessage)) {
                 break;
             }
 
