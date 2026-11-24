@@ -170,6 +170,7 @@ void MainWindow::showExportDialog()
 
         const QFileInfo fileInfo(destination);
         outputDirectory = fileInfo.absolutePath();
+        markProjectModified();
 
         if (report->isChecked()) {
             const QString reportName = projectName + QStringLiteral("_rapport.html");
