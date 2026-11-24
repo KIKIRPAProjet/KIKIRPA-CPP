@@ -51,7 +51,8 @@ namespace {
     // Identifiants volontairement différents des indices dans `tiles`.
     constexpr int LEFT_TILE_ID = 5;
     constexpr int RIGHT_TILE_ID = 9;
-    // Valeurs des pixels : B = 10 x + 1, G = 10 y + 2, R = 1000 (id + 1) dans la tuile (ordre BGR d'OpenCV).
+    // Valeurs des pixels d'une tuile : R = 1000 (id + 1), G = 10 y + 2, B = 10 x + 1. Le TIFF pyramidal les garde
+    // dans cet ordre, celui qu'il déclare (core/io/pyramid_cache.h), et la mosaïque aussi.
     constexpr int COORDINATE_FACTOR = 10;
     constexpr int TILE_ID_FACTOR = 1000;
     constexpr int VALID_PIXEL = 255;
@@ -92,13 +93,13 @@ namespace {
                 toPixelValue(COORDINATE_FACTOR * tileX + 1)};
     }
 
+    // Contenu du TIFF pyramidal, donc déjà en RGB : c'est le cache d'import qui convertit l'ordre BGR de
+    // cv::imread, une fois, à l'écriture. fusion n'a plus d'échange à faire et recopie ces valeurs telles quelles.
     cv::Mat makePatternImage(int tileId, cv::Size size) {
         cv::Mat image(size, CV_16UC3);
         for (int row = 0; row < size.height; ++row)
-            for (int column = 0; column < size.width; ++column) {
-                const cv::Vec3w rgb = expectedRgb(tileId, column, row);
-                image.at<cv::Vec3w>(row, column) = cv::Vec3w(rgb[2], rgb[1], rgb[0]);   // BGR, comme cv::imread
-            }
+            for (int column = 0; column < size.width; ++column)
+                image.at<cv::Vec3w>(row, column) = expectedRgb(tileId, column, row);
         return image;
     }
 

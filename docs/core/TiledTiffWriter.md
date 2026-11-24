@@ -8,9 +8,9 @@ La mosaïque finale ne tient pas en mémoire : 6 octets par pixel en 16 bits RGB
 
 C'est le même format que l'ancien writer interne de l'export, dont il est extrait :
 
-- blocs de `DataNs::BLOCK_SIZE` (512) pixels de côté, compressés en LZW ;
+- blocs de `DataNs::BLOCK_SIZE` (512) pixels de côté, compressés en **Deflate avec prédicteur horizontal** ;
 - pleine résolution seulement (un seul niveau, pas de pyramide) ;
-- TIFF classique, ou **BigTIFF** quand une estimation prudente de la taille (×1,5 pour le pire cas du LZW, plus les tables d'offsets) dépasse 4 Gio.
+- TIFF classique, ou **BigTIFF** quand une estimation prudente de la taille (×1,5 pour le pire cas, plus les tables d'offsets) dépasse 4 Gio. Le ratio mesuré du Deflate avec prédicteur est de 0,83 sur de vraies tuiles : la marge est large, mais la surévaluer ne coûte rien, alors que la sous-évaluer casserait l'écriture à 4 Gio.
 
 Pour une image qui tient en mémoire et dont on veut toute la pyramide, il y a `createPyramidalTiledTiff` ([PyramidalTiff.md](PyramidalTiff.md)).
 
@@ -50,10 +50,23 @@ La destination n'est remplacée **que par un fichier complet** :
 
 `IONs::copyFileReplacing` applique la même règle à une copie : l'export s'en sert pour publier `mosaic.tif`.
 
+## Recopier une région d'un TIFF tuilé
+
+`IONs::copyRegionToTiledTiff(source, région, destination, errorMessage)` extrait une région du niveau 0 d'un TIFF
+tuilé (pyramidal ou non) vers un nouveau TIFF tuilé, **bloc par bloc** : la mémoire utilisée est celle d'un bloc,
+quelle que soit la taille de la région. Le type de la source est conservé et les canaux sont recopiés tels quels.
+La région doit être non vide et entièrement contenue dans le niveau 0 ; la destination est publiée par renommage,
+donc un échec en cours de route ne laisse ni fichier incomplet ni temporaire.
+
+L'export recadré de l'interface (`export_mode.cpp`) s'en sert. Avant le 24/11/2026 il lisait la zone recadrée
+**d'un seul coup** (des dizaines de Go sur une grande mosaïque), l'écrivait en TIFF pyramidal — un format
+différent de celui de l'export non recadré, qui est une copie — et retombait en cas d'échec sur `cv::imwrite`,
+qui attend du BGR alors que la mosaïque est en RGB.
+
 ## Relire
 
 Le fichier produit se relit avec `IONs::PyramidalTiffReaderClass::readRegion(0, région, …)`, qui ne décode que les blocs touchés par la région ([PyramidalTiff.md](PyramidalTiff.md#lire-une-région)).
 
 ## Tests
 
-`tests/core/test_tiled_tiff_writer.cpp` : écriture dans le désordre puis relecture exacte pour les trois types utilisés (blocs de bord compris), fermeture refusée s'il manque un bloc (aucun fichier laissé), destruction sans `close()` (l'ancien fichier est gardé, le temporaire supprimé), blocs mal placés, mal dimensionnés ou écrits deux fois, types refusés, et choix du BigTIFF pour une image de 40 000 × 40 000 pixels. Ce dernier test ne vérifie que le choix du format : écrire réellement plus de 4 Gio ne tient pas dans un test unitaire.
+`tests/core/test_tiled_tiff_writer.cpp` : écriture dans le désordre puis relecture exacte pour les trois types utilisés (blocs de bord compris), fermeture refusée s'il manque un bloc (aucun fichier laissé), destruction sans `close()` (l'ancien fichier est gardé, le temporaire supprimé), blocs mal placés, mal dimensionnés ou écrits deux fois, types refusés, choix du BigTIFF pour une image de 40 000 × 40 000 pixels, et `copyRegionToTiledTiff` sur une région qui ne commence pas sur une frontière de bloc et ne mesure pas un multiple de 512 (plus les régions vides, négatives ou hors de l'image, qui ne laissent aucun fichier). Ce dernier test ne vérifie que le choix du format : écrire réellement plus de 4 Gio ne tient pas dans un test unitaire.

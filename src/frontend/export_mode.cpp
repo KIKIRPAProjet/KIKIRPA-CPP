@@ -21,7 +21,7 @@
 #include "workspace_ui.h"
 
 #include "core/io/pyramidal_tiff_reader.h"
-#include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/tiled_tiff_writer.h"
 #include "core/io/unicode_path.h"
 
 #include <opencv2/core/mat.hpp>
@@ -181,24 +181,18 @@ void MainWindow::showExportDialog()
             const int cropWidth = qBound(1, static_cast<int>(normalizedCropRect.width() * fullWidth), fullWidth - cropX);
             const int cropHeight = qBound(1, static_cast<int>(normalizedCropRect.height() * fullHeight), fullHeight - cropY);
 
-            cv::Rect cropRegion(cropX, cropY, cropWidth, cropHeight);
-            cv::Mat croppedImage;
-            if (!reader.readRegion(0, cropRegion, croppedImage, readError)) {
-                QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("Impossible d'extraire la zone recadrée : %1")
-                        .arg(QString::fromStdString(readError)));
-                return;
-            }
+            const cv::Rect cropRegion(cropX, cropY, cropWidth, cropHeight);
 
+            // Recopie bloc par bloc (IONs::copyRegionToTiledTiff) : lire la zone recadrée d'un seul coup
+            // demanderait des dizaines de Go sur une grande mosaïque, alors qu'un bloc suffit. Le fichier
+            // produit a le même format que l'export non recadré, qui est une simple copie.
             std::string writeError;
-            const auto destinationPath = IONs::pathFromUtf8(destination.toStdString());
-            if (!IONs::createPyramidalTiledTiff(croppedImage, destinationPath, writeError)) {
-                if (!IONs::writeImage(destinationPath, croppedImage)) {
-                    QMessageBox::warning(&dialog, tr("Export impossible"),
-                        tr("Impossible d'enregistrer le TIFF recadré : %1")
-                            .arg(QString::fromStdString(writeError)));
-                    return;
-                }
+            if (!IONs::copyRegionToTiledTiff(IONs::pathFromUtf8(mosaicFilePath.toStdString()), cropRegion,
+                                             IONs::pathFromUtf8(destination.toStdString()), writeError)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible d'enregistrer le TIFF recadré : %1")
+                        .arg(QString::fromStdString(writeError)));
+                return;
             }
         } else {
             QFile sourceFile(mosaicFilePath);

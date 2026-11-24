@@ -204,13 +204,16 @@ QImage matToQImage(const cv::Mat &mat)
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
                       QImage::Format_Grayscale8).copy();
     }
+    // Les trois appelants lisent un niveau d'un TIFF pyramidal, qui contient ce qu'il déclare : du RGB à 3 canaux,
+    // du RGBA à 4 (core/io/pyramid_cache.h). Les formats Qt sont donc ceux de l'ordre des octets R, G, B, A, et non
+    // Format_BGR888 / Format_ARGB32, qui attendent l'ordre BGR(A) d'OpenCV.
     if (mat8.channels() == 3) {
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
-                      QImage::Format_BGR888).copy();
+                      QImage::Format_RGB888).copy();
     }
     if (mat8.channels() == 4) {
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
-                      QImage::Format_ARGB32).copy();
+                      QImage::Format_RGBA8888).copy();
     }
     return {};
 }

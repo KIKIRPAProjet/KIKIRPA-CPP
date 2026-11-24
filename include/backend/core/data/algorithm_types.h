@@ -123,8 +123,8 @@ namespace DataNs {
     };
 
     // Mosaïque assemblée (type "Mosaic", clé "mosaic"). Les pixels sont sur disque, dans trois TIFF tuilés pleine
-    // résolution (blocs de BLOCK_SIZE, LZW) de canvasSize pixels, écrits bloc par bloc : le DataStore ne garde que les
-    // chemins, jamais l'image (6 octets par pixel).
+    // résolution (blocs de BLOCK_SIZE, Deflate avec prédicteur horizontal) de canvasSize pixels, écrits bloc par
+    // bloc : le DataStore ne garde que les chemins, jamais l'image (6 octets par pixel).
     struct Mosaic {
         std::filesystem::path imagePath;        // CV_16UC3, canaux RGB
         std::filesystem::path provenancePath;   // CV_16UC1, comme CompositeBlock::provenance

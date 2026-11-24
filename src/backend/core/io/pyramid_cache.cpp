@@ -12,6 +12,7 @@
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <array>
 #include <cstddef>
@@ -29,6 +30,14 @@ namespace IONs {
     namespace fs = std::filesystem;
 
     namespace {
+
+        // Version du format du fichier produit, écrite dans la provenance et comparée à la relecture. À incrémenter
+        // dès qu'un cache écrit par une version antérieure ne peut plus être relu tel quel.
+        //   2 : canaux dans l'ordre déclaré (RGB / RGBA), compression Deflate avec prédicteur horizontal ;
+        //   1 : BGR déclaré RGB, compression LZW. Ces provenances n'ont pas de champ "formatVersion" : l'empreinte
+        //       y est à la racine du JSON, donc elles n'ont pas de champ "source" non plus et sont invalides
+        //       d'elles-mêmes. Il n'y a rien à migrer : elles sont réécrites au prochain import.
+        constexpr int PYRAMID_FORMAT_VERSION = 2;
 
         // FNV-1a sur 32 bits : assez pour distinguer les images d'un même dossier, le nom de l'image restant lisible.
         constexpr std::uint32_t FNV_OFFSET_BASIS = 2166136261U;
@@ -72,13 +81,35 @@ namespace IONs {
             return nlohmann::json::parse(stream, nullptr, false);
         }
 
+        // Contenu du .source.json : voir la règle dans core/io/pyramid_cache.h. Les deux champs sont comparés par
+        // isPyramidCacheValid ; tout champ ajouté ici devra rester hors de cette comparaison.
+        nlohmann::json makeProvenance(const nlohmann::json& fingerprint) {
+            return nlohmann::json::object({{"source", fingerprint}, {"formatVersion", PYRAMID_FORMAT_VERSION}});
+        }
+
+        // Lecture défensive : la provenance est un fichier sur disque, un champ peut manquer ou avoir le mauvais
+        // type. 0 n'est la version d'aucun format écrit : un fichier douteux est donc invalide.
+        int provenanceFormatVersion(const nlohmann::json& provenance) {
+            const auto field = provenance.find("formatVersion");
+            return field != provenance.end() && field->is_number_integer() ? field->get<int>() : 0;
+        }
+
+        // Canaux dans l'ordre que le TIFF déclare : OpenCV lit en BGR (BGRA avec alpha), le writer déclare
+        // PHOTOMETRIC_RGB. Sans cet échange, le fichier mentirait sur ses canaux et chaque lecteur devrait défaire
+        // l'erreur de son côté (dette T6/T7). En place : une seconde image pleine résolution ferait 578 Mio de plus
+        // sur une tuile du KIKIRPA, et l'échange est local à chaque pixel.
+        void swapToDeclaredChannelOrder(cv::Mat& image) {
+            if (image.channels() == 3) cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+            if (image.channels() == 4) cv::cvtColor(image, image, cv::COLOR_BGRA2RGBA);
+        }
+
         bool writeProvenance(const fs::path& pyramidPath, const nlohmann::json& fingerprint, std::string& errorMessage) {
             const fs::path destination = provenancePath(pyramidPath);
             const fs::path temporary = makeTemporaryPath(destination);
             bool written = false;
             {
                 std::ofstream stream(temporary, std::ios::binary);   // ouverture en écriture : contenu remplacé
-                stream << fingerprint.dump();
+                stream << makeProvenance(fingerprint).dump();
                 written = static_cast<bool>(stream);
             }
             if (written && replaceFile(temporary, destination, errorMessage)) return true;
@@ -103,11 +134,13 @@ namespace IONs {
             // Empreinte prise avant la lecture : si la source change pendant la conversion, la provenance écrite est
             // celle de l'ancienne version, et le cache sera refait au prochain passage.
             const nlohmann::json fingerprint = sourceFingerprint(sourcePath);
-            const cv::Mat image = readImage(sourcePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+            cv::Mat image = readImage(sourcePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
             if (image.empty()) {
                 errorMessage = "cannot read " + pathToUtf8(sourcePath);
                 return false;
             }
+            swapToDeclaredChannelOrder(image);   // BGR d'OpenCV -> RGB déclaré par le TIFF ; les dimensions et le
+                                                 // type ne changent pas, entry les garde tels quels.
             std::error_code removeError;
             fs::remove(provenancePath(entry.pyramidPath), removeError);   // cache invalide pendant l'écriture
             if (!createPyramidalTiledTiff(image, entry.pyramidPath, errorMessage)) return false;
@@ -141,7 +174,11 @@ namespace IONs {
             const std::uintmax_t pyramidSize = fs::file_size(pyramidPath, errorCode);
             if (errorCode || pyramidSize == 0) return false;
             const nlohmann::json provenance = readProvenance(pyramidPath);
-            return provenance.is_object() && provenance == sourceFingerprint(sourcePath);
+            if (!provenance.is_object()) return false;
+            // La version d'abord : un entier contre trois appels système, et un cache d'un autre format n'a pas à
+            // être comparé à sa source pour être refusé.
+            if (provenanceFormatVersion(provenance) != PYRAMID_FORMAT_VERSION) return false;
+            return provenance.value("source", nlohmann::json()) == sourceFingerprint(sourcePath);
         } catch (const std::exception&) {
             return false;
         }

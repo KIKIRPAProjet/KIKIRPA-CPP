@@ -33,7 +33,7 @@ Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite 
 2. **Nom unique** : si `<filename>` ou une de ses copies numérotées existe déjà dans le dossier de sortie, le step prend le numéro qui suit le plus élevé présent : `<nom> (1).tif`, `<nom> (2).tif`, etc. Le dernier export est ainsi toujours celui de numéro maximal, même si des copies intermédiaires ont été supprimées.
 3. **Publication** : `IONs::copyFileReplacing` copie le fichier sous un nom temporaire dans `outputDirectory`, puis le renomme vers le chemin unique déterminé. L'ancien fichier existant n'est donc jamais écrasé. Une erreur pendant la copie ne pollue pas la destination et le temporaire est supprimé.
 
-Le format du fichier (blocs de 512 × 512, LZW, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
+Le format du fichier (blocs de 512 × 512, Deflate avec prédicteur horizontal, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
 
 **Copie et non déplacement** : la sortie de l'assemblage reste en place. On peut ainsi refaire l'export (par exemple vers un autre dossier) sans refaire l'assemblage, dont le checkpoint reste valable. Le prix est la place sur le disque : l'image existe deux fois. Si `imagePath` est déjà le fichier de destination, rien n'est copié.
 

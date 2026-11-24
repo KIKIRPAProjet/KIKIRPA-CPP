@@ -192,12 +192,14 @@ namespace StepsNs {
         }
 
         // OpenCV range les canaux en BGR (et le TIFF pyramidal les a gardés ainsi) ; la mosaïque est en RGB.
+        // Le TIFF pyramidal contient ce qu'il déclare : du RGB à 3 canaux, du RGBA à 4 (core/io/pyramid_cache.h).
+        // Il n'y a donc plus d'échange à faire ici, seulement le gris à étaler et l'alpha à laisser tomber.
         cv::Mat convertToRgb(const cv::Mat& image) {
             cv::Mat rgb;
             switch (image.channels()) {
                 case CHANNEL_COUNT_GRAY: cv::cvtColor(image, rgb, cv::COLOR_GRAY2RGB); break;
-                case CHANNEL_COUNT_COLOR: cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB); break;
-                case CHANNEL_COUNT_COLOR_ALPHA: cv::cvtColor(image, rgb, cv::COLOR_BGRA2RGB); break;
+                case CHANNEL_COUNT_COLOR: return image;
+                case CHANNEL_COUNT_COLOR_ALPHA: cv::cvtColor(image, rgb, cv::COLOR_RGBA2RGB); break;
                 default: throw std::runtime_error("fusion: unsupported tile channel count");
             }
             return rgb;

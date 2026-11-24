@@ -3,6 +3,7 @@
 
 #include "core/data/tile.h"
 #include "core/io/file_replacement.h"
+#include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <opencv2/core/cvdef.h>
@@ -27,8 +28,11 @@ namespace IONs {
     namespace {
 
         constexpr int BITS_PER_BYTE = 8;
-        // Estimation prudente de la taille du fichier, pour choisir BigTIFF avant d'écrire : le LZW peut grossir
-        // une image bruitée, chaque bloc a ses entrées dans les tables d'offsets, plus une marge pour l'en-tête.
+        // Estimation prudente de la taille du fichier, pour choisir BigTIFF avant d'écrire : la compression peut
+        // ne rien gagner sur une image bruitée, chaque bloc a ses entrées dans les tables d'offsets, plus une
+        // marge pour l'en-tête. Le Deflate avec prédicteur mesure 0,83 sur de vraies tuiles : la marge de 1,5 est
+        // large, mais la surévaluer ne coûte rien (elle ne sert qu'à choisir BigTIFF), alors que la sous-évaluer
+        // casserait l'écriture à 4 Gio.
         constexpr long double WORST_CASE_COMPRESSION_RATIO = 1.5L;
         constexpr long double BYTES_PER_BLOCK_ENTRY = 256.0L;
         constexpr long double HEADER_MARGIN_BYTES = 1024.0L * 1024.0L;
@@ -54,7 +58,8 @@ namespace IONs {
         }
 
         // Dimensions, canaux, bits par canal, origine en haut à gauche, canaux entrelacés (RGBRGB), modèle
-        // colorimétrique, compression LZW et taille des blocs.
+        // colorimétrique, compression Deflate avec prédicteur horizontal (posé après la compression : c'est un
+        // champ du codec) et taille des blocs.
         bool configureTiff(TIFF* tiffFile, cv::Size imageSize, int imageType, std::string& errorMessage) {
             const auto channelCount = static_cast<std::uint16_t>(CV_MAT_CN(imageType));
             const auto bitsPerSample = static_cast<std::uint16_t>(CV_ELEM_SIZE1(imageType) * BITS_PER_BYTE);
@@ -68,7 +73,8 @@ namespace IONs {
                 !TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PHOTOMETRIC, photometric) ||
-                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_LZW) ||
+                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_ADOBE_DEFLATE) ||
+                !TIFFSetField(tiffFile, TIFFTAG_PREDICTOR, PREDICTOR_HORIZONTAL) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILEWIDTH, blockSize) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILELENGTH, blockSize)) {
                 errorMessage = "cannot configure TIFF image";
@@ -214,6 +220,35 @@ namespace IONs {
         std::error_code ignoredError;   // rien à faire de plus si le temporaire ne peut pas être supprimé
         fs::remove(temporaryPath, ignoredError);
         temporaryPath.clear();
+    }
+
+    bool copyRegionToTiledTiff(const fs::path& sourcePath, cv::Rect region, const fs::path& destinationPath,
+                               std::string& errorMessage) {
+        errorMessage.clear();
+        if (region.width <= 0 || region.height <= 0 || region.x < 0 || region.y < 0) {
+            errorMessage = "region to copy must be non-empty and inside the image";
+            return false;
+        }
+        const PyramidalTiffReaderClass reader(sourcePath);
+        // Un pixel suffit pour connaître le type à donner au writer, sans charger quoi que ce soit.
+        cv::Mat firstPixel;
+        if (!reader.readRegion(0, cv::Rect(region.x, region.y, 1, 1), firstPixel, errorMessage)) return false;
+
+        TiledTiffWriterClass writer;
+        if (!writer.open(destinationPath, region.size(), firstPixel.type(), errorMessage)) return false;
+        // Parcours de la grille de blocs de la destination ; le dernier bloc d'une ligne ou d'une colonne est
+        // incomplet, et writeBlock l'accepte tel quel.
+        for (int top = 0; top < region.height; top += DataNs::BLOCK_SIZE) {
+            for (int left = 0; left < region.width; left += DataNs::BLOCK_SIZE) {
+                const cv::Rect blockInRegion(left, top,
+                                             std::min(DataNs::BLOCK_SIZE, region.width - left),
+                                             std::min(DataNs::BLOCK_SIZE, region.height - top));
+                cv::Mat block;
+                if (!reader.readRegion(0, blockInRegion + region.tl(), block, errorMessage)) return false;
+                if (!writer.writeBlock(blockInRegion.tl(), block, errorMessage)) return false;
+            }
+        }
+        return writer.close(errorMessage);
     }
 
 }

@@ -41,7 +41,9 @@ namespace IONs {
             }
 
             // Dimensions, canaux, bits par canal, origine en haut à gauche, canaux entrelacés (RGBRGB et non RRRGGGBBB),
-            // modèle colorimétrique, compression LZW et taille des blocs.
+            // modèle colorimétrique, compression Deflate avec prédicteur horizontal et taille des blocs.
+            // Le prédicteur est un champ du codec : libtiff le refuse s'il arrive avant TIFFTAG_COMPRESSION.
+            // Sans lui, sur du 16 bits bruité, la compression fait grossir le fichier (mesuré : +19 % en LZW seul).
             const uint16_t photometric =
                 channels == 1 ? PHOTOMETRIC_MINISBLACK : PHOTOMETRIC_RGB;
             if (!TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, static_cast<uint32_t>(levelImage.cols)) ||
@@ -51,7 +53,8 @@ namespace IONs {
                 !TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PHOTOMETRIC, photometric) ||
-                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_LZW) ||
+                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_ADOBE_DEFLATE) ||
+                !TIFFSetField(tiffFile, TIFFTAG_PREDICTOR, PREDICTOR_HORIZONTAL) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILEWIDTH, TILE_SIZE) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILELENGTH, TILE_SIZE)) {
                 errorMessage = "cannot configure TIFF directory";

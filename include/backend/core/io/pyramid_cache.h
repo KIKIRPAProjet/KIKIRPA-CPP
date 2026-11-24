@@ -12,9 +12,16 @@ namespace IONs {
     // - Nom : <dossier du cache>/<nom de l'image>_<empreinte du chemin complet>_pyramid.tif. L'empreinte rend le nom
     //   propre à une source : photo.tif et photo.tiff, ou deux images de même nom dans deux dossiers, n'ont jamais le
     //   même cache, quelle que soit leur case dans la grille.
-    // - Provenance : à côté, <pyramide>.source.json garde l'empreinte de la source (chemin, taille, date) lue juste
-    //   avant de la convertir. Le cache n'est valable que si cette empreinte est identique à celle de la source
-    //   actuelle : une source remplacée, même par un fichier plus ancien, invalide son cache.
+    // - Provenance : à côté, <pyramide>.source.json décrit ce qui a été converti et comment :
+    //     { "source": { chemin, existence, taille, date }, "formatVersion": <entier> }
+    //   `source` est l'empreinte de l'image lue juste avant la conversion : une source remplacée, même par un
+    //   fichier plus ancien, invalide son cache. `formatVersion` décrit le fichier produit (ordre des canaux,
+    //   compression) : un cache écrit par une autre version est invalide, donc réécrit, au lieu d'être relu de
+    //   travers. Le cache n'est valable que si les deux concordent. Un champ ajouté plus tard (dernier usage,
+    //   emplacement du niveau 0) ne doit pas entrer dans cette comparaison.
+    // - Canaux : le TIFF du cache contient ce qu'il déclare, donc du **RGB** (RGBA avec un canal alpha), et non
+    //   l'ordre BGR d'OpenCV. La conversion est faite à l'écriture, une fois, au lieu d'être défaite par chaque
+    //   lecteur.
 
     // <dossier des images>/.cache/pyramids
     std::filesystem::path pyramidCacheDirectory(const std::filesystem::path& imagesDirectory);

@@ -1,17 +1,24 @@
 // tests/core/test_pyramid_cache.cpp
 // Cache des TIFF pyramidaux partagé par l'import et l'interface : nom propre à chaque source, validité par empreinte
-// exacte de la source, réutilisation sans relire l'image.
+// exacte de la source et par version du format, réutilisation sans relire l'image, et canaux dans l'ordre que le
+// TIFF déclare (RGB, et non l'ordre BGR de cv::imread).
 #include "core/io/pyramid_cache.h"
 
+#include "core/io/file_fingerprint.h"
+#include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <string>
 #include <system_error>
 
@@ -21,6 +28,11 @@ namespace {
 
     constexpr int IMAGE_SIZE = 16;
     constexpr int GREY_LEVEL = 100;
+    // Trois valeurs distinctes : un canal échangé se voit, contrairement à un gris.
+    constexpr int BLUE_LEVEL = 10;
+    constexpr int GREEN_LEVEL = 20;
+    constexpr int RED_LEVEL = 30;
+    constexpr int PYRAMID_FORMAT_VERSION = 2;   // même valeur que pyramid_cache.cpp : le format est un contrat
     constexpr std::chrono::hours ONE_DAY{24};   // recul de la date d'une source « plus ancienne »
 
     struct TestDirectory {
@@ -42,6 +54,24 @@ namespace {
 
     void writeGreyImage(const fs::path& path, int width) {
         ASSERT_TRUE(IONs::writeImage(path, cv::Mat(IMAGE_SIZE, width, CV_8UC1, cv::Scalar(GREY_LEVEL))));
+    }
+
+    // cv::imwrite attend du BGR : Scalar(bleu, vert, rouge) écrit donc dans le fichier un pixel dont le rouge vaut
+    // RED_LEVEL. C'est cet ordre-là, celui de l'image de l'œuvre, que la pyramide doit rendre.
+    void writeColourImage(const fs::path& path) {
+        const cv::Mat image(IMAGE_SIZE, IMAGE_SIZE, CV_8UC3, cv::Scalar(BLUE_LEVEL, GREEN_LEVEL, RED_LEVEL));
+        ASSERT_TRUE(IONs::writeImage(path, image));
+    }
+
+    fs::path provenanceOf(const fs::path& pyramidPath) {
+        fs::path provenance = pyramidPath;
+        provenance += ".source.json";
+        return provenance;
+    }
+
+    nlohmann::json readProvenance(const fs::path& pyramidPath) {
+        std::ifstream stream(provenanceOf(pyramidPath), std::ios::binary);
+        return nlohmann::json::parse(stream, nullptr, false);
     }
 
     IONs::PyramidCacheEntry prepare(const fs::path& source, const fs::path& cacheDirectory) {
@@ -90,9 +120,7 @@ TEST(PyramidCacheTest, PyramidWithoutProvenanceIsInvalid) {
     writeGreyImage(source, IMAGE_SIZE);
     const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
 
-    fs::path provenance = entry.pyramidPath;
-    provenance += ".source.json";
-    ASSERT_TRUE(fs::remove(provenance));
+    ASSERT_TRUE(fs::remove(provenanceOf(entry.pyramidPath)));
     EXPECT_FALSE(IONs::isPyramidCacheValid(source, entry.pyramidPath));
 }
 
@@ -117,4 +145,66 @@ TEST(PyramidCacheTest, MissingSourceOrPyramidIsInvalid) {
     std::string errorMessage;
     EXPECT_FALSE(IONs::preparePyramidCache(source, directory.path, entry, errorMessage));
     EXPECT_FALSE(errorMessage.empty());
+}
+
+// Le TIFF du cache doit contenir ce qu'il déclare (PHOTOMETRIC_RGB), et non l'ordre BGR rendu par cv::imread : sans
+// cela, le fichier mentait sur ses canaux et chaque lecteur défaisait l'erreur de son côté (dette T6/T7).
+TEST(PyramidCacheTest, PyramidHoldsRgbInTheOrderItDeclares) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "couleur.tif";
+    writeColourImage(source);
+
+    const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
+    ASSERT_EQ(entry.type, CV_8UC3);
+
+    const IONs::PyramidalTiffReaderClass reader(entry.pyramidPath);
+    cv::Mat pixel;
+    std::string errorMessage;
+    ASSERT_TRUE(reader.readRegion(0, cv::Rect(0, 0, 1, 1), pixel, errorMessage)) << errorMessage;
+    ASSERT_EQ(pixel.type(), CV_8UC3);
+
+    const cv::Vec3b& channels = pixel.at<cv::Vec3b>(0, 0);
+    EXPECT_EQ(channels[0], RED_LEVEL);
+    EXPECT_EQ(channels[1], GREEN_LEVEL);
+    EXPECT_EQ(channels[2], BLUE_LEVEL);
+}
+
+// La provenance décrit la source dans "source" et le fichier produit dans "formatVersion".
+TEST(PyramidCacheTest, ProvenanceCarriesTheSourceAndTheFormatVersion) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
+
+    const nlohmann::json provenance = readProvenance(entry.pyramidPath);
+    ASSERT_TRUE(provenance.is_object());
+    EXPECT_EQ(provenance.value("formatVersion", 0), PYRAMID_FORMAT_VERSION);
+    ASSERT_TRUE(provenance.contains("source"));
+    EXPECT_TRUE(provenance["source"].is_object());
+    EXPECT_TRUE(provenance["source"].contains("path"));
+}
+
+// Une provenance d'un autre format est invalide, même si la source n'a pas changé : ses pixels ne peuvent pas être
+// relus tels quels. C'est le cas des caches écrits avant la version 2, qui gardaient l'empreinte à la racine du JSON.
+TEST(PyramidCacheTest, ProvenanceOfAnotherFormatVersionIsInvalid) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+
+    {   // provenance à plat, comme avant la version 2 : l'empreinte de la source sans l'envelopper
+        std::ofstream stream(provenanceOf(entry.pyramidPath), std::ios::binary);
+        stream << IONs::computeFileFingerprint(source).dump();
+    }
+    EXPECT_FALSE(IONs::isPyramidCacheValid(source, entry.pyramidPath));
+    EXPECT_FALSE(prepare(source, cache).reused);   // réécrite, pas réutilisée
+
+    {   // version inconnue, provenance bien formée par ailleurs
+        nlohmann::json provenance = readProvenance(entry.pyramidPath);
+        provenance["formatVersion"] = PYRAMID_FORMAT_VERSION + 1;
+        std::ofstream stream(provenanceOf(entry.pyramidPath), std::ios::binary);
+        stream << provenance.dump();
+    }
+    EXPECT_FALSE(IONs::isPyramidCacheValid(source, entry.pyramidPath));
 }
