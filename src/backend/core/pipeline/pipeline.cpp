@@ -143,6 +143,8 @@ namespace PipelineNs {
             for (const ConfigNs::DataSlot& outputSlot : steps[stepIndex]->getConfigJson().get<ConfigNs::StepConfig>().outputs)
                 latestOutputByKey[outputSlot.key] = {stepIndex, outputSlot.dataType};
         try {
+            for (size_t stepIndex = 0; stepIndex < startIndex; ++stepIndex)
+                checkpoint.loadResult(stepIndex, *steps[stepIndex]);
             for (const auto& [key, producer] : latestOutputByKey) checkpoint.load(producer.first, *steps[producer.first], key, producer.second, dataStore);
         } catch (const std::exception& exception) {
             report(log, std::string("cannot restore checkpoint: ") + exception.what(), true);
