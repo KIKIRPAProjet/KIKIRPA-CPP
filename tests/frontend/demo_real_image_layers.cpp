@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
 
         const bool success = pipeline.run(
             [](const std::string &message) {
-                std::cout << message << std::endl;
+                std::cout << message << '\n';
             }
         );
 

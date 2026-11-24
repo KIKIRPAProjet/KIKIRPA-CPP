@@ -58,6 +58,7 @@ int main(int argc, char *argv[])
 
     auto *canvas = new ArtworkCanvas(&window);
     canvas->setMinimumSize(650, 450);
+    canvas->setMode(5); // Vue Assemblage
     canvas->setSeamVisible(false);
     canvas->setImageLayers(layers);
 

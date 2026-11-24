@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include <QPainter>
 #include <QRegularExpression>
@@ -136,6 +137,51 @@ namespace {
     }
 
     // Solution de repli si le pipeline s'arrête avant le calcul des positions (affiche la première tuile).
+    // Bande de lignes de la mosaïque fusionnée, réduite à `previewWidth` de large, en RVB 8 bits. Vide si illisible.
+    cv::Mat readFusedBand(const IONs::PyramidalTiffReaderClass& reader, const cv::Rect& band, cv::Size reducedSize) {
+        cv::Mat pixels;
+        std::string error;
+        if (!reader.readRegion(0, band, pixels, error) || pixels.channels() != 3) return {};
+        cv::Mat reduced;
+        cv::resize(pixels, reduced, reducedSize, 0, 0, cv::INTER_AREA);
+        if (reduced.depth() == CV_16U) reduced.convertTo(reduced, CV_8U, 1.0 / 256.0);
+        return reduced.depth() == CV_8U ? reduced : cv::Mat();
+    }
+
+    // Aperçu du fichier produit par fusion : territoires découpés par les coutures, intensités corrigées, donc la même
+    // image que le TIFF final. Lu par bandes de DataNs::BLOCK_SIZE lignes : la pleine résolution n'est jamais chargée
+    // en entier. Image vide si le fichier manque ou est illisible.
+    QImage renderFusedMosaicPreview(const DataNs::Mosaic& mosaic) {
+        const cv::Size size = mosaic.canvasSize;
+        if (size.width <= 0 || size.height <= 0 || !std::filesystem::exists(mosaic.imagePath)) return {};
+        const double scale = std::min(1.0, static_cast<double>(PREVIEW_TARGET_WIDTH) / size.width);
+        const cv::Size previewSize(std::max(1, cvRound(size.width * scale)), std::max(1, cvRound(size.height * scale)));
+        cv::Mat preview(previewSize, CV_8UC3, cv::Scalar::all(0));
+        const IONs::PyramidalTiffReaderClass reader(mosaic.imagePath);
+        for (int top = 0; top < size.height; top += DataNs::BLOCK_SIZE) {
+            const cv::Rect band(0, top, size.width, std::min(DataNs::BLOCK_SIZE, size.height - top));
+            const int previewTop = std::min(previewSize.height, cvRound(top * scale));
+            const int previewBottom = std::min(previewSize.height, cvRound(band.br().y * scale));
+            if (previewBottom <= previewTop) continue;
+            const cv::Mat reduced = readFusedBand(reader, band, cv::Size(previewSize.width, previewBottom - previewTop));
+            if (reduced.empty()) return {};
+            reduced.copyTo(preview.rowRange(previewTop, previewBottom));
+        }
+        // Le fichier est en RVB (TiledTiffWriterClass), sans conversion à la lecture.
+        return QImage(preview.data, preview.cols, preview.rows, static_cast<int>(preview.step), QImage::Format_RGB888).copy();
+    }
+
+    // Largeur pleine résolution de la mosaïque montrée par l'aperçu : celle de la fusion, sinon la boîte des tuiles
+    // positionnées (renderPositionsMosaic). Les territoires sont dans ce repère (DataNs::computeMosaicCorners). 0 si
+    // aucune des deux n'est connue.
+    double previewReferenceWidth(const StepNs::DataStoreClass& dataStore) {
+        if (dataStore.has("mosaic")) return dataStore.get<DataNs::Mosaic>("mosaic").canvasSize.width;
+        if (!dataStore.has("positions") || !dataStore.has("tiles")) return 0.0;
+        const BoundingBox box = computeBoundingBox(dataStore.get<std::vector<DataNs::TilePositionData>>("positions"),
+                                                   dataStore.get<DataNs::TileList>("tiles"));
+        return box.isValid() ? box.width() : 0.0;
+    }
+
     QImage renderFallbackPreview(const DataNs::TileList& tiles) {
         if (tiles.empty()) return QImage();
         const auto& firstTile = tiles.front();
@@ -254,13 +300,15 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
         const auto& completed = pipeline->getRunState().completedSteps;
         const int count = static_cast<int>(completed.size());
         const QString name = count > 0 ? QString::fromStdString(completed.back()) : QString();
+        emit resultsReady(collectResults(QSize()));   // les paires déjà mesurées restent consultables pendant la pause
         emit pipelinePaused(count, name);
         return;
     }
 
     if (success) {
-        QVector<ImageLayer> layers;
-        const QImage preview = generatePreviewImage(layers);
+        const QImage preview = generatePreviewImage();
+        QRectF layerBounds;
+        const auto layers = collectImageLayers(layerBounds);
         if (cancelRequested.load()) {
             emit pipelineCancelled();
             return;
@@ -277,7 +325,8 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
             }
         }
         emit progressChanged(100);
-        emit imageLayersReady(layers);
+        emit resultsReady(collectResults(preview.size()));
+        emit imageLayersReady(layers, layerBounds);
         emit pipelineFinished(true, QString(), preview);
         return;
     }
@@ -285,6 +334,8 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
     const QString errorText = executionError.empty()
         ? tr("Échec de l'exécution d'une étape du pipeline.")
         : QString::fromStdString(executionError);
+    // Après un échec (une tuile non reliée, par exemple), les paires et leurs raisons d'échec aident à comprendre.
+    emit resultsReady(collectResults(QSize()));
     emit pipelineFinished(false, errorText, QImage());
 }
 
@@ -315,33 +366,46 @@ void PipelineWorkerClass::runPipeline(const QString& scriptJsonText, const QStri
     processExecutionResult(success, executionError);
 }
 
-QImage PipelineWorkerClass::generatePreviewImage(QVector<ImageLayer>& layers) {
+QVector<ImageLayer> PipelineWorkerClass::collectImageLayers(QRectF& bounds)
+{
+    const auto& dataStore = pipeline->getDataStore();
+    if (!dataStore.has("positions") || !dataStore.has("tiles")) return {};
+    try {
+        const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
+        const auto& positions = dataStore.get<std::vector<DataNs::TilePositionData>>("positions");
+        if (positions.empty()) return {};
+        auto layers = buildImageLayers(tiles, positions, 3, &bounds);
+        if (layers.size() != static_cast<qsizetype>(tiles.size())) {
+            emit logMessageReceived(tr("Les tuiles en rotation sont omises de la superposition TIFF."),
+                                    QStringLiteral("warning"));
+        }
+        return layers;
+    } catch (const std::exception& exception) {
+        emit logMessageReceived(tr("Impossible de charger les calques TIFF : %1").arg(exception.what()),
+                                QStringLiteral("warning"));
+    }
+    return {};
+}
+
+QImage PipelineWorkerClass::generatePreviewImage() {
     if (!pipeline) return QImage();
     const auto& dataStore = pipeline->getDataStore();
 
-    // Priorité à l'assemblage calculé via les positions finales et les tuiles importées.
+    // Priorité à l'image fusionnée : c'est elle que l'export publie.
+    if (dataStore.has("mosaic")) {
+        try {
+            const QImage fused = renderFusedMosaicPreview(dataStore.get<DataNs::Mosaic>("mosaic"));
+            if (!fused.isNull()) return fused;
+        } catch (const std::exception& exception) {
+            emit logMessageReceived(tr("Avertissement lecture de la mosaïque : %1").arg(exception.what()), QStringLiteral("warning"));
+        }
+    }
+
+    // Repli : les tuiles entières superposées à leurs positions finales (sans coutures ni correction d'intensité).
     if (dataStore.has("positions") && dataStore.has("tiles")) {
         try {
             const auto& positions = dataStore.get<std::vector<DataNs::TilePositionData>>("positions");
             const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
-            if (!positions.empty() && !tiles.empty()) {
-                // Un échec des couches interactives ne doit pas empêcher l'aperçu Export.
-                try {
-                    layers = buildImageLayers(tiles, positions);
-                    const auto skippedCount = tiles.size() - static_cast<std::size_t>(layers.size());
-                    if (skippedCount > 0) {
-                        emit logMessageReceived(
-                            QStringLiteral("%1 TIFF layer(s) skipped because their rotation is unsupported.")
-                                .arg(skippedCount),
-                            QStringLiteral("warning"));
-                    }
-                } catch (const std::exception& exception) {
-                    emit logMessageReceived(
-                        QStringLiteral("Cannot build TIFF image layers: %1")
-                            .arg(QString::fromUtf8(exception.what())),
-                        QStringLiteral("warning"));
-                }
-            }
             const QImage mosaic = renderPositionsMosaic(positions, tiles);
             if (!mosaic.isNull()) return mosaic;
         } catch (const std::exception& exception) {
@@ -358,4 +422,36 @@ QImage PipelineWorkerClass::generatePreviewImage(QVector<ImageLayer>& layers) {
         }
     }
     return QImage();
+}
+
+PipelineResults PipelineWorkerClass::collectResults(const QSize& previewSize) {
+    PipelineResults results;
+    if (!pipeline) return results;
+    const auto& dataStore = pipeline->getDataStore();
+    try {
+        if (dataStore.has("tiles")) results.tiles = FrontendNs::buildResultTiles(dataStore.get<DataNs::TileList>("tiles"));
+        // Sans "matches" (toutes les paires ont échoué), les raisons d'échec des steps donnent quand même les paires.
+        if (dataStore.has("tiles")) {
+            std::vector<nlohmann::json> stepResults;
+            for (const auto& step : pipeline->getSteps()) stepResults.push_back(step->getResult());
+            const std::vector<DataNs::PairMatches> noMatches;
+            const std::vector<DataNs::PairResidual> noResiduals;
+            results.pairs = FrontendNs::buildPairInfos(
+                dataStore.get<DataNs::TileList>("tiles"),
+                dataStore.has("matches") ? dataStore.get<std::vector<DataNs::PairMatches>>("matches") : noMatches,
+                stepResults, dataStore.has("pairResiduals")
+                    ? dataStore.get<std::vector<DataNs::PairResidual>>("pairResiduals") : noResiduals);
+            if (dataStore.has("overlapEstimates"))
+                FrontendNs::attachOverlapEstimates(results.pairs, dataStore.get<DataNs::OverlapEstimates>("overlapEstimates"));
+        }
+        // Même réduction que l'aperçu : les coutures tombent sur l'image affichée.
+        const double mosaicWidth = previewReferenceWidth(dataStore);
+        if (!previewSize.isEmpty() && dataStore.has("territories") && mosaicWidth > 0.0)
+            results.seams = FrontendNs::buildSeamLines(
+                dataStore.get<std::vector<DataNs::TileTerritory>>("territories"), previewSize,
+                static_cast<double>(previewSize.width()) / mosaicWidth);
+    } catch (const std::exception& exception) {
+        emit logMessageReceived(tr("Avertissement lecture des résultats : %1").arg(exception.what()), QStringLiteral("warning"));
+    }
+    return results;
 }

@@ -1,10 +1,11 @@
-#ifndef WORKSPACE_UI_H
-#define WORKSPACE_UI_H
+#pragma once
 
+#include "image_layer.h"
 #include "projectgrid.h"
 
 #include <QObject>
-#include "image_layer.h"
+#include <QVector>
+
 class QComboBox;
 class QLabel;
 class QProgressBar;
@@ -34,7 +35,7 @@ public:
 
     void updateFromGridState(const QString &projectName,
                              const ProjectGrid::State &gridState);
-    void setImageLayers(const QVector<ImageLayer> &layers);
+    void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
 
     HomePage *homePage() const { return m_homePage; }
     QStackedWidget *pages() const { return m_pages; }
@@ -49,11 +50,11 @@ public:
     RightPanel *rightPanel() const { return m_rightPanel; }
     BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
     TopToolbars *topToolbars() const { return m_topToolbars; }
+    LeftToolbar *leftToolbar() const { return m_leftToolbar; }
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;
     QComboBox *captureOrderCombo() const;
-    QComboBox *arrangementCombo() const;
     QLabel *statusLabel() const;
     QLabel *currentStepLabel() const;
     QProgressBar *progressBar() const;
@@ -82,5 +83,3 @@ private:
     TopToolbars *m_topToolbars = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
 };
-
-#endif // WORKSPACE_UI_H

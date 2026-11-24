@@ -16,6 +16,15 @@
 #include <string>
 #include <utility>
 
+namespace {
+QRectF layerWorldRect(const DataNs::TileClass& tile, const DataNs::TilePositionData& position, int level)
+{
+    const double scale = std::ldexp(1.0, level);
+    return {position.position.x / scale, position.position.y / scale,
+            tile.getLevel(0).width / scale, tile.getLevel(0).height / scale};
+}
+}
+
 ImageLayer loadLowResolutionLayer(
     const DataNs::TileClass& tile,
     const DataNs::TilePositionData& position,
@@ -54,20 +63,19 @@ ImageLayer loadLowResolutionLayer(
     }
 
     // La position absolue est exprimée en pixels de pleine résolution.
-    const double scale = std::ldexp(1.0, level);
     ImageLayer layer;
     layer.id = QString::number(tileId);
     layer.name = QString::fromStdString(IONs::pathToUtf8(tile.getSource().filename()));
     layer.image = preview;
-    layer.worldRect = QRectF(position.position.x / scale, position.position.y / scale,
-                             preview.width(), preview.height());
+    layer.worldRect = layerWorldRect(tile, position, level);
     return layer;
 }
 
 QVector<ImageLayer> buildImageLayers(
     const DataNs::TileList& tiles,
     const std::vector<DataNs::TilePositionData>& positions,
-    int level)
+    int level,
+    QRectF* bounds)
 {
     std::map<int, const DataNs::TilePositionData*> positionsById;
     for (const auto& position : positions) {
@@ -99,11 +107,15 @@ QVector<ImageLayer> buildImageLayers(
     }
 
     QVector<ImageLayer> layers;
+    QRectF worldBounds;
     for (const auto& tile : tiles) {
-        ImageLayer layer = loadLowResolutionLayer(*tile, *positionsById.at(tile->getId()), level);
+        const auto& position = *positionsById.at(tile->getId());
+        ImageLayer layer = loadLowResolutionLayer(*tile, position, level);
+        if (bounds) worldBounds = worldBounds.united(layerWorldRect(*tile, position, level));
         if (!layer.image.isNull()) {
             layers.push_back(std::move(layer));
         }
     }
+    if (bounds) *bounds = worldBounds;
     return layers;
 }

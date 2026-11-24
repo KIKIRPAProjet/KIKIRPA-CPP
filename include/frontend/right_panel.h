@@ -1,5 +1,4 @@
-#ifndef RIGHT_PANEL_H
-#define RIGHT_PANEL_H
+#pragma once
 
 #include <QTabWidget>
 #include <QVector>
@@ -26,7 +25,7 @@ public:
 
     void updateGridState(const ProjectGrid::State &gridState);
     void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
-    void setImageLayers(const QVector<ImageLayer> &layers);
+    void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
     void setActiveStep(int stepNumber);
 
 private:
@@ -40,5 +39,3 @@ private:
     AssemblyTab *m_assemblyTab = nullptr;
     int m_alignmentTabIndex = -1;   // index de l'onglet Paire (sa page est une zone de défilement)
 };
-
-#endif // RIGHT_PANEL_H

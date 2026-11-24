@@ -59,9 +59,9 @@ namespace {
 
         ASSERT_EQ(layers.size(), 2);
         EXPECT_EQ(layers[0].id, QString::number(FIRST_TILE_ID));
-        EXPECT_EQ(layers[0].worldRect, QRectF(6, -2, IMAGE_WIDTH / 2, IMAGE_HEIGHT / 2));
+        EXPECT_EQ(layers[0].worldRect, QRectF(6, -2, IMAGE_WIDTH / 2.0, IMAGE_HEIGHT / 2.0));
         EXPECT_EQ(layers[1].id, QString::number(SECOND_TILE_ID));
-        EXPECT_EQ(layers[1].worldRect, QRectF(20, 8, IMAGE_WIDTH / 2, IMAGE_HEIGHT / 2));
+        EXPECT_EQ(layers[1].worldRect, QRectF(20, 8, IMAGE_WIDTH / 2.0, IMAGE_HEIGHT / 2.0));
     }
 
     TEST_F(ImageLayerLoaderTestClass, ConvertsColorTiffToQImage) {
@@ -104,11 +104,13 @@ namespace {
 
     TEST_F(ImageLayerLoaderTestClass, SkipsRotatedTileAndLoadsFollowingTile) {
         positions.front().rotationRadians = 0.25;
-        const auto layers = buildImageLayers(tiles, positions, 1);
+        QRectF bounds;
+        const auto layers = buildImageLayers(tiles, positions, 1, &bounds);
+        EXPECT_EQ(bounds, QRectF(6, -2, 30, 22));
 
         ASSERT_EQ(layers.size(), 1);
         EXPECT_EQ(layers.front().id, QString::number(SECOND_TILE_ID));
-        EXPECT_EQ(layers.front().worldRect, QRectF(20, 8, IMAGE_WIDTH / 2, IMAGE_HEIGHT / 2));
+        EXPECT_EQ(layers.front().worldRect, QRectF(20, 8, IMAGE_WIDTH / 2.0, IMAGE_HEIGHT / 2.0));
         EXPECT_FALSE(layers.front().image.isNull());
     }
 

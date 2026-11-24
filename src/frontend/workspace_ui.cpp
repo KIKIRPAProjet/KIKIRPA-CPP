@@ -121,10 +121,6 @@ QComboBox *WorkspaceUI::captureOrderCombo() const
     return gridtab() ? gridtab()->captureOrderCombo() : nullptr;
 }
 
-QComboBox *WorkspaceUI::arrangementCombo() const
-{
-    return m_topToolbars ? m_topToolbars->arrangementCombo() : nullptr;
-}
 
 QLabel *WorkspaceUI::statusLabel() const
 {
@@ -165,10 +161,10 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
 
     m_mainWindow->setWindowTitle(projectName + QStringLiteral(" : KIK-IRPA Assemblage"));
 }
-void WorkspaceUI::setImageLayers(const QVector<ImageLayer> &layers)
+void WorkspaceUI::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
 {
     if (m_rightPanel) {
-        m_rightPanel->setImageLayers(layers);
+        m_rightPanel->setImageLayers(layers, bounds);
     }
 }
 
@@ -211,12 +207,16 @@ void WorkspaceUI::createWorkspace()
 
     m_centerArea = new WorkspaceCenter(m_mainWindow);
     m_leftToolbar = new LeftToolbar;
+    m_leftToolbar->setVisible(false);
     connect(m_leftToolbar, &LeftToolbar::toolSelected, this,
             [this](int index, const QString &name) {
         m_mainWindow->updateStatus(tr("Outil actif : %1").arg(name));
         if (m_mainWindow->currentMode == kMaskMode
                 && index >= kPaintToolFirst && index <= kPaintToolLast) {
             m_centerArea->canvas()->toggleMask();
+        }
+        if (m_centerArea && m_centerArea->canvas()) {
+            m_centerArea->canvas()->setActiveTool(index);
         }
     });
     m_rightPanel = new RightPanel(m_mainWindow, m_projectGrid, m_centerArea);
@@ -241,6 +241,7 @@ void WorkspaceUI::createWorkspace()
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
     m_bottomTabs = new BottomTabs(m_mainWindow);
+    m_bottomTabs->setVisible(false);
 
     auto *contentSplitter = new QSplitter(Qt::Vertical);
     contentSplitter->setHandleWidth(kSplitterHandleWidth);

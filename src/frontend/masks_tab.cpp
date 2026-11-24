@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QSignalBlocker>
 #include <QSlider>
+#include <QStringList>
 #include <QVBoxLayout>
 
 namespace {
@@ -25,7 +26,7 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     auto *layersLayout = new QVBoxLayout(this);
     layersLayout->addWidget(new QLabel(tr("Calques")));
     const QStringList layerNames = {tr("Lignes de couture"), tr("Erreur d'alignement"),
-                                    tr("Tuiles"), tr("Mosaïque"), tr("Masques")};
+                                    tr("Masques")};
     for (const QString &name : layerNames) {
         auto *check = new QCheckBox(name);
         check->setChecked(true);
@@ -46,16 +47,23 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     }
     imageLayerControls = new QGroupBox(tr("Images superposées"), this);
     auto *opacityForm = new QFormLayout(imageLayerControls);
+    fusedMosaicCheck = new QCheckBox(tr("Afficher la mosaïque fusionnée"), imageLayerControls);
+    fusedMosaicCheck->setObjectName(QStringLiteral("fusedMosaicCheck"));
     globalOpacitySlider = new QSlider(Qt::Horizontal, imageLayerControls);
+    globalOpacitySlider->setObjectName(QStringLiteral("globalOpacitySlider"));
     globalOpacitySlider->setRange(0, MAX_OPACITY_PERCENT);
     globalOpacitySlider->setValue(MAX_OPACITY_PERCENT);
     layerSelector = new QComboBox(imageLayerControls);
+    layerSelector->setObjectName(QStringLiteral("layerSelector"));
     layerSelector->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     layerSelector->setPlaceholderText(tr("Aucune tuile"));
     layerOpacitySlider = new QSlider(Qt::Horizontal, imageLayerControls);
+    layerOpacitySlider->setObjectName(QStringLiteral("layerOpacitySlider"));
     layerOpacitySlider->setRange(0, MAX_OPACITY_PERCENT);
     layerVisibilityCheck = new QCheckBox(tr("Afficher la tuile"), imageLayerControls);
+    layerVisibilityCheck->setObjectName(QStringLiteral("layerVisibilityCheck"));
 
+    opacityForm->addRow(fusedMosaicCheck);
     opacityForm->addRow(tr("Opacité globale"), globalOpacitySlider);
     opacityForm->addRow(tr("Tuile"), layerSelector);
     opacityForm->addRow(tr("Opacité de la tuile"), layerOpacitySlider);
@@ -65,6 +73,10 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     imageLayerControls->setEnabled(false);
     syncSelectedLayerControls();
 
+    connect(fusedMosaicCheck, &QCheckBox::toggled, this, [this](bool fused) {
+        m_canvas->setFusedMosaicVisible(fused);
+        syncSelectedLayerControls();
+    });
     connect(globalOpacitySlider, &QSlider::valueChanged, this, [this](int percent) {
         m_canvas->setGlobalImageLayerOpacity(static_cast<qreal>(percent) / MAX_OPACITY_PERCENT);
     });
@@ -83,9 +95,9 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
     });
 }
 
-void MasksTab::setImageLayers(const QVector<ImageLayer> &layers)
+void MasksTab::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
 {
-    m_canvas->setImageLayers(layers);
+    m_canvas->setImageLayers(layers, bounds);
 
     const QSignalBlocker blockSelection(layerSelector);
     const QSignalBlocker blockGlobalOpacity(globalOpacitySlider);
@@ -94,6 +106,7 @@ void MasksTab::setImageLayers(const QVector<ImageLayer> &layers)
         layerSelector->addItem(layer.name, layer.id);
     }
 
+    fusedMosaicCheck->setChecked(false);
     globalOpacitySlider->setValue(MAX_OPACITY_PERCENT);
     layerSelector->setCurrentIndex(layers.isEmpty() ? -1 : 0);
     imageLayerControls->setEnabled(!layers.isEmpty());
@@ -109,9 +122,12 @@ void MasksTab::syncSelectedLayerControls()
     const QSignalBlocker blockOpacity(layerOpacitySlider);
     const QSignalBlocker blockVisibility(layerVisibilityCheck);
     const bool visible = layer && layer->visible;
-    layerVisibilityCheck->setEnabled(layer != nullptr);
+    const bool adjustingLayers = !fusedMosaicCheck->isChecked();
+    globalOpacitySlider->setEnabled(adjustingLayers);
+    layerSelector->setEnabled(adjustingLayers);
+    layerVisibilityCheck->setEnabled(adjustingLayers && layer != nullptr);
     layerVisibilityCheck->setChecked(visible);
-    layerOpacitySlider->setEnabled(visible);
+    layerOpacitySlider->setEnabled(adjustingLayers && visible);
     const qreal opacity = layer ? qBound(qreal(0), layer->opacity, qreal(1)) : 1.0;
     layerOpacitySlider->setValue(qRound(opacity * MAX_OPACITY_PERCENT));
 }

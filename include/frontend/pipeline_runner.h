@@ -2,6 +2,7 @@
 #pragma once
 
 #include "image_layer.h"
+#include "pipeline_results.h"
 
 #include <QImage>
 #include <QObject>
@@ -63,8 +64,9 @@ class PipelineRunnerClass : public QObject {
         void logMessage(const QString& message);
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
-        void imageLayersReady(const QVector<ImageLayer>& layers);
+        void imageLayersReady(const QVector<ImageLayer>& layers, const QRectF& bounds);
         void mosaicFileReady(const QString& imagePath);
+        void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
 
     private:

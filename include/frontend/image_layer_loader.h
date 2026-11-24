@@ -22,8 +22,9 @@ ImageLayer loadLowResolutionLayer(
 
 // Associe les tuiles et positions par identifiant, puis charge les couches dans l'ordre des tuiles.
 // Lève une exception si les identifiants ne correspondent pas un à un ou si une lecture échoue.
-// Les tuiles en rotation sont omises avec un avertissement.
+// Les tuiles en rotation sont omises du rendu mais comptent dans les limites de la mosaïque.
 QVector<ImageLayer> buildImageLayers(
     const DataNs::TileList& tiles,
     const std::vector<DataNs::TilePositionData>& positions,
-    int level = 3);
+    int level = 3,
+    QRectF* bounds = nullptr);

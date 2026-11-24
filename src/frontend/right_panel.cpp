@@ -74,10 +74,10 @@ void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid
     }
 }
 
-void RightPanel::setImageLayers(const QVector<ImageLayer> &layers)
+void RightPanel::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
 {
     if (m_masksTab) {
-        m_masksTab->setImageLayers(layers);
+        m_masksTab->setImageLayers(layers, bounds);
     }
 }
 
