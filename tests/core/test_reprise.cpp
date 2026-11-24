@@ -69,7 +69,7 @@ constexpr int ESTIMATION_ORIGINE_EN_A = 320;
 
 // Vérification non bloquante : en cas d'échec, GoogleTest affiche le message
 void verifier(bool ok, const std::string& message) {
-    EXPECT_TRUE(ok) << "Assertion failed: " << message;
+    EXPECT_TRUE(ok) << message;
 }
 
 // Réglages d'un step de test.

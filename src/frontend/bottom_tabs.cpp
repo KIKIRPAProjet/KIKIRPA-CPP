@@ -15,7 +15,6 @@
 #include "bottom_tabs.h"
 #include "mainwindow.h"
 
-#include <QDateTime>
 #include <QTableWidget>
 #include <QListWidget>
 #include <QHeaderView>
@@ -34,6 +33,7 @@ BottomTabs::BottomTabs(MainWindow *mainWindow, QWidget *parent)
     // Le panneau peut être réduit jusqu'à sa seule barre d'onglets : il reste visible, mais ne prend presque plus de place.
     setMinimumHeight(tabBar()->sizeHint().height());
 }
+
 
 void BottomTabs::appendLog(const QString &message)
 {

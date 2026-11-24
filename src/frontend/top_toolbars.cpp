@@ -136,7 +136,7 @@ void TopToolbars::updateRunButtonState()
     // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend (+ afficher / masquer le bouton Stop).
     if (m_pipelineRunner->isRunning()) {
         m_runButton->setText(tr("Pause"));
-        if (m_stopButton) m_stopButton->setVisible(false); // Masqué pendant le calcul : seul Pause est affiché
+        if (m_stopButton) m_stopButton->setVisible(true);
     } else if (m_pipelineRunner->isPaused()) {
         m_runButton->setText(tr("Reprendre"));
         if (m_stopButton) m_stopButton->setVisible(true);  // Affiché lorsque le calcul est en pause

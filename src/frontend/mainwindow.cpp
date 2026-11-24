@@ -299,7 +299,7 @@ void MainWindow::setupPageConnections()
 void MainWindow::setupPairAlignmentConnections()
 {
     //seule ligne qui sera modifiée
-    m_pairs = FrontendUtils::defaultPairAlignments();
+    m_pairs = FrontendUtils::defaultPairAlignments(); 
     m_currentPairIndex = 0;
 
     /* À décommenter lors de la connexion au backend (remplace defaultPairAlignments() après le run) ---
@@ -405,7 +405,7 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
     refreshPairViews();
 }
 
-//comptage du nombre de paire douteuse et en échec, mise à jour des tables
+//comptage du nombre de paire douteuse et en échec, mise à jour des tables 
 void MainWindow::refreshPairViews()
 {
     if (m_pairs.isEmpty())
