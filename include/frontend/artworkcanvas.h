@@ -85,8 +85,11 @@ public:
     // Rectangle vide si aucune sélection exploitable n'est disponible.
     QRectF selectedCropNormalizedRect() const;
 
-    // Demande au backend d'appliquer la sélection ; ne modifie pas l'aperçu.
+    // Demande la validation de la sélection dans l'aperçu.
     void applyCrop();
+
+    // Prévisualise le rectangle normalisé sans lire ni écrire les TIFF.
+    void previewCrop(const QRectF& normalizedRectangle);
 
     // Active la sélection du rectangle sur la mosaïque affichée.
     void startCropSelection();

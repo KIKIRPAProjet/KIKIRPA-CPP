@@ -56,6 +56,12 @@ private:
     // Script du calcul complet, conservé pour revenir au résultat non rogné.
     QString originalPipelineScript;
 
+    // Le TIFF disponible correspond au recadrage affiché.
+    bool cropBackendReady = false;
+
+    // Ouvrir la fenêtre d'export après la réussite du rognage.
+    bool exportAfterCrop = false;
+
     void keyPressEvent(QKeyEvent *event) override;
 
     // Intercepte la fermeture de la fenêtre pour interrompre proprement un éventuel calcul en cours.

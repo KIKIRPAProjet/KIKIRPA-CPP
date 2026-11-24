@@ -711,6 +711,37 @@ QRectF ArtworkCanvas::selectedCropNormalizedRect() const
         relativeWidth * sourceRectangle.width(),
         relativeHeight * sourceRectangle.height());
 }
+void ArtworkCanvas::previewCrop(const QRectF& normalizedRectangle)
+{
+    if (m_originalMosaicPreview.isNull())
+        return;
+
+    const QRectF rectangle = normalizedRectangle.intersected(
+        QRectF(0.0, 0.0, 1.0, 1.0));
+
+    if (rectangle.isEmpty())
+        return;
+
+    const QRect previewRectangle = QRectF(
+        rectangle.x() * m_originalMosaicPreview.width(),
+        rectangle.y() * m_originalMosaicPreview.height(),
+        rectangle.width() * m_originalMosaicPreview.width(),
+        rectangle.height() * m_originalMosaicPreview.height())
+        .toAlignedRect()
+        .intersected(m_originalMosaicPreview.rect());
+
+    if (previewRectangle.isEmpty())
+        return;
+
+    m_mosaicPreview = m_originalMosaicPreview.copy(previewRectangle);
+    m_cropNormalizedRect = rectangle;
+    m_isCropped = true;
+    m_cropSelectionRect = QRect();
+    m_isCropping = false;
+    m_activeHandle = CropHandle::None;
+    m_activeTool = -1;
+    update();
+}
 
 void ArtworkCanvas::applyCrop()
 {

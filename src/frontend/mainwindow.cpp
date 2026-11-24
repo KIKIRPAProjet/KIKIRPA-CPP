@@ -202,6 +202,8 @@ void MainWindow::setupPipelineConnections()
             if (!pipelineRunner->isCropRun()) {
                 mosaicFilePath.clear();
                 originalMosaic = {};
+                cropBackendReady = false;
+                exportAfterCrop = false;
             }
             pendingCropMosaic = {};
             projectGrid->cancelBackgroundPyramidGeneration();
@@ -251,7 +253,18 @@ void MainWindow::setupPipelineConnections()
 
     if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
         connect(canvas, &ArtworkCanvas::cropRequested,
-            this, &MainWindow::requestMosaicCrop);
+            this, [this, canvas](const QRectF& rectangle) {
+                if (pipelineRunner->isRunning() || pipelineRunner->isPaused())
+                    return;
+
+                canvas->previewCrop(rectangle);
+                cropBackendReady = false;
+                exportAfterCrop = false;
+
+                updateStatus(tr(
+                    "Aperçu du recadrage validé. "
+                    "Le traitement pleine résolution sera effectué à l'export."));
+            });
     }
 
     connect(pipelineRunner, &PipelineRunnerClass::pausedStateChanged,
@@ -512,6 +525,8 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     switchingProject = true;
     mosaicFilePath.clear();
     originalMosaic = {};
+    cropBackendReady = false;
+    exportAfterCrop = false;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -567,6 +582,8 @@ void MainWindow::applyLoadedProject(const QString &path)
     switchingProject = true;
     mosaicFilePath.clear();
     originalMosaic = {};
+    cropBackendReady = false;
+    exportAfterCrop = false;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -1001,6 +1018,8 @@ void MainWindow::resetMosaicCrop()
         return;
     }
 
+    cropBackendReady = false;
+    exportAfterCrop = false;
     mosaicFilePath = sourcePath;
     if (!originalPipelineScript.isEmpty())
         pipelineRunner->setScriptJson(originalPipelineScript);
@@ -1036,11 +1055,15 @@ void MainWindow::beginMosaicCrop()
     }
 }
 
-void MainWindow::handleCropFinished(bool success, const QImage& previewImage)
+void MainWindow::handleCropFinished(
+    bool success, const QImage& previewImage)
 {
     setCropControlsEnabled(true);
 
-    // Un changement de projet ne doit pas recevoir le résultat de l'ancien.
+    const bool shouldOpenExport = exportAfterCrop;
+    exportAfterCrop = false;
+    cropBackendReady = false;
+
     if (originalMosaic.imagePath != pendingCropSource.imagePath) {
         pendingCropMosaic = {};
         return;
@@ -1048,28 +1071,47 @@ void MainWindow::handleCropFinished(bool success, const QImage& previewImage)
 
     if (!success) {
         pendingCropMosaic = {};
-        updateStatus(tr("Rognage non appliqué. Consultez le journal pour la cause."));
+        updateStatus(tr(
+            "Export interrompu. Le recadrage reste visible en aperçu. "
+            "Consultez le journal pour la cause."));
         return;
     }
 
     const QString croppedPath =
         QString::fromStdString(IONs::pathToUtf8(pendingCropMosaic.imagePath));
 
-    if (previewImage.isNull() || pendingCropMosaic.canvasSize.width <= 0 ||
+    if (previewImage.isNull() ||
+        pendingCropMosaic.canvasSize.width <= 0 ||
         pendingCropMosaic.canvasSize.height <= 0 ||
         !QFileInfo(croppedPath).isFile()) {
-        updateStatus(tr(
-            "Le calcul est terminé, mais son résultat ne peut pas être affiché. "
-            "L'image précédente est conservée."));
         pendingCropMosaic = {};
+        updateStatus(tr(
+            "Le résultat du rognage est indisponible. "
+            "L'export n'a pas été effectué."));
         return;
     }
 
-    if (auto* canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
-        canvas->setBackendCropPreview(previewImage, pendingCropRectangle);
-        mosaicFilePath = croppedPath;
-        setMode(kModeExport);
-        updateStatus(tr("Rognage appliqué par le backend. L'image est prête à être exportée."));
+    auto* canvas =
+        dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas());
+    if (!canvas)
+        return;
+
+    canvas->setBackendCropPreview(previewImage, pendingCropRectangle);
+    mosaicFilePath = croppedPath;
+    cropBackendReady = true;
+    setMode(kModeExport);
+
+    updateStatus(tr("Recadrage calculé. L'image peut être enregistrée."));
+
+    if (shouldOpenExport) {
+        // Laisser le runner terminer son nettoyage avant d'ouvrir le dialogue.
+        QTimer::singleShot(0, this, [this, croppedPath]() {
+            if (cropBackendReady && mosaicFilePath == croppedPath &&
+                !pipelineRunner->isRunning() &&
+                !pipelineRunner->isPaused()) {
+                showExportDialog();
+            }
+            });
     }
 }
 

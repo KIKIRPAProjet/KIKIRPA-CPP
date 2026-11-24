@@ -55,10 +55,20 @@ void MainWindow::showExportDialog()
     auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
     if (canvas && canvas->hasActiveCropSelection()) {
         QMessageBox::information(this, tr("Sélection non validée"),
-            tr("Validez le recadrage et attendez sa fin, ou annulez la sélection avant d'exporter."));
+            tr("Validez le recadrage ou annulez la sélection avant d'exporter."));
         return;
     }
 
+    if (canvas && canvas->isCropped() && !cropBackendReady) {
+        exportAfterCrop = true;
+        requestMosaicCrop(canvas->cropNormalizedRect());
+
+        // Une erreur de préparation peut empêcher le lancement.
+        if (!pipelineRunner->isRunning())
+            exportAfterCrop = false;
+
+        return;
+    }
     QDialog dialog(this);
     dialog.setWindowTitle(tr("Exporter le projet"));
     QVBoxLayout layout(&dialog);
