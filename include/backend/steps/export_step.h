@@ -13,13 +13,15 @@ namespace StepsNs {
     using Json = StepNs::Json;
 
     struct ExportInput {
+        static constexpr int DEFAULT_PREVIEW_MAX_SIDE = 6000;
+
         // Vide : dossier Téléchargements de l'utilisateur courant.
         std::string outputDirectory;
         // Nom du fichier de sortie. Vide : "mosaic.tif" ou "mosaic.jpg" selon format.
         std::string filename;
         // "tiff" conserve la mosaïque RGB 16 bits ; "jpeg" produit un aperçu RGB 8 bits réduit ; "both" produit les deux.
         std::string format = "tiff";
-        int previewMaxSide = 6000;
+        int previewMaxSide = DEFAULT_PREVIEW_MAX_SIDE;
     };
 
     struct ExportOutput {

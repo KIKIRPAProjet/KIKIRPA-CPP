@@ -18,7 +18,6 @@
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
-#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <tiff.h>
 #include <tiffio.h>
@@ -107,27 +106,27 @@ namespace StepsNs {
             return downloadsDirectory();
         }
 
-        std::string sanitizeFilename(const std::string& filename, const std::string& format) {
-            const std::string extension = format == "jpeg" ? ".jpg" : ".tif";
-            if (filename.empty()) return format == "jpeg" ? "mosaic.jpg" : "mosaic.tif";
+        std::string sanitizeFilename(const std::string& filename, bool isJpeg) {
+            const std::string extension = isJpeg ? ".jpg" : ".tif";
+            if (filename.empty()) return isJpeg ? "mosaic.jpg" : "mosaic.tif";
             const fs::path filenamePath = IONs::pathFromUtf8(filename).filename();
             std::string stem = IONs::pathToUtf8(filenamePath.stem());
-            if (stem.empty()) stem = format == "jpeg" ? "mosaic" : "mosaic";
+            if (stem.empty()) stem = "mosaic";
             return stem + extension;
         }
 
         std::string configuredFilename(const Json& configJson) {
-            const std::string format = configuredFormat(configJson);
+            const bool isJpeg = configuredFormat(configJson) == "jpeg";
             if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
-                return sanitizeFilename("", format);
+                return sanitizeFilename("", isJpeg);
             }
             for (const Json& parameter : configJson.at("parameters")) {
                 if (parameter.value("name", "") == "filename" && parameter.contains("value") &&
                     parameter["value"].is_string()) {
-                    return sanitizeFilename(parameter["value"].get<std::string>(), format);
+                    return sanitizeFilename(parameter["value"].get<std::string>(), isJpeg);
                 }
             }
-            return sanitizeFilename("", format);
+            return sanitizeFilename("", isJpeg);
         }
 
         // Copies numérotées d'un même export : <nom><ext> est le rang 0, « <nom> (1)<ext> » le rang 1, etc. Un nouvel
@@ -235,9 +234,27 @@ namespace StepsNs {
                 "cannot create output directory '" + IONs::pathToUtf8(directory) + "': " + directoryError.message();
             return false;
         }
-        
-        constexpr int DEFAULT_PREVIEW_MAX_SIDE = 6000;
+
+        constexpr int DEFAULT_PREVIEW_MAX_SIDE = ExportInput::DEFAULT_PREVIEW_MAX_SIDE;
         constexpr int JPEG_MAX_SIDE = 65535;
+
+        struct PreviewBuildContext {
+            cv::Mat preview;
+            double scale = 1.0;
+            std::string errorMessage;
+        };
+
+        struct JpegExportTarget {
+            fs::path imagePath;
+            int maxSide = DEFAULT_PREVIEW_MAX_SIDE;
+        };
+
+        struct ExportPlan {
+            fs::path directory;
+            fs::path imagePath;
+            int previewMaxSide = DEFAULT_PREVIEW_MAX_SIDE;
+            bool isBigTiff = false;
+        };
 
         int configuredPreviewMaxSide(const Json& configJson) {
             if (!configJson.contains("parameters") || !configJson["parameters"].is_array()) {
@@ -252,79 +269,133 @@ namespace StepsNs {
             return DEFAULT_PREVIEW_MAX_SIDE;
         }
 
-        bool exportJpegPreview(const DataNs::Mosaic& mosaic, const fs::path& imagePath,
-                               const Json& config, ExportOutput& output, Json& result) {
-            const int maxSide = configuredPreviewMaxSide(config);
-            if (maxSide < 1 || maxSide > JPEG_MAX_SIDE) {
-                result["error"] = "JPEG preview size must be between 1 and 65535 pixels";
+        bool renderPreviewBlock(IONs::PyramidalTiffReaderClass& reader, const cv::Rect& sourceRect,
+                                PreviewBuildContext& context) {
+            cv::Mat source16;
+            if (!reader.readRegion(0, sourceRect, source16, context.errorMessage)) {
+                context.errorMessage = "cannot read mosaic region for JPEG preview: " + context.errorMessage;
                 return false;
             }
+            cv::Mat source8;
+            source16.convertTo(source8, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
+            cv::Mat sourceBgr;
+            cv::cvtColor(source8, sourceBgr, cv::COLOR_RGB2BGR);
+            const double scale = context.scale;
+            const int destX = static_cast<int>(std::round(sourceRect.x * scale));
+            const int destY = static_cast<int>(std::round(sourceRect.y * scale));
+            const int destWidth =
+                std::max(1, static_cast<int>(std::round((sourceRect.x + sourceRect.width) * scale)) - destX);
+            const int destHeight =
+                std::max(1, static_cast<int>(std::round((sourceRect.y + sourceRect.height) * scale)) - destY);
+            const cv::Rect previewRect(destX, destY, destWidth, destHeight);
+            const cv::Rect clippedPreview = previewRect & cv::Rect(0, 0, context.preview.cols, context.preview.rows);
+            if (!clippedPreview.empty()) {
+                cv::resize(sourceBgr, context.preview(clippedPreview), clippedPreview.size(), 0.0, 0.0, cv::INTER_AREA);
+            }
+            return true;
+        }
 
+        bool renderPreviewRow(IONs::PyramidalTiffReaderClass& reader, const cv::Size& canvasSize, int sourceY,
+                              PreviewBuildContext& context) {
+            for (int sourceX = 0; sourceX < canvasSize.width; sourceX += DataNs::BLOCK_SIZE) {
+                const cv::Rect sourceRect(
+                    sourceX, sourceY,
+                    std::min(DataNs::BLOCK_SIZE, canvasSize.width - sourceX),
+                    std::min(DataNs::BLOCK_SIZE, canvasSize.height - sourceY)
+                );
+                if (!renderPreviewBlock(reader, sourceRect, context)) return false;
+            }
+            return true;
+        }
+
+        bool buildJpegPreview(const DataNs::Mosaic& mosaic, int maxSide, PreviewBuildContext& context) {
             const int sourceSide = std::max(mosaic.canvasSize.width, mosaic.canvasSize.height);
             const double scale = std::min(static_cast<double>(maxSide) / sourceSide, 1.0);
             const cv::Size previewSize{
                 std::max(1, static_cast<int>(std::round(mosaic.canvasSize.width * scale))),
                 std::max(1, static_cast<int>(std::round(mosaic.canvasSize.height * scale)))
             };
-
-            cv::Mat preview(previewSize, CV_8UC3, cv::Scalar(0, 0, 0));
+            context = {cv::Mat(previewSize, CV_8UC3, cv::Scalar(0, 0, 0)), scale, {}};
             IONs::PyramidalTiffReaderClass reader(mosaic.imagePath);
-
             for (int sourceY = 0; sourceY < mosaic.canvasSize.height; sourceY += DataNs::BLOCK_SIZE) {
-                for (int sourceX = 0; sourceX < mosaic.canvasSize.width; sourceX += DataNs::BLOCK_SIZE) {
-                    const cv::Rect sourceRect(
-                        sourceX, sourceY,
-                        std::min(DataNs::BLOCK_SIZE, mosaic.canvasSize.width - sourceX),
-                        std::min(DataNs::BLOCK_SIZE, mosaic.canvasSize.height - sourceY)
-                    );
-
-                    cv::Mat source16;
-                    std::string errorMessage;
-                    if (!reader.readRegion(0, sourceRect, source16, errorMessage)) {
-                        result["error"] = "cannot read mosaic region for JPEG preview: " + errorMessage;
-                        return false;
-                    }
-
-                    cv::Mat source8;
-                    source16.convertTo(source8, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
-
-                    cv::Mat sourceBgr;
-                    cv::cvtColor(source8, sourceBgr, cv::COLOR_RGB2BGR);
-
-                    const cv::Rect previewRect(
-                        static_cast<int>(std::round(sourceX * scale)),
-                        static_cast<int>(std::round(sourceY * scale)),
-                        std::max(1, static_cast<int>(std::round((sourceX + sourceRect.width) * scale)) -
-                            static_cast<int>(std::round(sourceX * scale))),
-                        std::max(1, static_cast<int>(std::round((sourceY + sourceRect.height) * scale)) -
-                            static_cast<int>(std::round(sourceY * scale)))
-                    );
-                    const cv::Rect clippedPreview = previewRect & cv::Rect(0, 0, previewSize.width, previewSize.height);
-                    if (clippedPreview.empty()) continue;
-                    cv::resize(sourceBgr, preview(clippedPreview), clippedPreview.size(), 0.0, 0.0, cv::INTER_AREA);
-                }
+                if (!renderPreviewRow(reader, mosaic.canvasSize, sourceY, context)) return false;
             }
+            return true;
+        }
 
+        bool writeJpegPreviewFile(const cv::Mat& preview, const fs::path& imagePath, std::string& errorMessage) {
             const fs::path temporaryPath = IONs::makeTemporaryPath(imagePath).concat(".jpg");
             if (!IONs::writeImage(temporaryPath, preview)) {
                 std::error_code removeError;
                 fs::remove(temporaryPath, removeError);
-                result["error"] = "cannot write JPEG preview '" + IONs::pathToUtf8(imagePath) + "'";
+                errorMessage = "cannot write JPEG preview '" + IONs::pathToUtf8(imagePath) + "'";
                 return false;
             }
-
-            std::string errorMessage;
             if (!IONs::replaceFile(temporaryPath, imagePath, errorMessage)) {
                 std::error_code removeError;
                 fs::remove(temporaryPath, removeError);
+                return false;
+            }
+            return true;
+        }
+
+        bool exportJpegPreview(const DataNs::Mosaic& mosaic, const JpegExportTarget& target, ExportOutput& output,
+                               Json& result) {
+            if (target.maxSide < 1 || target.maxSide > JPEG_MAX_SIDE) {
+                result["error"] = "JPEG preview size must be between 1 and 65535 pixels";
+                return false;
+            }
+            PreviewBuildContext context;
+            if (!buildJpegPreview(mosaic, target.maxSide, context) ||
+                !writeJpegPreviewFile(context.preview, target.imagePath, context.errorMessage)) {
+                result["error"] = context.errorMessage;
+                return false;
+            }
+            const cv::Size previewSize = context.preview.size();
+            output = {target.imagePath, previewSize, false, "jpeg"};
+            result["image"] = {{"path", IONs::pathToUtf8(target.imagePath)},
+                               {"format", "jpeg"},
+                               {"preview", true},
+                               {"previewMaxSide", std::max(previewSize.width, previewSize.height)}};
+            result["canvasSize"] = {previewSize.width, previewSize.height};
+            return true;
+        }
+
+        bool exportBothFormats(const DataNs::Mosaic& mosaic, const ExportPlan& plan, ExportOutput& output,
+                               Json& result) {
+            std::string errorMessage;
+            if (!IONs::copyFileReplacing(mosaic.imagePath, plan.imagePath, errorMessage)) {
                 result["error"] = errorMessage;
                 return false;
             }
+            const fs::path jpegName = fs::path(IONs::pathToUtf8(plan.imagePath)).stem().replace_extension(".jpg");
+            const fs::path jpegPath = nextExportPath(plan.directory, IONs::pathToUtf8(jpegName.filename()));
+            ExportOutput jpegOutput;
+            Json jpegResult;
+            if (!exportJpegPreview(mosaic, {jpegPath, plan.previewMaxSide}, jpegOutput, jpegResult)) {
+                result = jpegResult;
+                return false;
+            }
+            output = {plan.imagePath, mosaic.canvasSize, plan.isBigTiff, "both"};
+            result["image"] = {{"path", IONs::pathToUtf8(plan.imagePath)},
+                               {"bigTiff", output.isBigTiff},
+                               {"format", "tiff"},
+                               {"jpegPreview", IONs::pathToUtf8(jpegOutput.imagePath)}};
+            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
+            return true;
+        }
 
-            output = {imagePath, previewSize, false, "jpeg"};
-            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"format", "jpeg"},
-                               {"preview", true}, {"previewMaxSide", previewSize.width > previewSize.height ? previewSize.width : previewSize.height}};
-            result["canvasSize"] = {previewSize.width, previewSize.height};
+        bool exportTiff(const DataNs::Mosaic& mosaic, const ExportPlan& plan, ExportOutput& output, Json& result) {
+            std::string errorMessage;
+            if (!IONs::copyFileReplacing(mosaic.imagePath, plan.imagePath, errorMessage)) {
+                result["error"] = errorMessage;
+                return false;
+            }
+            output = {plan.imagePath, mosaic.canvasSize, plan.isBigTiff, "tiff"};
+            result["image"] = {{"path", IONs::pathToUtf8(plan.imagePath)},
+                               {"bigTiff", output.isBigTiff},
+                               {"format", "tiff"}};
+            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
 
@@ -343,53 +414,15 @@ namespace StepsNs {
                 result["error"] = "unsupported export format '" + format + "'";
                 return false;
             }
-            const std::string filename = configuredFilename(config);
-            const fs::path imagePath = nextExportPath(directory, filename);
-
+            const ExportPlan plan{directory, nextExportPath(directory, configuredFilename(config)),
+                                  configuredPreviewMaxSide(config), header.isBigTiff};
             if (format == "jpeg") {
-                return exportJpegPreview(mosaic, imagePath, config, output, result);
+                return exportJpegPreview(mosaic, {plan.imagePath, plan.previewMaxSide}, output, result);
             }
             if (format == "both") {
-                if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
-                    result["error"] = errorMessage;
-                    return false;
-                }
-
-                const fs::path jpegName = fs::path(IONs::pathToUtf8(imagePath)).stem().replace_extension(".jpg");
-                const fs::path jpegPath = nextExportPath(directory, IONs::pathToUtf8(jpegName.filename()));
-                Json jpegConfig = config;
-                jpegConfig["parameters"] = Json::array();
-                for (const Json& parameter : config.at("parameters")) {
-                    if (parameter.value("name", "") == "format") {
-                        jpegConfig["parameters"].push_back({{"valueType", "string"}, {"name", "format"}, {"value", "jpeg"}});
-                    } else {
-                        jpegConfig["parameters"].push_back(parameter);
-                    }
-                }
-
-                ExportOutput jpegOutput;
-                Json jpegResult;
-                if (!exportJpegPreview(mosaic, jpegPath, jpegConfig, jpegOutput, jpegResult)) {
-                    result = jpegResult;
-                    return false;
-                }
-
-                output = {imagePath, mosaic.canvasSize, header.isBigTiff, "both"};
-                result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff},
-                                   {"format", "tiff"}, {"jpegPreview", IONs::pathToUtf8(jpegOutput.imagePath)}};
-                result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
-                return true;
-            } else {
-                if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
-                    result["error"] = errorMessage;
-                    return false;
-                }
+                return exportBothFormats(mosaic, plan, output, result);
             }
-            output = {imagePath, mosaic.canvasSize, header.isBigTiff, format};
-            result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff},
-                               {"format", format}};
-            result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
-            return true;
+            return exportTiff(mosaic, plan, output, result);
         }
 
     }
