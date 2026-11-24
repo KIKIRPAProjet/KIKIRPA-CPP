@@ -28,8 +28,9 @@ public:
     // modèle sur ce poste est remplacé par la méthode par défaut, dans le projet aussi.
     void updateChoices(const FrontendNs::PipelineChoices &requestedChoices);
 
-    // Affiche l'état sauvegardé dans la liste des étapes : ✓ étapes faites, ▶ étape où le calcul reprendra,
-    // ○ étapes suivantes, et un résumé sous la liste. savedStepCount < 0 : aucun calcul sauvegardé.
+    // Affiche l'état sauvegardé dans la liste des étapes : « (sauvegardée) » pour les étapes faites, gras et
+    // « (reprise ici) » pour l'étape où le calcul reprendra, texte grisé pour les suivantes, et un résumé sous la liste.
+    // savedStepCount < 0 : aucun calcul sauvegardé.
     void showSavedState(int savedStepCount);
 
 private:
@@ -44,7 +45,7 @@ private:
     // Note « Vote 2D automatique », affichée seulement avec SIFT et LightGlue.
     void refreshVoteNote(const FrontendNs::PipelineChoices &choices);
 
-    // Remet les marques ✓ ▶ ○ et le résumé d'après m_savedStepCount.
+    // Remet les mentions, le style et le résumé d'après m_savedStepCount.
     void applySavedState();
 
     // Lit les méthodes affichées et les enregistre dans le projet.

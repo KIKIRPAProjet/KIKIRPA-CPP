@@ -270,6 +270,23 @@ TEST_F(ProjectSetupTestClass, LightGlueGetsVote2DAndTheBuildModel) {
   EXPECT_EQ(parameterValue(script.at("pipeline").at("steps").at(1), "modelPath"), FrontendNs::LIGHTGLUE_MODEL_PATH);
 }
 
+// Corrections manuelles (onglet Paire) : manual-matches est ajouté après l'appariement, avant le positionnement, avec
+// les points saisis ; le backend accepte le script.
+TEST_F(ProjectSetupTestClass, ManualCorrectionsAddManualMatchesBeforePositioning) {
+  FrontendNs::ProjectSetup setup = model.getSetup();
+  setup.pipelineChoices.manualCorrections = {{0, 1, {{500.0, 40.0}}, {{20.0, 40.0}}}};
+  model.setSetup(setup);
+
+  const FrontendNs::Json script = model.createBackendScript();
+  const std::vector<std::string> expected{"import", "phase-correlation", "manual-matches", "absolute-pos",
+                                          "intensity-correction", "graphcut", "fusion", "export"};
+  EXPECT_EQ(stepNames(script), expected);
+  const FrontendNs::Json &corrections = parameterValue(script.at("pipeline").at("steps").at(2), "corrections");
+  ASSERT_EQ(corrections.size(), 1U);
+  EXPECT_EQ(corrections.at(0).at("tileIdB"), 1);
+  EXPECT_EQ(corrections.at(0).at("pointsInA"), FrontendNs::Json::parse("[[500.0, 40.0]]"));
+}
+
 // Couture par programmation dynamique : remplace graphcut, et le backend accepte le script (territoires pour la fusion).
 TEST_F(ProjectSetupTestClass, DynamicProgrammingReplacesGraphCut) {
   FrontendNs::ProjectSetup setup = model.getSetup();

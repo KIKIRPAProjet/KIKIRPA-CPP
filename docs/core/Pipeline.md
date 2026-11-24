@@ -138,7 +138,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 - `StepClass::externalInputsFingerprint()` décrit ce que le step lit hors du pipeline. Elle est gardée dans le manifest.
 - `ImportStepClass` y met le nom, la taille et la date de chaque image source. Une image ajoutée, retirée ou modifiée périme donc le checkpoint de l'import, et toute la suite est refaite.
 
-**État sauvegardé** (`core/pipeline/saved_state.h`, test : `tests/core/test_saved_state.cpp`) : `countSavedSteps` renvoie le nombre de steps de tête déjà faits dont le checkpoint est encore valide. C'est la règle de reprise elle-même : `resolveStart` l'appelle, le prochain run reprend donc au step de cet index. L'interface l'utilise avec le script des méthodes choisies et les étapes faites lues dans `<dossier de checkpoints>/run.json` (le fichier que réécrit le lanceur, comme pour la reprise). L'onglet « Chaîne » marque dans sa liste les étapes faites (✓), l'étape de reprise (▶) et les suivantes (○), à l'ouverture d'un projet, après chaque étape, en pause et en fin de run.
+**État sauvegardé** (`core/pipeline/saved_state.h`, test : `tests/core/test_saved_state.cpp`) : `countSavedSteps` renvoie le nombre de steps de tête déjà faits dont le checkpoint est encore valide. C'est la règle de reprise elle-même : `resolveStart` l'appelle, le prochain run reprend donc au step de cet index. L'interface l'utilise avec le script des méthodes choisies et les étapes faites lues dans `<dossier de checkpoints>/run.json` (le fichier que réécrit le lanceur, comme pour la reprise). Dans la liste de l'onglet « Chaîne », les étapes faites portent la mention « (sauvegardée) », l'étape de reprise est en gras avec « (reprise ici) » et les suivantes sont grisées. L'affichage est mis à jour à l'ouverture d'un projet, après chaque étape, en pause, en fin de run, et quand la grille est validée ou que le recouvrement ou une méthode change.
 
 **Pause** : `PipelineClass::requestPause()` est thread-safe. La pause est prise en compte entre deux steps, et le statut passe à `paused`. Un nouveau `run()` reprend au step suivant.
 
@@ -150,6 +150,7 @@ Le champ facultatif **`"run"`** du script, à côté de `"pipeline"`, contient d
 | `phase-correlation` | `StepsNs::PhaseCorrelationStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `sift` | `StepsNs::SiftStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
 | `lightglue` | `StepsNs::LightGlueStepClass` | `tiles` : `Tiles` | `matches` : `PairMatches` |
+| `manual-matches` | `StepsNs::ManualMatchesStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `matches` : `PairMatches` |
 | `absolute-pos` | `StepsNs::AbsolutePosStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `positions` : `Positions`, `pairResiduals` : `PairResiduals` |
 | `graphcut` | `StepsNs::GraphCutStepClass` | `tiles` : `Tiles`, `positions` : `Positions` | `territories` : `Territories` |
 | `intensity-correction` | `StepsNs::IntensityCorrectionStepClass` | `tiles` : `Tiles`, `matches` : `PairMatches` | `intensityCorrection` : `IntensityCorrection` |

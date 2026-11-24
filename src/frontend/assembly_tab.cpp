@@ -12,14 +12,17 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFont>
 #include <QFormLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
 #include <QVBoxLayout>
+#include <QVariant>
 
 namespace {
 
@@ -184,7 +187,7 @@ void AssemblyTab::setupStepList(QVBoxLayout *layout)
 
 void AssemblyTab::applyChoices()
 {
-    FrontendNs::PipelineChoices choices;
+    FrontendNs::PipelineChoices choices = m_projectGrid->state().pipelineChoices;   // garde les corrections manuelles
     choices.estimateOverlap = selectedData(m_overlapCombo) == "overlap-estimation";
     choices.matchingStep = selectedData(m_matchingCombo);
     choices.intensityMethod = selectedData(m_intensityCombo);
@@ -285,12 +288,19 @@ void AssemblyTab::applySavedState()
     for (int row = 0; row < stepCount; ++row) {
         QListWidgetItem *item = m_stepList->item(row);
         const QString baseText = item->data(BASE_TEXT_ROLE).toString();
-        QString marker;
-        if (m_savedStepCount >= 0)
-            marker = row < m_savedStepCount ? QStringLiteral("✓  ")
-                   : row == m_savedStepCount ? QStringLiteral("▶  ")
-                                             : QStringLiteral("○  ");
-        item->setText(marker + baseText);
+        // Sauvegardée : mention en fin de ligne ; reprise : gras et mention ; à refaire : texte grisé.
+        const bool hasState = m_savedStepCount >= 0;
+        QString suffix;
+        if (hasState && row < m_savedStepCount) suffix = tr(" (sauvegardée)");
+        else if (hasState && row == m_savedStepCount) suffix = tr(" (reprise ici)");
+        item->setText(baseText + suffix);
+        QFont font = item->font();
+        font.setBold(hasState && row == m_savedStepCount);
+        item->setFont(font);
+        if (hasState && row > m_savedStepCount)
+            item->setForeground(m_stepList->palette().color(QPalette::Disabled, QPalette::Text));
+        else
+            item->setData(Qt::ForegroundRole, QVariant());
     }
 
     if (m_savedStepCount < 0 || stepCount == 0)

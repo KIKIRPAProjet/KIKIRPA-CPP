@@ -102,7 +102,7 @@ void GridTab::createReferenceActions(QVBoxLayout *layout)
 
     m_importReferenceButton = FrontendUtils::makeButton(tr("Importer une image de référence…"), m_gridTabPage);
     m_compareReferenceButton = FrontendUtils::makeButton(tr("Comparer à l'image de référence"), m_gridTabPage);
-    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille ✓"), m_gridTabPage, true);
+    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille"), m_gridTabPage, true);
 
     layout->addWidget(m_importReferenceButton);
     layout->addWidget(m_compareReferenceButton);
@@ -216,11 +216,20 @@ void GridTab::setupConnections()
 
     // Recouvrement
     connect(m_horizontalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
-            [this](int value) { m_projectGrid->setHorizontalOverlap(value); });
+            [this](int value) {
+                m_projectGrid->setHorizontalOverlap(value);
+                m_mainWindow->refreshSavedState();   // le recouvrement change le script
+            });
     connect(m_verticalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
-            [this](int value) { m_projectGrid->setVerticalOverlap(value); });
+            [this](int value) {
+                m_projectGrid->setVerticalOverlap(value);
+                m_mainWindow->refreshSavedState();   // le recouvrement change le script
+            });
     connect(m_linkedOverlapCheck, &QCheckBox::toggled, this,
-            [this](bool linked) { m_projectGrid->setOverlapsLinked(linked); });
+            [this](bool linked) {
+                m_projectGrid->setOverlapsLinked(linked);
+                m_mainWindow->refreshSavedState();
+            });
 
     // Modalité, échelle et incertitude
     connect(m_modalityCombo, &QComboBox::currentTextChanged, this,

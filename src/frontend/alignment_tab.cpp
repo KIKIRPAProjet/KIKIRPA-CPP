@@ -61,7 +61,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
 
     // En-tête de la paire courante + statut (douteuse / fiable)
     auto *headerRow = new QHBoxLayout;
-    m_pairTitleLabel = new QLabel(tr("Paire r00_c00 → r00_c01"), this);
+    m_pairTitleLabel = new QLabel(tr("Paire r00_c00 / r00_c01"), this);
     m_pairTitleLabel->setStyleSheet(QStringLiteral("font-weight:600; color:#ececec;"));
     m_statusBadgeLabel = new QLabel(tr("douteuse"), this);
     m_statusBadgeLabel->setAlignment(Qt::AlignCenter);
@@ -119,7 +119,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
     actionsGrid->addWidget(m_validateButton, 1, 1);
     mainLayout->addLayout(actionsGrid);
 
-    auto *recalcButton = FrontendUtils::makeButton(tr("↻ Recalculer les positions F7"), this, true);
+    auto *recalcButton = FrontendUtils::makeButton(tr("Recalculer les positions F7"), this, true);
     mainLayout->addWidget(recalcButton);
 
     auto *separatorBottom = new QFrame(this);
@@ -180,7 +180,7 @@ AlignmentTab::AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidge
         m_mainWindow->requestRun(4);
     });
 
-    setPairs(FrontendUtils::defaultPairAlignments(), 0);
+    setPairs({}, 0);   // les paires arrivent avec le premier calcul (MainWindow::applyPipelineResults)
 }
 
 // enregistre la liste des paires et l'index de la paire active 
@@ -212,14 +212,11 @@ void AlignmentTab::rebuildPairSelector()
         if (onlyDubious && !pair.isDubious())
             continue;
 
-        const QString prefix = pair.isDubious()
-            ? QStringLiteral("⚠ ")
-            : QStringLiteral("✓ ");
-        const QString statusText = pair.isDubious()
-            ? tr("douteuse")
-            : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable"));
-        const QString itemLabel = QStringLiteral("%1%2 (%3)")
-                                      .arg(prefix, pair.pairLabel(), statusText);
+        const bool failed = pair.status == FrontendUtils::PairStatus::Failed;
+        const QString statusText = failed ? tr("échec")
+            : (pair.isDubious() ? tr("douteuse")
+                                : (pair.status == FrontendUtils::PairStatus::Validated ? tr("validée") : tr("fiable")));
+        const QString itemLabel = QStringLiteral("%1 (%2)").arg(pair.pairLabel(), statusText);
         m_pairCombo->addItem(itemLabel, pair.pairIndex);
         if (pair.pairIndex == m_currentPairIndex) {
             comboIndexToSelect = m_pairCombo->count() - 1;
@@ -275,7 +272,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     m_confidenceValueLabel->setText(
         tr("%1 · NCC %2")
             .arg(QString::number(pair.meanConfidence, 'f', 2).replace('.', ','),
-                 QString::number(pair.nccScore, 'f', 2).replace('.', ',')));
+                 FrontendUtils::formatMeasure(pair.nccScore, 2)));
 
     m_offsetValueLabel->setText(
         tr("%1 ; %2 px")
@@ -283,13 +280,12 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
                  QString::number(pair.dy, 'f', 1).replace('.', ',')));
 
     m_pointsShownValueLabel->setText(
-        QStringLiteral("<span style='color:#4ec978;'>● %1 retenus</span> · "
-                       "<span style='color:#e05a52;'>● %2 rejetés</span>")
+        QStringLiteral("<span style='color:#4ec978;'>- %1 retenus</span> · "
+                       "<span style='color:#e05a52;'>- %2 rejetés</span>")
             .arg(pair.shownInliers)
             .arg(pair.shownOutliers));
 
-    m_errorValueLabel->setText(
-        tr("%1 px").arg(QString::number(pair.optimizationErrorPx, 'f', 2).replace('.', ',')));
+    m_errorValueLabel->setText(FrontendUtils::formatMeasure(pair.optimizationErrorPx, 2, QStringLiteral(" px")));
     m_interventionValueLabel->setText(pair.intervention);
 }
 
