@@ -29,4 +29,3 @@ private:
     QVector<QToolButton *> m_toolButtons;
     QStringList m_toolNames;
 };
-
