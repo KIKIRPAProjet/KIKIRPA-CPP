@@ -138,7 +138,7 @@ private:
             "Adam Dikri\n"
             "Adrien Poncelet\n"
             "Amory Devillez\n"
-            "Anthony Debucqoy\n"
+            "Anthony Debucquoy\n"
             "Christian Claus\n"
             "Eva Bovijn\n"
             "Hugo Honorez\n"
