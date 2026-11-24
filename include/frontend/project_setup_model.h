@@ -2,6 +2,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <string>
@@ -21,6 +22,20 @@ struct ProjectTile {
   int column = 0;
 };
 
+// Points appariés à la main pour une paire (onglet Paire, « Correction manuelle »), en pixels pleine résolution, chacun
+// dans le repère de sa tuile : pointsInA[i] correspond à pointsInB[i]. Paramètre "corrections" du step manual-matches.
+struct ManualCorrection {
+  int tileIdA = 0;
+  int tileIdB = 0;
+  std::vector<std::array<double, 2>> pointsInA;
+  std::vector<std::array<double, 2>> pointsInB;
+
+  bool operator==(const ManualCorrection &other) const {
+    return tileIdA == other.tileIdA && tileIdB == other.tileIdB && pointsInA == other.pointsInA &&
+           pointsInB == other.pointsInB;
+  }
+};
+
 // Méthode choisie pour chaque étape du pipeline (onglet Chaîne). Les noms sont ceux du registre des steps.
 struct PipelineChoices {
   bool estimateOverlap = false;                    // ajoute overlap-estimation avant l'appariement
@@ -28,11 +43,13 @@ struct PipelineChoices {
   std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
   std::string seamStep = "graphcut";               // "graphcut" ou "dynamic-programming-dijkstra" (territoires pour la fusion)
   std::string exportFormat = "both";               // "tiff", "jpeg" ou "both"
+  // Non vide : manual-matches est ajouté avant absolute-pos et remplace les points de ces paires.
+  std::vector<ManualCorrection> manualCorrections;
 
   bool operator==(const PipelineChoices &other) const {
     return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
            intensityMethod == other.intensityMethod && seamStep == other.seamStep &&
-           exportFormat == other.exportFormat;
+           exportFormat == other.exportFormat && manualCorrections == other.manualCorrections;
   }
 };
 

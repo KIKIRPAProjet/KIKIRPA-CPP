@@ -1,5 +1,4 @@
-#ifndef WORKSPACE_UI_H
-#define WORKSPACE_UI_H
+#pragma once
 
 #include "projectgrid.h"
 
@@ -48,11 +47,10 @@ public:
     RightPanel *rightPanel() const { return m_rightPanel; }
     BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
     TopToolbars *topToolbars() const { return m_topToolbars; }
+    LeftToolbar *leftToolbar() const { return m_leftToolbar; }
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;
-    QComboBox *captureOrderCombo() const;
-    QComboBox *arrangementCombo() const;
     QLabel *statusLabel() const;
     QLabel *currentStepLabel() const;
     QProgressBar *progressBar() const;
@@ -81,5 +79,3 @@ private:
     TopToolbars *m_topToolbars = nullptr;
     QPushButton *m_cancelRunButton = nullptr;
 };
-
-#endif // WORKSPACE_UI_H

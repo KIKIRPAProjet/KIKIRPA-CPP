@@ -6,7 +6,6 @@
 class MainWindow;
 class ProjectGrid;
 class PipelineRunnerClass;
-class QComboBox;
 class QHBoxLayout;
 class QPushButton;
 
@@ -20,8 +19,8 @@ public:
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
-
-    QComboBox *arrangementCombo() const { return m_arrangementCombo; }
+    // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
+    void setExportVisible(bool visible);
 
 signals:
     void previousPairRequested();
@@ -32,7 +31,6 @@ public slots:
     void updateRunButtonState();
 
 private:
-    void createToolbar();
     void createModesBar();
     void createModeButtons(QWidget *stages, QHBoxLayout *stageLayout);
     void createActionButtons(QWidget *stages, QHBoxLayout *stageLayout);
@@ -42,10 +40,9 @@ private:
     void handleRunButtonClicked();
 
     MainWindow *m_mainWindow;
-    ProjectGrid *m_projectGrid;
     PipelineRunnerClass *m_pipelineRunner;
 
-    QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
+    QPushButton *m_exportButton = nullptr;
 };

@@ -1,25 +1,24 @@
 // src/frontend/top_toolbars.cpp
 #include "top_toolbars.h"
+
 #include "frontendutils.h"
 #include "mainwindow.h"
-#include "projectgrid.h"
 #include "pipeline_runner.h"
+#include "projectgrid.h"
 
 #include <QButtonGroup>
-#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
 
-TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent)
-    : QWidget(parent), m_mainWindow(mainWindow), m_projectGrid(projectGrid), m_pipelineRunner(pipelineRunner)
+TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, PipelineRunnerClass *pipelineRunner, QWidget *parent)
+    : QWidget(parent), m_mainWindow(mainWindow), m_pipelineRunner(pipelineRunner)
 {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
     mainLayout->setSpacing(0);
 
-    createToolbar();
     createModesBar();
     createOptionsBar();
 
@@ -29,25 +28,16 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, Pipel
         connect(m_pipelineRunner, &PipelineRunnerClass::runFinished, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
+
+        // Affiche le bouton d'export dès que la mosaïque finale est prête.
+        connect(m_pipelineRunner, &PipelineRunnerClass::mosaicReady, this, [this]() {
+            setExportVisible(true);
+        });
+        // Masque le bouton dès le démarrage d'un nouveau calcul pour éviter d'exporter un résultat obsolète.
+        connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
+            setExportVisible(false);
+        });
     }
-}
-
-void TopToolbars::createToolbar()
-{
-    QWidget *toolbar = new QWidget(this);
-    auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 5, 8, 5);
-
-    auto *title = new QLabel(tr("KIK-IRPA Assemblage"));
-    title->setObjectName(QStringLiteral("workspaceTitle"));
-    toolbarLayout->addWidget(title);
-    toolbarLayout->addStretch();
-
-    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), toolbar);
-    toolbarLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
-
-    static_cast<QVBoxLayout *>(layout())->addWidget(toolbar);
 }
 
 void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
@@ -56,9 +46,7 @@ void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
     modeGroup->setExclusive(true);
 
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
-        const QString label = (i == 3)
-            ? QStringLiteral("!   %1").arg(FrontendUtils::MODE_NAMES.at(i))
-            : QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
+        const QString label = QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
         auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
@@ -71,12 +59,12 @@ void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
 void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
 {
     // Bouton polymorphe d'exécution du calcul (Lancer / Pause / Reprendre).
-    m_runButton = FrontendUtils::makeButton(tr("▶ Tout lancer"), stages, true);
+    m_runButton = FrontendUtils::makeButton(tr("Tout lancer"), stages, true);
     m_runButton->setObjectName(QStringLiteral("runPipelineButton"));
     stageLayout->addWidget(m_runButton);
     connect(m_runButton, &QPushButton::clicked, this, &TopToolbars::handleRunButtonClicked);
 
-    m_stopButton = FrontendUtils::makeButton(tr("⏹ Arrêter"), stages);
+    m_stopButton = FrontendUtils::makeButton(tr("Arrêter"), stages);
     m_stopButton->setObjectName(QStringLiteral("stopPipelineButton"));
     m_stopButton->setVisible(false);
     stageLayout->addWidget(m_stopButton);
@@ -84,27 +72,43 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
         if (m_pipelineRunner) m_pipelineRunner->cancelRun();
     });
 
-    auto *compare = FrontendUtils::makeButton(tr("Comparer…"), stages);
-    stageLayout->addWidget(compare);
-    connect(compare, &QPushButton::clicked, m_pipelineRunner, &PipelineRunnerClass::showComparison);
+    auto* saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    saveButton->setObjectName(QStringLiteral("saveProjectButton"));
+    stageLayout->addWidget(saveButton);
+    connect(saveButton, &QPushButton::clicked,
+        m_mainWindow, &MainWindow::saveProject);
+
+    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    save->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
+    stageLayout->addWidget(save);
+    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
+
+    m_exportButton = FrontendUtils::makeButton(tr("Exporter…"), stages);
+    m_exportButton->setObjectName(QStringLiteral("exportPipelineButton"));
+    m_exportButton->setVisible(false);
+    stageLayout->addWidget(m_exportButton);
+    connect(m_exportButton, &QPushButton::clicked,
+        m_mainWindow, &MainWindow::showExportDialog);
 }
 
 void TopToolbars::createModesBar()
 {
     QWidget *stages = new QWidget(this);
     auto *stageLayout = new QHBoxLayout(stages);
-    stageLayout->setContentsMargins(8, 4, 8, 4);
+    stageLayout->setContentsMargins(8, 10, 8, 4);
     stageLayout->setSpacing(4);
 
     createModeButtons(stages, stageLayout);
 
-    auto *prevPairBtn = FrontendUtils::makeButton(tr("‹ Préc."), stages);
+    auto *prevPairBtn = FrontendUtils::makeButton(tr("Précédente"), stages);
     prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
+    prevPairBtn->setVisible(false);
     stageLayout->addWidget(prevPairBtn);
     connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
 
-    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante N ›"), stages);
+    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante"), stages);
     nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
+    nextDubiousBtn->setVisible(false);
     stageLayout->addWidget(nextDubiousBtn);
     connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
 
@@ -140,13 +144,13 @@ void TopToolbars::updateRunButtonState()
 
     // Met à jour l'icône et l'intitulé du bouton selon l'état réel du runner backend (+ afficher / masquer le bouton Stop).
     if (m_pipelineRunner->isRunning()) {
-        m_runButton->setText(tr("⏸ Pause"));
+        m_runButton->setText(tr("Pause"));
         if (m_stopButton) m_stopButton->setVisible(false); // Masqué pendant le calcul : seul Pause est affiché
     } else if (m_pipelineRunner->isPaused()) {
-        m_runButton->setText(tr("▶ Reprendre"));
+        m_runButton->setText(tr("Reprendre"));
         if (m_stopButton) m_stopButton->setVisible(true);  // Affiché lorsque le calcul est en pause
     } else {
-        m_runButton->setText(tr("▶ Tout lancer"));
+        m_runButton->setText(tr("Tout lancer"));
         if (m_stopButton) m_stopButton->setVisible(false); // Masqué au repos
     }
 }
@@ -162,25 +166,18 @@ void TopToolbars::createOptionsBar()
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
 
-    m_arrangementCombo = new QComboBox;
-    m_arrangementCombo->addItems({tr("Automatique (par lignes)"),
-                                tr("Serpentin vertical, bas gauche"),
-                                tr("Serpentin vertical, haut droite"),
-                                tr("Serpentin horizontal"), tr("Par lignes"), tr("Par colonnes")});
-    m_arrangementCombo->setObjectName(QStringLiteral("arrangementCombo"));
-    optionsLayout->addWidget(m_arrangementCombo);
-    connect(m_arrangementCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this, [this](int value) {
-        m_projectGrid->setCaptureOrder(value);
-        m_mainWindow->updateStatus(tr("Ordre de prise de vue : %1").arg(m_arrangementCombo->currentText()));
-    });
-
     static_cast<QVBoxLayout *>(layout())->addWidget(modeOptions);
 }
 
-void TopToolbars::updateTitle(const QString &projectName, const QString &modality)
+void TopToolbars::updateTitle(const QString &/*projectName*/, const QString &/*modality*/)
 {
-    if (auto *title = findChild<QLabel *>(QStringLiteral("workspaceTitle"))) {
-        title->setText(tr("%1 — %2 — KIK-IRPA Assemblage").arg(projectName, modality));
+    // Conservé vide : le nom du projet est directement affiché dans la barre de titre de la fenêtre.
+}
+
+void TopToolbars::setExportVisible(bool visible)
+{
+    if (m_exportButton) {
+        m_exportButton->setVisible(visible);
     }
 }
 
@@ -188,9 +185,9 @@ void TopToolbars::updateDubiousState(int dubiousCount)
 {
     if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
         if (dubiousCount > 0) {
-            alignBtn->setText(QStringLiteral("!   %1 (%2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
+            alignBtn->setText(QStringLiteral("4   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
         } else {
-            alignBtn->setText(QStringLiteral("✓   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
+            alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
     }
     if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {

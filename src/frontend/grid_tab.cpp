@@ -102,7 +102,7 @@ void GridTab::createReferenceActions(QVBoxLayout *layout)
 
     m_importReferenceButton = FrontendUtils::makeButton(tr("Importer une image de référence…"), m_gridTabPage);
     m_compareReferenceButton = FrontendUtils::makeButton(tr("Comparer à l'image de référence"), m_gridTabPage);
-    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille ✓"), m_gridTabPage, true);
+    m_validateGridButton = FrontendUtils::makeButton(tr("Valider la grille"), m_gridTabPage, true);
 
     layout->addWidget(m_importReferenceButton);
     layout->addWidget(m_compareReferenceButton);
@@ -131,20 +131,6 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
     dimensions->addRow(tr("Colonnes"), m_gridColumnsSpin);
     layout->addLayout(dimensions);
 
-    auto *orderGroup = new QGroupBox(tr("Ordre de prise de vue"), container);
-    auto *orderLayout = new QVBoxLayout(orderGroup);
-    m_captureOrderCombo = new QComboBox(orderGroup);
-    m_captureOrderCombo->addItems({
-        tr("Automatique (par lignes)"),
-        tr("Serpentin vertical, bas gauche"),
-        tr("Serpentin vertical, haut droite"),
-        tr("Serpentin horizontal"),
-        tr("Par lignes"),
-        tr("Par colonnes")
-    });
-    orderLayout->addWidget(m_captureOrderCombo);
-    layout->addWidget(orderGroup);
-
     return container;
 }
 
@@ -154,7 +140,8 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
 QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
 {
     auto *captureGroup = new QGroupBox(tr("Prise de vue"), parent);
-    auto *captureForm = new QFormLayout(captureGroup);
+    auto *groupLayout = new QVBoxLayout(captureGroup);
+    auto *captureForm = new QFormLayout;
 
     m_horizontalOverlapSpin = new QSpinBox(captureGroup);
     m_horizontalOverlapSpin->setRange(0, kMaxOverlapPercent);
@@ -172,31 +159,49 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
     captureForm->addRow(tr("Recouvrement horizontal"), m_horizontalOverlapSpin);
     captureForm->addRow(tr("Recouvrement vertical"), m_verticalOverlapSpin);
     captureForm->addRow(QString(), m_linkedOverlapCheck);
+    groupLayout->addLayout(captureForm);
 
-    m_modalityCombo = new QComboBox(captureGroup);
+    auto *advancedToggle = new QPushButton(tr("Afficher les paramètres avancés"), captureGroup);
+    advancedToggle->setCheckable(true);
+    advancedToggle->setFlat(true);
+    advancedToggle->setStyleSheet(QStringLiteral("text-align:left; border:0; background:transparent; color:#9bb6d0; padding:2px 0;"));
+    groupLayout->addWidget(advancedToggle);
+
+    auto *advancedWidget = new QWidget(captureGroup);
+    advancedWidget->setVisible(false);
+    auto *advancedForm = new QFormLayout(advancedWidget);
+    advancedForm->setContentsMargins(0, 4, 0, 0);
+
+    m_modalityCombo = new QComboBox(advancedWidget);
     m_modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
                                tr("Radiographie"), tr("Autre")});
-    captureForm->addRow(tr("Modalité"), m_modalityCombo);
+    advancedForm->addRow(tr("Modalité"), m_modalityCombo);
 
-    m_scaleSpin = new QDoubleSpinBox(captureGroup);
+    m_scaleSpin = new QDoubleSpinBox(advancedWidget);
     m_scaleSpin->setRange(0.0, kMaxScale);
     m_scaleSpin->setDecimals(kScaleDecimals);
     m_scaleSpin->setSingleStep(kScaleStep);
     m_scaleSpin->setSpecialValueText(tr("À renseigner"));
     m_scaleSpin->setSuffix(tr(" mm / pixel"));
-    captureForm->addRow(tr("Échelle"), m_scaleSpin);
+    advancedForm->addRow(tr("Échelle"), m_scaleSpin);
 
-    m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), captureGroup);
+    m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), advancedWidget);
     m_automaticUncertaintyCheck->setChecked(m_projectGrid->state().automaticUncertainty);
 
-    m_uncertaintySpin = new QDoubleSpinBox(captureGroup);
+    m_uncertaintySpin = new QDoubleSpinBox(advancedWidget);
     m_uncertaintySpin->setRange(0.0, kMaxUncertainty);
     m_uncertaintySpin->setDecimals(kUncertaintyDecimals);
     m_uncertaintySpin->setSuffix(tr(" px"));
     m_uncertaintySpin->setEnabled(!m_projectGrid->state().automaticUncertainty);
 
-    captureForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
-    captureForm->addRow(QString(), m_automaticUncertaintyCheck);
+    advancedForm->addRow(tr("Marge d'incertitude"), m_uncertaintySpin);
+    advancedForm->addRow(QString(), m_automaticUncertaintyCheck);
+    groupLayout->addWidget(advancedWidget);
+
+    connect(advancedToggle, &QPushButton::toggled, advancedWidget, [advancedToggle, advancedWidget](bool checked) {
+        advancedWidget->setVisible(checked);
+        advancedToggle->setText(checked ? tr("Masquer les paramètres avancés") : tr("Afficher les paramètres avancés"));
+    });
 
     return captureGroup;
 }
@@ -206,14 +211,11 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
  */
 void GridTab::setupConnections()
 {
-    // Dimensions et ordre de prise de vue
+    // Dimensions de la grille
     connect(m_gridRowsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setGridRows(value); });
     connect(m_gridColumnsSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setGridColumns(value); });
-    connect(m_captureOrderCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), this,
-            [this](int value) { m_projectGrid->setCaptureOrder(value); });
-
     // Recouvrement
     connect(m_horizontalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
             [this](int value) { m_projectGrid->setHorizontalOverlap(value); });
@@ -259,7 +261,6 @@ void GridTab::updateParameters(const ProjectGrid::State &gridState)
 {
     setSilently(m_gridRowsSpin, &QSpinBox::setValue, gridState.gridRows);
     setSilently(m_gridColumnsSpin, &QSpinBox::setValue, gridState.gridColumns);
-    setSilently(m_captureOrderCombo, &QComboBox::setCurrentIndex, gridState.captureOrder);
     setSilently(m_horizontalOverlapSpin, &QSpinBox::setValue, gridState.horizontalOverlap);
     setSilently(m_verticalOverlapSpin, &QSpinBox::setValue, gridState.verticalOverlap);
     setSilently(m_linkedOverlapCheck, &QCheckBox::setChecked, gridState.overlapsLinked);

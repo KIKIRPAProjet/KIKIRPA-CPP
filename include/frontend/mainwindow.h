@@ -17,6 +17,7 @@ class PipelineRunnerClass;
 class WorkspaceUI;
 class MenuBarManager;
 class QImage;
+struct PipelineResults;
 
 class MainWindow : public QMainWindow
 {
@@ -63,6 +64,8 @@ private:
     void validatePair(int pairIndex);
     void applyManualPairOffset(int pairIndex, double dx, double dy);
     void refreshPairViews();
+    // Remplace les paires et les lignes de couture affichées par celles du dernier calcul (vides : tout est effacé).
+    void applyPipelineResults(const PipelineResults &results);
 
     void refreshGrid();
     void refreshGridControls();
@@ -73,6 +76,12 @@ private:
     void setMode(int mode);
     void refreshProjectInfo();
     void saveProject();
+    bool saveProjectToFile();
+    bool confirmDiscardUnsavedChanges();
+    void markProjectModified();
+    void refreshWindowTitle();
+    bool projectModified = false;
+    bool switchingProject = false;
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
@@ -98,12 +107,12 @@ private:
     PipelineRunnerClass *pipelineRunner = nullptr;
     WorkspaceUI *workspaceUI = nullptr;
     MenuBarManager *menuBarManager = nullptr;
-    QString projectName = QStringLiteral("VanDerVeken");
+    QString projectName = QStringLiteral("Polyptik");
     QString projectPath;
     QString outputDirectory;
     bool projectCreated = false;
     int currentMode = 4;
-    int zoomPercent = 12;
+    int zoomPercent = 100;
     bool panelsVisible = true;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;

@@ -1,8 +1,7 @@
 /**
  * @brief page d'accueil de l'application, permettant de créer un nouveau projet ou d'ouvrir un projet existant
  */
-#ifndef HOMEPAGE_H
-#define HOMEPAGE_H
+#pragma once
 
 #include <QStringList>
 #include <QWidget>
@@ -42,5 +41,3 @@ private:
     QString currentProjectName;
     int currentTileCount = 0;
 };
-
-#endif
