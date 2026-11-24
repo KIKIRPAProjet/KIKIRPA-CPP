@@ -224,9 +224,18 @@ QString findPyramidPathForSource(const QString &sourcePath)
         return {};
 
     // Le chemin passé est déjà un TIFF pyramidal
-    if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
-        sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
-        return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+    if (sourcePath.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive) ||
+        sourcePath.endsWith(QStringLiteral(".tiff"), Qt::CaseInsensitive)) {
+        if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
+            sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
+            return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+        }
+        if (QFileInfo::exists(sourcePath)) {
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(sourcePath.toStdString()));
+            if (reader.getLevelCount() > 1) {
+                return sourcePath;
+            }
+        }
     }
 
     const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());

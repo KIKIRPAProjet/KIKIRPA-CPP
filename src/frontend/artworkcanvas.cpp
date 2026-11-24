@@ -50,6 +50,25 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     update();
 }
 
+void ArtworkCanvas::setMode(int mode)
+{
+    if (modeValue != mode) {
+        modeValue = mode;
+        fitToWindow();
+        update();
+    }
+}
+
+void ArtworkCanvas::setZoom(int zoom)
+{
+    const int newZoom = qBound(kMinZoomPercent, zoom, kMaxZoomPercent);
+    if (newZoom != zoomPercent) {
+        zoomPercent = newZoom;
+        emit zoomChanged(zoomPercent);
+        update();
+    }
+}
+
 QTransform ArtworkCanvas::viewTransform() const
 {
     const qreal scale = zoomPercent / 100.0;
@@ -61,11 +80,33 @@ QTransform ArtworkCanvas::viewTransform() const
     return transform;
 }
 
+void ArtworkCanvas::fitToWindow()
+{
+    m_panOffset = QPointF(0.0, 0.0);
+    int fitZoom = 100;
+
+    if (modeValue == kModeExport || modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+        if (!m_mosaicPreview.isNull() && m_mosaicPreview.width() > 0 && m_mosaicPreview.height() > 0) {
+            const QRect target = rect().adjusted(24, 24, -24, -24);
+            const double scaleX = static_cast<double>(target.width()) / m_mosaicPreview.width();
+            const double scaleY = static_cast<double>(target.height()) / m_mosaicPreview.height();
+            const double fitScale = std::min(scaleX, scaleY);
+            fitZoom = qBound(kMinZoomPercent, qRound(fitScale * 100.0), kMaxZoomPercent);
+        }
+    } else if (modeValue == kModeGrid) {
+        fitZoom = 100;
+    } else {
+        fitZoom = 100;
+    }
+
+    zoomPercent = fitZoom;
+    emit zoomChanged(zoomPercent);
+    update();
+}
+
 void ArtworkCanvas::resetView()
 {
-    zoomPercent = 100;
-    m_panOffset = QPointF(0.0, 0.0);
-    update();
+    fitToWindow();
 }
 
 void ArtworkCanvas::setGridState(int rows, int columns, int order,
@@ -422,8 +463,9 @@ void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
 
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
 {
+    const QPoint scenePos = viewTransform().inverted().map(point);
     for (int index = 0; index < gridCellRects.size(); ++index)
-        if (gridCellRects.at(index).contains(point))
+        if (gridCellRects.at(index).contains(scenePos))
             return index;
     return -1;
 }
@@ -497,7 +539,12 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     }
 
     if (modeValue == kModeGrid) {
+        beginViewTransform();
         drawGrid(p);
+        p.restore();
+        p.setPen(QColor("#dddddd"));
+        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
         return;
     }
 
@@ -595,17 +642,19 @@ void ArtworkCanvas::setMosaicPreview(const QImage &image) {
     m_isCropped = false;
     m_cropNormalizedRect = QRectF(0, 0, 1, 1);
     m_cropSelectionRect = QRect();
-    update();
+    if (!image.isNull()) {
+        fitToWindow();
+    } else {
+        update();
+    }
 }
 
 QRect ArtworkCanvas::mosaicDisplayedRect() const
 {
     if (m_mosaicPreview.isNull()) return QRect();
-    const QRect target = rect().adjusted(24, 24, -24, -24);
-    const QSize scaledSize = m_mosaicPreview.size().scaled(target.size(), Qt::KeepAspectRatio);
-    return QRect(target.left() + (target.width() - scaledSize.width()) / 2,
-                 target.top() + (target.height() - scaledSize.height()) / 2,
-                 scaledSize.width(), scaledSize.height());
+    return QRect((width() - m_mosaicPreview.width()) / 2,
+                 (height() - m_mosaicPreview.height()) / 2,
+                 m_mosaicPreview.width(), m_mosaicPreview.height());
 }
 
 void ArtworkCanvas::drawCropOverlay(QPainter &painter, const QRect &imageRect)

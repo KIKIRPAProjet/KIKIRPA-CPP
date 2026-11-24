@@ -102,6 +102,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
+        connect(canvasView, &ArtworkCanvas::zoomChanged, this, [this](int zoom) {
+            zoomPercent = zoom;
+            workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoom));
+        });
     }
 
     auto *nextDubiousShortcut = new QShortcut(QKeySequence(Qt::Key_N), this);
@@ -272,9 +276,9 @@ void MainWindow::setupMenuConnections()
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
-        zoomPercent = 100;
-        workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
+        if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+            canvasView->fitToWindow();
+        }
     });
    
     connect(menuBarManager, &MenuBarManager::runRequested,

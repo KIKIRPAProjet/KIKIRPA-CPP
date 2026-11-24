@@ -35,8 +35,11 @@ class ArtworkCanvas final : public QWidget
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
-    void setMode(int mode) { modeValue = mode; update(); }
-    void setZoom(int zoom) { zoomPercent = zoom; update(); }
+    void setMode(int mode);
+    void setZoom(int zoom);
+    int zoom() const { return zoomPercent; }
+    void fitToWindow();
+    void resetView();
     void setGridState(int rows, int columns, int order, const QVector<GridTile> &tiles,
                       int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
@@ -50,6 +53,7 @@ public:
 
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
+    QRect mosaicDisplayedRect() const;
     // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
     void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
@@ -90,7 +94,6 @@ public:
     // Rétablit l'image originale non recadrée.
     void resetCrop();
 
-    void resetView();
     void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
 
     signals:
@@ -173,7 +176,6 @@ private:
     bool m_emptyCardHovered = false;
     QCache<QString, QImage> m_imageCache;
 
-    QRect mosaicDisplayedRect() const;
     // Zoom et déplacement de la vue : repère de l'image non zoomée -> écran (paintEvent, recadrage).
     QTransform viewTransform() const;
     int m_activeTool = -1;

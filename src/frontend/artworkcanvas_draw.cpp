@@ -29,8 +29,8 @@ constexpr qreal kArrowAngleDegrees = 28.0;
 // Côté des aperçus mis en cache : la taille affichée (zoom compris), arrondie à la puissance de deux supérieure,
 // entre ces deux bornes. Une grille de 50 tuiles tient alors en quelques dizaines de Mo, et zoomer de 10 % ne
 // relit pas l'image.
-constexpr int kPreviewMinDimension = 256;
-constexpr int kPreviewMaxDimension = 2048;
+constexpr int kPreviewMinDimension = 128;
+constexpr int kPreviewMaxDimension = 8192;
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
 constexpr int LABEL_BAND = 20;   // bande au-dessus de chaque tuile pour son nom : le nom ne cache pas l'image
@@ -231,14 +231,11 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
 {
     if (m_mosaicPreview.isNull())
         return false;
-    const QRect target = rect().adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
-    // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
-    // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
-    const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
-                         target.top() + (target.height() - fitted.height()) / 2);
-    p.drawImage(topLeft, fitted);
-    if (withSeams) drawSeamLines(p, QRectF(topLeft, fitted.size()), m_seamLines);
+    const QPoint topLeft((width() - m_mosaicPreview.width()) / 2,
+                         (height() - m_mosaicPreview.height()) / 2);
+    const QRectF imageRect(topLeft, m_mosaicPreview.size());
+    p.drawImage(imageRect, m_mosaicPreview);
+    if (withSeams) drawSeamLines(p, imageRect, m_seamLines);
     return true;
 }
 

@@ -152,9 +152,7 @@ void WorkspaceCenter::createCanvasAndControls()
         applyZoom(m_mainWindow->zoomPercent + 10);
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        m_canvas->resetView();
+        m_canvas->fitToWindow();
     });
     connect(oneToOne, &QPushButton::clicked, this, [applyZoom]() {
         applyZoom(100);
