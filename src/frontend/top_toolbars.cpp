@@ -76,16 +76,12 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
         if (m_pipelineRunner) m_pipelineRunner->cancelRun();
     });
 
-    auto* saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    auto *saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
     saveButton->setObjectName(QStringLiteral("saveProjectButton"));
+    saveButton->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
     stageLayout->addWidget(saveButton);
     connect(saveButton, &QPushButton::clicked,
         m_mainWindow, &MainWindow::saveProject);
-
-    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), stages);
-    save->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
-    stageLayout->addWidget(save);
-    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
 
     m_exportButton = FrontendUtils::makeButton(tr("Exporter…"), stages);
     m_exportButton->setObjectName(QStringLiteral("exportPipelineButton"));

@@ -571,6 +571,15 @@ void MainWindow::invalidatePipelineResults()
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
+    if (auto *top = workspaceUI->topToolbars()) {
+        top->setExportVisible(false);
+        top->resetModesAvailability();
+        const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
+        if (hasTiles) {
+            top->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+            top->setModeEnabled(2, true); // Débloque mode "3 Masques"
+        }
+    }
     updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
 }
 
@@ -810,12 +819,6 @@ void MainWindow::refreshProjectInfo()
 
     const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
     const QString lockedTip = hasTiles ? QString() : tr("Importez d'abord un dossier de tuiles");
-    for (int m = 2; m <= 5; ++m) {
-        if (auto *btn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(m))) {
-            btn->setEnabled(hasTiles);
-            btn->setToolTip(lockedTip);
-        }
-    }
     if (auto *runBtn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("runPipelineButton"))) {
         runBtn->setEnabled(hasTiles);
         runBtn->setToolTip(lockedTip);
