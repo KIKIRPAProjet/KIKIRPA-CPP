@@ -223,16 +223,45 @@ void drawTileLabel(QPainter &p, const QRectF &tileRect, const QString &name, boo
 
 bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
 {
-    if (m_mosaicPreview.isNull())
+    // Les coutures des vues Assemblage et Ligne de couture utilisent le repère de la mosaïque entière.
+    if (m_originalMosaicPreview.isNull())
         return false;
     const QRect target = rect().adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
     // Réduction en conservant le ratio, puis dessin centré à la taille obtenue.
     // (drawImage(target, ...) ré-étirerait l'image pour remplir tout le rectangle.)
-    const QImage fitted = m_mosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    const QImage fitted = m_originalMosaicPreview.scaled(target.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
     const QPoint topLeft(target.left() + (target.width() - fitted.width()) / 2,
                          target.top() + (target.height() - fitted.height()) / 2);
     p.drawImage(topLeft, fitted);
     if (withSeams) drawSeamLines(p, QRectF(topLeft, fitted.size()), m_seamLines);
+    return true;
+}
+
+bool ArtworkCanvas::drawAssemblyLayers(QPainter &p)
+{
+    if (imageLayers.isEmpty()) return false;
+    QRectF bounds = imageLayerBounds;
+    if (bounds.isEmpty()) {
+        for (const ImageLayer &layer : imageLayers)
+            bounds = bounds.united(layer.worldRect);
+    }
+    if (bounds.isEmpty()) return false;
+
+    const QRectF area = rect().adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const qreal scale = qMin(area.width() / bounds.width(), area.height() / bounds.height());
+    const QSizeF size = bounds.size() * scale;
+    const QRectF frame(area.center() - QPointF(size.width(), size.height()) / 2, size);
+    p.save();
+    p.setClipRect(frame);
+    for (const ImageLayer &layer : imageLayers) {
+        if (!layer.visible || layer.image.isNull()) continue;
+        const QRectF target(frame.topLeft() + (layer.worldRect.topLeft() - bounds.topLeft()) * scale,
+                            layer.worldRect.size() * scale);
+        p.setOpacity(globalImageLayerOpacity * layer.opacity);
+        p.drawImage(target, layer.image);
+    }
+    p.restore();
+    if (seamVisible) drawSeamLines(p, frame, m_seamLines);
     return true;
 }
 
@@ -426,7 +455,7 @@ void ArtworkCanvas::drawGrid(QPainter &p)
         p.setPen(QPen((index == selectedGridCell || isDragTarget) ? QColor("#4b9bea") : QColor("#e8c638"),
                       (index == selectedGridCell || isDragTarget) ? 3 : 1, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
-        p.drawRect(cell.adjusted(1, 1, -2, -2));  
+        p.drawRect(cell.adjusted(1, 1, -2, -2));
     }
 
     p.setPen(QColor("#eeeeee"));
