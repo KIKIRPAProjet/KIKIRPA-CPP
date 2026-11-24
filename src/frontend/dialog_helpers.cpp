@@ -298,26 +298,29 @@ void DialogHelpers::showComparisonDialog(QWidget *parent,
     dialog.exec();
 }
 
-bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep, int stepCount)
+bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep,
+                                      const std::vector<FrontendUtils::PipelineStepInfo> &steps)
 {
     QDialog confirmation(parent);
     confirmation.setWindowTitle(
-        translate("Relancer à partir de l'étape %1").arg(firstStep));
+        translate("Relancer à partir de « %1 »")
+            .arg(steps.at(static_cast<std::size_t>(firstStep - 1)).displayName));
     auto *layout = new QVBoxLayout(&confirmation);
     layout->addWidget(new QLabel(
         translate("Les étapes précédentes seront réutilisées sans recalcul."),
         &confirmation));
     auto *reused = new QListWidget(&confirmation);
     for (int step = 1; step < firstStep; ++step)
-        reused->addItem(translate(" Étape %1 : résultat conservé").arg(step));
+        reused->addItem(translate("%1 : résultat conservé")
+                            .arg(steps.at(static_cast<std::size_t>(step - 1)).displayName));
     layout->addWidget(reused);
     auto *recalculated = new QListWidget(&confirmation);
-    for (int step = firstStep; step <= stepCount; ++step)
-        recalculated->addItem(translate("Étape %1 : résultat recalculé").arg(step));
+    for (int step = firstStep; step <= static_cast<int>(steps.size()); ++step)
+        recalculated->addItem(translate("%1 : résultat recalculé")
+                                  .arg(steps.at(static_cast<std::size_t>(step - 1)).displayName));
     layout->addWidget(recalculated);
     layout->addWidget(FrontendUtils::mutedLabel(
-        translate("Les résultats actuels seront conservés dans l'historique. "
-                  "Cette maquette ne lance pas de calcul backend."),
+        translate("Les résultats actuels seront conservés dans l'historique."),
         &confirmation));
     auto *buttons = new QDialogButtonBox(
         QDialogButtonBox::Cancel | QDialogButtonBox::Ok, &confirmation);

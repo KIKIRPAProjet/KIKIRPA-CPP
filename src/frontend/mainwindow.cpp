@@ -1034,7 +1034,7 @@ void MainWindow::requestRun(int firstStep)
         return;
     }
     // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
-    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep, static_cast<int>(steps.size()))) {
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep, steps)) {
         return;
     }
 
