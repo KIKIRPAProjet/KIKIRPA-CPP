@@ -6,7 +6,6 @@
 class MainWindow;
 class ProjectGrid;
 class PipelineRunnerClass;
-class QComboBox;
 class QHBoxLayout;
 class QPushButton;
 
@@ -20,8 +19,6 @@ public:
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
-
-    QComboBox *arrangementCombo() const { return m_arrangementCombo; }
 
 signals:
     void previousPairRequested();
@@ -45,7 +42,6 @@ private:
     ProjectGrid *m_projectGrid;
     PipelineRunnerClass *m_pipelineRunner;
 
-    QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
 };

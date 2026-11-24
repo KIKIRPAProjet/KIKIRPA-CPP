@@ -39,13 +39,10 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     currentPair = pair;
     update();
 }
-
-void ArtworkCanvas::setGridState(int rows, int columns, int order,
-                                 const QVector<GridTile> &tiles, int selectedCell)
+void ArtworkCanvas::setGridState(int rows, int columns,const QVector<GridTile>& tiles, int selectedCell)
 {
     gridRows = rows;
     gridColumns = columns;
-    captureOrder = order;
     gridTiles = tiles;
     selectedGridCell = selectedCell;
     update();
@@ -88,7 +85,6 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
     }
     QWidget::mouseReleaseEvent(event);
 }
-
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
 {
     for (int index = 0; index < gridCellRects.size(); ++index)

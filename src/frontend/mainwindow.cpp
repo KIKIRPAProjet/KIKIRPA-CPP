@@ -538,7 +538,6 @@ void MainWindow::setMode(int mode)
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
     }
-    workspaceUI->arrangementCombo()->setVisible(currentMode == 1);
     if (currentMode == 1)
         workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
@@ -630,9 +629,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
         return;
     }
 
-    updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3, ordre « %4 ».")
-                     .arg(activeTileCount).arg(gridState.gridRows).arg(gridState.gridColumns)
-                     .arg(workspaceUI->captureOrderCombo() ? workspaceUI->captureOrderCombo()->currentText() : QString()));
+    updateStatus(tr("Grille validée : %1 tuile(s), %2 × %3.")
+        .arg(activeTileCount)
+        .arg(gridState.gridRows)
+        .arg(gridState.gridColumns));
     QMessageBox::information(this, tr("Grille validée"),
         tr("La grille et ses paramètres sont valides.\n\nJSON backend généré :\n%1")
             .arg(QString::fromStdString(IONs::pathToUtf8(scriptPath))));
