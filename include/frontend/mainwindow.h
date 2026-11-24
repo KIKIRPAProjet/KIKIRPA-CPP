@@ -75,6 +75,7 @@ private:
                                  const QImage &referenceImage, const QImage &tileImage);
     void setMode(int mode);
     void refreshProjectInfo();
+    void invalidatePipelineResults();
     void saveProject();
     bool saveProjectToFile();
     bool confirmDiscardUnsavedChanges();

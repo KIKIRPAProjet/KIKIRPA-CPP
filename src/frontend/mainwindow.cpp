@@ -143,6 +143,10 @@ void MainWindow::setupProjectGridConnections()
             markProjectModified();
         refreshProjectInfo();
     });
+    connect(projectGrid, &ProjectGrid::gridChanged, this, [this]() {
+        if (!switchingProject)
+            invalidatePipelineResults();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
             this, [this](bool) {
                 if (!switchingProject)
@@ -458,6 +462,15 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
         canvasView->setAlignmentOverview(results.tiles, results.pairs);
     }
     refreshPairViews();
+}
+
+void MainWindow::invalidatePipelineResults()
+{
+    applyPipelineResults(PipelineResults());
+    mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
 }
 
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
