@@ -9,6 +9,7 @@
 #include "core/io/file_fingerprint.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <nlohmann/json.hpp>
@@ -63,7 +64,7 @@ namespace StepsNs {
             std::string directory;
             for (const Json& parameter : configJson.at("parameters"))
                 if (parameter.at("name") == "outputDirectory") directory = parameter.at("value").get<std::string>();
-            return fs::u8path(directory);
+            return IONs::pathFromUtf8(directory);
         }
 
         // Sans outputDirectory : <dossier des images>/.cache/mosaic, à côté du cache d'import (.cache/pyramids). Un
@@ -323,7 +324,7 @@ namespace StepsNs {
             output.value = makeMosaicPaths(resolveOutputDirectory(configJson, inputs.tiles), context.canvasSize);
             writeMosaic(context, output.value);
             dataStore->replace(output.key, output.value);
-            result["image"] = output.value.imagePath.u8string();
+            result["image"] = IONs::pathToUtf8(output.value.imagePath);
             result["canvasSize"] = {output.value.canvasSize.width, output.value.canvasSize.height};
             result["blockCount"] = blockRectangles(output.value.canvasSize).size();
             return true;

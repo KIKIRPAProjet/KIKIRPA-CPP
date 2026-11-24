@@ -18,6 +18,7 @@
 
 #include <QPainter>
 #include <QRegularExpression>
+#include <QUuid>
 
 #include <algorithm>
 #include <cmath>
@@ -221,6 +222,7 @@ void PipelineWorkerClass::requestCancel() {
 }
 
 bool PipelineWorkerClass::initializePipeline(const QString& scriptJsonText, const QString& startFromStep, bool skipCompletedSteps, bool isResume) {
+    namespace fs = std::filesystem;
     nlohmann::json scriptJson;
     try {
         scriptJson = nlohmann::json::parse(scriptJsonText.toStdString());
@@ -239,8 +241,28 @@ bool PipelineWorkerClass::initializePipeline(const QString& scriptJsonText, cons
     runState.skipCompletedSteps = skipCompletedSteps;
     if (!startFromStep.isEmpty()) runState.startFromStep = startFromStep.toStdString();
 
+    const nlohmann::json projectMetadata = scriptJson.value("project", nlohmann::json::object());
+    const QString projectName = QString::fromStdString(projectMetadata.value("name", std::string("Projet")));
+    const QString executionId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    fs::path outputDirectory;
+    if (projectMetadata.contains("outputDirectory") && projectMetadata["outputDirectory"].is_string())
+        outputDirectory = IONs::pathFromUtf8(projectMetadata["outputDirectory"].get<std::string>());
+    if (outputDirectory.empty() && !runState.checkpointDirectory.empty())
+        outputDirectory = IONs::pathFromUtf8(runState.checkpointDirectory).parent_path();
+    if (outputDirectory.empty()) {
+        emit pipelineFinished(false, tr("Le dossier de sortie du projet est introuvable."), QImage());
+        return false;
+    }
+
+    const fs::path runDirectory = outputDirectory / "runs" / executionId.toStdString();
+    pipeline->setReportPath(runDirectory / "execution.json");
+    pipeline->setReportMetadata({
+        {"projectName", projectName.toUtf8().toStdString()},
+        {"executionId", executionId.toStdString()},
+        {"project", projectMetadata}
+    });
+
     if (!runState.checkpointDirectory.empty()) {
-        namespace fs = std::filesystem;
         const fs::path checkpointDir = fs::absolute(IONs::pathFromUtf8(runState.checkpointDirectory));
         const fs::path statePath = checkpointDir / "run.json";
 

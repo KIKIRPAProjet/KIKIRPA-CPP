@@ -1,68 +1,186 @@
 // src/frontend/export_mode.cpp
-/*
- * .cpp : le POURQUOI
- * - choix de conception : centraliser les options d'export dans une boîte de dialogue ;
- * - cas limite : le backend d'export peut ne pas être connecté dans le prototype ;
- * - unité ou repère : les formats et profils sont ceux du projet courant ;
- * - raison non évidente : le rapport est proposé séparément pour permettre un export sans rapport.
- */
-/*
- * Header : le QUOI
- * Gère l'export du projet et la création du rapport d'assemblage.
- * - ce que ça fait : affiche les options d'export et prépare la génération du fichier de sortie ;
- * - ce que ça renvoie : aucune valeur directement, les résultats sont transmis à l'interface ;
- * - quand ça lève une exception : si la boîte de dialogue ou l'enregistrement du fichier échoue.
- */
-//  gere l'export du projet et la creation du rapport
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
-#include "projectgrid.h"
 #include "workspace_ui.h"
 
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/pyramidal_tiff_writer.h"
 #include "core/io/unicode_path.h"
+#include "core/pipeline/pipeline_report.h"
 
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 
+#include <nlohmann/json.hpp>
 
-#include <QCheckBox>
+#include <QByteArray>
 #include <QComboBox>
-#include <QDateTime>
+#include <QDir>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QIODevice>
-#include <QMessageBox>
-#include <QDir>
 #include <QLabel>
+#include <QMessageBox>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSaveFile>
 #include <QVBoxLayout>
-#include <QFile>
+
+#include <filesystem>
+#include <stdexcept>
+#include <string>
+
+namespace {
+
+std::filesystem::path toFilesystemPath(const QString &path)
+{
+    return IONs::pathFromUtf8(path.toStdString());
+}
+
+}
 
 void MainWindow::showExportDialog()
 {
-    if (mosaicFilePath.isEmpty() || !QFileInfo(mosaicFilePath).isFile()) {
-        QMessageBox::information(this, tr("Image non disponible"),
-            tr("L'image finale n'est pas encore prête. Lancez le calcul complet avant de pouvoir l'exporter."));
-        return;
-    }
-
-    auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
-    if (canvas && !canvas->isCropped() && canvas->hasActiveCropSelection()) {
-        canvas->applyCrop();
-    }
-
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("Exporter le projet"));
+    dialog.setWindowTitle(tr("Exporter le projet ou un rapport"));
     QVBoxLayout layout(&dialog);
 
+    layout.addWidget(new QLabel(tr("Rapport d'une exécution archivée"), &dialog));
+    auto *executions = new QComboBox(&dialog);
+    QFileInfoList runDirectories;
+    if (!outputDirectory.isEmpty()) {
+        const QDir runsDirectory(QDir(outputDirectory).filePath(QStringLiteral("runs")));
+        runDirectories = runsDirectory.entryInfoList(
+            QDir::Dirs | QDir::NoDotAndDotDot, QDir::Time);
+    }
+    QString summaryCacheWarning;
+    for (const QFileInfo &runDirectory : runDirectories) {
+        const QString jsonPath = QDir(runDirectory.absoluteFilePath()).filePath(QStringLiteral("execution.json"));
+        const QString summaryPath = QDir(runDirectory.absoluteFilePath())
+                                        .filePath(QStringLiteral("execution-summary.json"));
+        if (!QFileInfo::exists(jsonPath)) continue;
+
+        nlohmann::json report;
+        if (QFileInfo::exists(summaryPath)) {
+            QFile summaryFile(summaryPath);
+            if (summaryFile.open(QIODevice::ReadOnly))
+                report = nlohmann::json::parse(summaryFile.readAll().constData(), nullptr, false);
+        }
+        const bool validSummary = !report.is_discarded() && report.is_object() &&
+                                 report.contains("metadata") && report["metadata"].is_object() &&
+                                 report.contains("progress") && report["progress"].is_object();
+        if (!validSummary) {
+            QFile archiveFile(jsonPath);
+            if (!archiveFile.open(QIODevice::ReadOnly)) continue;
+            report = nlohmann::json::parse(archiveFile.readAll().constData(), nullptr, false);
+            if (!report.is_discarded() && report.is_object() &&
+                report.contains("metadata") && report["metadata"].is_object() &&
+                report.contains("steps") && report["steps"].is_array()) {
+                try {
+                    PipelineNs::writeReportSummary(toFilesystemPath(jsonPath), report);
+                } catch (const std::exception &exception) {
+                    if (summaryCacheWarning.isEmpty())
+                        summaryCacheWarning = QString::fromUtf8(exception.what());
+                }
+            }
+        }
+        const bool hasSummary = report.is_object() && report.contains("progress") &&
+                                report["progress"].is_object();
+        const bool hasArchivedSteps = report.is_object() && report.contains("steps") &&
+                                      report["steps"].is_array();
+        if (report.is_discarded() || !report.is_object() || !report.contains("metadata") ||
+            !report["metadata"].is_object() || (!hasSummary && !hasArchivedSteps))
+            continue;
+
+        const auto &metadata = report["metadata"];
+        const QString archivedProject = QString::fromUtf8(
+            metadata.value("projectName", std::string("projet inconnu")).c_str());
+        const QString executionId = QString::fromUtf8(
+            metadata.value("executionId", std::string()).c_str());
+        const QString startedAt = QString::fromUtf8(
+            metadata.value("startedAt", std::string("date inconnue")).c_str());
+        const QString status = QString::fromUtf8(
+            metadata.value("status", std::string("statut inconnu")).c_str());
+        const QString label = tr("%1 — %2 — %3 — %4")
+                                  .arg(archivedProject, startedAt, executionId, status);
+        executions->addItem(label, jsonPath);
+    }
+
+    layout.addWidget(new QLabel(tr("Exécution à exporter"), &dialog));
+    layout.addWidget(executions);
+    if (!summaryCacheWarning.isEmpty())
+        layout.addWidget(new QLabel(
+            tr("Certaines anciennes archives n'ont pas pu être mises en cache : %1")
+                .arg(summaryCacheWarning), &dialog));
+    if (executions->count() == 0) {
+        executions->setEnabled(false);
+        layout.addWidget(new QLabel(
+            tr("Aucune exécution archivée n'a été trouvée dans le dossier du projet."),
+            &dialog));
+    } else {
+        layout.addWidget(new QLabel(
+            tr("Le rapport est généré à partir des résultats enregistrés, sans relancer le calcul."),
+            &dialog));
+    }
+
+    auto *exportReport = new QPushButton(tr("Enregistrer le rapport HTML…"), &dialog);
+    exportReport->setEnabled(executions->count() > 0);
+    layout.addWidget(exportReport);
+    connect(exportReport, &QPushButton::clicked, this, [this, &dialog, executions]() {
+        const QString executionJsonPath = executions->currentData().toString();
+        QFile file(executionJsonPath);
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(&dialog, tr("Rapport indisponible"),
+                tr("L'archive de cette exécution n'a pas pu être lue."));
+            return;
+        }
+
+        const QByteArray contents = file.readAll();
+        nlohmann::json report;
+        try {
+            report = nlohmann::json::parse(contents.constData());
+            if (!report.is_object() || !report.contains("metadata") ||
+                !report.contains("steps") || !report["steps"].is_array())
+                throw std::runtime_error("archive does not contain the expected steps");
+        } catch (const std::exception &exception) {
+            QMessageBox::warning(&dialog, tr("Archive invalide"),
+                tr("Le rapport ne peut pas être exporté :\n%1")
+                    .arg(QString::fromUtf8(exception.what())));
+            return;
+        }
+
+        const QString archivedProject = QString::fromUtf8(
+            report["metadata"].value("projectName", std::string("projet")).c_str());
+        const QString executionId = QString::fromUtf8(
+            report["metadata"].value("executionId", std::string("execution")).c_str());
+        const QString fileName = archivedProject + QStringLiteral("_rapport_") +
+                                 executionId + QStringLiteral(".html");
+        const QString defaultPath = outputDirectory.isEmpty()
+            ? fileName : QDir(outputDirectory).filePath(fileName);
+        const QString htmlPath = QFileDialog::getSaveFileName(
+            &dialog, tr("Enregistrer le rapport"), defaultPath,
+            tr("Rapport HTML (*.html)"));
+        if (htmlPath.isEmpty())
+            return;
+
+        try {
+            PipelineNs::writeHtmlReport(toFilesystemPath(htmlPath), report);
+        } catch (const std::exception &exception) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("Le rapport HTML n'a pas pu être enregistré :\n%1")
+                    .arg(QString::fromUtf8(exception.what())));
+            return;
+        }
+
+        updateStatus(tr("Rapport de l'exécution %1 exporté.").arg(executionId));
+        dialog.accept();
+    });
+
+    layout.addWidget(new QLabel(tr("Exporter la mosaïque TIFF"), &dialog));
     layout.addWidget(new QLabel(tr("Fichier de destination de la mosaïque :"), &dialog));
     auto *imagePathLayout = new QHBoxLayout();
     auto *imagePathEdit = new QLineEdit(&dialog);
@@ -91,12 +209,13 @@ void MainWindow::showExportDialog()
     auto *format = new QComboBox(&dialog);
     format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
                       tr("PSB"), tr("JPEG, perte de précision")});
-    auto *report = new QCheckBox(tr("Générer le rapport d'assemblage (HTML)"), &dialog);
-    report->setChecked(true);
     layout.addWidget(new QLabel(tr("Format de sortie"), &dialog));
     layout.addWidget(format);
     layout.addWidget(new QLabel(tr("Profil ICC des tuiles conservé"), &dialog));
-    layout.addWidget(report);
+    const bool mosaicAvailable = !mosaicFilePath.isEmpty() && QFileInfo(mosaicFilePath).isFile();
+    if (!mosaicAvailable)
+        layout.addWidget(new QLabel(
+            tr("Aucune mosaïque finale n'est disponible pour l'export TIFF."), &dialog));
     layout.addWidget(FrontendUtils::mutedLabel(
         tr("L'export de la mosaïque en pleine résolution sera généré par le backend."),
         &dialog));
@@ -104,10 +223,11 @@ void MainWindow::showExportDialog()
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
     auto *exportButton = buttons->addButton(tr("Exporter…"),
                                             QDialogButtonBox::AcceptRole);
+    exportButton->setEnabled(mosaicAvailable);
     layout.addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
-    connect(exportButton, &QPushButton::clicked, this, [this, &dialog, format, report, imagePathEdit]() {
+    connect(exportButton, &QPushButton::clicked, this, [this, &dialog, format, imagePathEdit]() {
         if (format->currentIndex() != 0) {
             QMessageBox::information(&dialog, tr("Format non disponible"),
                 tr("Seul l'export TIFF 16 bits est actuellement pris en charge."));
@@ -161,6 +281,8 @@ void MainWindow::showExportDialog()
         }
 
         auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
+        if (canvas && !canvas->isCropped() && canvas->hasActiveCropSelection())
+            canvas->applyCrop();
         const bool isCropped = canvas && canvas->isCropped();
 
         if (isCropped) {
@@ -213,31 +335,6 @@ void MainWindow::showExportDialog()
         const QFileInfo fileInfo(destination);
         outputDirectory = fileInfo.absolutePath();
         markProjectModified();
-
-        if (report->isChecked()) {
-            const QString reportName = projectName + QStringLiteral("_rapport.html");
-            const QString defaultPath = outputDirectory.isEmpty()
-                ? reportName : QDir(outputDirectory).filePath(reportName);
-            const QString path = QFileDialog::getSaveFileName(&dialog, tr("Enregistrer le rapport"),
-                defaultPath, tr("Rapport HTML (*.html)"));
-            if (!path.isEmpty()) {
-                QSaveFile file(path);
-                const QString html = QStringLiteral(
-                    "<!doctype html><meta charset=\"utf-8\"><title>Rapport KIK-IRPA</title>"
-                    "<h1>Rapport d'assemblage : %1</h1><p>Généré le %2.</p><p>Format demandé : %3</p>"
-                    "<p>Fichier image : %4</p><p>Tuiles référencées : %5</p><p>Les mesures présentées sont celles de la maquette.</p>")
-                    .arg(projectName.toHtmlEscaped(),
-                         QDateTime::currentDateTime().toString(Qt::ISODate).toHtmlEscaped(),
-                         format->currentText().toHtmlEscaped(),
-                         fileInfo.fileName().toHtmlEscaped())
-                    .arg(projectGrid ? projectGrid->state().tilePaths.size() : 0);
-                if (!file.open(QIODevice::WriteOnly) || file.write(html.toUtf8()) < 0 || !file.commit()) {
-                    QMessageBox::warning(&dialog, tr("Export impossible"),
-                        tr("Le rapport n'a pas pu être enregistré."));
-                    return;
-                }
-            }
-        }
 
         updateStatus(tr("TIFF exporté : %1")
                          .arg(fileInfo.absoluteFilePath()));

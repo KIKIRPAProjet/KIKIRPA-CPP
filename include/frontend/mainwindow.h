@@ -51,6 +51,7 @@ private:
 
     // Initialisation (appelées par le constructeur)
     void applyStyleSheet();
+
     void setupProjectGridConnections();
     void setupPipelineConnections();
     void setupHomePageConnections();
@@ -71,9 +72,12 @@ private:
     void refreshGridControls();
     void chooseTilesDirectory();
     bool chooseReferenceImage();
+
     void showReferenceComparison(const QString &referencePath, const QString &tilePath,
                                  const QImage &referenceImage, const QImage &tileImage);
+
     void setMode(int mode);
+
     void refreshProjectInfo();
     void saveProject();
     bool saveProjectToFile();
@@ -86,6 +90,7 @@ private:
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
     void showExportDialog();
+
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
 
@@ -93,11 +98,13 @@ private slots:
     void initializeNewProject(const QString &name, const QString &tileDirectory,
                               const QString &selectedOutputDirectory,
                               const QStringList &tilePaths);
+
     void applyLoadedProject(const QString &path);
     void openCurrentProjectFromHome();
     void handleTilesImported(const QString &directory, int importedCount);
     void showGridMessage(const QString &title, const QString &message, bool warning);
     void handleGridValidation(bool valid, int activeTileCount, const QStringList &errors);
+
     void showComparisonDialog();
     void showCancelRunButton();
     void removeCancelRunButton();
@@ -110,6 +117,7 @@ private:
     QString projectName = QStringLiteral("Polyptik");
     QString projectPath;
     QString outputDirectory;
+
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 100;

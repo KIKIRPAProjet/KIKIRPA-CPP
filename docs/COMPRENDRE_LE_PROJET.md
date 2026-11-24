@@ -482,20 +482,24 @@ Limites connues :
 - l'aperçu est dessiné à partir des positions et des images sources lues par `QImage`, pas à partir de la mosaïque produite ; sans lecteur TIFF dans Qt, il peut rester vide ;
 - certains boutons ne font encore rien (par exemple la comparaison A/B de l'onglet d'assemblage).
 
+### Exécutions et rapports
+
+Chaque lancement archive son rapport sous `<dossier-de-sortie>/runs/<identifiant>/`. `execution-summary.json` suit la progression et permet de remplir rapidement la liste d'export ; `execution.json` est écrit à la fin du run. Les checkpoints et le script de reprise restent dans le dossier configuré pour leur reprise.
+
+Le rapport décrit les paramètres et statuts des étapes, leurs entrées et sorties résumées, ainsi que les résultats utiles. Les coordonnées individuelles des points de confiance ne sont pas recopiées ; leur nombre et les indicateurs agrégés restent visibles. Les erreurs d'archivage avertissent l'utilisateur sans interrompre le calcul. Depuis Qt, l'opérateur choisit une exécution archivée et exporte son rapport HTML sans relancer le pipeline. Les anciennes archives sans résumé sont prises en charge par la création d'un cache léger lors de leur premier affichage.
+
 ### Ce qui est en cours
 
-- Plusieurs PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
+- Plusieurs PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105).
 
-### Comment le brancher au backend
-
-Tout ce qu'il faut existe déjà côté backend :
+Les autres interactions non liées au pipeline, comme Annuler / Rétablir, restent des maquettes.
 
 | Le front veut… | Il utilise |
 |---|---|
-| construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::pipelineToJson`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
+| construire le pipeline à partir des choix de l'utilisateur | `FrontendNs::ProjectSetupModelClass`, puis `PipelineNs::buildPipeline` (les erreurs de configuration arrivent en `std::invalid_argument`, à afficher) |
 | connaître les steps et leurs paramètres pour les proposer | `PipelineNs::getRegisteredStepNames()`, puis `createStep(nom)->getConfigJson()` |
-| lancer sans geler la fenêtre | `pipeline.run(logger)` dans un thread de travail (`QtConcurrent::run`) |
-| afficher le journal | le `logger` reçoit chaque message (`Step 2/7 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
+| lancer sans geler la fenêtre | `PipelineRunnerClass` pilote `PipelineWorkerClass` dans un thread dédié |
+| afficher le journal | le `logger` reçoit chaque message (`Step 2/5 OK …`). Il est appelé **depuis le thread de travail** : passer par un signal Qt en connexion différée pour mettre à jour l'interface |
 | mettre en pause | `pipeline.requestPause()`, sans risque depuis le thread de l'interface. La pause est prise entre deux steps |
 | reprendre ou refaire à partir d'un step | `RunState` : `checkpointDirectory`, `startFromStep`, `skipCompletedSteps` |
 | afficher l'avancement et l'état sauvegardé | `run.json` (`status`, `completedSteps`), réécrit après chaque step |
@@ -513,7 +517,7 @@ C'est ce que fait #132 (`src/frontend/pipeline_worker.cpp`). La reprise y suit l
 
 - **Fusion et Export** : tester la chaîne de bout en bout sur une mosaïque réelle du KIKIRPA (§5) ; fondu le long des coutures, si besoin.
 - **L'aperçu de l'interface** (§9) : le lire dans `mosaic_image.tif` (ou dans le TIFF pyramidal, à un niveau réduit) plutôt que dans les images sources.
-- **L'export** : choisir le nom du fichier, refuser d'écraser une mosaïque existante, produire un aperçu JPEG réduit.
+- **L'aperçu de l'export** : produire une version JPEG réduite.
 - **La reprise** : refaire un step dont un fichier de sortie a disparu, au lieu d'échouer à chaque relance ; ne laisser sortir de `run()` aucune exception levée par un checkpoint.
 - **Les jonctions de `dynamic-programming-dijkstra`** : dans le coin commun à quatre tuiles, l'attribution des pixels dépend de l'ordre des tuiles (#137). Brancher le réseau global déjà porté (`chooseAllJunctions`, `solveGlobalNetwork` dans `junctions.h`), pour que les quatre coutures d'un coin se rejoignent en un même point.
 - **Lire le TIFF pyramidal** (`readRegion`) dans les steps, au lieu des images source entières (§6).

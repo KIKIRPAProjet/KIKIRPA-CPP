@@ -5,6 +5,8 @@ Test : `tests/core/test_pipeline.cpp` (`ctest -L unit`).
 
 ## Lancer un pipeline
 
+La GUI génère le script backend à partir du projet et lance le pipeline réel de façon asynchrone. Chaque exécution reçoit son propre dossier sous `<dossier-de-sortie>/runs/<identifiant>/`, avec son archive `execution.json` et un petit `execution-summary.json` utilisé pour suivre la progression et remplir rapidement la liste d'export. Le résumé est mis à jour pendant le run ; l'archive complète est écrite une seule fois à la fin (succès, échec ou pause). Les exécutions encore en cours ne sont pas proposées à l'export. Le script d'état et les checkpoints restent dans le dossier défini par `run.checkpointDirectory`.
+
 ### En ligne de commande
 
 ```sh
@@ -84,6 +86,14 @@ Exemple complet et formats des sorties : [COMPRENDRE_LE_PROJET.md](../COMPRENDRE
 ## Exécution
 
 `PipelineClass::run` part d'un `DataStoreClass` vide et exécute les steps dans l'ordre. Il s'arrête au premier step qui renvoie `false` **ou lève une exception**, et renvoie `false`. Le message (`getResult()` du step, ou le texte de l'exception) va au logger, ou sur `std::cerr` s'il n'y en a pas.
+
+### Rapport d'exécution
+
+L'appelant active l'archive avec `setReportPath()` et fournit le nom du projet ainsi que l'identifiant d'exécution avec `setReportMetadata()`. Le résumé de progression est écrit de façon atomique après chaque transition ; l'archive complète est écrite de façon atomique à la fin. Le pipeline ne crée pas automatiquement le rapport HTML. Un chemin de rapport vide désactive l'archivage. Une erreur d'écriture de l'archive produit un avertissement et ne bloque pas le calcul. Si seul le résumé ne peut pas être écrit, l'archive finale reste disponible et l'interface peut lire ses métadonnées en solution de repli.
+
+L'archive décrit les étapes dans leur ordre configuré. Elle consigne le statut global, les dates de début et de fin, les paramètres de chaque étape, les clés et types de ses entrées, les sorties résumées et le résultat de chaque étape. Les descripteurs d'entrées et de sorties ne sont pas répétés dans la configuration. Les coordonnées individuelles des points de confiance ne sont pas archivées : leur nombre et les indicateurs agrégés par paire restent disponibles, tandis que les détails restent accessibles dans les checkpoints lorsqu'ils sont activés. Un arrêt laisse les étapes non exécutées au statut `notReached`; celles déjà réutilisées depuis un checkpoint valide portent `skipped`, et une étape en cours d'exécution porte `running`. Pour une étape sautée, le rapport conserve son statut et ses clés de sortie sans recharger une seconde fois les données du checkpoint. Une étape en échec contient le motif disponible. Les tuiles sont documentées par leurs noms, chemins, dimensions et voisinages, sans recopier les pixels. Les correspondances, territoires et coutures sont résumés (comptages, mesures et extrémités utiles) afin de limiter les répétitions et la taille des rapports. Un type non pris en charge est signalé dans le rapport sans faire échouer le pipeline.
+
+Depuis le menu d'export Qt, l'opérateur sélectionne une exécution archivée et exporte son rapport HTML. Cette opération lit uniquement le JSON déjà enregistré : elle ne relance aucun calcul. Pour les anciennes archives sans résumé, l'interface en crée un lors du premier affichage ; les affichages suivants ne lisent que ce petit fichier. Le rapport détaille aussi les dimensions et le chemin de sortie lorsqu'un step `export` a effectivement produit un fichier.
 
 ## Reprise, pause, checkpoints
 
