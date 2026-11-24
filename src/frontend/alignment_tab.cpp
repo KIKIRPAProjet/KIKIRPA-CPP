@@ -205,16 +205,16 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
         if (m_pairTitleLabel)
             m_pairTitleLabel->setText(tr("Aucune paire calculée"));
         if (m_statusBadgeLabel) {
-            m_statusBadgeLabel->setText(tr("—"));
+            m_statusBadgeLabel->setText(QStringLiteral("-"));
             m_statusBadgeLabel->setStyleSheet(QStringLiteral(
                 "background:#3a3a3a; color:#aaaaaa; border-radius:3px; padding:2px 8px;"));
         }
-        if (m_reasonValueLabel) m_reasonValueLabel->setText(QStringLiteral("—"));
-        if (m_confidenceValueLabel) m_confidenceValueLabel->setText(QStringLiteral("—"));
-        if (m_offsetValueLabel) m_offsetValueLabel->setText(QStringLiteral("—"));
-        if (m_pointsShownValueLabel) m_pointsShownValueLabel->setText(QStringLiteral("—"));
-        if (m_errorValueLabel) m_errorValueLabel->setText(QStringLiteral("—"));
-        if (m_interventionValueLabel) m_interventionValueLabel->setText(QStringLiteral("—"));
+        if (m_reasonValueLabel) m_reasonValueLabel->setText(QStringLiteral("-"));
+        if (m_confidenceValueLabel) m_confidenceValueLabel->setText(QStringLiteral("-"));
+        if (m_offsetValueLabel) m_offsetValueLabel->setText(QStringLiteral("-"));
+        if (m_pointsShownValueLabel) m_pointsShownValueLabel->setText(QStringLiteral("-"));
+        if (m_errorValueLabel) m_errorValueLabel->setText(QStringLiteral("-"));
+        if (m_interventionValueLabel) m_interventionValueLabel->setText(QStringLiteral("-"));
     }
 }
 

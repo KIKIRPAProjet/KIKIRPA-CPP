@@ -1,5 +1,4 @@
-#ifndef ARTWORKCANVAS_H
-#define ARTWORKCANVAS_H
+#pragma once
 
 #include "projectgrid.h"
 #include "frontendutils.h"
@@ -12,9 +11,12 @@
 #include <QCache>
 #include <QPoint>
 #include <QPointF>
+#include <QTransform>
 
+#include <cstdint>
 #include <functional>
 
+class QKeyEvent;
 class QMouseEvent;
 class QPaintEvent;
 class QPainter;
@@ -42,15 +44,42 @@ public:
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
-    void setMosaicPreview(const QImage &image) {
-        m_mosaicPreview = image;
-        update(); // Demande à Qt de redessiner le canevas immédiatement
-    }
+    // Définit et mémorise l'aperçu de la mosaïque assemblée pour le mode Image finale.
+    void setMosaicPreview(const QImage &image);
+
+    // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
+
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export 
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
+
+    // Active un outil de dessin ou d'édition (par exemple l'outil de recadrage).
+    void setActiveTool(int tool) { m_activeTool = tool; update(); }
+
+    // Retourne l'outil actuellement sélectionné (-1 si aucun).
+    int activeTool() const { return m_activeTool; }
+
+    // Indique si un recadrage a été appliqué sur la mosaïque affichée.
+    bool isCropped() const { return m_isCropped; }
+
+    // Indique si une zone de sélection de recadrage valide est activement tracée.
+    bool hasActiveCropSelection() const {
+        return m_cropSelectionRect.isValid() && m_cropSelectionRect.width() >= 15 && m_cropSelectionRect.height() >= 15;
+    }
+
+    // Retourne le rectangle de recadrage normalisé entre 0.0 et 1.0 par rapport à l'image pleine résolution.
+    QRectF cropNormalizedRect() const { return m_cropNormalizedRect; }
+
+    // Valide et applique la sélection de recadrage actuelle sur l'image affichée.
+    void applyCrop();
+
+    // Annule la boîte de sélection en cours sans modifier le recadrage déjà appliqué.
+    void cancelCropSelection();
+
+    // Rétablit l'image originale non recadrée.
+    void resetCrop();
 
     void resetView();
     void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
@@ -61,9 +90,11 @@ public:
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
-    void mouseReleaseEvent(QMouseEvent *event) override;
-    void paintEvent(QPaintEvent *) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    void paintEvent(QPaintEvent *) override;
     void leaveEvent(QEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
 
@@ -78,6 +109,22 @@ private:
     bool hasActiveImages() const;
     QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
+    void drawCropOverlay(QPainter &painter, const QRect &imageRect);
+
+    enum class CropHandle : std::uint8_t {
+        None,
+        TopLeft,
+        TopRight,
+        BottomLeft,
+        BottomRight,
+        Top,
+        Bottom,
+        Left,
+        Right,
+        Move
+    };
+
+    CropHandle hitTestCropHandle(const QPoint &pos) const;
 
     int modeValue = 4;
     int zoomPercent = 100;
@@ -105,6 +152,18 @@ private:
     bool m_panning = false;
     bool m_emptyCardHovered = false;
     QCache<QString, QImage> m_imageCache;
-};
 
-#endif // ARTWORKCANVAS_H
+    QRect mosaicDisplayedRect() const;
+    // Zoom et déplacement de la vue : repère de l'image non zoomée -> écran (paintEvent, recadrage).
+    QTransform viewTransform() const;
+    int m_activeTool = -1;
+    QImage m_originalMosaicPreview;
+    bool m_isCropping = false;
+    bool m_isCropped = false;
+    QRect m_cropSelectionRect;
+    QRectF m_cropNormalizedRect = QRectF(0, 0, 1, 1);
+    QPoint m_cropStartPos;
+    CropHandle m_activeHandle = CropHandle::None;
+    QPoint m_cropDragStart;
+    QRect m_cropRectAtDragStart;
+};

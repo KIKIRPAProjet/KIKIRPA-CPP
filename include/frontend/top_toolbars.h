@@ -20,13 +20,14 @@ public:
 
     void updateTitle(const QString &projectName, const QString &modality);
     void updateDubiousState(int dubiousCount);
+    // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
+    void setExportVisible(bool visible);
 
     QComboBox *arrangementCombo() const { return m_arrangementCombo; }
 
 signals:
     void previousPairRequested();
     void nextDubiousPairRequested();
-    void togglePanelsRequested();
 
 public slots:
     // Aligne l'intitulé du bouton principal (Lancer / Pause / Reprendre) sur l'état du runner.
@@ -48,4 +49,5 @@ private:
     QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
+    QPushButton *m_exportButton = nullptr;
 };

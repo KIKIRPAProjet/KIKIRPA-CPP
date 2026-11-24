@@ -1,3 +1,4 @@
+// src/frontend/left_toolbar.cpp
 #include "left_toolbar.h"
 
 #include <QButtonGroup>
@@ -101,6 +102,13 @@ QIcon makeToolIcon(int index)
         p.drawLine(QPointF(13.5, 7.7), QPointF(14.5, 9.2));
         break;
     }
+    case 9: { // Recadrer (deux coins de cadre)
+        p.drawLine(QPointF(6.0, 3.5), QPointF(6.0, 14.0));
+        p.drawLine(QPointF(6.0, 14.0), QPointF(16.5, 14.0));
+        p.drawLine(QPointF(3.5, 6.0), QPointF(14.0, 6.0));
+        p.drawLine(QPointF(14.0, 6.0), QPointF(14.0, 16.5));
+        break;
+    }
     default:
         break;
     }
@@ -116,34 +124,52 @@ LeftToolbar::LeftToolbar(QWidget *parent)
     auto *toolLayout = new QVBoxLayout(this);
     toolLayout->setContentsMargins(4, 5, 4, 5);
 
-    const QStringList toolNames = {tr("Main (H)"), tr("Zoom (Z)"), tr("Sélection (V)"),
+    m_toolNames = {tr("Main (H)"), tr("Zoom (Z)"), tr("Sélection (V)"),
         tr("Pinceau (B)"), tr("Gomme (E)"), tr("Lasso (L)"), tr("Rectangle (M)"),
-        tr("Point (P)"), tr("Mesure (I)")};
+        tr("Point (P)"), tr("Mesure (I)"), tr("Recadrer (C)")};
 
     const QList<Qt::Key> shortcuts = {Qt::Key_H, Qt::Key_Z, Qt::Key_V,
                                       Qt::Key_B, Qt::Key_E, Qt::Key_L,
-                                      Qt::Key_M, Qt::Key_P, Qt::Key_I};
+                                      Qt::Key_M, Qt::Key_P, Qt::Key_I, Qt::Key_C};
 
     auto *toolGroup = new QButtonGroup(this);
     toolGroup->setExclusive(true);
 
-    for (int i = 0; i < toolNames.size(); ++i) {
+    for (int i = 0; i < m_toolNames.size(); ++i) {
         auto *tool = new QToolButton(this);
         tool->setIcon(makeToolIcon(i));
         tool->setIconSize(QSize(18, 18));
-        tool->setToolTip(toolNames.at(i));
+        tool->setToolTip(m_toolNames.at(i));
         tool->setShortcut(QKeySequence(shortcuts.at(i)));
         tool->setFixedSize(kToolButtonSize, kToolButtonSize);
         tool->setCheckable(true);
         if (i == 0)
             tool->setChecked(true);
         toolGroup->addButton(tool, i);
+        if (i == kCropToolIndex) {
+            tool->setVisible(false); // L'outil de recadrage est masqué par défaut hors du mode Image finale
+        }
         toolLayout->addWidget(tool);
+        m_toolButtons.append(tool);
 
-        connect(tool, &QToolButton::clicked, this, [this, toolNames, i]() {
-            emit toolSelected(i, toolNames.at(i));
+        connect(tool, &QToolButton::clicked, this, [this, i]() {
+            emit toolSelected(i, m_toolNames.at(i));
         });
     }
 
     toolLayout->addStretch();
+}
+
+void LeftToolbar::selectTool(int index)
+{
+    if (index >= 0 && index < m_toolButtons.size()) {
+        m_toolButtons.at(index)->animateClick();
+    }
+}
+
+void LeftToolbar::setToolVisible(int index, bool visible)
+{
+    if (index >= 0 && index < m_toolButtons.size()) {
+        m_toolButtons.at(index)->setVisible(visible);
+    }
 }

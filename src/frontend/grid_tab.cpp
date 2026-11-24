@@ -175,7 +175,7 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
     captureForm->addRow(QString(), m_linkedOverlapCheck);
     groupLayout->addLayout(captureForm);
 
-    auto *advancedToggle = new QPushButton(tr("▸ Paramètres avancés"), captureGroup);
+    auto *advancedToggle = new QPushButton(tr("Afficher les paramètres avancés"), captureGroup);
     advancedToggle->setCheckable(true);
     advancedToggle->setFlat(true);
     advancedToggle->setStyleSheet(QStringLiteral("text-align:left; border:0; background:transparent; color:#9bb6d0; padding:2px 0;"));
@@ -214,7 +214,7 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
 
     connect(advancedToggle, &QPushButton::toggled, advancedWidget, [advancedToggle, advancedWidget](bool checked) {
         advancedWidget->setVisible(checked);
-        advancedToggle->setText(checked ? tr("▾ Paramètres avancés") : tr("▸ Paramètres avancés"));
+        advancedToggle->setText(checked ? tr("Masquer les paramètres avancés") : tr("Afficher les paramètres avancés"));
     });
 
     return captureGroup;

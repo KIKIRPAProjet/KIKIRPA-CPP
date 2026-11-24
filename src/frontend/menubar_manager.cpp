@@ -51,16 +51,6 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     quitAction->setShortcut(QKeySequence::Quit);
     connect(quitAction, &QAction::triggered, this, &MenuBarManager::quitRequested);
 
-    auto *editMenu = menuBar->addMenu(tr("Édition"));
-    auto *undoAction = editMenu->addAction(tr("Annuler"), QKeySequence::Undo);
-    undoAction->setEnabled(false);
-    undoAction->setToolTip(tr("Historique d'annulation non disponible"));
-    connect(undoAction, &QAction::triggered, this, &MenuBarManager::undoRequested);
-    auto *redoAction = editMenu->addAction(tr("Rétablir"), QKeySequence::Redo);
-    redoAction->setEnabled(false);
-    redoAction->setToolTip(tr("Historique de rétablissement non disponible"));
-    connect(redoAction, &QAction::triggered, this, &MenuBarManager::redoRequested);
-
     auto *viewMenu = menuBar->addMenu(tr("Affichage"));
     connect(viewMenu->addAction(tr("Afficher / masquer les panneaux")),
             &QAction::triggered, this, &MenuBarManager::togglePanelsRequested);
@@ -73,16 +63,6 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *fit = viewMenu->addAction(tr("Ajuster à la fenêtre"));
     fit->setShortcut(QKeySequence(QStringLiteral("Ctrl+0")));
     connect(fit, &QAction::triggered, this, &MenuBarManager::fitToWindowRequested);
-
-    auto *tilesMenu = menuBar->addMenu(tr("Tuiles"));
-    connect(tilesMenu->addAction(tr("Importer un dossier de photos…")),
-            &QAction::triggered, this, &MenuBarManager::importTilesRequested);
-    connect(tilesMenu->addAction(tr("Organiser la grille")),
-            &QAction::triggered, this, [this]() { emit modeChangeRequested(1); });
-
-    auto *masksMenu = menuBar->addMenu(tr("Masques"));
-    connect(masksMenu->addAction(tr("Détecter les bords noirs")),
-            &QAction::triggered, this, [this]() { emit modeChangeRequested(2); });
 
     auto *assemblyMenu = menuBar->addMenu(tr("Assemblage"));
     connect(assemblyMenu->addAction(tr("Tout lancer"), QKeySequence(Qt::Key_F5)),
