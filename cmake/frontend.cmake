@@ -18,10 +18,10 @@ file(GLOB_RECURSE frontend_headers CONFIGURE_DEPENDS
 add_library(kikirpa_frontend STATIC
     ${frontend_sources}
     ${frontend_headers}
-    "${PROJECT_SOURCE_DIR}/assets/credits_logos.qrc"
+    
 )
 
-set_target_properties(kikirpa_frontend PROPERTIES AUTOMOC ON AUTORCC ON)
+set_target_properties(kikirpa_frontend PROPERTIES AUTOMOC ON )
 
 # Impose la norme C++17 aux cibles qui utilisent cette bibliothèque.
 # PUBLIC permet également de transmettre cette exigence aux cibles dépendantes.

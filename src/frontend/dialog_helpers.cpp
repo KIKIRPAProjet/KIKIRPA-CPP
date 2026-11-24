@@ -39,19 +39,19 @@ public:
         setMinimumSize(640, 440);
         auto *timer = new QTimer(this);
         connect(timer, &QTimer::timeout, this, [this]() {
-            scrollY -= 0.5;
+            scrollY -= 1;
             if (scrollY + textLogicalHeight < -40.0)
                 scrollY = static_cast<double>(height());
             update();
         });
-        timer->start(16);
+        timer->start(30);
     }
 
 protected:
-    void showEvent(QShowEvent *event) override
+        void showEvent(QShowEvent *event) override
     {
         QWidget::showEvent(event);
-        scrollY = static_cast<double>(height());
+        scrollInitialized = false;
         rebuildTextBuffer();
     }
 
@@ -69,6 +69,10 @@ protected:
 
         const int w = width();
         const int h = height();
+        if (!scrollInitialized) {
+            scrollY = static_cast<double>(h);
+            scrollInitialized = true;
+        }
         painter.fillRect(rect(), Qt::black);
 
         // Champ d'étoiles déterministe en arrière-plan.
@@ -120,18 +124,20 @@ private:
     void rebuildTextBuffer()
     {
         const int logicalWidth = qMax(320, width());
-        const int scale = 2;
+        const double scale= qMax(1.0, devicePixelRatioF());
         const int margin = logicalWidth / 8;
         const int textWidth = logicalWidth - 2 * margin;
 
         const QString episodeTitle = translate("POLYPTIK");
-        //Je désaprouve ce nom
+        //Je désaprouve ce nom 
+        //Dikri Adam
         const QString subtitle = translate("CRÉDITS DU PROJET");
         const QString body = translate(
             "Projet d'assemblage d'images haute résolution\n"
             "par les étudiants de la faculté polytechnique de Mons\n"
             "Master 1 IG 2026\n\n"
-            "Équipe du projet\n\n"
+            "Équipe du projet\n\n")
+        + QStringLiteral(
             "Abdellah Boumaiza\n"
             "Abdelouahed Sabbar\n"
             "Abderrahim Mghimimi\n"
@@ -153,9 +159,17 @@ private:
             "Zakaria Rezzouk\n\n"
             );
 
-        QFont titleFont(QStringLiteral("Sans Serif"), 22, QFont::Bold);
-        QFont subtitleFont(QStringLiteral("Sans Serif"), 28, QFont::Black);
-        QFont bodyFont(QStringLiteral("Sans Serif"), 17, QFont::DemiBold);
+        QFont titleFont = font();
+        titleFont.setPointSize(22);
+        titleFont.setWeight(QFont::Bold);
+
+        QFont subtitleFont = font();
+        subtitleFont.setPointSize(28);
+        subtitleFont.setWeight(QFont::Black);
+
+        QFont bodyFont = font();
+        bodyFont.setPointSize(17);
+        bodyFont.setWeight(QFont::DemiBold);
 
         const QRect titleBounds = QFontMetrics(titleFont).boundingRect(
             QRect(0, 0, textWidth, 1000), Qt::AlignHCenter | Qt::TextWordWrap, episodeTitle);
@@ -167,8 +181,8 @@ private:
         textLogicalHeight = static_cast<double>(
             titleBounds.height() + 18 + subtitleBounds.height() + 36 + bodyBounds.height() + 40);
 
-        textBuffer = QImage(logicalWidth * scale, static_cast<int>(textLogicalHeight) * scale,
-                            QImage::Format_ARGB32_Premultiplied);
+        textBuffer = QImage(qRound(logicalWidth * scale), qRound(textLogicalHeight * scale),
+                    QImage::Format_ARGB32_Premultiplied);
         textBuffer.fill(Qt::transparent);
 
         QPainter bufferPainter(&textBuffer);
@@ -195,6 +209,7 @@ private:
     QImage textBuffer;
     double textLogicalHeight = 400.0;
     double scrollY = 440.0;
+    bool scrollInitialized = false;
 };
 }
 
@@ -315,14 +330,11 @@ bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep)
     return confirmation.exec() == QDialog::Accepted;
 }
 
-static void initCreditsLogosResource()
-{
-    Q_INIT_RESOURCE(credits_logos);
-}
+
 
 void DialogHelpers::showCreditsDialog(QWidget *parent)
 {
-    initCreditsLogosResource();
+    
 
     QDialog dialog(parent, Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
                            Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
@@ -342,9 +354,9 @@ void DialogHelpers::showCreditsDialog(QWidget *parent)
     logoLayout->setContentsMargins(20, 10, 20, 10);
     logoLayout->setSpacing(16);
     const QStringList logoResources = {
-        QStringLiteral(":/logos/umons.png"),
-        QStringLiteral(":/logos/polytech.png"),
-        QStringLiteral(":/logos/faculte_sciences.png")
+        QStringLiteral(":/credits/umons.png"),
+        QStringLiteral(":/credits/polytech.png"),
+        QStringLiteral(":/credits/faculte_sciences.png")
     };
     const QStringList logoCaptions = {
         translate("Université de Mons"),

@@ -4,7 +4,7 @@
         <file alias="logo.png">logo/logo.png</file>
         <file alias="logo_home.png">logo/logo_home.png</file>
     </qresource>
-    <qresource prefix ="/logo">
+    <qresource prefix="/credits">
         <file alias="faculte_sciences.png">credits/faculte_sciences.png</file>
         <file alias="polytech.png">credits/polytech.png</file>
         <file alias="umons.png">credits/umons.png</file>
