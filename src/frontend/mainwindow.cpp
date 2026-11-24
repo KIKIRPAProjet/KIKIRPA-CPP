@@ -358,20 +358,20 @@ void MainWindow::setupPairAlignmentConnections()
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             connect(alignTab, &AlignmentTab::pairSelectionRequested,
                     this, &MainWindow::selectPair);
+            connect(alignTab, &AlignmentTab::pairIsolationRequested, this, [this](int pairIndex) {
+                selectPair(pairIndex);
+                if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+                    canvasView->setPairIsolated(true);
+            });
             connect(alignTab, &AlignmentTab::nextDubiousRequested,
                     this, &MainWindow::selectNextDubiousPair);
             connect(alignTab, &AlignmentTab::pairValidated,
                     this, &MainWindow::validatePair);
             connect(alignTab, &AlignmentTab::manualOffsetApplied,
                     this, &MainWindow::applyManualPairOffset);
+            connect(alignTab, &AlignmentTab::manualPointsApplied,
+                    this, &MainWindow::applyManualPairPoints);
         }
-    }
-
-    if (TopToolbars *top = workspaceUI->topToolbars()) {
-        connect(top, &TopToolbars::previousPairRequested,
-                this, &MainWindow::selectPreviousPair);
-        connect(top, &TopToolbars::nextDubiousPairRequested,
-                this, &MainWindow::selectNextDubiousPair);
     }
 
     refreshPairViews();
@@ -391,15 +391,6 @@ void MainWindow::selectPair(int pairIndex)
 
     const auto &pair = m_pairs.at(m_currentPairIndex);
     updateStatus(tr("Paire sélectionnée : %1 (%2)").arg(pair.pairLabel(), FrontendNs::describePairForOperator(pair).state));
-}
-
-void MainWindow::selectPreviousPair()
-{
-    if (m_pairs.isEmpty())
-        return;
-    setMode(3);
-    const int prevIndex = (m_currentPairIndex - 1 + m_pairs.size()) % m_pairs.size();
-    selectPair(prevIndex);
 }
 
 //
@@ -445,17 +436,70 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
     pair.intervention = tr("manuelle (%1 ; %2 px)")
                             .arg(QString::number(dx, 'f', 1).replace('.', ','),
                                  QString::number(dy, 'f', 1).replace('.', ','));
+    const FrontendNs::ManualCorrection correction = FrontendNs::manualCorrectionFor(pair, dx, dy);
+    const QString pairLabel = pair.pairLabel();
     refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
 
+void MainWindow::applyManualPairPoints(int pairIndex, const QVector<QPointF> &pointsInA,
+                                       const QVector<QPointF> &pointsInB)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    if (pointsInA.isEmpty() || pointsInA.size() != pointsInB.size())
+        return;
+
+    auto &pair = m_pairs[pairIndex];
+    FrontendNs::ManualCorrection correction;
+    correction.tileIdA = pair.tileIndexA;
+    correction.tileIdB = pair.tileIndexB;
+    std::vector<double> offsetsX;
+    std::vector<double> offsetsY;
+    const int count = static_cast<int>(pointsInA.size());
+    offsetsX.reserve(count);
+    offsetsY.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const QPointF &ptA = pointsInA.at(i);
+        const QPointF &ptB = pointsInB.at(i);
+        correction.pointsInA.push_back({ptA.x(), ptA.y()});
+        correction.pointsInB.push_back({ptB.x(), ptB.y()});
+        offsetsX.push_back(ptA.x() - ptB.x());
+        offsetsY.push_back(ptA.y() - ptB.y());
+    }
+    const auto medianOf = [](std::vector<double> values) {
+        const std::size_t mid = values.size() / 2;
+        std::sort(values.begin(), values.end());
+        return (values.size() % 2 == 1) ? values[mid] : (values[mid - 1] + values[mid]) / 2.0;
+    };
+
+    pair.dx = medianOf(std::move(offsetsX));
+    pair.dy = medianOf(std::move(offsetsY));
+    pair.pointsInA = pointsInA;
+    pair.pointsInB = pointsInB;
+    pair.isInlier = QVector<bool>(count, true);
+    pair.totalMatches = count;
+    pair.inlierCount = count;
+    pair.shownInliers = count;
+    pair.shownOutliers = 0;
+    pair.status = FrontendUtils::PairStatus::Validated;
+    pair.statusReason = tr("corrigée à la main");
+    pair.intervention = tr("manuelle (%1 point(s))").arg(count);
+    const QString pairLabel = pair.pairLabel();
+    refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
+
+void MainWindow::submitManualCorrection(const QString &pairLabel, const FrontendNs::ManualCorrection &correction)
+{
     FrontendNs::PipelineChoices choices = projectGrid->state().pipelineChoices;
-    choices.manualCorrections =
-        FrontendNs::withCorrection(choices.manualCorrections, FrontendNs::manualCorrectionFor(pair, dx, dy));
+    choices.manualCorrections = FrontendNs::withCorrection(choices.manualCorrections, correction);
     projectGrid->setPipelineChoices(choices);
     const auto steps = FrontendUtils::pipelineSteps(choices);
     const auto manualStep = std::find_if(steps.begin(), steps.end(), [](const FrontendUtils::PipelineStepInfo &step) {
         return step.technicalName == "manual-matches";
     });
-    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pair.pairLabel()));
+    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pairLabel));
     if (manualStep != steps.end())
         requestRun(static_cast<int>(manualStep - steps.begin()) + 1);
 }
@@ -693,18 +737,16 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     const bool isPairMode = (currentMode == 3);
+    if (auto *overviewBtn = workspaceUI->workspace()->findChild<QWidget *>(
+            QStringLiteral("pairOverviewButton"))) {
+        overviewBtn->setVisible(isPairMode);
+    }
     if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
         QStringLiteral("pairOverlayButton"))) {
         overlayBtn->setVisible(isPairMode);
     }
-    if (auto* prevPairBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("prevPairButton"))) {
-        prevPairBtn->setVisible(isPairMode);
-    }
-    if (auto* nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("nextDubiousButton"))) {
-        nextDubiousBtn->setVisible(isPairMode);
-    }
+    if (!isPairMode && workspaceUI->rightPanel() && workspaceUI->rightPanel()->alignmentTab())
+        workspaceUI->rightPanel()->alignmentTab()->cancelPointPickingUi();
     // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
     const bool isExportMode = (currentMode == kModeExport);
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(

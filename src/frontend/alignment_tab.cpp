@@ -45,10 +45,9 @@
 namespace {
 
 constexpr int COLUMN_PAIR = 0;
-constexpr int COLUMN_STATE = 1;
-constexpr int COLUMN_POINTS = 2;
-constexpr int COLUMN_ERROR = 3;
-constexpr int COLUMN_COUNT = 4;
+constexpr int COLUMN_POINTS = 1;
+constexpr int COLUMN_ERROR = 2;
+constexpr int COLUMN_COUNT = 3;
 constexpr int PAIR_INDEX_ROLE = Qt::UserRole;
 constexpr int SORT_KEY_ROLE = Qt::UserRole + 1;
 constexpr int TABLE_MINIMUM_HEIGHT = 180;
@@ -196,10 +195,10 @@ void AlignmentTab::createTable(QVBoxLayout *layout)
 {
     m_table = new QTableWidget(0, COLUMN_COUNT, this);
     m_table->setObjectName(QStringLiteral("pairTable"));
-    m_table->setHorizontalHeaderLabels({tr("Paire"), tr("État"), tr("Points"), tr("Écart (px)")});
+    m_table->setHorizontalHeaderLabels({tr("Paire"), tr("Points"), tr("Écart (px)")});
     m_table->horizontalHeaderItem(COLUMN_ERROR)->setToolTip(tr("Écart restant après le positionnement global"));
     m_table->horizontalHeader()->setSectionResizeMode(COLUMN_PAIR, QHeaderView::Stretch);
-    for (const int column : {COLUMN_STATE, COLUMN_POINTS, COLUMN_ERROR})
+    for (const int column : {COLUMN_POINTS, COLUMN_ERROR})
         m_table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents);
     m_table->verticalHeader()->setVisible(false);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -207,7 +206,7 @@ void AlignmentTab::createTable(QVBoxLayout *layout)
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setMinimumHeight(TABLE_MINIMUM_HEIGHT);
     m_table->setSortingEnabled(true);
-    m_table->sortByColumn(COLUMN_STATE, Qt::AscendingOrder);   // échecs et paires à vérifier en premier
+    m_table->sortByColumn(COLUMN_POINTS, Qt::AscendingOrder);   // paires avec le moins de points en premier
     layout->addWidget(m_table);
 
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this]() {
@@ -217,6 +216,12 @@ void AlignmentTab::createTable(QVBoxLayout *layout)
         const int pairIndex = m_table->item(selected.first()->row(), COLUMN_PAIR)->data(PAIR_INDEX_ROLE).toInt();
         if (pairIndex != m_currentPairIndex)
             emit pairSelectionRequested(pairIndex);
+    });
+    connect(m_table, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
+        if (!item)
+            return;
+        const int pairIndex = m_table->item(item->row(), COLUMN_PAIR)->data(PAIR_INDEX_ROLE).toInt();
+        emit pairIsolationRequested(pairIndex);
     });
 }
 
@@ -251,18 +256,60 @@ void AlignmentTab::createDetails(QVBoxLayout *layout)
     form->addRow(m_correctionTitleLabel, m_correctionValueLabel);
     detailsLayout->addLayout(form);
 
-    auto *actions = new QHBoxLayout;
-    m_correctButton = FrontendUtils::makeButton(tr("Corriger…"), m_details, true);
-    m_correctButton->setToolTip(tr("Saisir le décalage à la main ; le calcul repart des corrections"));
-    m_validateButton = FrontendUtils::makeButton(tr("Valider"), m_details);
+    m_actionsBar = new QWidget(m_details);
+    auto *actions = new QHBoxLayout(m_actionsBar);
+    actions->setContentsMargins(0, 0, 0, 0);
+    m_correctButton = FrontendUtils::makeButton(tr("Corriger…"), m_actionsBar, true);
+    m_correctButton->setToolTip(tr("Placer des paires de points à la main en cliquant sur les deux tuiles"));
+    m_validateButton = FrontendUtils::makeButton(tr("Valider"), m_actionsBar);
     m_validateButton->setToolTip(tr("Accepter cette paire telle qu'elle a été mesurée"));
     actions->addWidget(m_correctButton);
     actions->addWidget(m_validateButton);
-    detailsLayout->addLayout(actions);
+    detailsLayout->addWidget(m_actionsBar);
+
+    m_pickingBar = new QWidget(m_details);
+    auto *pickingLayout = new QVBoxLayout(m_pickingBar);
+    pickingLayout->setContentsMargins(0, 4, 0, 0);
+    pickingLayout->setSpacing(6);
+    m_pickingHintLabel = FrontendUtils::mutedLabel(QString(), m_pickingBar);
+    m_pickingHintLabel->setWordWrap(true);
+    pickingLayout->addWidget(m_pickingHintLabel);
+    auto *pickingButtons = new QHBoxLayout;
+    pickingButtons->setContentsMargins(0, 0, 0, 0);
+    m_applyPointsButton = FrontendUtils::makeButton(tr("Appliquer"), m_pickingBar, true);
+    m_applyPointsButton->setEnabled(false);
+    m_undoPointButton = FrontendUtils::makeButton(tr("Retirer"), m_pickingBar);
+    m_undoPointButton->setToolTip(tr("Retirer le dernier point placé (clic droit)"));
+    m_cancelPickingButton = FrontendUtils::makeButton(tr("Annuler"), m_pickingBar);
+    pickingButtons->addWidget(m_applyPointsButton);
+    pickingButtons->addWidget(m_undoPointButton);
+    pickingButtons->addWidget(m_cancelPickingButton);
+    pickingLayout->addLayout(pickingButtons);
+    m_pickingBar->setVisible(false);
+    detailsLayout->addWidget(m_pickingBar);
+
     layout->addWidget(m_details);
 
-    connect(m_correctButton, &QPushButton::clicked, this, &AlignmentTab::showManualAdjustmentDialog);
+    connect(m_correctButton, &QPushButton::clicked, this, &AlignmentTab::startInteractiveCorrection);
     connect(m_validateButton, &QPushButton::clicked, this, [this]() { emit pairValidated(m_currentPairIndex); });
+    connect(m_undoPointButton, &QPushButton::clicked, this, [this]() {
+        if (m_canvas)
+            m_canvas->undoLastPickedPoint();
+    });
+    connect(m_cancelPickingButton, &QPushButton::clicked, this, &AlignmentTab::cancelPointPickingUi);
+    connect(m_applyPointsButton, &QPushButton::clicked, this, [this]() {
+        if (!m_canvas)
+            return;
+        const QVector<QPointF> pointsInA = m_canvas->pickedPointsInA();
+        const QVector<QPointF> pointsInB = m_canvas->pickedPointsInB();
+        cancelPointPickingUi();
+        if (!pointsInA.isEmpty() && pointsInA.size() == pointsInB.size())
+            emit manualPointsApplied(m_currentPairIndex, pointsInA, pointsInB);
+    });
+    if (m_canvas) {
+        connect(m_canvas, &ArtworkCanvas::manualPointsChanged, this, &AlignmentTab::refreshPickingUi);
+        connect(m_canvas, &ArtworkCanvas::pointPickingCancelled, this, &AlignmentTab::cancelPointPickingUi);
+    }
 }
 
 void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs, int currentPairIndex)
@@ -276,15 +323,17 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
         ++counts[stateOrder(pair.status)];
     m_summaryLabel->setText(m_pairs.isEmpty()
         ? tr("Lancez l'assemblage pour voir les paires de tuiles et leur état.")
-        : tr("%1 paire(s) : %2 fiable(s), %3 à vérifier, %4 en échec, %5 validée(s)")
-              .arg(m_pairs.size()).arg(counts[3]).arg(counts[1]).arg(counts[0]).arg(counts[2]));
+        : tr("%1 paire(s) : %2 fiable(s), %3 à vérifier")
+              .arg(m_pairs.size()).arg(counts[3] + counts[2]).arg(counts[0] + counts[1]));
     m_toCheckOnly->setEnabled(!m_pairs.isEmpty());
     m_nextToCheckButton->setEnabled(counts[0] + counts[1] > 0);
 
     rebuildTable();
     m_details->setVisible(!m_pairs.isEmpty());
-    if (!m_pairs.isEmpty())
-        setCurrentPair(m_pairs.at(m_currentPairIndex));
+    cancelPointPickingUi();
+    if (m_pairs.isEmpty())
+        return;
+    setCurrentPair(m_pairs.at(m_currentPairIndex));
 }
 
 // Une ligne par paire (seulement les paires à vérifier si le filtre est coché), puis la paire courante sélectionnée.
@@ -310,20 +359,23 @@ void AlignmentTab::fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair
     auto *pairItem = new QTableWidgetItem(shortPairLabel(pair));
     pairItem->setData(PAIR_INDEX_ROLE, pair.pairIndex);
     pairItem->setToolTip(pair.pairLabel() + QStringLiteral("\n") + text.explanation);
-    auto *stateItem = new SortableItem(text.state, stateOrder(pair.status));
-    stateItem->setForeground(stateColor(pair.status));
-    QFont bold = stateItem->font();
-    bold.setBold(true);
-    stateItem->setFont(bold);
-    stateItem->setToolTip(text.explanation);
     auto *pointsItem = new SortableItem(QString::number(pair.totalMatches), pair.totalMatches);
     const double error = pair.optimizationErrorPx.value_or(-1.0);   // non mesuré : en tête du tri croissant
     auto *errorItem = new SortableItem(pair.optimizationErrorPx ? formatPixels(error) : QStringLiteral("-"), error);
     errorItem->setToolTip(FrontendUtils::formatMeasure(pair.optimizationErrorPx, 2, QStringLiteral(" px")));
     pointsItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
     errorItem->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    if (needsCheck(pair)) {
+        const QColor alertColor = stateColor(FrontendUtils::PairStatus::Failed);
+        QFont bold = pairItem->font();
+        bold.setBold(true);
+        pairItem->setFont(bold);
+        for (QTableWidgetItem *cell : {pairItem, static_cast<QTableWidgetItem *>(pointsItem),
+                                       static_cast<QTableWidgetItem *>(errorItem)}) {
+            cell->setForeground(alertColor);
+        }
+    }
     m_table->setItem(row, COLUMN_PAIR, pairItem);
-    m_table->setItem(row, COLUMN_STATE, stateItem);
     m_table->setItem(row, COLUMN_POINTS, pointsItem);
     m_table->setItem(row, COLUMN_ERROR, errorItem);
 }
@@ -343,6 +395,8 @@ void AlignmentTab::selectCurrentRow()
 
 void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
+    if (pair.pairIndex != m_currentPairIndex && m_canvas && m_canvas->isPickingPoints())
+        cancelPointPickingUi();
     m_currentPairIndex = pair.pairIndex;
     if (m_currentPairIndex >= 0 && m_currentPairIndex < m_pairs.size())
         m_pairs[m_currentPairIndex] = pair;
@@ -352,6 +406,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     const QColor color = stateColor(pair.status);
     m_pairTitleLabel->setText(shortPairLabel(pair));
     m_pairTitleLabel->setToolTip(pair.pairLabel());
+    m_stateLabel->setVisible(pair.status != FrontendUtils::PairStatus::Reliable);
     m_stateLabel->setText(text.state);
     m_stateLabel->setStyleSheet(QStringLiteral("color:%1; font-weight:600; border:1px solid %1; border-radius:8px; "
                                                "padding:1px 8px;").arg(color.name()));
@@ -360,7 +415,7 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     m_stateLabel->setToolTip(text.details);
 
     const bool measured = pair.totalMatches > 0 || !pair.overlapInA.isEmpty();   // échec sans estimation : rien de mesuré
-    m_offsetValueLabel->setText(measured ? tr("%1 ; %2 px").arg(formatPixels(pair.dx), formatPixels(pair.dy))
+    m_offsetValueLabel->setText(measured ? tr("dx = %1 px ; dy = %2 px").arg(formatPixels(pair.dx), formatPixels(pair.dy))
                                          : tr("non mesuré"));
     m_pointsValueLabel->setText(tr("%1 retenu(s), %2 rejeté(s)").arg(pair.shownInliers).arg(pair.shownOutliers));
     m_errorValueLabel->setText(FrontendUtils::formatMeasure(pair.optimizationErrorPx, 2, QStringLiteral(" px")));
@@ -374,6 +429,55 @@ void AlignmentTab::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 QString AlignmentTab::shortPairLabel(const FrontendUtils::PairAlignmentInfo &pair) const
 {
     return m_shortTileNames.value(pair.tileA, pair.tileA) + QStringLiteral(" → ") + m_shortTileNames.value(pair.tileB, pair.tileB);
+}
+
+void AlignmentTab::startInteractiveCorrection()
+{
+    if (m_currentPairIndex < 0 || m_currentPairIndex >= m_pairs.size())
+        return;
+    const auto &pair = m_pairs.at(m_currentPairIndex);
+    if (pair.imagePathA.isEmpty() || pair.imagePathB.isEmpty()
+        || pair.tileSizeA.isEmpty() || pair.tileSizeB.isEmpty()) {
+        showManualAdjustmentDialog();
+        return;
+    }
+    if (!m_canvas)
+        return;
+    m_actionsBar->setVisible(false);
+    m_pickingBar->setVisible(true);
+    const bool alreadyManual = pair.status == FrontendUtils::PairStatus::Validated
+                               && pair.statusReason.contains(QStringLiteral("main"));
+    if (alreadyManual)
+        m_canvas->startPointPicking(pair.pointsInA, pair.pointsInB);
+    else
+        m_canvas->startPointPicking();
+    refreshPickingUi();
+    m_mainWindow->updateStatus(tr("Correction manuelle : cliquez un point dans A puis dans B (%1).").arg(pair.pairLabel()));
+}
+
+void AlignmentTab::refreshPickingUi()
+{
+    if (!m_canvas)
+        return;
+    const int count = static_cast<int>(m_canvas->pickedPointsInA().size());
+    const bool pending = m_canvas->hasPendingPointInA();
+    m_pickingHintLabel->setText(pending
+        ? tr("%1 paire(s) — cliquez le même détail dans B (clic droit : retirer).")
+              .arg(count)
+        : tr("%1 paire(s) — cliquez un détail dans A, puis le même dans B.")
+              .arg(count));
+    m_applyPointsButton->setEnabled(count > 0);
+    m_undoPointButton->setEnabled(pending || count > 0);
+}
+
+void AlignmentTab::cancelPointPickingUi()
+{
+    if (m_canvas)
+        m_canvas->stopPointPicking();
+    if (m_pickingBar)
+        m_pickingBar->setVisible(false);
+    if (m_actionsBar)
+        m_actionsBar->setVisible(true);
 }
 
 // Ouvre une fenêtre permettant à l'opérateur de corriger manuellement le décalage (dx, dy) de la paire sélectionnée.

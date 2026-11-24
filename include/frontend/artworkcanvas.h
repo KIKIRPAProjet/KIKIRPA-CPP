@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 class QKeyEvent;
 class QMouseEvent;
@@ -55,6 +56,9 @@ public:
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
     void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
     {
+        stopPointPicking();
+        setPairOverlayMode(false);
+        setPairIsolated(false);
         m_resultTiles = tiles;
         m_allPairs = pairs;
         update();
@@ -62,6 +66,16 @@ public:
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
+    void setPairIsolated(bool isolated);   // afficher uniquement les 2 tuiles de la paire courante
+    bool isPairIsolated() const { return m_pairIsolated; }
+    bool isPairOverlayMode() const { return pairOverlayMode; }
+    void startPointPicking(const QVector<QPointF> &initialPointsA = {}, const QVector<QPointF> &initialPointsB = {});
+    void undoLastPickedPoint();
+    void stopPointPicking();
+    bool isPickingPoints() const { return m_pickingPoints; }
+    const QVector<QPointF> &pickedPointsInA() const { return m_manualPointsA; }
+    const QVector<QPointF> &pickedPointsInB() const { return m_manualPointsB; }
+    bool hasPendingPointInA() const { return m_pendingPointInA.has_value(); }
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
     // Active un outil de dessin ou d'édition (par exemple l'outil de recadrage).
@@ -98,6 +112,9 @@ public:
         void importTilesRequested();
         // Clic (sans glisser) sur un lien, une zone de recouvrement ou une jonction de la vue d'ensemble de l'alignement.
         void pairClicked(int pairIndex);
+        void pairViewModeChanged();
+        void manualPointsChanged();
+        void pointPickingCancelled();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -122,7 +139,11 @@ private:
     // ou, en mode superposé, la paire sélectionnée en grand.
     void drawPairView(QPainter &p);
     void drawTilesOverview(QPainter &p);
+    void drawFocusedPair(QPainter &p);
     void drawSuperposedPair(QPainter &p);
+    void drawManualPickingOverlay(QPainter &p, const QRectF &rectA, double scaleA,
+                                  const QRectF &rectB, double scaleB);
+    bool handlePointPickingClick(const QPointF &scenePos);
     void drawCenteredMessage(QPainter &p, const QString &message);
 
     bool hasActiveImages() const;
@@ -166,6 +187,12 @@ private:
     bool seamVisible = true;
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;
+    bool m_pairIsolated = false;
+    bool m_pickingPoints = false;
+    std::optional<QPointF> m_pendingPointInA;
+    QPointF m_hoverScenePos;
+    QVector<QPointF> m_manualPointsA;
+    QVector<QPointF> m_manualPointsB;
     FrontendUtils::PairAlignmentInfo currentPair;
 
     QPointF m_panOffset;
