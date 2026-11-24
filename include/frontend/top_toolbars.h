@@ -17,7 +17,7 @@ class TopToolbars : public QWidget
 public:
     explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent = nullptr);
 
-    void updateTitle(const QString &projectName, const QString &modality);
+    void updateTitle(const QString &projectName);
     void updateDubiousState(int dubiousCount);
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);

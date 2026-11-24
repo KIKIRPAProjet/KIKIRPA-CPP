@@ -131,7 +131,7 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
 }
 
 /**
- * construit le groupe gérant les dimensions physiques de la grille, le recouvrement et la modalité de capture.
+ * construit le groupe gérant les dimensions physiques de la grille, le recouvrement et l'incertitude.
  */
 QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
 {
@@ -207,7 +207,7 @@ void GridTab::setupConnections()
     connect(m_linkedOverlapCheck, &QCheckBox::toggled, this,
             [this](bool linked) { m_projectGrid->setOverlapsLinked(linked); });
 
-    // incertitude
+    // Incertitude
     connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this,
             [this](bool automatic) { m_projectGrid->setAutomaticUncertainty(automatic); });
     connect(m_uncertaintySpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this,

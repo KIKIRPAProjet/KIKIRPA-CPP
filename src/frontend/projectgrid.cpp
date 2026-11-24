@@ -372,22 +372,6 @@ void ProjectGrid::setPipelineChoices(const FrontendNs::PipelineChoices &choices)
     emit gridUpdated();
 }
 
-void ProjectGrid::setModality(const QString &modality)
-{
-    if (gridState.modality == modality)
-        return;
-    gridState.modality = modality;
-    gridState.gridValidated = false;
-    emit gridUpdated();
-}
-
-void ProjectGrid::setScaleMmPerPixel(double scale)
-{
-    gridState.scaleMmPerPixel = scale;
-    gridState.gridValidated = false;
-    emit gridUpdated();
-}
-
 void ProjectGrid::setAutomaticUncertainty(bool automatic)
 {
     gridState.automaticUncertainty = automatic;

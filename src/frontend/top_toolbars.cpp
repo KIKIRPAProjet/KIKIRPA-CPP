@@ -169,7 +169,7 @@ void TopToolbars::createOptionsBar()
     static_cast<QVBoxLayout *>(layout())->addWidget(modeOptions);
 }
 
-void TopToolbars::updateTitle(const QString &/*projectName*/, const QString &/*modality*/)
+void TopToolbars::updateTitle(const QString &/*projectName*/)
 {
     // Conservé vide : le nom du projet est directement affiché dans la barre de titre de la fenêtre.
 }

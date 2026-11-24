@@ -7,8 +7,6 @@ class MainWindow;
 class QLabel;
 class ArtworkCanvas;
 class QLineEdit;
-class QComboBox;
-class QDoubleSpinBox;
 
 class WorkspaceCenter : public QWidget
 {
@@ -34,7 +32,4 @@ private:
     QLabel *m_projectFolderLabel = nullptr;
     QLabel *m_projectFormatLabel = nullptr;
     QLabel *m_zoomLabel = nullptr;
-
-    QComboBox *m_modalityCombo = nullptr;
-    QDoubleSpinBox *m_scaleSpin = nullptr;
 };

@@ -3,7 +3,6 @@
 #include "mainwindow.h"
 #include "frontendutils.h"
 #include "artworkcanvas.h"
-#include "projectgrid.h"
 
 #include <algorithm>
 #include <QVBoxLayout>
@@ -15,15 +14,6 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileInfo>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QSignalBlocker>
-
-namespace{
-    constexpr double kMaxScale = 1000000.0;
-    constexpr int kScaleDecimals = 6;
-    constexpr double kScaleStep = 0.01;
-}
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
@@ -94,24 +84,6 @@ void WorkspaceCenter::createProjectMode()
     m_projectFormatLabel = new QLabel(m_projectInfoPanel);
     m_projectFormatLabel->setWordWrap(true);
     projectInfoLayout->addWidget(m_projectFormatLabel);
-
-    auto *captureForm = new QFormLayout;
-    captureForm->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
-    m_modalityCombo = new QComboBox(m_projectInfoPanel);
-    m_modalityCombo->addItems({tr("Lumière visible"),tr("Lumière rasante"),tr("Infrarouge"),tr("Ultraviolet"),tr("Radiographie")});
-    captureForm->addRow(tr("Modalité"),m_modalityCombo);
-
-    m_scaleSpin = new QDoubleSpinBox(m_projectInfoPanel);
-    m_scaleSpin->setRange(0.0,kMaxScale);
-    m_scaleSpin->setDecimals(kScaleDecimals);
-    m_scaleSpin->setSingleStep(kScaleStep);
-    m_scaleSpin->setSuffix(tr(" µm /pixel"));
-    captureForm->addRow(tr("Echelle"), m_scaleSpin);
-
-    projectInfoLayout->addLayout(captureForm);
-
-    connect(m_modalityCombo, &QComboBox::currentTextChanged, this, [this](const QString &value){if (m_mainWindow->projectGrid) m_mainWindow->projectGrid->setModality(value);});
-    connect(m_scaleSpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged),this,[this](double value){if (m_mainWindow->projectGrid) m_mainWindow->projectGrid->setScaleMmPerPixel(value);});
 
     projectInfoLayout->addStretch();
 }
@@ -246,15 +218,4 @@ void WorkspaceCenter::updateProjectInfo(const QString &projectName, const Projec
     m_projectFormatLabel->setStyleSheet(allFilesValid
             ? QStringLiteral("color:#66c98a;")
             : QStringLiteral("color:#e0a45f;"));
-
-    if(m_scaleSpin){
-        const QSignalBlocker blocker(m_scaleSpin);
-        m_scaleSpin->setValue(gridState.scaleMmPerPixel);
-    }
-    if(m_modalityCombo){
-        const QSignalBlocker blocker(m_modalityCombo);
-        const int index = m_modalityCombo->findText(gridState.modality);
-        m_modalityCombo->setCurrentIndex(index >= 0 ? index : 0);
-        if(index < 0 &&m_mainWindow->projectGrid) m_mainWindow->projectGrid->setModality(m_modalityCombo->currentText());
-    }
 }
