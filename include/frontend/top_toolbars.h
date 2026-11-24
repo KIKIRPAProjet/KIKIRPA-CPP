@@ -6,7 +6,6 @@
 class MainWindow;
 class ProjectGrid;
 class PipelineRunnerClass;
-class QComboBox;
 class QHBoxLayout;
 class QPushButton;
 class QButtonGroup;
@@ -24,12 +23,12 @@ public:
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
 
-    // Contrôle de la disponibilité des modes de navigation
+    // Active ou désactive l'accès à un mode donné dans la barre supérieure.
     void setModeEnabled(int modeIndex, bool enabled);
+    // Indique si le bouton correspondant au mode est actuellement cliquable.
     bool isModeEnabled(int modeIndex) const;
-    void resetModesAvailability(); // Seul le mode 0 (Projet) reste actif
-
-    QComboBox *arrangementCombo() const { return m_arrangementCombo; }
+    // Réinitialise la disponibilité : seul le mode 0 (Projet) reste actif.
+    void resetModesAvailability();
 
 signals:
     void previousPairRequested();
@@ -51,10 +50,8 @@ private:
     QButtonGroup *m_modeGroup = nullptr;
 
     MainWindow *m_mainWindow;
-    ProjectGrid *m_projectGrid;
     PipelineRunnerClass *m_pipelineRunner;
 
-    QComboBox *m_arrangementCombo = nullptr;
     QPushButton *m_runButton = nullptr;
     QPushButton *m_stopButton = nullptr;
     QPushButton *m_exportButton = nullptr;
