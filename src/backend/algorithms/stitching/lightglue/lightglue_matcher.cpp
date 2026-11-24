@@ -92,13 +92,13 @@ namespace LightGlueNs {
         cv::Mat convertChannels(const cv::Mat& image, bool isGreyscale) {
             cv::Mat converted = image;
             if (isGreyscale && image.channels() == 3) {
-                cv::cvtColor(image, converted, cv::COLOR_BGR2GRAY);
+                cv::cvtColor(image, converted, cv::COLOR_RGB2GRAY);
             } else if (isGreyscale && image.channels() == 4) {
-                cv::cvtColor(image, converted, cv::COLOR_BGRA2GRAY);
+                cv::cvtColor(image, converted, cv::COLOR_RGBA2GRAY);
             } else if (!isGreyscale && image.channels() == 1) {
-                cv::cvtColor(image, converted, cv::COLOR_GRAY2BGR);
+                cv::cvtColor(image, converted, cv::COLOR_GRAY2RGB);
             } else if (!isGreyscale && image.channels() == 4) {
-                cv::cvtColor(image, converted, cv::COLOR_BGRA2BGR);
+                cv::cvtColor(image, converted, cv::COLOR_RGBA2RGB);
             }
             return converted;
         }

@@ -68,6 +68,33 @@ la pleine résolution. Des pixels à la mauvaise échelle, **sans aucune erreur*
 D'où la règle : la mise en page d'un fichier se lit dans le fichier. Changer `DataNs::LEVEL_COUNT` oblige donc à
 incrémenter `PYRAMID_FORMAT_VERSION`, ce qui réécrit les caches.
 
+## Un niveau entier : `readTileLevel`
+
+`readTileLevel(sourcePath, pyramidPath, level)` rend **tous** les pixels d'un niveau, **en RGB**, pris au meilleur
+endroit : dans le cache quand la tuile en a un, sinon dans l'image de l'œuvre, réduite autant de fois que
+nécessaire. C'est ce qu'appellent les steps qui travaillent sur un niveau entier plutôt que sur des régions :
+`phase-correlation` (par `readPixels`), `sift` et `lightglue` (par `matching_step_utils::readImage`),
+`overlap-estimation`, `intensity-correction` et `dynamic-programming-dijkstra`.
+
+Le gain est proportionnel au niveau :
+
+| Niveau | Lu avant (source + réductions) | Lu maintenant | Qui |
+|---|---|---|---|
+| 0 | 578 Mio | 578 Mio | `sift`, `lightglue`, `overlap-estimation`, `dp-dijkstra` |
+| 1 | 578 Mio + une réduction | 145 Mio | `phase-correlation` avec `niveau` = 1 |
+| 3 | 578 Mio + trois réductions | ~10 Mio | `intensity-correction` |
+
+Le repli sans cache donne **exactement les mêmes pixels** : réduire puis échanger les canaux, ou l'inverse, revient
+au même, `INTER_AREA` moyennant canal par canal. Un test le vérifie niveau par niveau.
+
+Et comme tout arrive désormais en RGB, les conversions en gris des algorithmes sont nommées `RGB2GRAY` au lieu de
+`BGR2GRAY` (même luminance, seul le nom était faux), et les deux `COLOR_BGR2RGB` du step
+`dynamic-programming-dijkstra` ont disparu.
+
+**Ce que ça ne fait pas** : lire seulement la bande de recouvrement. L'estimateur découpe la bande nominale
+lui-même et `computeCommonAreas` travaille dans le repère de la tuile entière : il faudrait que les algorithmes
+reçoivent une région **et son origine**, donc changer leur contrat. C'est un chantier à part.
+
 ## Ce qui reste dans le cache
 
 Les niveaux réduits, toujours : ils n'existent nulle part ailleurs. Et le niveau 0 pour les sources de la colonne

@@ -10,6 +10,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
@@ -106,11 +107,11 @@ namespace StepsNs {
             return {};
         }
 
-        // IMREAD_UNCHANGED préserve notamment les images 16 bits.
+        // Par le cache quand la tuile en a un, et en RGB, l'ordre que le solveur attend (core/io/tile_pixel_reader.h).
         std::string readPairImages(const NeighbourPair& pair, PairImages& images) {
             if (images.imageA.empty())
-                images.imageA = IONs::readImage(pair.tileA.getSource(), cv::IMREAD_UNCHANGED);
-            images.imageB = IONs::readImage(pair.tileB.getSource(), cv::IMREAD_UNCHANGED);
+                images.imageA = IONs::readTileLevel(pair.tileA.getSource(), pair.tileA.getTiff(), 0);
+            images.imageB = IONs::readTileLevel(pair.tileB.getSource(), pair.tileB.getTiff(), 0);
             if (images.imageA.empty() || images.imageB.empty())
                 return "cannot read " +
                 IONs::pathToUtf8(images.imageA.empty() ?
@@ -141,10 +142,7 @@ namespace StepsNs {
                 correctedA, images.imageA.type(), 1.0 / inputs.correction.tileGains[pair.indexA]);
             images.imageB(areaB).convertTo(
                 correctedB, images.imageB.type(), 1.0 / inputs.correction.tileGains[pair.indexB]);
-            if (correctedA.channels() == 3) {
-                cv::cvtColor(correctedA, correctedA, cv::COLOR_BGR2RGB);
-                cv::cvtColor(correctedB, correctedB, cv::COLOR_BGR2RGB);
-            }
+            // Plus d'échange de canaux ici : readPairImages rend déjà du RGB, l'ordre que le solveur attend.
             if (pair.direction == DataNs::Direction::Bottom) {
                 cv::transpose(correctedA, overlaps.overlapA);
                 cv::transpose(correctedB, overlaps.overlapB);

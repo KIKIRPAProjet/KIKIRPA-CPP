@@ -5,6 +5,9 @@
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
+
 #include <tiff.h>
 #include <tiffio.h>
 
@@ -23,6 +26,7 @@ namespace IONs {
         // Au-delà, décoder une bande coûte plus que la région qu'on en tire : à la largeur d'une tuile du KIKIRPA,
         // 256 lignes de RGB 16 bits font déjà 17 Mio.
         constexpr std::uint32_t MAX_ROWS_PER_STRIP = 256;
+        constexpr double LEVEL_REDUCTION = 0.5;   // chaque niveau de la pyramide divise les dimensions par deux
         constexpr std::uint16_t BITS_PER_SAMPLE_8 = 8;
         constexpr std::uint16_t BITS_PER_SAMPLE_16 = 16;
         constexpr std::uint16_t CHANNEL_COUNT_GRAY = 1;
@@ -102,6 +106,24 @@ namespace IONs {
     TilePixelReaderClass::TilePixelReaderClass(fs::path source, fs::path pyramid)
         : sourcePath(std::move(source)), pyramidPath(std::move(pyramid)) {
         levelZeroFromSource = decideLevelZeroFromSource();
+    }
+
+    cv::Mat readTileLevel(const fs::path& sourcePath, const fs::path& pyramidPath, int level) {
+        if (level < 0) return {};
+        if (!pyramidPath.empty()) {
+            cv::Mat pixels;
+            std::string errorMessage;
+            if (TilePixelReaderClass(sourcePath, pyramidPath).readLevel(level, pixels, errorMessage))
+                return pixels;
+        }
+        // Pas de cache, ou cache illisible : l'image de l'œuvre, réduite ici exactement comme le writer l'aurait
+        // fait, puis ses canaux remis dans l'ordre RGB — cv::imread rend du BGR.
+        cv::Mat pixels = readImage(sourcePath, cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
+        for (int reduction = 0; reduction < level && !pixels.empty(); ++reduction)
+            cv::resize(pixels, pixels, cv::Size(), LEVEL_REDUCTION, LEVEL_REDUCTION, cv::INTER_AREA);
+        if (pixels.channels() == 3) cv::cvtColor(pixels, pixels, cv::COLOR_BGR2RGB);
+        if (pixels.channels() == 4) cv::cvtColor(pixels, pixels, cv::COLOR_BGRA2RGBA);
+        return pixels;
     }
 
     TilePixelReaderClass::TilePixelReaderClass(fs::path source, fs::path pyramid, bool levelZeroInSource)

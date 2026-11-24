@@ -25,8 +25,9 @@ namespace StepsNs {
     // contient des tuiles nulles, des identifiants dupliqués ou des voisinages incohérents.
     std::vector<NeighborPair> collectPairs(const DataNs::TileList& tiles);
 
-    // Lit les pixels sans modifier la profondeur. Lève une exception si le fichier est illisible
-    // ou si son format n'est pas une image 2D non signée 8/16 bits à 1, 3 ou 4 canaux.
+    // Lit la pleine résolution sans modifier la profondeur, **en RGB** (core/io/tile_pixel_reader.h : par le
+    // cache quand la tuile en a un). Lève une exception si le fichier est illisible ou si son format n'est pas
+    // une image 2D non signée 8/16 bits à 1, 3 ou 4 canaux.
     cv::Mat readImage(const DataNs::TileClass& tile);
 
     // Vérifie les tailles, bornes, scores et translations ; lève std::runtime_error si invalides.

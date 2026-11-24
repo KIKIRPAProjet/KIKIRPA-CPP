@@ -6,6 +6,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
 #include "core/data/tile.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 #include "steps/matching_step_utils.h"
 
@@ -36,7 +37,6 @@ namespace StepsNs {
 
     namespace {
 
-        constexpr double PYRAMID_REDUCTION = 0.5;   // chaque niveau de la pyramide divise les dimensions par 2
         constexpr float PIXEL_CENTER = 0.5f;
 
         // Auto-similarité : passe-haut (les grandes taches d'une texture normale se ressemblent à quelques px près, pas le
@@ -94,7 +94,9 @@ namespace StepsNs {
             const cv::Rect bandRect = isBottom ? cv::Rect(0, imageA.rows - thickness, imageA.cols, thickness)
                                                : cv::Rect(imageA.cols - thickness, 0, thickness, imageA.rows);
             cv::Mat grey = imageA(bandRect);
-            if (grey.channels() > 1) cv::cvtColor(grey, grey, grey.channels() == 4 ? cv::COLOR_BGRA2GRAY : cv::COLOR_BGR2GRAY);
+            // Les pixels arrivent en RGB (core/io/tile_pixel_reader.h) ; la luminance est la même qu'avec du BGR
+            // converti par COLOR_BGR2GRAY, seuls les noms changent.
+            if (grey.channels() > 1) cv::cvtColor(grey, grey, grey.channels() == 4 ? cv::COLOR_RGBA2GRAY : cv::COLOR_RGB2GRAY);
             cv::Mat band;
             grey.convertTo(band, CV_32F);
             return band;
@@ -334,12 +336,9 @@ namespace StepsNs {
     }
 
     cv::Mat PhaseCorrelationStepClass::readPixels(const DataNs::TileClass& tile, int level) {
-        cv::Mat image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);   // IMREAD_UNCHANGED garde les 16 bits
-        // Mêmes réductions successives que createPyramidalTiledTiff : le résultat sera celui du niveau du TIFF.
-        for (int levelIndex = 0; levelIndex < level && !image.empty(); ++levelIndex) {
-            cv::resize(image, image, cv::Size(), PYRAMID_REDUCTION, PYRAMID_REDUCTION, cv::INTER_AREA);
-        }
-        return image;
+        // Le niveau demandé est lu dans le cache quand la tuile en a un, au lieu de lire la pleine résolution et
+        // de la réduire : au niveau 1, 145 Mio au lieu de 578, sans la seconde image que la réduction alloue.
+        return IONs::readTileLevel(tile.getSource(), tile.getTiff(), level);
     }
 
     void PhaseCorrelationStepClass::scaleToFullResolution(DataNs::Matches& matches, int level) {

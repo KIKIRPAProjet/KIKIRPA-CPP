@@ -236,3 +236,37 @@ TEST(TilePixelReaderTest, LayoutIsReadFromTheFileNotFromTheProvenance) {
     ASSERT_TRUE(reader.getLevelDimensions(0, width, height, error)) << error;
     EXPECT_EQ(width, SOURCE_WIDTH);
 }
+
+// readTileLevel donne les mêmes pixels par le cache et par l'image de l'œuvre : c'est ce qui permet aux steps
+// d'appariement de lire le niveau réduit du cache au lieu de lire la pleine résolution et de la réduire eux-mêmes.
+// Réduire puis échanger les canaux, ou l'inverse, revient au même : INTER_AREA moyenne canal par canal.
+TEST(TilePixelReaderTest, ReadTileLevelGivesTheSamePixelsFromTheCacheAndFromTheSource) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "oeuvre.tif";
+    writeStripTiff(source, makeColourImage(), COMPRESSION_NONE, SINGLE_STRIP);
+    const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
+
+    for (int level = 0; level < DataNs::LEVEL_COUNT; ++level) {
+        const cv::Mat fromCache = IONs::readTileLevel(source, entry.pyramidPath, level);
+        const cv::Mat fromSource = IONs::readTileLevel(source, {}, level);   // tuile sans cache : le repli
+        ASSERT_FALSE(fromCache.empty()) << "niveau " << level;
+        ASSERT_EQ(fromCache.size(), fromSource.size()) << "niveau " << level;
+        ASSERT_EQ(fromCache.type(), fromSource.type()) << "niveau " << level;
+        EXPECT_EQ(cv::norm(fromCache, fromSource, cv::NORM_INF), 0.0) << "niveau " << level;
+        expectColour(fromCache);   // toujours en RGB, quel que soit le chemin
+    }
+}
+
+// Un niveau négatif ou absent ne doit pas faire lire la source entière par erreur.
+TEST(TilePixelReaderTest, ReadTileLevelRefusesAnImpossibleLevel) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "oeuvre.tif";
+    writeStripTiff(source, makeColourImage(), COMPRESSION_NONE, SINGLE_STRIP);
+    const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
+
+    EXPECT_TRUE(IONs::readTileLevel(source, entry.pyramidPath, -1).empty());
+    // Au-delà du dernier niveau, le cache échoue et le repli réduit autant de fois : l'image devient minuscule mais
+    // reste lisible. Ce qui compte est qu'aucun chemin ne rende la pleine résolution par mégarde.
+    const cv::Mat tooDeep = IONs::readTileLevel(source, entry.pyramidPath, DataNs::LEVEL_COUNT);
+    if (!tooDeep.empty()) EXPECT_LT(tooDeep.cols, SOURCE_WIDTH);
+}

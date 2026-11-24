@@ -26,6 +26,15 @@ namespace IONs {
     // d'échantillon sont vérifiés en même temps. Ne lève jamais ; `width` et `height` ne sont remplis qu'en cas de oui.
     SourceRegionSupport probeSource(const std::filesystem::path& sourcePath);
 
+    // Tous les pixels du niveau `level` d'une tuile, **en RGB**, pris au meilleur endroit : dans le cache quand la
+    // tuile en a un (au niveau 1, 145 Mio au lieu des 578 de la source d'une tuile du KIKIRPA, et aucune
+    // réduction en mémoire), sinon dans l'image de l'œuvre, réduite ici autant de fois que nécessaire.
+    // `pyramidPath` vide : une tuile sans cache, ce que font les tests qui fabriquent leurs tuiles à la main.
+    // Image vide si la lecture échoue. Réduire puis échanger les canaux, ou l'inverse, donne le même résultat
+    // (INTER_AREA moyenne canal par canal) : les deux chemins rendent donc exactement les mêmes pixels.
+    cv::Mat readTileLevel(const std::filesystem::path& sourcePath, const std::filesystem::path& pyramidPath,
+                          int level);
+
     // Pixels d'une tuile, où qu'ils soient : le niveau 0 dans l'image de l'œuvre quand celle-ci sait servir une
     // région (le cache ne garde alors que les niveaux réduits, soit 27 % de sa taille), sinon dans le cache ; les
     // niveaux réduits toujours dans le cache.
