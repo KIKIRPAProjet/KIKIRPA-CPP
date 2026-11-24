@@ -40,7 +40,6 @@ private:
     void handleRunButtonClicked();
 
     MainWindow *m_mainWindow;
-    ProjectGrid *m_projectGrid;
     PipelineRunnerClass *m_pipelineRunner;
 
     QPushButton *m_runButton = nullptr;

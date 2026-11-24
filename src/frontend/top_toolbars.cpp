@@ -12,8 +12,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent)
-    : QWidget(parent), m_mainWindow(mainWindow), m_projectGrid(projectGrid), m_pipelineRunner(pipelineRunner)
+TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, PipelineRunnerClass *pipelineRunner, QWidget *parent)
+    : QWidget(parent), m_mainWindow(mainWindow), m_pipelineRunner(pipelineRunner)
 {
     auto *mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -76,6 +76,11 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
     stageLayout->addWidget(compare);
     connect(compare, &QPushButton::clicked, m_pipelineRunner, &PipelineRunnerClass::showComparison);
 
+    auto *save = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    save->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
+    stageLayout->addWidget(save);
+    connect(save, &QPushButton::clicked, m_mainWindow, &MainWindow::saveProject);
+
     m_exportButton = FrontendUtils::makeButton(tr("Exporter…"), stages);
     m_exportButton->setObjectName(QStringLiteral("exportPipelineButton"));
     m_exportButton->setVisible(false);
@@ -94,11 +99,13 @@ void TopToolbars::createModesBar()
 
     auto *prevPairBtn = FrontendUtils::makeButton(tr("Précédente"), stages);
     prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
+    prevPairBtn->setVisible(false);
     stageLayout->addWidget(prevPairBtn);
     connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
 
     auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante"), stages);
     nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
+    nextDubiousBtn->setVisible(false);
     stageLayout->addWidget(nextDubiousBtn);
     connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
 

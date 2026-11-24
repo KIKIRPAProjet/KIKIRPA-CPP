@@ -55,6 +55,7 @@
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QShortcut>
 #include <QStackedWidget>
 #include <QStatusBar>
 #include <QTimer>
@@ -97,6 +98,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupMenuConnections();
     setupPageConnections();
     setupPairAlignmentConnections();
+
+    if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        connect(canvasView, &ArtworkCanvas::importTilesRequested,
+                this, &MainWindow::chooseTilesDirectory);
+    }
+
+    auto *nextDubiousShortcut = new QShortcut(QKeySequence(Qt::Key_N), this);
+    connect(nextDubiousShortcut, &QShortcut::activated,
+            this, &MainWindow::selectNextDubiousPair);
 }
 
 void MainWindow::applyStyleSheet()
@@ -111,7 +121,8 @@ void MainWindow::applyStyleSheet()
         "QPushButton:hover,QToolButton:hover { background:#4a4a4a; }"
         "QPushButton[primary=\"true\"] { background:#397fb8; border-color:#438bca; color:white; }"
         "QPushButton[primary=\"true\"]:hover { background:#4b91cd; }"
-        "QPushButton:checked { background:#292929; border-color:#353535; color:#999; }"
+        "QPushButton:checked,QToolButton:checked { background:#2c5273; border-color:#438bca; color:#ffffff; }"
+        "QPushButton:disabled,QToolButton:disabled { background:#2b2b2b; border-color:#3a3a3a; color:#666666; }"
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
@@ -123,8 +134,8 @@ void MainWindow::applyStyleSheet()
         " gridline-color:#484848; selection-background-color:#36536d; }"
         "QHeaderView::section { background:#303030; color:#bdbdbd; border:0;"
         " border-bottom:1px solid #505050; padding:5px; }"
-        "QProgressBar { background:#242424; border:0; text-align:center; height:8px; }"
-        "QProgressBar::chunk { background:#43a56c; }"
+        "QProgressBar { background:#242424; border:0; border-radius:4px; height:8px; }"
+        "QProgressBar::chunk { background:#43a56c; border-radius:4px; }"
         "QSplitter::handle { background:#202020; }"
         "QSplitter::handle:hover { background:#438bca; }"
         "QLabel[muted=\"true\"] { color:#999; }"
@@ -178,6 +189,9 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
+        if (workspaceUI->bottomTabs())
+            workspaceUI->bottomTabs()->setVisible(true);
+        panelsVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -249,18 +263,18 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
-        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
+        workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
         zoomPercent = qMax(5, zoomPercent - 10);
-        workspaceUI->zoomLabel()->setText(QString::number(zoomPercent) + "%");
+        workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
         zoomPercent = 100;
-        workspaceUI->zoomLabel()->setText(QStringLiteral("Ajuster"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
+        workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
+        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
    
     connect(menuBarManager, &MenuBarManager::runRequested,
@@ -278,8 +292,10 @@ void MainWindow::setupPageConnections()
 {
     connect(workspaceUI->pages(), &QStackedWidget::currentChanged, this, [this](int index) {
         menuBar()->setVisible(index != 0);
+        statusBar()->setVisible(index != 0);
     });
     menuBar()->setVisible(false);
+    statusBar()->setVisible(false);
 }
 
 void MainWindow::setupPairAlignmentConnections()
@@ -542,16 +558,32 @@ void MainWindow::setMode(int mode)
 {
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    if (workspaceUI->rightTabs() && workspaceUI->gridTabPage()) {
-        const int gridIndex = workspaceUI->rightTabs()->indexOf(workspaceUI->gridTabPage());
-        if (currentMode == 1 && gridIndex < 0) {
-            workspaceUI->rightTabs()->insertTab(0, workspaceUI->gridTabPage(), tr("Grille"));
-            workspaceUI->rightTabs()->setCurrentWidget(workspaceUI->gridTabPage());
-        } else if (currentMode != 1 && gridIndex >= 0) {
-            const bool gridWasSelected = workspaceUI->rightTabs()->currentWidget() == workspaceUI->gridTabPage();
-            workspaceUI->rightTabs()->removeTab(gridIndex);
-            if (gridWasSelected && workspaceUI->rightTabs()->count() > 0)
-                workspaceUI->rightTabs()->setCurrentIndex(qMin(gridIndex, workspaceUI->rightTabs()->count() - 1));
+    if (QTabWidget *tabs = workspaceUI->rightTabs()) {
+        const bool isGridMode = (currentMode == 1);
+        const bool isPairMode = (currentMode == 3);
+        const bool isLayersMode = (currentMode != 1);
+
+        if (tabs->count() >= 4) {
+            tabs->setTabEnabled(0, isGridMode);
+            tabs->setTabToolTip(0, isGridMode ? QString() : tr("Disponible uniquement en mode Tuiles"));
+
+            tabs->setTabEnabled(1, true); // Chaîne toujours accessible
+
+            tabs->setTabEnabled(2, isPairMode);
+            tabs->setTabToolTip(2, isPairMode ? QString() : tr("Disponible uniquement en mode Alignement"));
+
+            tabs->setTabEnabled(3, isLayersMode);
+            tabs->setTabToolTip(3, isLayersMode ? QString() : tr("Indisponible en mode Tuiles"));
+        }
+
+        if (isGridMode) {
+            tabs->setCurrentIndex(0);
+        } else if (currentMode == 2) {
+            tabs->setCurrentIndex(3);
+        } else if (isPairMode) {
+            tabs->setCurrentIndex(2);
+        } else if (tabs->currentIndex() >= 0 && !tabs->isTabEnabled(tabs->currentIndex())) {
+            tabs->setCurrentIndex(1); // Chaîne par défaut
         }
     }
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
@@ -573,11 +605,25 @@ void MainWindow::setMode(int mode)
         workspaceUI->projectInfoPanel()->setVisible(currentMode == 0);
     if (workspaceUI->canvas())
         workspaceUI->canvas()->setVisible(currentMode != 0);
+    if (workspaceUI->leftToolbar())
+        workspaceUI->leftToolbar()->setVisible(currentMode == 2 || currentMode == 3 || currentMode == kModeExport);
     if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
     }
-
+    const bool isPairMode = (currentMode == 3);
+    if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("pairOverlayButton"))) {
+        overlayBtn->setVisible(isPairMode);
+    }
+    if (auto* prevPairBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("prevPairButton"))) {
+        prevPairBtn->setVisible(isPairMode);
+    }
+    if (auto* nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget*>(
+        QStringLiteral("nextDubiousButton"))) {
+        nextDubiousBtn->setVisible(isPairMode);
+    }
     // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
     const bool isExportMode = (currentMode == kModeExport);
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
@@ -618,6 +664,19 @@ void MainWindow::setMode(int mode)
 void MainWindow::refreshProjectInfo()
 {
     workspaceUI->updateFromGridState(projectName, projectGrid->state());
+
+    const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
+    const QString lockedTip = hasTiles ? QString() : tr("Importez d'abord un dossier de tuiles");
+    for (int m = 2; m <= 5; ++m) {
+        if (auto *btn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(m))) {
+            btn->setEnabled(hasTiles);
+            btn->setToolTip(lockedTip);
+        }
+    }
+    if (auto *runBtn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("runPipelineButton"))) {
+        runBtn->setEnabled(hasTiles);
+        runBtn->setToolTip(lockedTip);
+    }
 }
 
 void MainWindow::refreshGrid()
@@ -881,12 +940,6 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         panelsVisible = !panelsVisible;
         workspaceUI->rightTabs()->setVisible(panelsVisible);
         workspaceUI->bottomTabs()->setVisible(panelsVisible);
-        event->accept();
-        return;
-    }
-    // Raccourci clavier (touche N) : passe directement à la prochaine paire douteuse.
-    if (event->key() == Qt::Key_N) {
-        selectNextDubiousPair();
         event->accept();
         return;
     }

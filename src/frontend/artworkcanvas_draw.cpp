@@ -12,12 +12,15 @@
 
 #include <map>
 #include <utility>
+#include <algorithm>
 
 namespace {
 constexpr int kGridGapX = 18;
 constexpr int kGridGapY = 20;
 constexpr int kLabelBarHeight = 21;
 constexpr int kMinCellWidthForFileName = 145;
+
+constexpr int kPreviewMaxDimension = 2048;   // côté max des aperçus mis en cache : nets quand on zoome
 
 constexpr int PREVIEW_MARGIN = 24;
 constexpr int MAX_DRAWN_POINTS = 500;   // par paire ; au-delà (SIFT, LightGlue), un point sur N pour rester lisible
@@ -47,7 +50,9 @@ void strokePath(QPainter &p, const QPainterPath &path, const QColor &color, qrea
                 Qt::PenStyle style = Qt::SolidLine)
 {
     p.setBrush(Qt::NoBrush);
-    p.setPen(QPen(color, width, style, Qt::RoundCap, Qt::RoundJoin));
+    QPen pen(color, width, style, Qt::RoundCap, Qt::RoundJoin);
+    pen.setCosmetic(true);   // même épaisseur à l'écran quel que soit le zoom
+    p.setPen(pen);
     p.drawPath(path);
 }
 
@@ -159,7 +164,9 @@ void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, c
         strokePath(p, retainedLinks, LINK_COLOR, LINE_WIDTH);
         strokePath(p, rejectedLinks, BOUNDARY_COLOR, LINE_WIDTH, Qt::DashLine);
     }
-    p.setPen(QPen(POINT_RING, LINE_WIDTH));
+    QPen ring(POINT_RING, LINE_WIDTH);
+    ring.setCosmetic(true);
+    p.setPen(ring);
     for (const auto &[point, inlier] : dots) {
         p.setBrush(inlier ? POINT_COLOR : BOUNDARY_COLOR);
         p.drawEllipse(point, POINT_RADIUS, POINT_RADIUS);
@@ -213,9 +220,6 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
                          target.top() + (target.height() - fitted.height()) / 2);
     p.drawImage(topLeft, fitted);
     if (withSeams) drawSeamLines(p, QRectF(topLeft, fitted.size()), m_seamLines);
-    // On affiche le pourcentage de zoom en bas à gauche même pour la mosaïque
-    p.setPen(QColor("#dddddd"));
-    p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft, QString::number(zoomPercent) + QStringLiteral(" %"));
     return true;
 }
 
@@ -281,6 +285,57 @@ void ArtworkCanvas::drawSuperposedPair(QPainter &p)
     drawPairOverlap(p, currentPair, placementA, placementB, true);
     drawPairPoints(p, currentPair, placementA, placementB, true);
     drawTileLabel(p, placementA.rect | placementB.rect, currentPair.pairLabel(), true);
+}
+
+void ArtworkCanvas::drawEmptyState(QPainter &p)
+{
+    const QRect card = emptyImportCardRect();
+
+    p.save();
+    p.setRenderHint(QPainter::Antialiasing, true);
+
+    const QColor bgColor = m_emptyCardHovered ? QColor("#3e4852") : QColor("#3a3a3a");
+    const QColor borderColor = m_emptyCardHovered ? QColor("#4b9bea") : QColor("#6d6d6d");
+    p.setBrush(bgColor);
+    p.setPen(QPen(borderColor, 1.5, Qt::DashLine));
+    p.drawRoundedRect(card, 10, 10);
+
+    const int circleSize = 48;
+    const QRect circleRect(card.center().x() - circleSize / 2,
+                           card.top() + 34, circleSize, circleSize);
+    p.setPen(Qt::NoPen);
+    p.setBrush(m_emptyCardHovered ? QColor("#4b91cd") : QColor("#397fb8"));
+    p.drawEllipse(circleRect);
+
+    p.setPen(QPen(Qt::white, 2.6, Qt::SolidLine, Qt::RoundCap));
+    const QPoint c = circleRect.center();
+    p.drawLine(QPoint(c.x() - 10, c.y()), QPoint(c.x() + 10, c.y()));
+    p.drawLine(QPoint(c.x(), c.y() - 10), QPoint(c.x(), c.y() + 10));
+
+    QFont titleFont = p.font();
+    if (titleFont.pointSize() > 0)
+        titleFont.setPointSize(titleFont.pointSize() + 1);
+    else if (titleFont.pixelSize() > 0)
+        titleFont.setPixelSize(titleFont.pixelSize() + 2);
+    titleFont.setBold(true);
+    p.setFont(titleFont);
+    p.setPen(QColor("#ececec"));
+    p.drawText(QRect(card.left() + 16, circleRect.bottom() + 16, card.width() - 32, 24),
+               Qt::AlignCenter, tr("Ajouter des images"));
+
+    QFont subFont = p.font();
+    subFont.setBold(false);
+    if (subFont.pointSize() > 0)
+        subFont.setPointSize(qMax(8, subFont.pointSize() - 2));
+    else if (subFont.pixelSize() > 0)
+        subFont.setPixelSize(qMax(10, subFont.pixelSize() - 2));
+    p.setFont(subFont);
+    p.setPen(QColor("#aaaaaa"));
+    p.drawText(QRect(card.left() + 18, circleRect.bottom() + 42, card.width() - 36, 36),
+               Qt::AlignHCenter | Qt::AlignTop | Qt::TextWordWrap,
+               tr("Cliquez ici pour importer un dossier de tuiles"));
+
+    p.restore();
 }
 
 void ArtworkCanvas::drawGrid(QPainter &p)
@@ -351,8 +406,12 @@ void ArtworkCanvas::drawGrid(QPainter &p)
                        tile.empty ? tr("CASE VIDE") : tr("Déposer une tuile ici"));
         }
 
-        p.setPen(QPen(index == selectedGridCell ? QColor("#4b9bea") : QColor("#e8c638"),
-                      index == selectedGridCell ? 3 : 1, Qt::DashLine));
+        const bool isDragTarget = (dragStartCell >= 0 && index == dragTargetCell && index != dragStartCell);
+        if (isDragTarget)
+            p.fillRect(cell, QColor(75, 155, 234, 55));
+
+        p.setPen(QPen((index == selectedGridCell || isDragTarget) ? QColor("#4b9bea") : QColor("#e8c638"),
+                      (index == selectedGridCell || isDragTarget) ? 3 : 1, Qt::DashLine));
         p.setBrush(Qt::NoBrush);
         p.drawRect(cell.adjusted(1, 1, -2, -2));  
     }
@@ -423,10 +482,16 @@ void ArtworkCanvas::drawPainting(QPainter &p, const QRect &r)
 void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
                               int rotation, bool flipped)
 {
-    QSize previewSize = r.size();
-    if (rotation % 180 != 0)
-        previewSize.transpose();
-    QImage image = readPreviewImage(path, previewSize);
+    QImage image;
+    if (const QImage *cached = m_imageCache.object(path)) {
+        image = *cached;
+    } else {
+        image = readPreviewImage(path, QSize(kPreviewMaxDimension, kPreviewMaxDimension));
+        if (!image.isNull()) {
+            const qsizetype cost = std::max<qsizetype>(1, image.sizeInBytes());
+            m_imageCache.insert(path, new QImage(image), cost);
+        }
+    }
     if (image.isNull()) {
         p.fillRect(r, QColor("#262626"));
         p.setPen(QColor("#d35b55"));
@@ -437,16 +502,14 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
         image = image.mirrored(true, false);
     if (rotation != 0)
         image = image.transformed(QTransform().rotate(rotation), Qt::SmoothTransformation);
-    if (image.width() > r.width() || image.height() > r.height())
-        image = image.scaled(r.size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    const QSize targetSize = image.size().scaled(r.size(), Qt::KeepAspectRatio);
+    const QRect targetRect(r.left() + (r.width() - targetSize.width()) / 2,
+                           r.top() + (r.height() - targetSize.height()) / 2,
+                           targetSize.width(), targetSize.height());
 
     p.save();
     p.setClipRect(r);
-    const int x = r.left() + (r.width() - image.width()) / 2;
-    const int y = r.top() + (r.height() - image.height()) / 2;
-    p.drawImage(x, y, image);
+    p.drawImage(targetRect, image);
     p.restore();
-    p.setPen(QPen(QColor("#101010"), 5));
-    p.setBrush(Qt::NoBrush);
-    p.drawRect(r);
 }
