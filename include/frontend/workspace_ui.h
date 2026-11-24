@@ -51,8 +51,6 @@ public:
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
     QWidget *gridTabPage() const;
     GridTab *gridtab() const;
-    QComboBox *captureOrderCombo() const;
-    QComboBox *arrangementCombo() const;
     QLabel *statusLabel() const;
     QLabel *currentStepLabel() const;
     QProgressBar *progressBar() const;
