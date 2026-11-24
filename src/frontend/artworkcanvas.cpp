@@ -791,9 +791,8 @@ void ArtworkCanvas::setMosaicFilePath(const QString &path)
                     IONs::PyramidCacheEntry entry;
                     std::string prepErr;
                     if (IONs::preparePyramidCache(src, cacheDir, entry, prepErr)) {
-                        QMetaObject::invokeMethod(this, [this]() {
-                            this->update();
-                        }, Qt::QueuedConnection);
+                        // NOLINTNEXTLINE(clang-analyzer-cplusplus.NewDeleteLeaks)
+                        QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
                     }
                 });
             }

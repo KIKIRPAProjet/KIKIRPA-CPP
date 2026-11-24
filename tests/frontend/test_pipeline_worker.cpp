@@ -715,59 +715,45 @@ TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
     QObject::connect(runner, &PipelineRunnerClass::runFinished, &loop, &QEventLoop::quit);
     timer.start(ASYNC_WAIT_TIMEOUT_MS);
     runner->startRun();
-    std::cout << "[DEBUG 1] before loop.exec" << std::endl;
     loop.exec();
-    std::cout << "[DEBUG 2] after loop.exec" << std::endl;
     ASSERT_FALSE(canvas->mosaicPreview().isNull());
 
-    std::cout << "[DEBUG 3] before canvas->setFixedSize" << std::endl;
     canvas->setFixedSize(768, 400);
     canvas->resetView();
     window.show();
     QApplication::processEvents();
-    std::cout << "[DEBUG 4] before canvas->mosaicPreview" << std::endl;
     const QImage originalMosaic = canvas->mosaicPreview();
 
     auto selectMode = [&](const char *name) {
-        std::cout << "[DEBUG 5] selectMode " << name << std::endl;
         auto *button = window.findChild<QPushButton *>(QString::fromLatin1(name));
         ASSERT_NE(button, nullptr);
         ASSERT_TRUE(button->isEnabled());
         button->click();
     };
     selectMode("mode5");
-    std::cout << "[DEBUG 6] before grab withSeams" << std::endl;
     const QImage withSeams = canvas->grab().toImage();
-    std::cout << "[DEBUG 7] after grab withSeams" << std::endl;
     canvas->setSeamVisible(false);
     const QImage withoutSeams = canvas->grab().toImage();
-    std::cout << "[DEBUG 8] after grab withoutSeams" << std::endl;
     EXPECT_NE(withSeams, withoutSeams);
 
     auto *fused = window.findChild<QCheckBox *>(QStringLiteral("fusedMosaicCheck"));
     ASSERT_NE(fused, nullptr);
     fused->click();
     const QImage fusedWithoutSeams = canvas->grab().toImage();
-    std::cout << "[DEBUG 9] after grab fusedWithoutSeams" << std::endl;
     selectMode("mode4");
     EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
     selectMode("mode3");
     EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
     selectMode("mode6");
     EXPECT_EQ(canvas->mosaicPreview(), originalMosaic);
-    std::cout << "[DEBUG 10] after selectMode mode6" << std::endl;
 
     canvas->setActiveTool(CROP_TOOL);
     canvas->setZoom(DOUBLE_ZOOM);
     const QPoint center(canvas->width() / 2, canvas->height() / 2);
     const QPoint delta(100, 60);
-    std::cout << "[DEBUG 11] before sendMouse Press" << std::endl;
     sendMouse(*canvas, QEvent::MouseButtonPress, center - delta, Qt::LeftButton, Qt::LeftButton);
-    std::cout << "[DEBUG 12] before sendMouse Move" << std::endl;
     sendMouse(*canvas, QEvent::MouseMove, center + delta, Qt::NoButton, Qt::LeftButton);
-    std::cout << "[DEBUG 13] before sendMouse Release" << std::endl;
     sendMouse(*canvas, QEvent::MouseButtonRelease, center + delta, Qt::LeftButton, Qt::NoButton);
-    std::cout << "[DEBUG 14] after sendMouse" << std::endl;
     ASSERT_TRUE(canvas->hasActiveCropSelection());
     canvas->applyCrop();
     ASSERT_TRUE(canvas->isCropped());
@@ -779,7 +765,6 @@ TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
     EXPECT_NEAR(normalizedCrop.width(), (delta.x() + 1.0) / (canvas->width() - 48), 0.01);
     canvas->resetCrop();
     EXPECT_EQ(canvas->mosaicPreview(), originalMosaic);
-    std::cout << "[DEBUG 15] end of test function" << std::endl;
 }
 
 int main(int argc, char** argv) {
