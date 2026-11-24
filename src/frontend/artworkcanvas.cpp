@@ -1,6 +1,7 @@
 // src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
 
+#include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -48,6 +49,12 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
     currentPair = pair;
     update();
+}
+
+// Vue d'ensemble de l'alignement (toutes les tuiles et leurs paires), pas la paire superposée.
+bool ArtworkCanvas::isPairOverviewShown() const
+{
+    return modeValue == kModePair && !pairOverlayMode && !m_resultTiles.isEmpty();
 }
 
 QTransform ArtworkCanvas::viewTransform() const
@@ -187,6 +194,7 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
         m_panning = true;
         m_lastPanPos = event->pos();
+        m_pressPos = event->pos();
         setCursor(Qt::ClosedHandCursor);
         event->accept();
         return;
@@ -235,6 +243,15 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
         m_panOffset += event->pos() - m_lastPanPos;
         m_lastPanPos = event->pos();
         update();
+        event->accept();
+        return;
+    }
+    if (isPairOverviewShown()) {   // main au survol d'une paire : on peut la choisir d'un clic
+        const bool overPair = pairAt(viewTransform().inverted().map(QPointF(event->pos()))) >= 0;
+        if (overPair)
+            setCursor(Qt::PointingHandCursor);
+        else
+            unsetCursor();
         event->accept();
         return;
     }
@@ -362,6 +379,13 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
     if (m_panning) {
         m_panning = false;
         unsetCursor();
+        // Clic sans glisser dans la vue d'ensemble de l'alignement : choisit la paire sous la souris.
+        const bool isClick = (event->pos() - m_pressPos).manhattanLength() < QApplication::startDragDistance();
+        if (isClick && event->button() == Qt::LeftButton && isPairOverviewShown()) {
+            const int pairIndex = pairAt(viewTransform().inverted().map(QPointF(event->pos())));
+            if (pairIndex >= 0)
+                emit pairClicked(pairIndex);
+        }
         event->accept();
         return;
     }

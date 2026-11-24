@@ -21,7 +21,6 @@ public:
     void showPairTab();
 
     void updateGridState(const ProjectGrid::State &gridState);
-    void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
     void setActiveStep(int stepNumber);
 
 private:

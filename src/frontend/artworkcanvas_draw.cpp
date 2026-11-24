@@ -16,6 +16,7 @@
 #include <map>
 #include <utility>
 #include <algorithm>
+#include <limits>
 
 namespace {
 constexpr int kGridGapX = 18;
@@ -46,6 +47,7 @@ constexpr qreal OVERLAY_OPACITY = 0.65;
 constexpr qreal LINE_WIDTH = 1.0;       // liens entre points, bord des zones de recouvrement
 constexpr qreal BOUNDARY_WIDTH = 1.5;   // coutures, jonction d'une paire en échec
 constexpr qreal POINT_RADIUS = 2.5;
+constexpr qreal PAIR_HIT_TOLERANCE_PX = 5.0;   // distance d'écran à laquelle un clic touche un lien ou une jonction
 const QColor POINT_COLOR(56, 189, 248);              // bleu ciel : points appariés et leurs liens
 const QColor LINK_COLOR(56, 189, 248, 190);
 const QColor BOUNDARY_COLOR(251, 113, 133);          // rose corail : couture, point rejeté, jonction en échec
@@ -195,19 +197,47 @@ void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, c
 
 // Paire en échec : la jonction entre les deux tuiles est soulignée d'un trait rose, au milieu de l'espace qui
 // les sépare (au-dessus de la bande du nom de la tuile du dessous), sur toute la longueur du bord commun.
+QLineF failedJunctionLine(const QRectF &rectA, const QRectF &rectB)
+{
+    if (rectB.left() >= rectA.right()) {   // B à droite de A
+        const qreal x = (rectA.right() + rectB.left()) / 2.0;
+        return {x, qMax(rectA.top(), rectB.top()), x, qMin(rectA.bottom(), rectB.bottom())};
+    }
+    const qreal y = (rectA.bottom() + rectB.top() - LABEL_BAND) / 2.0;   // B sous A
+    return {qMax(rectA.left(), rectB.left()), y, qMin(rectA.right(), rectB.right()), y};
+}
+
 void drawFailedJunction(QPainter &p, const QRectF &rectA, const QRectF &rectB)
 {
     QPainterPath junction;
-    if (rectB.left() >= rectA.right()) {   // B à droite de A
-        const qreal x = (rectA.right() + rectB.left()) / 2.0;
-        junction.moveTo(x, qMax(rectA.top(), rectB.top()));
-        junction.lineTo(x, qMin(rectA.bottom(), rectB.bottom()));
-    } else {                               // B sous A
-        const qreal y = (rectA.bottom() + rectB.top() - LABEL_BAND) / 2.0;
-        junction.moveTo(qMax(rectA.left(), rectB.left()), y);
-        junction.lineTo(qMin(rectA.right(), rectB.right()), y);
-    }
+    const QLineF line = failedJunctionLine(rectA, rectB);
+    junction.moveTo(line.p1());
+    junction.lineTo(line.p2());
     strokePath(p, junction, BOUNDARY_COLOR, BOUNDARY_WIDTH);
+}
+
+qreal distanceToSegment(const QPointF &point, const QLineF &segment)
+{
+    const QPointF along = segment.p2() - segment.p1();
+    const qreal lengthSquared = QPointF::dotProduct(along, along);
+    const qreal t = lengthSquared > 0.0 ? qBound(0.0, QPointF::dotProduct(point - segment.p1(), along) / lengthSquared, 1.0) : 0.0;
+    return QLineF(point, segment.p1() + t * along).length();
+}
+
+// Le point est-il sur un lien entre deux points appariés, ou sur la jonction d'une paire en échec ?
+bool isOnPairLine(const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
+                  const TilePlacement &placementB, const QPointF &point, qreal tolerance)
+{
+    if (pair.totalMatches == 0)
+        return distanceToSegment(point, failedJunctionLine(placementA.rect, placementB.rect)) <= tolerance;
+    const int count = static_cast<int>(qMin(pair.pointsInA.size(), pair.pointsInB.size()));
+    const int stride = qMax(1, count / MAX_DRAWN_POINTS);
+    for (int index = 0; index < count; index += stride) {
+        const QLineF link(placementA.map(pair.pointsInA.at(index)), placementB.map(pair.pointsInB.at(index)));
+        if (distanceToSegment(point, link) <= tolerance)
+            return true;
+    }
+    return false;
 }
 
 // Nom au-dessus de la tuile, dans la bande réservée : rien n'est dessiné sur l'image. En blanc et en gras pour les
@@ -283,6 +313,33 @@ void ArtworkCanvas::drawTilesOverview(QPainter &p)
             else if (pair.totalMatches == 0) drawFailedJunction(p, placementA->second.rect, placementB->second.rect);
         }
     }
+}
+
+// Paire sous le point (repère de la vue non zoomée) : un lien ou une jonction d'abord, sinon la plus petite zone de
+// recouvrement qui le contient (deux zones se chevauchent dans les coins). -1 si aucune.
+int ArtworkCanvas::pairAt(const QPointF &scenePos) const
+{
+    const QRectF area = QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const std::map<int, TilePlacement> placements = layoutTiles(m_resultTiles, area);
+    const qreal tolerance = PAIR_HIT_TOLERANCE_PX * 100.0 / qMax(1, zoomPercent);   // px d'écran, quel que soit le zoom
+    int smallestZonePair = -1;
+    qreal smallestZoneArea = std::numeric_limits<qreal>::max();
+    for (const FrontendUtils::PairAlignmentInfo &pair : m_allPairs) {
+        const auto placementA = placements.find(pair.tileIndexA);
+        const auto placementB = placements.find(pair.tileIndexB);
+        if (placementA == placements.end() || placementB == placements.end()) continue;
+        if (isOnPairLine(pair, placementA->second, placementB->second, scenePos, tolerance)) return pair.pairIndex;
+        const auto [inA, inB] = overlapAreas(pair);
+        if (inA.isEmpty()) continue;
+        for (const QRectF &zone : {placementA->second.map(inA), placementB->second.map(inB)}) {
+            const qreal zoneArea = zone.width() * zone.height();
+            if (zone.contains(scenePos) && zoneArea < smallestZoneArea) {
+                smallestZonePair = pair.pairIndex;
+                smallestZoneArea = zoneArea;
+            }
+        }
+    }
+    return smallestZonePair;
 }
 
 // B posée sur A à sa translation mesurée, le tout agrandi à la taille de la vue, le nom de la paire au-dessus.

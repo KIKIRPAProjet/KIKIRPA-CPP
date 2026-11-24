@@ -96,6 +96,8 @@ public:
     signals:
         void zoomChanged(int zoomPercent);
         void importTilesRequested();
+        // Clic (sans glisser) sur un lien, une zone de recouvrement ou une jonction de la vue d'ensemble de l'alignement.
+        void pairClicked(int pairIndex);
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -176,6 +178,10 @@ private:
     QRect mosaicDisplayedRect() const;
     // Zoom et déplacement de la vue : repère de l'image non zoomée -> écran (paintEvent, recadrage).
     QTransform viewTransform() const;
+    // Paire de la vue d'ensemble sous ce point du repère non zoomé, -1 si aucune (artworkcanvas_draw.cpp).
+    int pairAt(const QPointF &scenePos) const;
+    bool isPairOverviewShown() const;
+    QPoint m_pressPos;   // pour distinguer un clic d'un glisser (déplacement de la vue)
     int m_activeTool = -1;
     QImage m_originalMosaicPreview;
     bool m_isCropping = false;

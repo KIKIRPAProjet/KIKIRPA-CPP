@@ -66,13 +66,6 @@ void RightPanel::updateGridState(const ProjectGrid::State &gridState)
     }
 }
 
-void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState)
-{
-    if (m_alignmentTab) {
-        m_alignmentTab->updateInfo(projectName, gridState);
-    }
-}
-
 void RightPanel::setActiveStep(int stepNumber)
 {
     if (m_assemblyTab) {

@@ -13,6 +13,7 @@
 #include <QMetaType>
 #include <QPolygonF>
 #include <QSize>
+#include <QString>
 #include <QVector>
 
 #include <vector>
@@ -44,6 +45,14 @@ struct PipelineResults {
 };
 Q_DECLARE_METATYPE(PipelineResults)
 
+// Ce que l'onglet Paire montre d'une paire : l'état en un mot, une explication en français clair (avec ce qu'il faut
+// faire) et, pour l'infobulle, les mesures techniques et la raison brute renvoyée par les steps.
+struct PairOperatorText {
+    QString state;         // « Fiable », « À vérifier », « Échec » ou « Validée »
+    QString explanation;
+    QString details;
+};
+
 namespace FrontendNs {
 
     // Une entrée par tuile importée, dans l'ordre de la liste.
@@ -69,6 +78,10 @@ namespace FrontendNs {
 
     // `corrections` avec `correction` à la place de celle de la même paire (dans un sens ou l'autre), ou ajoutée.
     std::vector<ManualCorrection> withCorrection(std::vector<ManualCorrection> corrections, const ManualCorrection &correction);
+
+    // Texte de la paire pour l'opérateur : la raison des steps (phase-correlation, contrôle de confiance, interface) est
+    // reconnue par mots-clés et reformulée ; une raison inconnue est reprise telle quelle.
+    PairOperatorText describePairForOperator(const FrontendUtils::PairAlignmentInfo &pair);
 
     // Lignes de couture : frontières entre les territoires de deux tuiles différentes (les bords extérieurs de la
     // mosaïque n'en sont pas). Les territoires sont dans le repère de la mosaïque (DataNs::computeMosaicCorners),

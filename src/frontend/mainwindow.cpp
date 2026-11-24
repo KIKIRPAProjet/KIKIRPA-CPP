@@ -100,6 +100,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupPairAlignmentConnections();
 
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        connect(canvasView, &ArtworkCanvas::pairClicked, this, &MainWindow::selectPair);
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
     }
@@ -340,9 +341,7 @@ void MainWindow::selectPair(int pairIndex)
     }
 
     const auto &pair = m_pairs.at(m_currentPairIndex);
-    updateStatus(tr("Paire sélectionnée : %1 (%2)")
-                     .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
+    updateStatus(tr("Paire sélectionnée : %1 (%2)").arg(pair.pairLabel(), FrontendNs::describePairForOperator(pair).state));
 }
 
 void MainWindow::selectPreviousPair()
@@ -362,12 +361,13 @@ void MainWindow::selectNextDubiousPair()
     setMode(3);
     for (int offset = 1; offset <= m_pairs.size(); ++offset) {
         const int idx = (m_currentPairIndex + offset) % m_pairs.size();
-        if (m_pairs.at(idx).isDubious()) {
+        // Paires à vérifier et paires en échec, comme le filtre « À vérifier seulement » de l'onglet Paire.
+        if (m_pairs.at(idx).isDubious() || m_pairs.at(idx).status == FrontendUtils::PairStatus::Failed) {
             selectPair(idx);
             return;
         }
     }
-    updateStatus(tr("Aucune paire douteuse restante à inspecter."));
+    updateStatus(tr("Aucune paire à vérifier."));
 }
 
 //une fois une paire validée, mise à jour du status

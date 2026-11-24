@@ -173,10 +173,6 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
         m_centerArea->updateProjectInfo(projectName, gridState);
     }
 
-    if (m_rightPanel) {
-        m_rightPanel->updateProjectInfo(projectName, gridState);
-    }
-
     if (m_topToolbars) {
         m_topToolbars->updateTitle(projectName, gridState.modality);
     }
