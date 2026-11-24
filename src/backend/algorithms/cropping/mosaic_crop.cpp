@@ -97,7 +97,7 @@ namespace CroppingNs {
         }
 
         // Le résultat est préparé séparément. Seul un ancien résultat identifié,
-// sans fichiers étrangers, peut être remplacé.
+        // sans fichiers étrangers, peut être remplacé.
         class OutputDirectoryClass {
 
         public:

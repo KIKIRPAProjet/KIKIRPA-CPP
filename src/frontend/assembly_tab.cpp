@@ -180,7 +180,7 @@ void AssemblyTab::setupStepList(QVBoxLayout *layout)
 
 void AssemblyTab::applyChoices()
 {
-    FrontendNs::PipelineChoices choices;
+    FrontendNs::PipelineChoices choices = m_projectGrid->state().pipelineChoices;   // garde les corrections manuelles
     choices.estimateOverlap = selectedData(m_overlapCombo) == "overlap-estimation";
     choices.matchingStep = selectedData(m_matchingCombo);
     choices.intensityMethod = selectedData(m_intensityCombo);

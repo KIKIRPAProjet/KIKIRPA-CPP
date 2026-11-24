@@ -64,6 +64,11 @@ kikirpa_copy_onnxruntime_dlls(test_vote_2d_step)
 target_link_libraries(test_vote_2d_step PRIVATE kikirpa_backend GTest::gtest_main)
 gtest_discover_tests(test_vote_2d_step PROPERTIES LABELS "unit")
 
+add_executable(test_manual_matches_step test_manual_matches_step.cpp)
+kikirpa_copy_onnxruntime_dlls(test_manual_matches_step)
+target_link_libraries(test_manual_matches_step PRIVATE kikirpa_backend GTest::gtest_main)
+gtest_discover_tests(test_manual_matches_step PROPERTIES LABELS "unit")
+
 add_executable(test_fusion_step test_fusion_step.cpp)
 kikirpa_copy_onnxruntime_dlls(test_fusion_step)
 target_link_libraries(test_fusion_step PRIVATE kikirpa_backend GTest::gtest_main)

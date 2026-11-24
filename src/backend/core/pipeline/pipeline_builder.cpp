@@ -15,11 +15,13 @@
 #include "steps/import_step.h"
 #include "steps/intensity_correction_step.h"
 #include "steps/lightglue_step.h"
+#include "steps/manual_matches_step.h"
+#include "steps/mosaic_crop_step.h"
 #include "steps/phase_correlation_step.h"
 #include "steps/overlap_estimation_step.h"
 #include "steps/sift_step.h"
 #include "steps/vote_2d_step.h"
-#include "steps/mosaic_crop_step.h"
+
 
 #include <cstddef>
 #include <exception>
@@ -51,13 +53,14 @@ namespace PipelineNs {
                 {"overlap-estimation", [] { return std::make_unique<StepsNs::OverlapEstimationStepClass>(); }},
                 {"dynamic-programming-dijkstra", [] { return std::make_unique<StepsNs::DynamicProgrammingDijkstraStepClass>(); }},
                 {"graphcut", [] { return std::make_unique<StepsNs::GraphCutStepClass>(); }},
+                {"manual-matches", [] { return std::make_unique<StepsNs::ManualMatchesStepClass>(); }},
                 {"intensity-correction", [] { return std::make_unique<StepsNs::IntensityCorrectionStepClass>(); }},
                 {"fusion", [] { return std::make_unique<StepsNs::FusionStepClass>(); }},
                 // Cette vérification autonome s'ajoute à la fin quand les chemins des deux images sont disponibles.
                 {"final-verification", [] { return std::make_unique<StepsNs::FinalVerificationStepClass>(); }},
                 {"export", [] { return std::make_unique<StepsNs::ExportStepClass>(); }},
                 {"vote-2d", [] { return std::make_unique<StepsNs::Vote2DStepClass>(); }},
-                                {"mosaic-crop", [] { return std::make_unique<StepsNs::MosaicCropStepClass>(); }},
+                {"mosaic-crop", [] { return std::make_unique<StepsNs::MosaicCropStepClass>(); }},
             };
             return registry;
         }
