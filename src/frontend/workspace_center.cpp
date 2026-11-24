@@ -141,21 +141,19 @@ void WorkspaceCenter::createCanvasAndControls()
     static_cast<QVBoxLayout *>(layout())->addWidget(canvasControls);
 
     auto applyZoom = [this](int targetZoom) {
-        m_mainWindow->zoomPercent = qBound(5, targetZoom, 1600);
+        m_mainWindow->zoomPercent = qBound(1, targetZoom, 1600);
         m_zoomLabel->setText(QStringLiteral("%1 %").arg(m_mainWindow->zoomPercent));
         m_canvas->setZoom(m_mainWindow->zoomPercent);
     };
 
     connect(minus, &QPushButton::clicked, this, [this, applyZoom]() {
-        applyZoom(m_mainWindow->zoomPercent - 10);
+        applyZoom(FrontendUtils::nextZoomOut(m_mainWindow->zoomPercent));
     });
     connect(plus, &QPushButton::clicked, this, [this, applyZoom]() {
-        applyZoom(m_mainWindow->zoomPercent + 10);
+        applyZoom(FrontendUtils::nextZoomIn(m_mainWindow->zoomPercent));
     });
     connect(fit, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->zoomPercent = 100;
-        m_zoomLabel->setText(QStringLiteral("100 %"));
-        m_canvas->resetView();
+        m_canvas->fitToWindow();
     });
     connect(oneToOne, &QPushButton::clicked, this, [applyZoom]() {
         applyZoom(100);

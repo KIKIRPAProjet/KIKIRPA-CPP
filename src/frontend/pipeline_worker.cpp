@@ -31,7 +31,7 @@ namespace {
     // Expression régulière pour décoder les messages backend : "Step X/Y OK" ou "Step X/Y failed".
     const QRegularExpression STEP_PROGRESS_REGEX(QStringLiteral(R"(Step\s+(\d+)/(\d+)\s+([A-Za-z]+))"));
 
-    // Largeur cible de la vignette d'aperçu pour préserver les performances de l'UI.
+    // Largeur cible de la vignette d'aperçu pour préserver les performances de l'UI tout en offrant une grande netteté.
     constexpr int PREVIEW_TARGET_WIDTH = 1200;
 
     // Catégorise le message backend afin de router correctement les filtres dans le LogPanel.

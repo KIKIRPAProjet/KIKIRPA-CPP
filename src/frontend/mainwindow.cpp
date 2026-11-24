@@ -82,7 +82,7 @@ constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
-    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId()); // NOLINT(performance-no-int-to-ptr)
     if (!hwnd)
         return;
     constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
@@ -127,6 +127,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
+        connect(canvasView, &ArtworkCanvas::zoomChanged, this, [this](int zoom) {
+            zoomPercent = zoom;
+            workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoom));
+        });
     }
 
     auto *nextDubiousShortcut = new QShortcut(QKeySequence(Qt::Key_N), this);
@@ -222,6 +226,9 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
+            if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                canvas->setMosaicFilePath(imagePath);
+            }
         });
 
     // Au lancement du calcul, la préparation des vignettes s'arrête après son image en cours : l'import du backend
@@ -229,6 +236,9 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
+                    canvas->setMosaicFilePath(QString());
+                }
                 workspaceUI->setImageLayers({});
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
@@ -308,19 +318,19 @@ void MainWindow::setupMenuConnections()
         workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
-        zoomPercent = qMin(1600, zoomPercent + 10);
+        zoomPercent = FrontendUtils::nextZoomIn(zoomPercent);
         workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::zoomOutRequested, this, [this]() {
-        zoomPercent = qMax(5, zoomPercent - 10);
+        zoomPercent = FrontendUtils::nextZoomOut(zoomPercent);
         workspaceUI->zoomLabel()->setText(QStringLiteral("%1 %").arg(zoomPercent));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->setZoom(zoomPercent);
     });
     connect(menuBarManager, &MenuBarManager::fitToWindowRequested, this, [this]() {
-        zoomPercent = 100;
-        workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
-        static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
+        if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+            canvasView->fitToWindow();
+        }
     });
 
     connect(menuBarManager, &MenuBarManager::runRequested,
@@ -927,6 +937,9 @@ bool MainWindow::confirmDiscardUnsavedChanges()
     return false;
 }
 
+#ifdef _MSC_VER
+__declspec(noinline)
+#endif
 void MainWindow::markProjectModified()
 {
     if (switchingProject)
@@ -935,6 +948,9 @@ void MainWindow::markProjectModified()
     refreshWindowTitle();
 }
 
+#ifdef _MSC_VER
+__declspec(noinline)
+#endif
 void MainWindow::refreshWindowTitle()
 {
     const QString baseTitle = tr("KIK-IRPA Assemblage");

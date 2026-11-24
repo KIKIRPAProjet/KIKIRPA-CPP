@@ -12,6 +12,13 @@
 
 namespace IONs {
 
+    struct PyramidViewportRegion {
+        int level = 0;                           // niveau lu, 0 = résolution d'origine
+        cv::Rect region;                         // rectangle lu dans les coordonnées de `level`
+        cv::Rect2d fullResolutionRegion;         // rectangle couvert, dans le niveau 0
+        cv::Mat pixels;                          // pixels correspondant à `region`
+    };
+
     // Lecteur d'un TIFF pyramidal produit par createPyramidalTiledTiff.
     // Chaque lecture ouvre et ferme le fichier afin que les appels restent indépendants.
     class PyramidalTiffReaderClass {
@@ -29,7 +36,7 @@ namespace IONs {
             // Récupère les dimensions d'un niveau donné.
             bool getLevelDimensions(
                 int level,
-                int& width,
+                int& width, // NOLINT(bugprone-easily-swappable-parameters)
                 int& height,
                 std::string& errorMessage
             ) const;
@@ -37,8 +44,27 @@ namespace IONs {
             // Nombre total de niveaux dans la pyramide (1 si non pyramidal).
             int getLevelCount() const;
 
+            // Dimensions des niveaux présents dans le TIFF, du niveau 0 aux niveaux réduits.
+            bool readPyramidDimensions(
+                std::vector<cv::Size>& dimensions,
+                std::string& errorMessage
+            ) const;
+
+            // Lit la zone visible. origin est en pixels pleine résolution; viewportSize est en
+            // pixels écran; zoomPercent est un facteur d'affichage (100 = 1 pixel source par
+            // pixel écran). Une partie du viewport hors image est tronquée.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
+            bool readViewport(
+                const cv::Point2d& origin,
+                const cv::Size& viewportSize,
+                double zoomPercent,
+                PyramidViewportRegion& output,
+                std::string& errorMessage
+            ) const;
+
             // `region` est exprimée dans le repère du niveau demandé et doit y être entièrement contenue.
             // `output` reçoit exactement ses dimensions et son type.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool readRegion(
                 int level,
                 const cv::Rect& region,
@@ -48,6 +74,7 @@ namespace IONs {
 
             // Récupère le profil ICC (si présent) et les échelles de résolution (X et Y).
             // Laisse scaleX et scaleY à 1.0 et iccProfile vide si non trouvés, mais renvoie true.
+            // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
             bool readMetadata(
                 std::vector<uint8_t>& iccProfile,
                 double& scaleX,

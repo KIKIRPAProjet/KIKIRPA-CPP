@@ -224,9 +224,18 @@ QString findPyramidPathForSource(const QString &sourcePath)
         return {};
 
     // Le chemin passé est déjà un TIFF pyramidal
-    if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
-        sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
-        return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+    if (sourcePath.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive) ||
+        sourcePath.endsWith(QStringLiteral(".tiff"), Qt::CaseInsensitive)) {
+        if (sourcePath.endsWith(QStringLiteral("_pyramid.tif"), Qt::CaseInsensitive) ||
+            sourcePath.endsWith(QStringLiteral("_pyramid.tiff"), Qt::CaseInsensitive)) {
+            return QFileInfo::exists(sourcePath) ? sourcePath : QString();
+        }
+        if (QFileInfo::exists(sourcePath)) {
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(sourcePath.toStdString()));
+            if (reader.getLevelCount() > 1) {
+                return sourcePath;
+            }
+        }
     }
 
     const std::filesystem::path source = IONs::pathFromUtf8(sourcePath.toStdString());
@@ -279,6 +288,79 @@ QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize
     }
     return image;
 }
+
+PyramidalViewport readPyramidalViewport(
+    const QString &path,
+    const QPointF &originInFullResolution,
+    const QSize &viewportScreenSize,
+    double zoomPercent)
+{
+    if (path.isEmpty() || viewportScreenSize.width() <= 0 || viewportScreenSize.height() <= 0 || zoomPercent <= 0.0)
+        return {};
+
+    QString pyramidPath = findPyramidPathForSource(path);
+    if (pyramidPath.isEmpty() && QFileInfo::exists(path)) {
+        if (path.endsWith(QStringLiteral(".tif"), Qt::CaseInsensitive) ||
+            path.endsWith(QStringLiteral(".tiff"), Qt::CaseInsensitive)) {
+            pyramidPath = path;
+        }
+    }
+    if (pyramidPath.isEmpty())
+        return {};
+
+    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    IONs::PyramidViewportRegion output;
+    std::string errorMessage;
+    if (!reader.readViewport(cv::Point2d(originInFullResolution.x(), originInFullResolution.y()),
+                             cv::Size(viewportScreenSize.width(), viewportScreenSize.height()),
+                             zoomPercent, output, errorMessage)) {
+        return {};
+    }
+
+    if (output.pixels.empty())
+        return {};
+
+    QImage img = matToQImage(output.pixels);
+    if (img.isNull())
+        return {};
+
+    PyramidalViewport result;
+    result.image = std::move(img);
+    result.fullResolutionRegion = QRectF(output.fullResolutionRegion.x, output.fullResolutionRegion.y,
+                                         output.fullResolutionRegion.width, output.fullResolutionRegion.height);
+    result.level = output.level;
+    result.isValid = true;
+    return result;
+}
+
+// NOLINTBEGIN(readability-magic-numbers)
+int nextZoomIn(int currentZoom)
+{
+    static const int steps[] = {
+        1, 2, 5, 10, 15, 20, 25, 33, 50, 67, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1400, 1600
+    };
+    for (int step : steps) {
+        if (step > currentZoom) {
+            return step;
+        }
+    }
+    return 1600;
+}
+
+int nextZoomOut(int currentZoom)
+{
+    static const int steps[] = {
+        1, 2, 5, 10, 15, 20, 25, 33, 50, 67, 75, 100, 125, 150, 175, 200, 250, 300, 400, 500, 600, 800, 1000, 1200, 1400, 1600
+    };
+    const int count = static_cast<int>(sizeof(steps) / sizeof(steps[0]));
+    for (int i = count - 1; i >= 0; --i) {
+        if (steps[i] < currentZoom) {
+            return steps[i];
+        }
+    }
+    return 1;
+}
+// NOLINTEND(readability-magic-numbers)
 
 }
 

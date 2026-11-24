@@ -36,8 +36,11 @@ class ArtworkCanvas final : public QWidget
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
-    void setMode(int mode) { modeValue = mode; update(); }
-    void setZoom(int zoom) { zoomPercent = zoom; update(); }
+    void setMode(int mode);
+    void setZoom(int zoom);
+    int zoom() const { return zoomPercent; }
+    void fitToWindow();
+    void resetView();
     void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {})
     {
         imageLayers = layers;
@@ -86,8 +89,8 @@ public:
     }
 
     void setFusedMosaicVisible(bool visible) { fusedMosaicVisible = visible; update(); }
-    void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
-        int selectedCell);
+    void setGridState(int rows, int columns, const QVector<GridTile> &tiles,
+                      int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
                           std::function<void(int, int)> cellsSwapped);
     void toggleComparison() { comparison = !comparison; update(); }
@@ -96,9 +99,13 @@ public:
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     // Définit et mémorise l'aperçu de la mosaïque assemblée pour le mode Image finale.
     void setMosaicPreview(const QImage &image);
+    void setMosaicFilePath(const QString &path);
+    const QString &mosaicFilePath() const { return m_mosaicFilePath; }
+    QSize mosaicFullDimensions() const { return m_mosaicFullDimensions; }
 
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
+    QRect mosaicDisplayedRect() const;
     // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
     void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
@@ -106,7 +113,10 @@ public:
     {
         m_resultTiles = tiles;
         m_allPairs = pairs;
-        update();
+        if (modeValue == 3)
+            fitToWindow();
+        else
+            update();
     }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
@@ -139,7 +149,6 @@ public:
     // Rétablit l'image originale non recadrée.
     void resetCrop();
 
-    void resetView();
     void setImagePaths(const QStringList &paths) { imagePaths = paths; m_imageCache.clear(); update(); }
 
     signals:
@@ -174,6 +183,7 @@ private:
     void drawCenteredMessage(QPainter &p, const QString &message);
 
     bool hasActiveImages() const;
+    QSize contentSize() const;
     QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
     void drawCropOverlay(QPainter &painter, const QRect &imageRect);
@@ -212,6 +222,8 @@ private:
     bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
+    QString m_mosaicFilePath;
+    QSize m_mosaicFullDimensions;
     SeamLines m_seamLines;
     QVector<ResultTile> m_resultTiles;
     QVector<FrontendUtils::PairAlignmentInfo> m_allPairs;
@@ -223,10 +235,11 @@ private:
     QPointF m_panOffset;
     QPoint m_lastPanPos;
     bool m_panning = false;
+    QPoint m_panStartPos;
+    int m_clickedGridCell = -1;
     bool m_emptyCardHovered = false;
     QCache<QString, QImage> m_imageCache;
 
-    QRect mosaicDisplayedRect() const;
     // Zoom et déplacement de la vue : repère de l'image non zoomée -> écran (paintEvent, recadrage).
     QTransform viewTransform() const;
     int m_activeTool = -1;
