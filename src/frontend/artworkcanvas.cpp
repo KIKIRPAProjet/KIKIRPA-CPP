@@ -1,8 +1,12 @@
 // src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
+#include "core/io/pyramid_cache.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
+#include "frontendutils.h"
 #include <QFileInfo>
+#include <QImageReader>
+#include <QtConcurrent>
 
 #include <QEvent>
 #include <QKeyEvent>
@@ -50,7 +54,10 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
 void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
     currentPair = pair;
-    update();
+    if (modeValue == kModePair && pairOverlayMode)
+        fitToWindow();
+    else
+        update();
 }
 void ArtworkCanvas::setMode(int mode)
 {
@@ -88,13 +95,92 @@ QTransform ArtworkCanvas::viewTransform() const
     return transform;
 }
 
+QSize ArtworkCanvas::contentSize() const
+{
+    if (modeValue == kModeExport || modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+        if (!m_mosaicFullDimensions.isEmpty())
+            return m_mosaicFullDimensions;
+        if (!m_mosaicPreview.isNull())
+            return m_mosaicPreview.size();
+    } else if (modeValue == kModePair) {
+        if (pairOverlayMode && !currentPair.tileSizeA.isEmpty() && !currentPair.tileSizeB.isEmpty()) {
+            const QRectF bounds = QRectF(QPointF(0, 0), QSizeF(currentPair.tileSizeA)) |
+                                  QRectF(QPointF(currentPair.dx, currentPair.dy), QSizeF(currentPair.tileSizeB));
+            if (bounds.width() > 0 && bounds.height() > 0)
+                return bounds.size().toSize();
+        }
+        if (!m_resultTiles.isEmpty()) {
+            int rows = 1;
+            int columns = 1;
+            QSize cell(1, 1);
+            for (const ResultTile &tile : m_resultTiles) {
+                rows = qMax(rows, tile.row + 1);
+                columns = qMax(columns, tile.column + 1);
+                cell = cell.expandedTo(tile.size);
+            }
+            constexpr double kGapFraction = 0.04;
+            constexpr int kBand = 20;
+            const double gap = kGapFraction * qMax(cell.width(), cell.height());
+            const int totalW = qRound(columns * cell.width() + (columns - 1) * gap);
+            const int totalH = qRound(rows * cell.height() + (rows - 1) * gap + rows * kBand);
+            if (totalW > 0 && totalH > 0)
+                return QSize(totalW, totalH);
+        }
+    } else if (modeValue == kModeMasks) {
+        QString firstPath;
+        if (!imagePaths.isEmpty()) {
+            firstPath = imagePaths.first();
+        } else {
+            for (const auto &tile : gridTiles) {
+                if (!tile.path.isEmpty() && !tile.empty) {
+                    firstPath = tile.path;
+                    break;
+                }
+            }
+        }
+        if (!firstPath.isEmpty()) {
+            const QString pyr = FrontendUtils::findPyramidPathForSource(firstPath);
+            const QString pathToRead = !pyr.isEmpty() ? pyr : firstPath;
+            if (QFileInfo::exists(pathToRead)) {
+                IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pathToRead.toStdString()));
+                int w = 0, h = 0;
+                std::string err;
+                if (reader.getLevelDimensions(0, w, h, err) && w > 0 && h > 0)
+                    return QSize(w, h);
+            }
+            QImageReader qreader(firstPath);
+            const QSize sz = qreader.size();
+            if (sz.isValid() && sz.width() > 0 && sz.height() > 0)
+                return sz;
+        }
+    }
+
+    if (!imagePaths.isEmpty()) {
+        const QString firstPath = imagePaths.first();
+        const QString pyr = FrontendUtils::findPyramidPathForSource(firstPath);
+        const QString pathToRead = !pyr.isEmpty() ? pyr : firstPath;
+        if (QFileInfo::exists(pathToRead)) {
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pathToRead.toStdString()));
+            int w = 0, h = 0;
+            std::string err;
+            if (reader.getLevelDimensions(0, w, h, err) && w > 0 && h > 0)
+                return QSize(w, h);
+        }
+        QImageReader qreader(firstPath);
+        const QSize sz = qreader.size();
+        if (sz.isValid() && sz.width() > 0 && sz.height() > 0)
+            return sz;
+    }
+    return QSize();
+}
+
 void ArtworkCanvas::fitToWindow()
 {
     m_panOffset = QPointF(0.0, 0.0);
     int fitZoom = 100;
 
-    if (modeValue == kModeExport || modeValue == kModeAssembly || modeValue == MODE_SEAM) {
-        const QSize displaySize = !m_mosaicFullDimensions.isEmpty() ? m_mosaicFullDimensions : m_mosaicPreview.size();
+    if (modeValue != kModeGrid) {
+        const QSize displaySize = contentSize();
         if (displaySize.width() > 0 && displaySize.height() > 0) {
             const QRect target = rect().adjusted(24, 24, -24, -24);
             const double scaleX = static_cast<double>(target.width()) / displaySize.width();
@@ -102,8 +188,6 @@ void ArtworkCanvas::fitToWindow()
             const double fitScale = std::min(scaleX, scaleY);
             fitZoom = qBound(kMinZoomPercent, qRound(fitScale * 100.0), kMaxZoomPercent);
         }
-    } else if (modeValue == kModeGrid) {
-        fitZoom = 100;
     } else {
         fitZoom = 100;
     }
@@ -584,30 +668,24 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    const bool pair = modeValue == kModePair;
-    const int gutter = pair ? kPairGutter : 0;
-    const int maxW = pair ? (width() - 90) / 2 : width() - 130;
-    const int maxH = height() - 80;
-    const double aspect = pair ? kPairAspect : kSingleAspect;
-    int imageH = qMin(maxH, int(maxW / aspect));
-    int imageW = int(imageH * aspect);
-    if (imageW > maxW) {
-        imageW = maxW;
-        imageH = int(imageW / aspect);
+    if (modeValue == kModePair) {
+        beginViewTransform();
+        drawPairView(p);
+        p.restore();
+        p.setPen(QColor("#dddddd"));
+        p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                   QString::number(zoomPercent) + QStringLiteral(" %"));
+        return;
     }
-    imageW = qMax(kMinImageWidth, imageW);
-    imageH = qMax(kMinImageHeight, imageH);
-    const int totalW = pair ? imageW * 2 + gutter : imageW;
-    const int x0 = (width() - totalW) / 2;
+
+    const QSize nativeSize = contentSize();
+    const int imageW = nativeSize.width() > 0 ? nativeSize.width() : 2000;
+    const int imageH = nativeSize.height() > 0 ? nativeSize.height() : 1500;
+    const int x0 = (width() - imageW) / 2;
     const int y0 = (height() - imageH) / 2;
 
     const QRect firstImageRect(x0, y0, imageW, imageH);
-    beginViewTransform();   // zoom et déplacement de la vue, aussi pour l'alignement
-    if (pair) {
-        drawPairView(p);
-        p.restore();
-        return;
-    }
+    beginViewTransform();
 
     if (!imagePaths.isEmpty())
         drawPhoto(p, firstImageRect, imagePaths.first());
@@ -668,7 +746,10 @@ void ArtworkCanvas::setPairOverlayMode(bool enabled)
 {
     if (pairOverlayMode != enabled) {
         pairOverlayMode = enabled;
-        update();
+        if (modeValue == kModePair)
+            fitToWindow();
+        else
+            update();
     }
 }
 
@@ -698,6 +779,23 @@ void ArtworkCanvas::setMosaicFilePath(const QString &path)
         std::string err;
         if (reader.getLevelDimensions(0, w, h, err) && w > 0 && h > 0) {
             m_mosaicFullDimensions = QSize(w, h);
+        }
+        // Préparer la pyramide multi-niveaux en tâche de fond si elle n'existe pas encore
+        const QString pyr = FrontendUtils::findPyramidPathForSource(path);
+        if (pyr.isEmpty() || pyr == path) {
+            if (reader.getLevelCount() <= 1) {
+                (void)QtConcurrent::run([path, this]() {
+                    const std::filesystem::path src = IONs::pathFromUtf8(path.toStdString());
+                    const std::filesystem::path cacheDir = IONs::pyramidCacheDirectory(src.parent_path());
+                    IONs::PyramidCacheEntry entry;
+                    std::string prepErr;
+                    if (IONs::preparePyramidCache(src, cacheDir, entry, prepErr)) {
+                        QMetaObject::invokeMethod(this, [this]() {
+                            this->update();
+                        }, Qt::QueuedConnection);
+                    }
+                });
+            }
         }
     } else if (m_mosaicPreview.isNull()) {
         m_mosaicFullDimensions = QSize();

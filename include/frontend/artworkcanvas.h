@@ -64,7 +64,10 @@ public:
     {
         m_resultTiles = tiles;
         m_allPairs = pairs;
-        update();
+        if (modeValue == 3)
+            fitToWindow();
+        else
+            update();
     }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
@@ -130,6 +133,7 @@ private:
     void drawCenteredMessage(QPainter &p, const QString &message);
 
     bool hasActiveImages() const;
+    QSize contentSize() const;
     QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
     void drawCropOverlay(QPainter &painter, const QRect &imageRect);
