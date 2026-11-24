@@ -7,6 +7,7 @@
 #include "projectgrid.h"
 
 #include <QButtonGroup>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -37,6 +38,22 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, 
         connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
             setExportVisible(false);
         });
+        // Réévaluer après le traitement du résultat et le nettoyage du runner.
+        const auto refreshExportVisibility = [this]() {
+            const bool canExport =
+                !m_pipelineRunner->isRunning() &&
+                !m_pipelineRunner->isPaused() &&
+                !m_mainWindow->pipelineResultsStale &&
+                QFileInfo(m_mainWindow->mosaicFilePath).isFile();
+
+            setExportVisible(canExport);
+            };
+
+        connect(m_pipelineRunner, &PipelineRunnerClass::runFinished,
+            this, refreshExportVisibility, Qt::QueuedConnection);
+
+        connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled,
+            this, refreshExportVisibility, Qt::QueuedConnection);
     }
 }
 
@@ -130,20 +147,24 @@ void TopToolbars::createModesBar()
 
 void TopToolbars::handleRunButtonClicked()
 {
-    if (!m_pipelineRunner) return;
-
-    // Logique à 3 états :
-    // 1. En cours d'exécution -> demande une mise en pause propre après l'étape active.
-    // 2. En pause -> reprend l'exécution là où elle s'était arrêtée.
-    // 3. Inactif -> démarre une exécution complète depuis l'étape 1.
+    if (!m_pipelineRunner)
+        return;
 
     if (m_pipelineRunner->isRunning()) {
         m_pipelineRunner->pauseRun();
-    } else if (m_pipelineRunner->isPaused()) {
-        const int nextStep = m_pipelineRunner->pausedStep() + 1;
-        m_pipelineRunner->resetPausedState();
-        m_mainWindow->requestRun(nextStep);   
-    } else {
+    }
+    else if (m_pipelineRunner->isPaused()) {
+        if (m_pipelineRunner->isCropRun()) {
+            // Conserver le rectangle et le script du rognage en cours.
+            m_pipelineRunner->resumeRun();
+        }
+        else {
+            const int nextStep = m_pipelineRunner->pausedStep() + 1;
+            m_pipelineRunner->resetPausedState();
+            m_mainWindow->requestRun(nextStep);
+        }
+    }
+    else {
         m_mainWindow->requestRun(1);
     }
 }

@@ -96,8 +96,29 @@ dans le même dossier de sortie.
   à une interruption brutale du processus. Une restauration manuelle de
   la sauvegarde peut alors être nécessaire.
 - Les exécutions simultanées vers le même dossier ne sont pas prises en charge.
-- Ce step ne raccorde pas le bouton de rognage de l'interface.
-  L'interface devra fournir un rectangle en pixels pleine résolution.
+
+- Le rectangle sélectionné dans l'interface n'est actuellement pas enregistré
+  dans le fichier projet. Il doit être redéfini après réouverture.
+
+  ## Utilisation depuis l'interface
+
+Dans l'onglet Image finale, le bouton Rogner permet de sélectionner un
+rectangle. Valider le recadrage modifie uniquement l'aperçu en mémoire,
+sans lire ni écrire les TIFF pleine résolution.
+
+Le bouton Exporter convertit le rectangle normalisé en coordonnées pleine
+résolution à partir de `mosaic.canvasSize`, puis lance
+`mosaic-crop → export` depuis le checkpoint de fusion.
+Si ce checkpoint n'est plus valide, le calcul est refusé.
+
+Après réussite, la fenêtre d'enregistrement s'ouvre. Un nouvel export du
+même recadrage réutilise le TIFF calculé tant qu'il est disponible.
+
+Réinitialiser restaure la mosaïque originale. Une modification de la grille
+invalide également les résultats et le recadrage.
+
+Chaque nouveau calcul de rognage utilise un dossier distinct. Les résultats
+des essais précédents ne sont pas automatiquement supprimés.
 
 ## Tests
 

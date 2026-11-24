@@ -293,17 +293,25 @@ void PipelineRunnerClass::resumeRun() {
     startRun(firstStepNumber, true);
 }
 
-void PipelineRunnerClass::cancelRun() {
-    // Interrompt d'urgence le calcul en cours.
-    if (!running && !paused) return;
+void PipelineRunnerClass::cancelRun()
+{
+    if (!running && !paused)
+        return;
+
     if (worker && running) {
         emit statusChanged(tr("Interruption du calcul en cours..."));
         worker->requestCancel();
-    } else if (paused) {
+    }
+    else if (paused) {
         resetPausedState();
         emit pausedStateChanged(false);
         emit stepChanged(0, tr("Annulée"));
         emit statusChanged(tr("Exécution annulée."));
+
+        // Réactiver les commandes et abandonner l'export différé.
+        if (cropRun)
+            emit cropFinished(false, QImage());
+
         emit runCancelled();
         cleanUpThread();
     }

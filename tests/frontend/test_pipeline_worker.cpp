@@ -21,6 +21,7 @@
 
 #include <QtCore/QEventLoop>
 #include <QtCore/QObject>
+#include <QtCore/QRect>
 #include <QtCore/QString>
 #include <QtCore/QTimer>
 #include <QtCore/qglobal.h>
@@ -557,6 +558,121 @@ TEST_F(PipelineWorkerTestClass, FullTwoByTwoGridPipelineRunUpToExport) {
     EXPECT_FALSE(mosaic.empty());
     EXPECT_GT(mosaic.cols, TILE_WIDTH);
     EXPECT_GT(mosaic.rows, TILE_HEIGHT);
+}
+
+TEST_F(PipelineWorkerTestClass, CropRunnerUsesFusionCheckpoint)
+{
+    Json script = makeScript(
+        tilesDirectory, outputDirectory, checkpointDirectory);
+
+    // Un chemin explicite rend le checkpoint de fusion vérifiable
+    // depuis le nouveau worker créé pour le rognage.
+    const fs::path fusionDirectory = rootDirectory / "fusion";
+    for (auto& step : script["pipeline"]["steps"]) {
+        if (step["name"] == "fusion") {
+            step["parameters"] = Json::array({
+                parameter("outputDirectory",
+                    IONs::pathToUtf8(fusionDirectory))
+                });
+        }
+    }
+
+    const QString scriptText = QString::fromStdString(script.dump());
+
+    PipelineWorkerClass initialWorker;
+    bool initialSuccess = false;
+    QString initialError;
+
+    QObject::connect(
+        &initialWorker, &PipelineWorkerClass::pipelineFinished,
+        [&](bool success, const QString& error, const QImage&) {
+            initialSuccess = success;
+            initialError = error;
+        });
+
+    initialWorker.runPipeline(scriptText, QString(), true, false);
+    ASSERT_TRUE(initialSuccess) << initialError.toStdString();
+
+    PipelineRunnerClass runner;
+    runner.setScriptJson(scriptText);
+
+    QEventLoop eventLoop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+
+    bool timedOut = false;
+    bool cropFinished = false;
+    bool cropSuccess = false;
+    bool normalMosaicEmitted = false;
+    QImage cropPreview;
+    PipelineResults cropResults;
+
+    QObject::connect(
+        &timeout, &QTimer::timeout, &eventLoop, [&]() {
+            timedOut = true;
+            eventLoop.quit();
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::resultsReady,
+        &eventLoop, [&](const PipelineResults& results) {
+            cropResults = results;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::mosaicReady,
+        &eventLoop, [&](const QImage&) {
+            normalMosaicEmitted = true;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::cropFinished,
+        &eventLoop, [&](bool success, const QImage& preview) {
+            cropFinished = true;
+            cropSuccess = success;
+            cropPreview = preview;
+        });
+
+    QObject::connect(
+        &runner, &PipelineRunnerClass::runFinished,
+        &eventLoop, &QEventLoop::quit);
+
+    const QRect rectangle(10, 10, 100, 80);
+    const fs::path cropDirectory = rootDirectory / "crop";
+
+    runner.startCropRun(
+        rectangle,
+        QString::fromStdString(IONs::pathToUtf8(cropDirectory)));
+
+    ASSERT_TRUE(runner.isRunning());
+    timeout.start(ASYNC_WAIT_TIMEOUT_MS);
+    eventLoop.exec();
+    timeout.stop();
+
+    if (timedOut)
+        runner.cancelRun();
+
+    ASSERT_FALSE(timedOut);
+    ASSERT_TRUE(cropFinished);
+    ASSERT_TRUE(cropSuccess);
+    EXPECT_FALSE(normalMosaicEmitted);
+    EXPECT_FALSE(cropPreview.isNull());
+    EXPECT_FALSE(runner.isRunning());
+    EXPECT_FALSE(runner.isPaused());
+
+    EXPECT_EQ(cropResults.mosaic.canvasSize.width, rectangle.width());
+    EXPECT_EQ(cropResults.mosaic.canvasSize.height, rectangle.height());
+    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.imagePath));
+    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.provenancePath));
+    EXPECT_TRUE(fs::is_regular_file(cropResults.mosaic.maskPath));
+
+    // Le résultat original reste disponible.
+    EXPECT_TRUE(fs::is_regular_file(
+        fusionDirectory / "mosaic_image.tif"));
+
+    const Json cropScript =
+        Json::parse(runner.getScriptJson().toStdString());
+    EXPECT_EQ(cropScript["run"]["startFromStep"], "mosaic-crop");
 }
 
 int main(int argc, char** argv) {

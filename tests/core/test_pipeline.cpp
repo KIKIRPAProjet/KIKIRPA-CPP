@@ -89,9 +89,9 @@ public:
 void testerRegistre() {
     std::cout << "Registre des steps\n";
     const std::set<std::string> attendus = {
-      "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification", "fusion",
-      "graphcut", "import", "intensity-correction", "lightglue", "manual-matches", "mosaic-crop", "overlap-estimation",
-      "phase-correlation", "sift", "vote-2d" };
+     "absolute-pos", "dynamic-programming-dijkstra", "export", "final-verification", "fusion",
+     "graphcut", "import", "intensity-correction", "lightglue", "manual-matches", "mosaic-crop", "overlap-estimation",
+     "phase-correlation", "sift", "vote-2d" };
     const auto noms = PipelineNs::getRegisteredStepNames();
     const std::set<std::string> enregistres(noms.begin(), noms.end());
 
