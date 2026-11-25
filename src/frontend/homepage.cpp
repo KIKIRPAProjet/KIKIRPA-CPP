@@ -86,7 +86,7 @@ HomePage::HomePage(QWidget *parent)
     cardsScroll->setWidgetResizable(true);
     cardsScroll->setFrameShape(QFrame::NoFrame);
     cardsScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    cardsScroll->setMinimumHeight(130);
+    cardsScroll->setMinimumHeight(135);
     auto *cardsContainer = new QWidget(cardsScroll);
     recentCardsLayout = new QHBoxLayout(cardsContainer);
     recentCardsLayout->setContentsMargins(0, 0, 0, 0);
@@ -140,18 +140,25 @@ void HomePage::refreshRecentProjects()
     int cardCount = 0;
     if (currentProjectCreated && currentProjectPath.isEmpty()) {
         auto *card = FrontendUtils::makeButton(QString(), recentCardsLayout->parentWidget());
-        card->setMinimumSize(210, 100);
+        card->setMinimumSize(210, 105);
         card->setMaximumWidth(260);
-        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
-            "border:1px solid #383838;border-radius:5px;"));
+        card->setStyleSheet(QStringLiteral(
+            "QPushButton { text-align:left; background:#252525; border:1px solid #383838; border-radius:5px; }"
+            "QPushButton:hover { background:#2c2c2c; border-color:#4a4a4a; }"
+            "QLabel { border:none; background:transparent; padding:0px; }"));
         auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(14, 12, 14, 12);
+        cardLayout->setSpacing(6);
         auto *name = new QLabel(currentProjectName, card);
         name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
+        name->setWordWrap(true);
+        name->setAttribute(Qt::WA_TransparentForMouseEvents);
         auto *details = new QLabel(tr("%1 tuile(s)\nModifié le : %2")
                                        .arg(currentTileCount)
                                        .arg(tr("Non enregistré")), card);
         details->setProperty("muted", true);
         details->setWordWrap(true);
+        details->setAttribute(Qt::WA_TransparentForMouseEvents);
         cardLayout->addWidget(name);
         cardLayout->addWidget(details);
         recentCardsLayout->addWidget(card);
@@ -177,19 +184,25 @@ void HomePage::refreshRecentProjects()
         }
 
         auto *card = FrontendUtils::makeButton(QString(), recentCardsLayout->parentWidget());
-        card->setMinimumSize(210, 100);
+        card->setMinimumSize(210, 105);
         card->setMaximumWidth(260);
-        card->setStyleSheet(QStringLiteral("text-align:left;padding:12px;background:#252525;"
-            "border:1px solid #383838;border-radius:5px;"));
+        card->setStyleSheet(QStringLiteral(
+            "QPushButton { text-align:left; background:#252525; border:1px solid #383838; border-radius:5px; }"
+            "QPushButton:hover { background:#2c2c2c; border-color:#4a4a4a; }"
+            "QLabel { border:none; background:transparent; padding:0px; }"));
         auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(14, 12, 14, 12);
+        cardLayout->setSpacing(6);
         auto *name = new QLabel(recentName, card);
         name->setStyleSheet(QStringLiteral("font-size:14px;font-weight:600;"));
         name->setWordWrap(true);
+        name->setAttribute(Qt::WA_TransparentForMouseEvents);
         auto *details = new QLabel(tr("%1 tuile(s)\nModifié le %2")
                                        .arg(recentTileCount)
                                        .arg(formatModifiedDate(QFileInfo(path).lastModified())), card);
         details->setProperty("muted", true);
         details->setWordWrap(true);
+        details->setAttribute(Qt::WA_TransparentForMouseEvents);
         cardLayout->addWidget(name);
         cardLayout->addWidget(details);
         recentCardsLayout->addWidget(card);

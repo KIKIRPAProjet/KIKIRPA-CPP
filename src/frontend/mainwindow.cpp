@@ -23,6 +23,7 @@
 #include "frontendutils.h"
 #include "homepage.h"
 #include "left_toolbar.h"
+#include "logpanel.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -32,7 +33,6 @@
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
-#include "bottom_tabs.h"
 #include "right_panel.h"
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
@@ -62,6 +62,10 @@
 #include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
+#include <QDialog>
+#include <QHBoxLayout>
+#include <QStyle>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <filesystem>
@@ -235,8 +239,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
-        if (workspaceUI->bottomTabs())
-            workspaceUI->bottomTabs()->setVisible(true);
+        if (workspaceUI->logPanel())
+            workspaceUI->logPanel()->setVisible(true);
         sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
@@ -330,7 +334,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
         logVisible = !logVisible;
-        workspaceUI->bottomTabs()->setVisible(logVisible);
+        workspaceUI->logPanel()->setVisible(logVisible);
     });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
@@ -635,15 +639,81 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    
     const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
-    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
-                        QMessageBox::Open | QMessageBox::Cancel, this);
-    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
-    resumeButton->setEnabled(summary.canResume);
-    opening.exec();
-    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Ouvrir le projet"));
+    dialog.setMinimumWidth(440);
+
+    auto *mainLayout = new QVBoxLayout(&dialog);
+    mainLayout->setContentsMargins(20, 20, 20, 16);
+    mainLayout->setSpacing(18);
+
+    // Contenu : icône d'information + résumé du projet
+    auto *contentLayout = new QHBoxLayout;
+    contentLayout->setSpacing(14);
+    contentLayout->setAlignment(Qt::AlignTop);
+
+    auto *iconLabel = new QLabel(&dialog);
+    iconLabel->setPixmap(dialog.style()->standardPixmap(QStyle::SP_MessageBoxInformation));
+    iconLabel->setAlignment(Qt::AlignTop);
+    contentLayout->addWidget(iconLabel);
+
+    auto *textLabel = new QLabel(summary.text(), &dialog);
+    textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    contentLayout->addWidget(textLabel, 1);
+    mainLayout->addLayout(contentLayout);
+
+    // Barre des boutons
+    auto *btnLayout = new QHBoxLayout;
+    btnLayout->setSpacing(10);
+
+    // Bouton Annuler tout à gauche avec style discret
+    auto *cancelBtn = new QPushButton(tr("Annuler"), &dialog);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:transparent; border:1px solid #484848; color:#9e9e9e; }"
+        "QPushButton:hover { background:#333333; color:#d5d5d5; border-color:#5a5a5a; }"));
+    btnLayout->addWidget(cancelBtn);
+
+    // Espace élastique qui repousse Annuler à gauche et les deux Ouvrir à droite
+    btnLayout->addStretch(1);
+
+    // Bouton Ouvrir classique
+    auto *openBtn = new QPushButton(tr("Ouvrir"), &dialog);
+    openBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(openBtn);
+
+    // Bouton Ouvrir et reprendre (mis en valeur en bleu s'il est disponible)
+    auto *resumeBtn = new QPushButton(tr("Ouvrir et reprendre"), &dialog);
+    resumeBtn->setCursor(Qt::PointingHandCursor);
+    resumeBtn->setEnabled(summary.canResume);
+    if (summary.canResume) {
+        resumeBtn->setProperty("primary", true);
+    }
+    btnLayout->addWidget(resumeBtn);
+
+    mainLayout->addLayout(btnLayout);
+
+    bool accepted = false;
+    bool resume = false;
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(openBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = false;
+        dialog.accept();
+    });
+    connect(resumeBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = true;
+        dialog.accept();
+    });
+
+    if (dialog.exec() != QDialog::Accepted || !accepted)
         return;
-    const bool resume = opening.clickedButton() == resumeButton;
+    
     switchingProject = true;
     mosaicFilePath.clear();
     pipelineRunner->invalidateImageLayers();
@@ -782,10 +852,7 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
@@ -1122,7 +1189,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Tab) {
         sideBarVisible = !sideBarVisible;
         workspaceUI->rightTabs()->setVisible(sideBarVisible);
-        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
+        workspaceUI->logPanel()->setVisible(sideBarVisible);
         event->accept();
         return;
     }

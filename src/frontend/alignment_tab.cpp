@@ -510,3 +510,18 @@ void AlignmentTab::showManualAdjustmentDialog()
     if (dialog.exec() == QDialog::Accepted)
         emit manualOffsetApplied(m_currentPairIndex, dx->value(), dy->value());
 }
+<<<<<<< HEAD
+=======
+
+void AlignmentTab::updateInfo(const QString &projectName, const ProjectGrid::State &gridState)
+{
+    m_projectNameLabel->setText(tr("Projet : %1").arg(projectName));
+    m_tileCountLabel->setText(
+        tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
+
+    m_projectMetadataLabel->setText(tr("Recouvrement : %1 % / %2 %")
+                                        .arg(gridState.horizontalOverlap)
+                                        .arg(gridState.verticalOverlap));
+}
+
+>>>>>>> origin

@@ -7,16 +7,18 @@
 #include <QDockWidget>
 #include <QString>
 #include <QVector>
+#include <QTabWidget>
 
+class MainWindow;
 class QCheckBox;
 class QTextBrowser;
 
-class LogPanel : public QDockWidget
+class LogPanel : public QTabWidget
 {
     Q_OBJECT
 
 public:
-    explicit LogPanel(QWidget *parent = nullptr);
+    explicit LogPanel(MainWindow *mainWindow, QWidget *parent = nullptr);
 
 public slots:
     void appendLog(const QString &message, const QString &level);
@@ -43,4 +45,6 @@ private:
     QCheckBox *errorCheckBox = nullptr;
     QTextBrowser *textBrowser = nullptr;
     QVector<LogEntry> entries;
+
+	MainWindow *m_mainWindow;
 };
