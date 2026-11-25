@@ -74,6 +74,10 @@ namespace IONs {
     std::size_t removeStalePyramids(const std::filesystem::path& cacheDirectory, int maximumAgeDays);
 
     // Toutes les pyramides du cache : le « Libérer l'espace » demandé explicitement par l'utilisateur.
-    std::size_t removeAllPyramids(const std::filesystem::path& cacheDirectory);
+    // `enumerationFailed`, s'il est fourni, est mis à vrai quand le parcours du dossier s'est interrompu : le
+    // nombre rendu n'est alors qu'un compte partiel, et il reste des fichiers à supprimer. Les deux balayages
+    // ci-dessus n'offrent pas cette indication : ils sont au mieux-effort, personne n'attend leur résultat.
+    std::size_t removeAllPyramids(const std::filesystem::path& cacheDirectory,
+                                  bool* enumerationFailed = nullptr);
 
 }

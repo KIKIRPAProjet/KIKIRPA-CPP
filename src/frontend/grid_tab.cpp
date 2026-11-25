@@ -202,7 +202,17 @@ void GridTab::freePyramidCache()
     // d'événements, donc un calcul a pu démarrer pendant que la question était à l'écran.
     if (warnIfPipelineRunning()) return;
 
-    const std::size_t removed = IONs::removeAllPyramids(cacheDirectory);
+    bool enumerationFailed = false;
+    const std::size_t removed = IONs::removeAllPyramids(cacheDirectory, &enumerationFailed);
+    // Un parcours interrompu ne doit pas être annoncé comme un ménage terminé : il reste des fichiers, et
+    // c'est un deuxième appui sur le bouton qui les emportera.
+    if (enumerationFailed) {
+        QMessageBox::warning(this, tr("Libérer l'espace"),
+                             tr("%n fichier(s) supprimé(s), mais le cache n'a pas pu être parcouru en entier. "
+                                "Réessayez pour supprimer le reste.",
+                                "", static_cast<int>(removed)));
+        return;
+    }
     QMessageBox::information(this, tr("Libérer l'espace"),
                              tr("%n fichier(s) supprimé(s) du cache.", "", static_cast<int>(removed)));
 }

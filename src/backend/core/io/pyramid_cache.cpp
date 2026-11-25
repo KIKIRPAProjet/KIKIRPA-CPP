@@ -233,31 +233,45 @@ namespace IONs {
         // Le suffixe EXACT est indispensable : makeTemporaryPath fabrique « ….tif.<horloge>.<n>.tmp », et un test
         // par « le nom contient _pyramid.tif » attraperait un fichier en cours de publication par un autre
         // processus.
+        // `enumerationFailed`, quand il est fourni, dit que le parcours s'est **interrompu** : le nombre rendu
+        // n'est alors qu'un compte partiel, et l'appelant ne doit pas l'annoncer comme un ménage terminé.
         std::size_t removePyramidsIf(
             const fs::path& cacheDirectory,
-            const std::function<bool(const fs::path&, const nlohmann::json&)>& shouldRemove) {
+            const std::function<bool(const fs::path&, const nlohmann::json&)>& shouldRemove,
+            bool* enumerationFailed = nullptr) {
             std::size_t removedCount = 0;
-            std::error_code errorCode;
-            // Avec error_code, un dossier absent donne une plage vide au lieu de lever.
-            for (const fs::directory_entry& entry : fs::directory_iterator(cacheDirectory, errorCode)) {
-                if (!entry.is_regular_file(errorCode)) continue;
-                if (!endsWith(pathToUtf8(entry.path().filename()), PYRAMID_SUFFIX)) continue;
+            // Boucle explicite, et non « for (… : directory_iterator(…, errorCode)) » : l'error_code ne couvre
+            // que la construction de l'itérateur, et l'incrément, lui, **lève**. Or removeAllPyramids est
+            // appelé depuis un slot Qt (le bouton « Libérer l'espace »), et Qt ne rattrape pas les exceptions
+            // des slots : une erreur d'énumération y terminerait l'application, après avoir déjà supprimé une
+            // partie des fichiers. Avec error_code, un dossier absent donne une plage vide au lieu de lever.
+            std::error_code walkError;
+            // Séparé du parcours : l'échec d'un test sur une entrée ne doit pas arrêter le balayage des autres.
+            std::error_code entryError;
+            auto entry = fs::directory_iterator(cacheDirectory, walkError);
+            for (const auto end = fs::directory_iterator(); !walkError && entry != end;
+                 entry.increment(walkError)) {
+                if (!entry->is_regular_file(entryError) || entryError) continue;
+                if (!endsWith(pathToUtf8(entry->path().filename()), PYRAMID_SUFFIX)) continue;
                 // La provenance est passée telle quelle, même absente ou illisible : c'est au prédicat de
                 // décider. Les balayages sur l'âge et sur la source la réclament et gardent le fichier sans
                 // elle ; une demande de l'utilisateur (removeAllPyramids) n'en a pas besoin, et refuser
                 // laisserait sur place un fichier que plus rien ne peut récupérer.
-                const nlohmann::json provenance = readProvenance(entry.path());
-                if (!shouldRemove(entry.path(), provenance)) continue;
+                const nlohmann::json provenance = readProvenance(entry->path());
+                if (!shouldRemove(entry->path(), provenance)) continue;
                 std::error_code removeError;
-                const bool removed = fs::remove(entry.path(), removeError);
+                const bool removed = fs::remove(entry->path(), removeError);
                 // La provenance ne part **qu'avec** son TIFF. Un TIFF verrouillé (un lecteur l'a ouvert à
                 // cet instant) dont on aurait supprimé la provenance devient irrécupérable : l'âge et le
                 // chemin de la source ne se lisent que là, et pathHash est à sens unique. Le prochain
                 // balayage le laisserait donc en place à jamais.
-                if (!removed && fs::exists(entry.path(), removeError)) continue;
+                if (!removed && fs::exists(entry->path(), removeError)) continue;
                 if (removed) ++removedCount;
-                if (fs::remove(provenancePath(entry.path()), removeError)) ++removedCount;
+                if (fs::remove(provenancePath(entry->path()), removeError)) ++removedCount;
             }
+            // Un dossier de cache absent n'est pas un échec de parcours : il n'y a simplement rien à balayer.
+            if (enumerationFailed != nullptr)
+                *enumerationFailed = static_cast<bool>(walkError) && fs::exists(cacheDirectory, entryError);
             return removedCount;
         }
 
@@ -348,7 +362,8 @@ namespace IONs {
         });
     }
 
-    std::size_t removeAllPyramids(const fs::path& cacheDirectory) {
-        return removePyramidsIf(cacheDirectory, [](const fs::path&, const nlohmann::json&) { return true; });
+    std::size_t removeAllPyramids(const fs::path& cacheDirectory, bool* enumerationFailed) {
+        return removePyramidsIf(
+            cacheDirectory, [](const fs::path&, const nlohmann::json&) { return true; }, enumerationFailed);
     }
 }

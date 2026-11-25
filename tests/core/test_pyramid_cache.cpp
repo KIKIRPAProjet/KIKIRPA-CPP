@@ -245,6 +245,27 @@ TEST(PyramidCacheTest, OrphanPyramidIsRemovedAndTheOthersAreKept) {
     EXPECT_TRUE(IONs::isPyramidCacheValid(kept, keptEntry.pyramidPath));
 }
 
+// Le drapeau d’énumération ne doit pas crier au loup : ni un balayage normal, ni un dossier de cache absent (il
+// n’y a alors rien à parcourir) ne sont des parcours interrompus. Une vraie interruption n’est pas simulable de
+// façon portable ; ce qui est vérifiable, c’est qu’elle ne soit pas annoncée à tort — sinon l’interface dirait
+// « réessayez » après chaque ménage réussi.
+TEST(PyramidCacheTest, SweepingEverythingReportsNoEnumerationFailure) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+
+    bool enumerationFailed = true;
+    EXPECT_EQ(IONs::removeAllPyramids(cache, &enumerationFailed), 2U);
+    EXPECT_FALSE(enumerationFailed);
+    EXPECT_FALSE(fs::exists(entry.pyramidPath));
+
+    enumerationFailed = true;
+    EXPECT_EQ(IONs::removeAllPyramids(directory.path / "absent", &enumerationFailed), 0U);
+    EXPECT_FALSE(enumerationFailed);
+}
+
 // Un TIFF de cache sans provenance : l'âge et le chemin de la source ne se lisent que là, et pathHash est à sens
 // unique, donc les balayages automatiques ne peuvent rien en dire et le gardent. Mais une demande explicite de
 // l'utilisateur doit l'emporter, sinon plus rien ne récupère sa place. L'état existe dès qu'une suppression de TIFF
