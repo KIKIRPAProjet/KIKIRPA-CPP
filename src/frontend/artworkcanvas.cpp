@@ -1,10 +1,10 @@
 // src/frontend/artworkcanvas.cpp
 #include "artworkcanvas.h"
 
+#include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
-#include <QKeyEvent>
 #include <QResizeEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -30,7 +30,7 @@ constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour 
 constexpr int kModeGrid = 1;
 constexpr int kModeMasks = 2;
 constexpr int kModePair = 3;
-constexpr int MODE_SEAM = 4;
+constexpr int kModeSeam = 4;
 constexpr int kModeAssembly = 5;
 constexpr int kModeExport = 6;   // Image finale
 
@@ -84,12 +84,23 @@ void ArtworkCanvas::updateImportButtonPosition()
     m_importFolderButton->move(x, y);
 }
 
-//enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
+// Enregistrement de la nouvelle paire choisie + mise à jour de l'affichage
 void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
     currentPair = pair;
+    if (pair.pairIndex >= 0 && pair.pairIndex < m_allPairs.size()
+        && m_allPairs.at(pair.pairIndex).pairIndex == pair.pairIndex) {
+        m_allPairs[pair.pairIndex] = pair;
+    }
     update();
 }
+
+// Vue d'ensemble de l'alignement (toutes les tuiles et leurs paires), ni paire isolée ni superposée.
+bool ArtworkCanvas::isPairOverviewShown() const
+{
+    return modeValue == kModePair && !pairOverlayMode && !m_pairIsolated && !m_resultTiles.isEmpty();
+}
+
 QTransform ArtworkCanvas::viewTransform() const
 {
     const qreal scale = zoomPercent / 100.0;
@@ -106,6 +117,7 @@ void ArtworkCanvas::resetView()
 {
     zoomPercent = 100;
     m_panOffset = QPointF(0.0, 0.0);
+    emit zoomChanged(100);
     update();
 }
 
@@ -213,7 +225,8 @@ ArtworkCanvas::CropHandle ArtworkCanvas::hitTestCropHandle(const QPoint &pos) co
 
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 {
-    if (!hasActiveImages()) {
+    // En mode Image finale, la mosaïque peut exister sans tuiles actives : pas de carte d'import.
+    if (!hasActiveImages() && modeValue != kModeExport) {
         if (event->button() == Qt::LeftButton && emptyImportCardRect().contains(event->pos())) {
             emit importTilesRequested();
             event->accept();
@@ -222,7 +235,6 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     }
     setFocus();
     if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
-        setFocus();
         dragStartCell = gridCellAt(event->pos());
         if (dragStartCell >= 0) {
             dragTargetCell = dragStartCell;
@@ -256,9 +268,16 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         }
     }
 
+    if (modeValue == kModePair && m_pickingPoints && event->button() == Qt::RightButton) {
+        undoLastPickedPoint();
+        event->accept();
+        return;
+    }
+
     if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
         m_panning = true;
         m_lastPanPos = event->pos();
+        m_pressPos = event->pos();
         setCursor(Qt::ClosedHandCursor);
         event->accept();
         return;
@@ -266,15 +285,36 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     QWidget::mousePressEvent(event);
 }
 
+// Gestion clavier unique (fusion des deux anciennes définitions)
 void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
 {
-    if (modeValue == kModeGrid && (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
+    // Grille : suppression de la tuile sélectionnée
+    if (modeValue == kModeGrid
+        && (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
         if (cellDeleteRequestedCallback) {
             cellDeleteRequestedCallback();
             event->accept();
             return;
         }
     }
+
+    // Alignement : Échap annule la saisie de points / quitte la vue isolée ou superposée
+    if (modeValue == kModePair && event->key() == Qt::Key_Escape) {
+        if (m_pickingPoints) {
+            stopPointPicking();
+            emit pointPickingCancelled();
+            event->accept();
+            return;
+        }
+        if (pairOverlayMode || m_pairIsolated) {
+            setPairOverlayMode(false);
+            setPairIsolated(false);
+            event->accept();
+            return;
+        }
+    }
+
+    // Image finale : validation / annulation du recadrage
     if (modeValue == kModeExport && m_activeTool == kCropTool) {
         if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
             applyCrop();
@@ -287,12 +327,13 @@ void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
             return;
         }
     }
+
     QWidget::keyPressEvent(event);
 }
 
 void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!hasActiveImages()) {
+    if (!hasActiveImages() && modeValue != kModeExport) {
         const bool hovered = emptyImportCardRect().contains(event->pos());
         if (hovered != m_emptyCardHovered) {
             m_emptyCardHovered = hovered;
@@ -318,6 +359,23 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
         m_panOffset += event->pos() - m_lastPanPos;
         m_lastPanPos = event->pos();
         update();
+        event->accept();
+        return;
+    }
+    if (modeValue == kModePair && m_pickingPoints) {
+        m_hoverScenePos = viewTransform().inverted().map(QPointF(event->pos()));
+        setCursor(Qt::CrossCursor);
+        if (m_pendingPointInA.has_value())
+            update();
+        event->accept();
+        return;
+    }
+    if (isPairOverviewShown()) {   // main au survol d'une paire : on peut la choisir d'un clic
+        const bool overPair = pairAt(viewTransform().inverted().map(QPointF(event->pos()))) >= 0;
+        if (overPair)
+            setCursor(Qt::PointingHandCursor);
+        else
+            unsetCursor();
         event->accept();
         return;
     }
@@ -417,7 +475,6 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
     QWidget::mouseMoveEvent(event);
 }
 
-
 void ArtworkCanvas::leaveEvent(QEvent *event)
 {
     if (m_emptyCardHovered) {
@@ -445,6 +502,20 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
     if (m_panning) {
         m_panning = false;
         unsetCursor();
+        // Clic sans glisser dans la vue Alignement : place un point manuel ou isole la paire cliquée.
+        const bool isClick = (event->pos() - m_pressPos).manhattanLength() < QApplication::startDragDistance();
+        if (isClick && event->button() == Qt::LeftButton) {
+            const QPointF scenePos = viewTransform().inverted().map(QPointF(event->pos()));
+            if (modeValue == kModePair && m_pickingPoints) {
+                handlePointPickingClick(scenePos);
+            } else if (isPairOverviewShown()) {
+                const int pairIndex = pairAt(scenePos);
+                if (pairIndex >= 0) {
+                    setPairIsolated(true);
+                    emit pairClicked(pairIndex);
+                }
+            }
+        }
         event->accept();
         return;
     }
@@ -485,8 +556,6 @@ void ArtworkCanvas::wheelEvent(QWheelEvent *event)
     }
     event->accept();
 }
-
-
 
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
 {
@@ -542,15 +611,11 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    if (!hasActiveImages()) {
-        drawEmptyState(p);
-        return;
-    }
-
     // Assemblage et Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
-    if (modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+    if (modeValue == kModeAssembly || modeValue == kModeSeam) {
         beginViewTransform();
-        const bool drawn = drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
+        const bool layersDrawn = modeValue == kModeAssembly && !fusedMosaicVisible && drawAssemblyLayers(p);
+        const bool drawn = layersDrawn || drawMosaicPreview(p, modeValue == kModeSeam || seamVisible);
         p.restore();
         if (drawn) {
             p.setPen(QColor("#dddddd"));
@@ -559,7 +624,12 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
             return;
         }
     }
-    if (modeValue == MODE_SEAM) {
+    if (!hasActiveImages()) {
+        drawEmptyState(p);
+        return;
+    }
+
+    if (modeValue == kModeSeam) {
         drawCenteredMessage(p, tr("Lancez l'assemblage pour afficher les lignes de couture calculées."));
         return;
     }
@@ -653,11 +723,68 @@ void ArtworkCanvas::setPairOverlayMode(bool enabled)
 {
     if (pairOverlayMode != enabled) {
         pairOverlayMode = enabled;
+        zoomPercent = 100;
+        m_panOffset = QPointF(0.0, 0.0);
+        emit zoomChanged(100);
+        emit pairViewModeChanged();
         update();
     }
 }
 
-void ArtworkCanvas::setMosaicPreview(const QImage &image) {
+void ArtworkCanvas::setPairIsolated(bool isolated)
+{
+    if (m_pairIsolated != isolated) {
+        m_pairIsolated = isolated;
+        zoomPercent = 100;
+        m_panOffset = QPointF(0.0, 0.0);
+        emit zoomChanged(100);
+        emit pairViewModeChanged();
+        update();
+    }
+}
+
+void ArtworkCanvas::startPointPicking(const QVector<QPointF> &initialPointsA,
+                                      const QVector<QPointF> &initialPointsB)
+{
+    m_pickingPoints = true;
+    m_pendingPointInA.reset();
+    const int count = static_cast<int>(qMin(initialPointsA.size(), initialPointsB.size()));
+    m_manualPointsA = initialPointsA.mid(0, count);
+    m_manualPointsB = initialPointsB.mid(0, count);
+    setPairOverlayMode(false);
+    setPairIsolated(true);
+    emit manualPointsChanged();
+    update();
+}
+
+void ArtworkCanvas::undoLastPickedPoint()
+{
+    if (m_pendingPointInA.has_value()) {
+        m_pendingPointInA.reset();
+    } else if (!m_manualPointsA.isEmpty() && !m_manualPointsB.isEmpty()) {
+        m_manualPointsA.removeLast();
+        m_manualPointsB.removeLast();
+    }
+    emit manualPointsChanged();
+    update();
+}
+
+void ArtworkCanvas::stopPointPicking()
+{
+    if (!m_pickingPoints && !m_pendingPointInA.has_value()
+        && m_manualPointsA.isEmpty() && m_manualPointsB.isEmpty()) {
+        return;
+    }
+    m_pickingPoints = false;
+    m_pendingPointInA.reset();
+    m_manualPointsA.clear();
+    m_manualPointsB.clear();
+    unsetCursor();
+    update();
+}
+
+void ArtworkCanvas::setMosaicPreview(const QImage &image)
+{
     m_mosaicPreview = image;
     m_originalMosaicPreview = image;
     m_isCropped = false;
