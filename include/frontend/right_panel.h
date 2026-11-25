@@ -24,7 +24,6 @@ public:
     void showPairTab();
 
     void updateGridState(const ProjectGrid::State &gridState);
-    void updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState);
     void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
     void setActiveStep(int stepNumber);
 
