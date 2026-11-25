@@ -36,6 +36,12 @@ namespace {
     constexpr int CANVAS_WIDTH = DataNs::BLOCK_SIZE + 88;
     constexpr int CANVAS_HEIGHT = 300;
     constexpr int PIXEL_TOLERANCE = 5;
+    constexpr int SAMPLE_OFFSET = 10;
+    constexpr int RIGHT_BLOCK_OFFSET = 20;
+    constexpr int CROP_X = 100;
+    constexpr int CROP_Y = 30;
+    constexpr int CROP_WIDTH = 450;
+    constexpr int CROP_HEIGHT = 200;
     constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
     constexpr double LEFT_VALUE = 100.0;
     constexpr double RIGHT_VALUE = 3000.0;
@@ -290,7 +296,7 @@ TEST(ExportStepTest, PublishesBaselineJpegWhenFilenameIsJpg) {
     EXPECT_EQ(published.size(), testCanvasSize());
 
     // Le TIFF est en RGB et IONs::readImage (OpenCV) décode le JPEG en BGR.
-    const cv::Vec3b& leftPixel = published.at<cv::Vec3b>(10, 10);
+    const cv::Vec3b& leftPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET);
     EXPECT_NEAR(leftPixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
                 PIXEL_TOLERANCE);
     EXPECT_NEAR(leftPixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
@@ -298,7 +304,7 @@ TEST(ExportStepTest, PublishesBaselineJpegWhenFilenameIsJpg) {
     EXPECT_NEAR(leftPixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
                 PIXEL_TOLERANCE);
 
-    const cv::Vec3b& rightPixel = published.at<cv::Vec3b>(10, DataNs::BLOCK_SIZE + 20);
+    const cv::Vec3b& rightPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, DataNs::BLOCK_SIZE + RIGHT_BLOCK_OFFSET);
     EXPECT_NEAR(rightPixel[0], static_cast<int>(std::round((3 * RIGHT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
                 PIXEL_TOLERANCE);
     EXPECT_NEAR(rightPixel[1], static_cast<int>(std::round((2 * RIGHT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
@@ -311,7 +317,7 @@ TEST(ExportStepTest, ExportsCroppedRegionToBaselineJpeg) {
     ExportFixture fixture(CV_16UC3);
     const fs::path sourceTiff = fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath;
     const fs::path jpegPath = fixture.outputDirectory / "cropped_region.jpg";
-    const cv::Rect cropRegion(100, 30, 450, 200);
+    const cv::Rect cropRegion(CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT);
     std::string errorMessage;
 
     ASSERT_TRUE(StepsNs::exportTiffRegionToBaselineJpeg(sourceTiff, cropRegion, jpegPath, errorMessage))
@@ -322,11 +328,11 @@ TEST(ExportStepTest, ExportsCroppedRegionToBaselineJpeg) {
     EXPECT_EQ(published.type(), CV_8UC3);
     EXPECT_EQ(published.size(), cropRegion.size());
 
-    const cv::Vec3b& leftCropPixel = published.at<cv::Vec3b>(10, 10);
+    const cv::Vec3b& leftCropPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET);
     EXPECT_NEAR(leftCropPixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
                 PIXEL_TOLERANCE);
 
-    const cv::Vec3b& rightCropPixel = published.at<cv::Vec3b>(10, cropRegion.width - 10);
+    const cv::Vec3b& rightCropPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, cropRegion.width - SAMPLE_OFFSET);
     EXPECT_NEAR(rightCropPixel[2], static_cast<int>(std::round(RIGHT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
                 PIXEL_TOLERANCE);
 }

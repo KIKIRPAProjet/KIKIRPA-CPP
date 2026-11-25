@@ -306,14 +306,14 @@ namespace StepsNs {
             return false;
         }
 
-        struct StripRange {
+        struct StripTarget {
             int sourceY = 0;
             int sourceHeight = 0;
-            int destHeight = 0;
+            cv::Mat buffer;
         };
 
         bool fillStripBuffer(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
-                             const StripRange& strip, cv::Mat& stripRgb8, std::string& errorMessage) {
+                             StripTarget& strip, std::string& errorMessage) {
             for (int offsetX = 0; offsetX < plan.region.width; offsetX += DataNs::BLOCK_SIZE) {
                 const int blockWidth = std::min(DataNs::BLOCK_SIZE, plan.region.width - offsetX);
                 const cv::Rect sourceRect(plan.region.x + offsetX, plan.region.y + strip.sourceY, blockWidth,
@@ -329,11 +329,11 @@ namespace StepsNs {
                                        ? plan.outputSize.width
                                        : static_cast<int>(std::round((offsetX + blockWidth) * plan.scale));
                 if (destX1 <= destX0) continue;
-                const cv::Rect destRect(destX0, 0, destX1 - destX0, strip.destHeight);
+                const cv::Rect destRect(destX0, 0, destX1 - destX0, strip.buffer.rows);
                 if (destRect.size() == block8.size()) {
-                    block8.copyTo(stripRgb8(destRect));
+                    block8.copyTo(strip.buffer(destRect));
                 } else {
-                    cv::resize(block8, stripRgb8(destRect), destRect.size(), 0.0, 0.0, cv::INTER_AREA);
+                    cv::resize(block8, strip.buffer(destRect), destRect.size(), 0.0, 0.0, cv::INTER_AREA);
                 }
             }
             return true;
@@ -358,10 +358,9 @@ namespace StepsNs {
                 const int destHeight = destY1 - destY0;
                 if (destHeight <= 0) continue;
 
-                cv::Mat stripRgb8(destHeight, plan.outputSize.width, CV_8UC3);
-                const StripRange strip{offsetY, sourceHeight, destHeight};
-                if (!fillStripBuffer(reader, plan, strip, stripRgb8, errorMessage)) return false;
-                writeStripScanlines(cinfo, stripRgb8);
+                StripTarget strip{offsetY, sourceHeight, cv::Mat(destHeight, plan.outputSize.width, CV_8UC3)};
+                if (!fillStripBuffer(reader, plan, strip, errorMessage)) return false;
+                writeStripScanlines(cinfo, strip.buffer);
             }
             return true;
         }
@@ -407,14 +406,19 @@ namespace StepsNs {
             return encoded;
         }
 
-        bool exportTiffRegionToBaselineJpegImpl(const fs::path& tiffPath, const cv::Rect& region,
-                                                const fs::path& outputPath, cv::Size& exportedSize,
-                                                std::string& errorMessage) {
-            const IONs::PyramidalTiffReaderClass reader(tiffPath);
-            JpegStreamPlan plan;
-            if (!buildJpegStreamPlan(reader, region, plan, errorMessage)) return false;
+        struct JpegExportRequest {
+            fs::path tiffPath;
+            cv::Rect region;
+            fs::path outputPath;
+        };
 
-            const fs::path parentDirectory = outputPath.parent_path();
+        bool exportTiffRegionToBaselineJpegImpl(const JpegExportRequest& request, cv::Size& exportedSize,
+                                                std::string& errorMessage) {
+            const IONs::PyramidalTiffReaderClass reader(request.tiffPath);
+            JpegStreamPlan plan;
+            if (!buildJpegStreamPlan(reader, request.region, plan, errorMessage)) return false;
+
+            const fs::path parentDirectory = request.outputPath.parent_path();
             if (!parentDirectory.empty()) {
                 std::error_code directoryError;
                 fs::create_directories(parentDirectory, directoryError);
@@ -425,9 +429,9 @@ namespace StepsNs {
                 }
             }
 
-            const fs::path temporaryPath = IONs::makeTemporaryPath(outputPath);
+            const fs::path temporaryPath = IONs::makeTemporaryPath(request.outputPath);
             if (!streamTiffToJpegFile(reader, plan, temporaryPath, errorMessage) ||
-                !IONs::replaceFile(temporaryPath, outputPath, errorMessage)) {
+                !IONs::replaceFile(temporaryPath, request.outputPath, errorMessage)) {
                 std::error_code removeError;
                 fs::remove(temporaryPath, removeError);
                 return false;
@@ -449,8 +453,8 @@ namespace StepsNs {
             const fs::path imagePath = nextExportPath(directory, filename);
             if (hasJpegExtension(imagePath)) {
                 cv::Size exportedSize;
-                if (!exportTiffRegionToBaselineJpegImpl(mosaic.imagePath, cv::Rect(), imagePath, exportedSize,
-                                                        errorMessage)) {
+                const JpegExportRequest request{mosaic.imagePath, cv::Rect(), imagePath};
+                if (!exportTiffRegionToBaselineJpegImpl(request, exportedSize, errorMessage)) {
                     result["error"] = errorMessage;
                     return false;
                 }
@@ -474,7 +478,8 @@ namespace StepsNs {
                                         const std::filesystem::path& outputPath,
                                         std::string& errorMessage) {
         cv::Size exportedSize;
-        return exportTiffRegionToBaselineJpegImpl(tiffPath, region, outputPath, exportedSize, errorMessage);
+        const JpegExportRequest request{tiffPath, region, outputPath};
+        return exportTiffRegionToBaselineJpegImpl(request, exportedSize, errorMessage);
     }
 
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {
