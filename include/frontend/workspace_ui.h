@@ -17,7 +17,7 @@ class HomePage;
 class MainWindow;
 class PipelineRunnerClass;
 class ArtworkCanvas;
-class BottomTabs;
+class LogPanel;
 class GridTab;
 class WorkspaceStatusBar;
 class WorkspaceCenter;
@@ -46,9 +46,8 @@ public:
     QWidget *projectInfoPanel() const;
     QLabel *zoomLabel() const;
     QTabWidget *rightTabs() const;
-    QTabWidget *bottomTabs() const;
+    LogPanel *logPanel() const { return m_logPanel; }
     RightPanel *rightPanel() const { return m_rightPanel; }
-    BottomTabs *bottomTabsPanel() const { return m_bottomTabs; }
     TopToolbars *topToolbars() const { return m_topToolbars; }
     LeftToolbar *leftToolbar() const { return m_leftToolbar; }
     WorkspaceStatusBar *workspaceStatusBar() const { return m_statusBar; }
@@ -74,7 +73,7 @@ private:
     HomePage *m_homePage = nullptr;
     QStackedWidget *m_pages = nullptr;
     QWidget *m_workspace = nullptr;
-    BottomTabs *m_bottomTabs = nullptr;
+    LogPanel *m_logPanel = nullptr;
     WorkspaceStatusBar *m_statusBar = nullptr;
     WorkspaceCenter *m_centerArea = nullptr;
     LeftToolbar *m_leftToolbar = nullptr;

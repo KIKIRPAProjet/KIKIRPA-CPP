@@ -23,6 +23,7 @@
 #include "frontendutils.h"
 #include "homepage.h"
 #include "left_toolbar.h"
+#include "logpanel.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -32,7 +33,6 @@
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
-#include "bottom_tabs.h"
 #include "right_panel.h"
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
@@ -238,8 +238,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
-        if (workspaceUI->bottomTabs())
-            workspaceUI->bottomTabs()->setVisible(true);
+        if (workspaceUI->logPanel())
+            workspaceUI->logPanel()->setVisible(true);
         sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
@@ -333,7 +333,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
         logVisible = !logVisible;
-        workspaceUI->bottomTabs()->setVisible(logVisible);
+        workspaceUI->logPanel()->setVisible(logVisible);
     });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
@@ -810,10 +810,7 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
@@ -1150,7 +1147,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Tab) {
         sideBarVisible = !sideBarVisible;
         workspaceUI->rightTabs()->setVisible(sideBarVisible);
-        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
+        workspaceUI->logPanel()->setVisible(sideBarVisible);
         event->accept();
         return;
     }
