@@ -242,11 +242,20 @@ namespace IONs {
             for (const fs::directory_entry& entry : fs::directory_iterator(cacheDirectory, errorCode)) {
                 if (!entry.is_regular_file(errorCode)) continue;
                 if (!endsWith(pathToUtf8(entry.path().filename()), PYRAMID_SUFFIX)) continue;
+                // La provenance est passée telle quelle, même absente ou illisible : c'est au prédicat de
+                // décider. Les balayages sur l'âge et sur la source la réclament et gardent le fichier sans
+                // elle ; une demande de l'utilisateur (removeAllPyramids) n'en a pas besoin, et refuser
+                // laisserait sur place un fichier que plus rien ne peut récupérer.
                 const nlohmann::json provenance = readProvenance(entry.path());
-                if (!provenance.is_object() || !shouldRemove(entry.path(), provenance))
-                    continue;   // dans le doute, on garde
+                if (!shouldRemove(entry.path(), provenance)) continue;
                 std::error_code removeError;
-                if (fs::remove(entry.path(), removeError)) ++removedCount;
+                const bool removed = fs::remove(entry.path(), removeError);
+                // La provenance ne part **qu'avec** son TIFF. Un TIFF verrouillé (un lecteur l'a ouvert à
+                // cet instant) dont on aurait supprimé la provenance devient irrécupérable : l'âge et le
+                // chemin de la source ne se lisent que là, et pathHash est à sens unique. Le prochain
+                // balayage le laisserait donc en place à jamais.
+                if (!removed && fs::exists(entry.path(), removeError)) continue;
+                if (removed) ++removedCount;
                 if (fs::remove(provenancePath(entry.path()), removeError)) ++removedCount;
             }
             return removedCount;

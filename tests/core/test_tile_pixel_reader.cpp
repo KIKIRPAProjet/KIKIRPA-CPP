@@ -186,6 +186,40 @@ TEST(TilePixelReaderTest, NonTiffSourceKeepsLevelZeroInTheCache) {
     expectColour(fullResolution);
 }
 
+// La mise en page est constatée à la construction, et rien ne garantit que le fichier est encore celui-là : un
+// autre fil (l'interface qui reconstruit ses pyramides, un import concurrent) peut l'avoir republié avec l'autre
+// mise en page. Une décision périmée décalerait la renumérotation d'un niveau et rendrait des pixels de la
+// mauvaise échelle **sans erreur** : la lecture doit échouer. Le niveau 0 pris dans l'œuvre, lui, ne dépend pas
+// du cache et reste lisible.
+TEST(TilePixelReaderTest, LayoutChangedUnderTheReaderIsRefused) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "oeuvre.tif";
+    writeStripTiff(source, makeColourImage(), COMPRESSION_NONE, SINGLE_STRIP);
+
+    const IONs::PyramidCacheEntry entry = prepare(source, IONs::pyramidCacheDirectory(directory.path));
+    ASSERT_EQ(cachedLevelCount(entry.pyramidPath), DataNs::LEVEL_COUNT - 1);
+
+    const IONs::TilePixelReaderClass reader(source, entry.pyramidPath);
+    ASSERT_TRUE(reader.readsLevelZeroFromSource());
+    cv::Mat pixels;
+    std::string error;
+    ASSERT_TRUE(reader.readLevel(1, pixels, error)) << error;   // le cache tel qu'il a été constaté
+
+    // Republication avec l'autre mise en page : le fichier contient maintenant son propre niveau 0.
+    ASSERT_TRUE(IONs::createPyramidalTiledTiff(makeColourImage(), entry.pyramidPath, error)) << error;
+    ASSERT_EQ(cachedLevelCount(entry.pyramidPath), DataNs::LEVEL_COUNT);
+
+    EXPECT_FALSE(reader.readLevel(1, pixels, error));
+    EXPECT_NE(error.find("cache layout"), std::string::npos) << error;
+    EXPECT_FALSE(reader.readRegion(1, cv::Rect(0, 0, 2, 2), pixels, error));
+    int width = 0;
+    int height = 0;
+    EXPECT_FALSE(reader.getLevelDimensions(1, width, height, error));
+
+    ASSERT_TRUE(reader.readLevel(0, pixels, error)) << error;
+    expectColour(pixels);
+}
+
 // La sonde, organisation par organisation.
 TEST(TilePixelReaderTest, ProbeAnswersForEachOrganisation) {
     const TestDirectory directory;

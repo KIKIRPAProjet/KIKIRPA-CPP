@@ -245,6 +245,26 @@ TEST(PyramidCacheTest, OrphanPyramidIsRemovedAndTheOthersAreKept) {
     EXPECT_TRUE(IONs::isPyramidCacheValid(kept, keptEntry.pyramidPath));
 }
 
+// Un TIFF de cache sans provenance : l'âge et le chemin de la source ne se lisent que là, et pathHash est à sens
+// unique, donc les balayages automatiques ne peuvent rien en dire et le gardent. Mais une demande explicite de
+// l'utilisateur doit l'emporter, sinon plus rien ne récupère sa place. L'état existe dès qu'une suppression de TIFF
+// échoue, par exemple sur un verrou Windows : c'est pourquoi la provenance ne part jamais sans son TIFF.
+TEST(PyramidCacheTest, PyramidWithoutProvenanceIsSweptOnlyOnDemand) {
+    const TestDirectory directory;
+    const fs::path source = directory.path / "a.tif";
+    writeGreyImage(source, IMAGE_SIZE);
+    const fs::path cache = IONs::pyramidCacheDirectory(directory.path);
+    const IONs::PyramidCacheEntry entry = prepare(source, cache);
+    ASSERT_TRUE(fs::remove(provenanceOf(entry.pyramidPath)));
+
+    EXPECT_EQ(IONs::removeOrphanPyramids(cache), 0U);
+    EXPECT_EQ(IONs::removeStalePyramids(cache, 1), 0U);
+    EXPECT_TRUE(fs::exists(entry.pyramidPath));
+
+    EXPECT_EQ(IONs::removeAllPyramids(cache), 1U);   // le TIFF seul : il n'a plus de provenance
+    EXPECT_FALSE(fs::exists(entry.pyramidPath));
+}
+
 // Un temporaire de publication (…_pyramid.tif.<horloge>.<n>.tmp) appartient à une écriture en cours, peut-être dans un
 // autre processus : le ménage ne doit jamais y toucher, même quand il vide tout.
 TEST(PyramidCacheTest, TemporaryFileOfAPublicationIsNeverRemoved) {

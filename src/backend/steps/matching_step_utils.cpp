@@ -57,7 +57,8 @@ namespace StepsNs {
     }
 
     cv::Mat readImage(const DataNs::TileClass& tile) {
-        // Par le cache quand la tuile en a un, et toujours en RGB : voir core/io/tile_pixel_reader.h.
+        // Par le cache quand celui-ci contient le niveau demandé, sinon par l'image de l'œuvre (c'est le cas du
+        // niveau 0 dès que le cache est réduit), et toujours en RGB : voir core/io/tile_pixel_reader.h.
         auto image = IONs::readTileLevel(tile.getSource(), tile.getTiff(), 0);
         if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(tile.getSource()));
         if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||

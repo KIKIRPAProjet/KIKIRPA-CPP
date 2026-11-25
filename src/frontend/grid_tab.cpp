@@ -160,12 +160,33 @@ void GridTab::freePyramidCache()
     const std::filesystem::path cacheDirectory =
         IONs::pyramidCacheDirectory(IONs::pathFromUtf8(directory.toStdString()));
 
-    // La place récupérée est annoncée avant de demander : l'utilisateur doit savoir ce qu'il échange.
-    std::uintmax_t total = 0;
     std::error_code errorCode;
-    for (const auto &entry : std::filesystem::directory_iterator(cacheDirectory, errorCode))
-        if (entry.is_regular_file(errorCode))
-            total += entry.file_size(errorCode);
+    if (!std::filesystem::exists(cacheDirectory, errorCode)) {
+        QMessageBox::information(this, tr("Libérer l'espace"), tr("Le cache est déjà vide."));
+        return;
+    }
+
+    // La place récupérée est annoncée avant de demander : l'utilisateur doit savoir ce qu'il échange.
+    // Boucle explicite, et non « for (… : directory_iterator(…, errorCode)) » : l'error_code ne couvre que
+    // la construction, et l'incrément, lui, **lève**. Une erreur d'énumération remonterait donc en
+    // std::filesystem_error dans un slot Qt, qui ne rattrape pas les exceptions.
+    std::uintmax_t total = 0;
+    std::error_code entryError;
+    auto entry = std::filesystem::directory_iterator(cacheDirectory, errorCode);
+    for (const auto end = std::filesystem::directory_iterator(); !errorCode && entry != end;
+         entry.increment(errorCode)) {
+        // file_size rend (uintmax_t)-1 en cas d'erreur : sans ce test, un fichier illisible ferait un
+        // total absurde, annoncé à l'utilisateur dans la question.
+        if (!entry->is_regular_file(entryError) || entryError) continue;
+        const std::uintmax_t size = entry->file_size(entryError);
+        if (!entryError) total += size;
+    }
+    if (errorCode) {
+        QMessageBox::warning(this, tr("Libérer l'espace"),
+                             tr("Le cache n'a pas pu être parcouru : %1")
+                                 .arg(QString::fromStdString(errorCode.message())));
+        return;
+    }
     if (total == 0) {
         QMessageBox::information(this, tr("Libérer l'espace"), tr("Le cache est déjà vide."));
         return;

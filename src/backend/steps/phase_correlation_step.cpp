@@ -336,7 +336,8 @@ namespace StepsNs {
     }
 
     cv::Mat PhaseCorrelationStepClass::readPixels(const DataNs::TileClass& tile, int level) {
-        // Le niveau demandé est lu dans le cache quand la tuile en a un, au lieu de lire la pleine résolution et
+        // Le niveau demandé est lu dans le cache quand celui-ci le contient (le niveau 0 vient de l'image de
+        // l'œuvre dès que le cache est réduit), au lieu de lire la pleine résolution et
         // de la réduire : au niveau 1, 145 Mio au lieu de 578, sans la seconde image que la réduction alloue.
         return IONs::readTileLevel(tile.getSource(), tile.getTiff(), level);
     }

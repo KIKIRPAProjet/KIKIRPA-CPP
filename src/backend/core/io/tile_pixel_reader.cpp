@@ -68,6 +68,12 @@ namespace IONs {
             return (magic[0] == 'I' && magic[1] == 'I') || (magic[0] == 'M' && magic[1] == 'M');
         }
 
+        // TIFFTAG_ORIENTATION n'est volontairement pas examiné : les deux chemins l'ignorent, donc ils
+        // concordent. PyramidalTiffReaderClass rend les octets stockés tels quels, et les niveaux réduits
+        // viennent de readImage(..., IMREAD_UNCHANGED), dont OpenCV documente qu'il ignore l'orientation
+        // (imgcodecs.hpp : « Ignore EXIF orientation »). Une œuvre stockée à l'envers l'est donc à tous les
+        // niveaux, ce qui est cohérent : le pipeline ne travaille qu'en géométrie relative.
+
         // Une région se lit-elle sans décoder toute l'image ? Voir le détail dans core/io/pyramidal_tiff_reader.cpp,
         // qui choisit le même chemin de lecture à partir des mêmes tags.
         bool servesRegionsCheaply(TIFF* tiffFile) {
@@ -157,20 +163,47 @@ namespace IONs {
         return levelZeroFromSource ? level - 1 : level;
     }
 
+    int TilePixelReaderClass::expectedCacheLevelCount() const {
+        return levelZeroFromSource ? DataNs::LEVEL_COUNT - 1 : DataNs::LEVEL_COUNT;
+    }
+
+    // La décision prise à la construction décrit un fichier ; rien ne garantit que c'est encore celui-là.
+    // Un autre fil (l'interface qui reconstruit ses pyramides, un import concurrent) peut l'avoir republié
+    // avec une autre mise en page, si la source a changé d'organisation. La renumérotation serait alors
+    // décalée d'un niveau et rendrait des pixels de la mauvaise échelle **sans erreur** : on refuse.
+    // Un compte nul n'est pas un changement de mise en page mais un fichier illisible à cet instant
+    // (publication en cours) : la lecture qui suit échouera d'elle-même, avec sa propre cause.
+    bool TilePixelReaderClass::cacheLayoutStillMatches(std::string& errorMessage) const {
+        const int cachedLevels = PyramidalTiffReaderClass(pyramidPath).getLevelCount();
+        if (cachedLevels <= 0 || cachedLevels == expectedCacheLevelCount()) return true;
+        errorMessage = "cache layout of '" + pathToUtf8(pyramidPath) + "' changed while it was open: " +
+                       std::to_string(cachedLevels) + " levels instead of " +
+                       std::to_string(expectedCacheLevelCount()) + "; not reading it at the wrong scale";
+        return false;
+    }
+
+    // Le niveau 0 lu dans l'image de l'œuvre n'a rien à vérifier : la pleine résolution de l'œuvre est le
+    // niveau 0 de la pyramide par définition, quelle que soit la mise en page du cache à cet instant.
     bool TilePixelReaderClass::readRegion(int level, const cv::Rect& region, cv::Mat& output,
                                           std::string& errorMessage) const {
-        const PyramidalTiffReaderClass reader(fileOf(level));
+        const fs::path file = fileOf(level);
+        if (file == pyramidPath && !cacheLayoutStillMatches(errorMessage)) return false;
+        const PyramidalTiffReaderClass reader(file);
         return reader.readRegion(fileLevelOf(level), region, output, errorMessage);
     }
 
     bool TilePixelReaderClass::readLevel(int level, cv::Mat& output, std::string& errorMessage) const {
-        const PyramidalTiffReaderClass reader(fileOf(level));
+        const fs::path file = fileOf(level);
+        if (file == pyramidPath && !cacheLayoutStillMatches(errorMessage)) return false;
+        const PyramidalTiffReaderClass reader(file);
         return reader.readLevel(fileLevelOf(level), output, errorMessage);
     }
 
     bool TilePixelReaderClass::getLevelDimensions(int level, int& width, int& height,
                                                   std::string& errorMessage) const {
-        const PyramidalTiffReaderClass reader(fileOf(level));
+        const fs::path file = fileOf(level);
+        if (file == pyramidPath && !cacheLayoutStillMatches(errorMessage)) return false;
+        const PyramidalTiffReaderClass reader(file);
         return reader.getLevelDimensions(fileLevelOf(level), width, height, errorMessage);
     }
 

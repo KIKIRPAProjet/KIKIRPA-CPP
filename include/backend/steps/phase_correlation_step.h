@@ -126,7 +126,8 @@ namespace StepsNs {
             // Pixels de la tuile au niveau `level` de la pyramide, type d'origine (8/16 bits, gris ou couleur),
             // **en RGB**. Vide si le fichier est illisible. Seul point d'accès aux pixels du step, et aussi celui
             // d'`overlap-estimation` et d'`intensity-correction`. Depuis le 24/11/2026 il délègue à
-            // `IONs::readTileLevel` : le niveau demandé est lu dans le cache quand la tuile en a un, au lieu de
+            // `IONs::readTileLevel` : le niveau demandé est lu dans le cache quand celui-ci le contient, au
+            // lieu de
             // relire la pleine résolution et de la réduire (core/io/tile_pixel_reader.h).
             static cv::Mat readPixels(const DataNs::TileClass& tile, int level);
 

@@ -43,6 +43,13 @@ namespace IONs {
     // cache les contienne tous ou non : la traduction vers le niveau du fichier est la raison d'être de cette classe.
     // Tout appelant qui compte les niveaux à la main doit passer par elle.
     //
+    // La mise en page est constatée une fois, à la construction, et **vérifiée à chaque lecture du cache** :
+    // un autre fil peut republier le fichier entre-temps, et une décision périmée ferait rendre le niveau 1
+    // pour la pleine résolution, ou l'inverse, **sans erreur**. Une lecture dont la mise en page a changé
+    // échoue donc, au lieu de rendre des pixels de la mauvaise échelle ; `readTileLevel` retombe alors sur
+    // l'image de l'œuvre. Le coût est une ouverture de plus par lecture du cache (le compte de niveaux se
+    // lit dans le premier IFD), négligeable devant le décodage d'un bloc.
+    //
     // Même contrat que PyramidalTiffReaderClass pour chaque méthode ; chaque lecture ouvre et ferme son fichier.
     class TilePixelReaderClass {
 
@@ -66,6 +73,10 @@ namespace IONs {
             std::filesystem::path fileOf(int level) const;
             int fileLevelOf(int level) const;
             bool decideLevelZeroFromSource() const;
+            // Niveaux que le FICHIER de cache doit contenir si la mise en page constatée à la construction
+            // vaut toujours, et le refus de lire quand ce n'est plus le cas.
+            int expectedCacheLevelCount() const;
+            bool cacheLayoutStillMatches(std::string& errorMessage) const;
 
             std::filesystem::path sourcePath;
             std::filesystem::path pyramidPath;

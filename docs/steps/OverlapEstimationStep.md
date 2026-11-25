@@ -12,7 +12,7 @@ Mesure, pour chaque paire de tuiles voisines, la position de B par rapport à A 
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Sortie | `overlapEstimates` | `OverlapEstimates` | `DataNs::OverlapEstimates` | `phase-correlation`, `sift`, `lightglue` (s'ils viennent après, voir [Qui lit cette sortie](#qui-lit-cette-sortie)) |
 
-Ce que le step **lit** de `tiles` : l'identifiant de chaque tuile, ses voisines de droite et du dessous (`getRight()`, `getBottom()`), et **les pixels des deux tuiles de chaque paire**, à pleine résolution et en RGB, par `PhaseCorrelationStepClass::readPixels(tile, 0)` (donc par le cache quand la tuile en a un, voir [TilePixelReader.md](../core/TilePixelReader.md)).
+Ce que le step **lit** de `tiles` : l'identifiant de chaque tuile, ses voisines de droite et du dessous (`getRight()`, `getBottom()`), et **les pixels des deux tuiles de chaque paire**, à pleine résolution et en RGB, par `PhaseCorrelationStepClass::readPixels(tile, 0)` (donc par le cache quand il contient le niveau demandé ; au niveau 0 un cache réduit n'a rien à servir, et les pixels viennent alors de l'image de l'œuvre, voir [TilePixelReader.md](../core/TilePixelReader.md)).
 
 Ce qu'il **écrit** dans `overlapEstimates` : une entrée par paire mesurée, avec
 

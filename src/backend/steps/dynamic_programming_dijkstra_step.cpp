@@ -107,7 +107,8 @@ namespace StepsNs {
             return {};
         }
 
-        // Par le cache quand la tuile en a un, et en RGB, l'ordre que le solveur attend (core/io/tile_pixel_reader.h).
+        // Par le cache quand celui-ci contient le niveau demandé, sinon par l'image de l'œuvre, et en RGB,
+        // l'ordre que le solveur attend (core/io/tile_pixel_reader.h).
         std::string readPairImages(const NeighbourPair& pair, PairImages& images) {
             if (images.imageA.empty())
                 images.imageA = IONs::readTileLevel(pair.tileA.getSource(), pair.tileA.getTiff(), 0);

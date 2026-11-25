@@ -77,7 +77,7 @@ fait échouer le test de concurrence une fois sur deux.
 ## Un niveau entier : `readTileLevel`
 
 `readTileLevel(sourcePath, pyramidPath, level)` rend **tous** les pixels d'un niveau, **en RGB**, pris au meilleur
-endroit : dans le cache quand la tuile en a un, sinon dans l'image de l'œuvre, réduite autant de fois que
+endroit : dans le cache quand la tuile en a un et qu'il contient le niveau demandé (au niveau 0 un cache réduit n'a rien à servir, et les pixels viennent alors de l'image de l'œuvre), sinon dans l'image de l'œuvre, réduite autant de fois que
 nécessaire. C'est ce qu'appellent les steps qui travaillent sur un niveau entier plutôt que sur des régions :
 `phase-correlation` (par `readPixels`), `sift` et `lightglue` (par `matching_step_utils::readImage`),
 `overlap-estimation`, `intensity-correction` et `dynamic-programming-dijkstra`.

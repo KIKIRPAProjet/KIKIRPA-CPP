@@ -16,6 +16,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
