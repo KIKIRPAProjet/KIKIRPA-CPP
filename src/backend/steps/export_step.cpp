@@ -8,19 +8,27 @@
 
 #include "core/config/pipeline_config.h"
 #include "core/data/algorithm_types.h"
+#include "core/data/tile.h"
 #include "core/io/file_fingerprint.h"
 #include "core/io/file_replacement.h"
+#include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <nlohmann/json.hpp>
+#include <opencv2/core/hal/interface.h>
+#include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgproc.hpp>
 #include <tiff.h>
 #include <tiffio.h>
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <csetjmp>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -29,6 +37,10 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+
+// clang-format off
+#include <jpeglib.h>
+// clang-format on
 
 #ifdef _WIN32
 #include <windows.h>
@@ -44,6 +56,10 @@ namespace StepsNs {
         // Format attendu de l'image de la mosaïque : RGB, 16 bits par canal, tuilée.
         constexpr std::uint16_t EXPECTED_SAMPLES_PER_PIXEL = 3;
         constexpr std::uint16_t EXPECTED_BITS_PER_SAMPLE = 16;
+        constexpr int JPEG_MAX_SIDE = 65500;
+        constexpr int JPEG_BASELINE_QUALITY = 85;
+        constexpr int RGB_CHANNELS = 3;
+        constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
 
         // Ce que l'en-tête du TIFF de la mosaïque dit de l'image, lu sans décoder de pixel.
         struct TiffHeader {
@@ -219,6 +235,207 @@ namespace StepsNs {
             return false;
         }
 
+        bool hasJpegExtension(const fs::path& path) {
+            std::string extension = IONs::pathToUtf8(path.extension());
+            std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char character) {
+                return static_cast<char>(std::tolower(character));
+            });
+            return extension == ".jpg" || extension == ".jpeg";
+        }
+
+        struct JpegErrorContext {
+            jpeg_error_mgr pub{};
+            std::jmp_buf jumpBuffer{};
+            char message[JMSG_LENGTH_MAX]{};
+        };
+
+        void handleJpegErrorExit(j_common_ptr cinfo) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            auto* errorContext = reinterpret_cast<JpegErrorContext*>(cinfo->err);
+            (*cinfo->err->format_message)(cinfo, errorContext->message);
+            std::longjmp(errorContext->jumpBuffer, 1);
+        }
+
+        std::FILE* openBinaryOutput(const fs::path& path) {
+#ifdef _WIN32
+            return _wfopen(path.c_str(), L"wb");
+#else
+            return std::fopen(path.c_str(), "wb");
+#endif
+        }
+
+        struct JpegStreamPlan {
+            cv::Rect region;
+            cv::Size outputSize;
+            double scale = 1.0;
+        };
+
+        bool buildJpegStreamPlan(const IONs::PyramidalTiffReaderClass& reader, const cv::Rect& requestedRegion,
+                                 JpegStreamPlan& plan, std::string& errorMessage) {
+            int fullWidth = 0;
+            int fullHeight = 0;
+            if (!reader.getLevelDimensions(0, fullWidth, fullHeight, errorMessage)) return false;
+
+            const cv::Rect fullCanvas(0, 0, fullWidth, fullHeight);
+            plan.region = requestedRegion.empty() ? fullCanvas : (requestedRegion & fullCanvas);
+            if (plan.region.empty()) {
+                errorMessage = "the export region is empty";
+                return false;
+            }
+            const int maxSide = std::max(plan.region.width, plan.region.height);
+            plan.scale = maxSide > JPEG_MAX_SIDE ? static_cast<double>(JPEG_MAX_SIDE) / maxSide : 1.0;
+            plan.outputSize = {std::max(1, static_cast<int>(std::round(plan.region.width * plan.scale))),
+                               std::max(1, static_cast<int>(std::round(plan.region.height * plan.scale)))};
+            return true;
+        }
+
+        bool convertBlockToRgb8(const cv::Mat& block, cv::Mat& output, std::string& errorMessage) {
+            if (block.channels() != RGB_CHANNELS) {
+                errorMessage = "TIFF image must have 3 RGB channels for JPEG export";
+                return false;
+            }
+            if (block.depth() == CV_16U) {
+                block.convertTo(output, CV_8UC3, 1.0 / SIXTEEN_TO_EIGHT_BIT_DIVISOR);
+                return true;
+            }
+            if (block.depth() == CV_8U) {
+                output = block;
+                return true;
+            }
+            errorMessage = "TIFF image depth must be 8-bit or 16-bit for JPEG export";
+            return false;
+        }
+
+        struct StripRange {
+            int sourceY = 0;
+            int sourceHeight = 0;
+            int destHeight = 0;
+        };
+
+        bool fillStripBuffer(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
+                             const StripRange& strip, cv::Mat& stripRgb8, std::string& errorMessage) {
+            for (int offsetX = 0; offsetX < plan.region.width; offsetX += DataNs::BLOCK_SIZE) {
+                const int blockWidth = std::min(DataNs::BLOCK_SIZE, plan.region.width - offsetX);
+                const cv::Rect sourceRect(plan.region.x + offsetX, plan.region.y + strip.sourceY, blockWidth,
+                                          strip.sourceHeight);
+                cv::Mat blockRaw;
+                cv::Mat block8;
+                if (!reader.readRegion(0, sourceRect, blockRaw, errorMessage) ||
+                    !convertBlockToRgb8(blockRaw, block8, errorMessage)) {
+                    return false;
+                }
+                const int destX0 = static_cast<int>(std::round(offsetX * plan.scale));
+                const int destX1 = (offsetX + blockWidth == plan.region.width)
+                                       ? plan.outputSize.width
+                                       : static_cast<int>(std::round((offsetX + blockWidth) * plan.scale));
+                if (destX1 <= destX0) continue;
+                const cv::Rect destRect(destX0, 0, destX1 - destX0, strip.destHeight);
+                if (destRect.size() == block8.size()) {
+                    block8.copyTo(stripRgb8(destRect));
+                } else {
+                    cv::resize(block8, stripRgb8(destRect), destRect.size(), 0.0, 0.0, cv::INTER_AREA);
+                }
+            }
+            return true;
+        }
+
+        void writeStripScanlines(jpeg_compress_struct& cinfo, const cv::Mat& stripRgb8) {
+            for (int row = 0; row < stripRgb8.rows; ++row) {
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+                JSAMPROW rowPointer = const_cast<JSAMPROW>(stripRgb8.ptr<JSAMPLE>(row));
+                jpeg_write_scanlines(&cinfo, &rowPointer, 1);
+            }
+        }
+
+        bool encodeJpegStrips(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
+                              jpeg_compress_struct& cinfo, std::string& errorMessage) {
+            for (int offsetY = 0; offsetY < plan.region.height; offsetY += DataNs::BLOCK_SIZE) {
+                const int sourceHeight = std::min(DataNs::BLOCK_SIZE, plan.region.height - offsetY);
+                const int destY0 = static_cast<int>(std::round(offsetY * plan.scale));
+                const int destY1 = (offsetY + sourceHeight == plan.region.height)
+                                       ? plan.outputSize.height
+                                       : static_cast<int>(std::round((offsetY + sourceHeight) * plan.scale));
+                const int destHeight = destY1 - destY0;
+                if (destHeight <= 0) continue;
+
+                cv::Mat stripRgb8(destHeight, plan.outputSize.width, CV_8UC3);
+                const StripRange strip{offsetY, sourceHeight, destHeight};
+                if (!fillStripBuffer(reader, plan, strip, stripRgb8, errorMessage)) return false;
+                writeStripScanlines(cinfo, stripRgb8);
+            }
+            return true;
+        }
+
+        void configureBaselineJpeg(jpeg_compress_struct& cinfo, std::FILE* outputFile, const cv::Size& outputSize) {
+            jpeg_stdio_dest(&cinfo, outputFile);
+            cinfo.image_width = static_cast<JDIMENSION>(outputSize.width);
+            cinfo.image_height = static_cast<JDIMENSION>(outputSize.height);
+            cinfo.input_components = RGB_CHANNELS;
+            cinfo.in_color_space = JCS_RGB;
+            jpeg_set_defaults(&cinfo);
+            jpeg_set_quality(&cinfo, JPEG_BASELINE_QUALITY, TRUE);
+        }
+
+        bool streamTiffToJpegFile(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
+                                  const fs::path& temporaryPath, std::string& errorMessage) {
+            std::FILE* outputFile = openBinaryOutput(temporaryPath);
+            if (!outputFile) {
+                errorMessage = "cannot open temporary JPEG file '" + IONs::pathToUtf8(temporaryPath) + "'";
+                return false;
+            }
+            jpeg_compress_struct cinfo{};
+            JpegErrorContext errorContext;
+            cinfo.err = jpeg_std_error(&errorContext.pub);
+            errorContext.pub.error_exit = &handleJpegErrorExit;
+            if (setjmp(errorContext.jumpBuffer) != 0) {
+                jpeg_destroy_compress(&cinfo);
+                std::fclose(outputFile);
+                errorMessage = std::string("JPEG encoding failed: ") + errorContext.message;
+                return false;
+            }
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+            jpeg_create_compress(&cinfo);
+            configureBaselineJpeg(cinfo, outputFile, plan.outputSize);
+            jpeg_start_compress(&cinfo, TRUE);
+            const bool encoded = encodeJpegStrips(reader, plan, cinfo, errorMessage);
+            if (encoded) jpeg_finish_compress(&cinfo);
+            jpeg_destroy_compress(&cinfo);
+            if (std::fclose(outputFile) != 0 && encoded) {
+                errorMessage = "cannot close temporary JPEG file '" + IONs::pathToUtf8(temporaryPath) + "'";
+                return false;
+            }
+            return encoded;
+        }
+
+        bool exportTiffRegionToBaselineJpegImpl(const fs::path& tiffPath, const cv::Rect& region,
+                                                const fs::path& outputPath, cv::Size& exportedSize,
+                                                std::string& errorMessage) {
+            const IONs::PyramidalTiffReaderClass reader(tiffPath);
+            JpegStreamPlan plan;
+            if (!buildJpegStreamPlan(reader, region, plan, errorMessage)) return false;
+
+            const fs::path parentDirectory = outputPath.parent_path();
+            if (!parentDirectory.empty()) {
+                std::error_code directoryError;
+                fs::create_directories(parentDirectory, directoryError);
+                if (directoryError) {
+                    errorMessage = "cannot create output directory '" + IONs::pathToUtf8(parentDirectory) +
+                                   "': " + directoryError.message();
+                    return false;
+                }
+            }
+
+            const fs::path temporaryPath = IONs::makeTemporaryPath(outputPath);
+            if (!streamTiffToJpegFile(reader, plan, temporaryPath, errorMessage) ||
+                !IONs::replaceFile(temporaryPath, outputPath, errorMessage)) {
+                std::error_code removeError;
+                fs::remove(temporaryPath, removeError);
+                return false;
+            }
+            exportedSize = plan.outputSize;
+            return true;
+        }
+
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
             TiffHeader header;
             std::string errorMessage;
@@ -230,16 +447,34 @@ namespace StepsNs {
             if (!prepareOutputDirectory(config, directory, result)) return false;
             const std::string filename = configuredFilename(config);
             const fs::path imagePath = nextExportPath(directory, filename);
-            if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
-                result["error"] = errorMessage;
-                return false;
+            if (hasJpegExtension(imagePath)) {
+                cv::Size exportedSize;
+                if (!exportTiffRegionToBaselineJpegImpl(mosaic.imagePath, cv::Rect(), imagePath, exportedSize,
+                                                        errorMessage)) {
+                    result["error"] = errorMessage;
+                    return false;
+                }
+                output = {imagePath, exportedSize, false};
+            } else {
+                if (!IONs::copyFileReplacing(mosaic.imagePath, imagePath, errorMessage)) {
+                    result["error"] = errorMessage;
+                    return false;
+                }
+                output = {imagePath, mosaic.canvasSize, header.isBigTiff};
             }
-            output = {imagePath, mosaic.canvasSize, header.isBigTiff};
             result["image"] = {{"path", IONs::pathToUtf8(imagePath)}, {"bigTiff", output.isBigTiff}};
             result["canvasSize"] = {output.canvasSize.width, output.canvasSize.height};
             return true;
         }
 
+    }
+
+    bool exportTiffRegionToBaselineJpeg(const std::filesystem::path& tiffPath,
+                                        const cv::Rect& region,
+                                        const std::filesystem::path& outputPath,
+                                        std::string& errorMessage) {
+        cv::Size exportedSize;
+        return exportTiffRegionToBaselineJpegImpl(tiffPath, region, outputPath, exportedSize, errorMessage);
     }
 
     ExportStepClass::ExportStepClass(const ExportInput& initialInput) {

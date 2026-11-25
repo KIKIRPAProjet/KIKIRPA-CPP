@@ -25,13 +25,13 @@ Dernier step du pipeline. Il **publie** l'image de la mosaïque, déjà écrite 
 | Nom | Type | Défaut | Rôle |
 |---|---|---|---|
 | `outputDirectory` | string | vide | dossier où publier l'image ; vide = dossier Téléchargements de l'utilisateur courant. Créé s'il n'existe pas |
-| `filename` | string | `mosaic.tif` | nom du fichier de sortie. S'il n'a pas d'extension, `.tif` est ajouté. S'il existe déjà dans le dossier, un suffixe ` (1)`, ` (2)`... est ajouté |
+| `filename` | string | `mosaic.tif` | nom du fichier de sortie. S'il n'a pas d'extension, `.tif` est ajouté. Avec une extension `.jpg` ou `.jpeg`, l'image est convertie en JPEG Baseline 8 bits en streaming (sous-échantillonnée uniquement au-delà de 65 500 px). S'il existe déjà dans le dossier, un suffixe ` (1)`, ` (2)`... est ajouté |
 
 ## Fonctionnement
 
 1. **Contrôle** : l'en-tête de `imagePath` est lu sans décoder de pixel. Le fichier doit être un TIFF tuilé, à 3 canaux de 16 bits, aux dimensions de `canvasSize`.
 2. **Nom unique** : si `<filename>` ou une de ses copies numérotées existe déjà dans le dossier de sortie, le step prend le numéro qui suit le plus élevé présent : `<nom> (1).tif`, `<nom> (2).tif`, etc. Le dernier export est ainsi toujours celui de numéro maximal, même si des copies intermédiaires ont été supprimées.
-3. **Publication** : `IONs::copyFileReplacing` copie le fichier sous un nom temporaire dans `outputDirectory`, puis le renomme vers le chemin unique déterminé. L'ancien fichier existant n'est donc jamais écrasé. Une erreur pendant la copie ne pollue pas la destination et le temporaire est supprimé.
+3. **Publication** : pour un TIFF, `IONs::copyFileReplacing` copie le fichier sous un nom temporaire dans `outputDirectory`, puis le renomme vers le chemin unique déterminé. Pour un JPEG (`.jpg`/`.jpeg`), l'image est lue par bandes de 512 lignes via `PyramidalTiffReaderClass`, convertie en RGB 8 bits et encodée en JPEG Baseline (qualité 85) via `libjpeg` dans un fichier temporaire renommé atomiquement. L'ancien fichier existant n'est donc jamais écrasé. Une erreur pendant la copie ou l'encodage ne pollue pas la destination et le temporaire est supprimé.
 
 Le format du fichier (blocs de 512 × 512, LZW, TIFF ou BigTIFF selon la taille) est celui qu'a choisi le writer de l'assemblage : l'export ne le réécrit pas.
 

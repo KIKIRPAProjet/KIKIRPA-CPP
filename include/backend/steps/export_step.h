@@ -25,13 +25,22 @@ namespace StepsNs {
         bool isBigTiff = false;
     };
 
+    // Exporte une région (ou toute l'image si region est vide) d'un TIFF tuilé RGB
+    // vers un fichier JPEG Baseline 8 bits en streaming par bandes de BLOCK_SIZE lignes.
+    // Si la région dépasse 65 500 px de côté, elle est sous-échantillonnée à la volée.
+    bool exportTiffRegionToBaselineJpeg(const std::filesystem::path& tiffPath,
+                                        const cv::Rect& region,
+                                        const std::filesystem::path& outputPath,
+                                        std::string& errorMessage);
+
     // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename> (défaut mosaic.tif) : contrôle de son
-    // en-tête (dimensions, RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas
-    // par la mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
+    // en-tête (dimensions, RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage (ou conversion en JPEG
+    // Baseline 8 bits en streaming si filename se termine par .jpg / .jpeg). Les pixels ne sont jamais chargés en entier
+    // en mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
     // " (1)", " (2)"... Le checkpoint du step reste valable tant que ce dernier export est là, inchangé.
     //
     // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide = mosaic.tif).
-    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou nom incrémenté (ni provenance ni masque).
+    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif/mosaic.jpg ou nom incrémenté (ni provenance ni masque).
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 

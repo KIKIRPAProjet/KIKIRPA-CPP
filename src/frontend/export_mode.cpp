@@ -23,6 +23,7 @@
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/pyramidal_tiff_writer.h"
 #include "core/io/unicode_path.h"
+#include "steps/export_step.h"
 
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
@@ -77,20 +78,37 @@ void MainWindow::showExportDialog()
     imagePathLayout->addWidget(browseButton);
     layout.addLayout(imagePathLayout);
 
-    connect(browseButton, &QPushButton::clicked, &dialog, [this, &dialog, imagePathEdit]() {
+    auto *format = new QComboBox(&dialog);
+    format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
+                      tr("PSB"), tr("JPEG, perte de précision")});
+    constexpr int jpegFormatIndex = 3;
+
+    connect(browseButton, &QPushButton::clicked, &dialog, [this, &dialog, imagePathEdit, format]() {
+        const QString filter = format->currentIndex() == jpegFormatIndex
+            ? tr("Image JPEG (*.jpg *.jpeg);;Tous les fichiers (*.*)")
+            : tr("Image TIFF (*.tif *.tiff);;Tous les fichiers (*.*)");
         const QString path = QFileDialog::getSaveFileName(
             &dialog,
             tr("Choisir l'emplacement de l'image finale"),
             imagePathEdit->text(),
-            tr("Image TIFF (*.tif *.tiff);;Tous les fichiers (*.*)"));
+            filter);
         if (!path.isEmpty()) {
             imagePathEdit->setText(path);
         }
     });
 
-    auto *format = new QComboBox(&dialog);
-    format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
-                      tr("PSB"), tr("JPEG, perte de précision")});
+    connect(format, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), &dialog,
+            [imagePathEdit](int index) {
+        QString path = imagePathEdit->text().trimmed();
+        if (path.isEmpty()) return;
+        const QString targetExt = (index == jpegFormatIndex) ? QStringLiteral(".jpg") : QStringLiteral(".tif");
+        const QFileInfo info(path);
+        if (!info.suffix().isEmpty()) {
+            path.chop(info.suffix().size() + 1);
+        }
+        imagePathEdit->setText(path + targetExt);
+    });
+
     auto *report = new QCheckBox(tr("Générer le rapport d'assemblage (HTML)"), &dialog);
     report->setChecked(true);
     layout.addWidget(new QLabel(tr("Format de sortie"), &dialog));
@@ -108,9 +126,10 @@ void MainWindow::showExportDialog()
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
     connect(exportButton, &QPushButton::clicked, this, [this, &dialog, format, report, imagePathEdit]() {
-        if (format->currentIndex() != 0) {
+        const bool isJpeg = format->currentIndex() == jpegFormatIndex;
+        if (format->currentIndex() != 0 && !isJpeg) {
             QMessageBox::information(&dialog, tr("Format non disponible"),
-                tr("Seul l'export TIFF 16 bits est actuellement pris en charge."));
+                tr("Seuls les exports TIFF 16 bits et JPEG sont actuellement pris en charge."));
             return;
         }
         const QString chosenPath = imagePathEdit->text().trimmed();
@@ -128,16 +147,22 @@ void MainWindow::showExportDialog()
 
         QString destination = chosenPath;
         if (QFileInfo(destination).suffix().isEmpty()) {
-            destination += QStringLiteral(".tif");
+            destination += isJpeg ? QStringLiteral(".jpg") : QStringLiteral(".tif");
         }
 
         const QFileInfo requestedFile(destination);
         const QString extension = requestedFile.suffix();
+        const bool validExtension = isJpeg
+            ? (extension.compare(QStringLiteral("jpg"), Qt::CaseInsensitive) == 0 ||
+               extension.compare(QStringLiteral("jpeg"), Qt::CaseInsensitive) == 0)
+            : (extension.compare(QStringLiteral("tif"), Qt::CaseInsensitive) == 0 ||
+               extension.compare(QStringLiteral("tiff"), Qt::CaseInsensitive) == 0);
 
-        if (extension.compare(QStringLiteral("tif"), Qt::CaseInsensitive) != 0 &&
-            extension.compare(QStringLiteral("tiff"), Qt::CaseInsensitive) != 0) {
+        if (!validExtension) {
             QMessageBox::warning(&dialog, tr("Format non pris en charge"),
-                tr("Cet export produit un TIFF. Choisissez une extension .tif ou .tiff."));
+                isJpeg
+                    ? tr("Cet export produit un JPEG. Choisissez une extension .jpg ou .jpeg.")
+                    : tr("Cet export produit un TIFF. Choisissez une extension .tif ou .tiff."));
             return;
         }
 
@@ -162,6 +187,7 @@ void MainWindow::showExportDialog()
 
         auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
         const bool isCropped = canvas && canvas->isCropped();
+        cv::Rect cropRegion;
 
         if (isCropped) {
             const QRectF normalizedCropRect = canvas->cropNormalizedRect();
@@ -180,8 +206,24 @@ void MainWindow::showExportDialog()
             const int cropY = qBound(0, static_cast<int>(normalizedCropRect.y() * fullHeight), fullHeight - 1);
             const int cropWidth = qBound(1, static_cast<int>(normalizedCropRect.width() * fullWidth), fullWidth - cropX);
             const int cropHeight = qBound(1, static_cast<int>(normalizedCropRect.height() * fullHeight), fullHeight - cropY);
+            cropRegion = cv::Rect(cropX, cropY, cropWidth, cropHeight);
+        }
 
-            cv::Rect cropRegion(cropX, cropY, cropWidth, cropHeight);
+        if (isJpeg) {
+            std::string writeError;
+            if (!StepsNs::exportTiffRegionToBaselineJpeg(
+                    IONs::pathFromUtf8(mosaicFilePath.toStdString()),
+                    cropRegion,
+                    IONs::pathFromUtf8(destination.toStdString()),
+                    writeError)) {
+                QMessageBox::warning(&dialog, tr("Export impossible"),
+                    tr("Impossible d'enregistrer le JPEG : %1")
+                        .arg(QString::fromStdString(writeError)));
+                return;
+            }
+        } else if (isCropped) {
+            IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(mosaicFilePath.toStdString()));
+            std::string readError;
             cv::Mat croppedImage;
             if (!reader.readRegion(0, cropRegion, croppedImage, readError)) {
                 QMessageBox::warning(&dialog, tr("Export impossible"),
@@ -239,7 +281,7 @@ void MainWindow::showExportDialog()
             }
         }
 
-        updateStatus(tr("TIFF exporté : %1")
+        updateStatus((isJpeg ? tr("JPEG exporté : %1") : tr("TIFF exporté : %1"))
                          .arg(fileInfo.absoluteFilePath()));
         dialog.accept();
     });
