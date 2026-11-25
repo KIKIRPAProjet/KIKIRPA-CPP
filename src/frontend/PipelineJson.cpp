@@ -27,7 +27,7 @@ namespace FrontendNs {
             return std::invalid_argument("valeur '" + text + "' invalide pour l'option '" + name + "' de type " + valueType);
         };
 
-        if (valueType == "string") return {valueType, name, text};
+        if (valueType == "string") return {.valueType = valueType, .name = name, .value = text};
 
         if (valueType == "int") {
             try {
@@ -52,8 +52,11 @@ namespace FrontendNs {
         }
 
         if (valueType == "bool") {
-            std::string lowerCaseText = text;
-            std::transform(lowerCaseText.begin(), lowerCaseText.end(), lowerCaseText.begin(), [](unsigned char character) { return std::tolower(character); });
+            std::string lowerCaseText(text.size(), '\0');
+            std::transform(text.begin(), text.end(), lowerCaseText.begin(),
+                           [](const unsigned char character) {
+                               return static_cast<char>(std::tolower(character));
+                           });
             if (lowerCaseText == "true" || lowerCaseText == "1" || lowerCaseText == "yes" || lowerCaseText == "on") return {valueType, name, true};
             if (lowerCaseText == "false" || lowerCaseText == "0" || lowerCaseText == "no" || lowerCaseText == "off") return {valueType, name, false};
             throw invalid();

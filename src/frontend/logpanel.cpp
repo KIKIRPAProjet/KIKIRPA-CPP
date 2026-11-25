@@ -59,8 +59,8 @@ LogPanel::LogPanel(MainWindow *mainWindow, QWidget *parent)
 
 void LogPanel::appendLog(const QString &message, const QString &level)
 {
-    entries.append({message, level.trimmed(), QDateTime::currentDateTime().toString(
-                        QStringLiteral("HH:mm:ss"))});
+    entries.append({.message = message, .level = level.trimmed(), .time = QDateTime::currentDateTime().toString(
+        QStringLiteral("HH:mm:ss"))});
     const LogEntry &entry = entries.constLast();
     if (isEntryVisible(entry))
         textBrowser->append(formatEntry(entry));

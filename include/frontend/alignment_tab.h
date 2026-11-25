@@ -26,7 +26,7 @@ public:
 
     void setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs, int currentPairIndex);
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
-    void cancelPointPickingUi();
+    void cancelPointPickingUi() const;
 
 signals:
     void pairSelectionRequested(int pairIndex);
@@ -41,10 +41,10 @@ private:
     void createTable(QVBoxLayout *layout);
     void createDetails(QVBoxLayout *layout);
     void rebuildTable();
-    void fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair);
-    void selectCurrentRow();
+    void fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair) const;
+    void selectCurrentRow() const;
     void startInteractiveCorrection();
-    void refreshPickingUi();
+    void refreshPickingUi() const;
     void showManualAdjustmentDialog();
     QString shortPairLabel(const FrontendUtils::PairAlignmentInfo &pair) const;
 

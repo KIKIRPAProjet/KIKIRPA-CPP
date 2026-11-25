@@ -82,7 +82,7 @@
 
 namespace {
 constexpr int ASSEMBLY_MODE = 5;
-constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::modeNames())
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
@@ -760,7 +760,7 @@ void MainWindow::setMode(int mode)
 {
     if (!switchingProject && currentMode != mode)
         markProjectModified();
-    currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
+    currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::modeNames().size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (QTabWidget *tabs = workspaceUI->rightTabs()) {
         const bool isGridMode = (currentMode == 1);
@@ -857,7 +857,7 @@ void MainWindow::setMode(int mode)
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
     }
-    updateStatus(tr("Mode : %1").arg(FrontendUtils::MODE_NAMES.at(currentMode)));
+    updateStatus(tr("Mode : %1").arg(FrontendUtils::modeNames().at(currentMode)));
 }
 
 void MainWindow::refreshProjectInfo()
@@ -1078,9 +1078,9 @@ FrontendNs::ProjectSetup MainWindow::buildCurrentProjectSetup() const
         if (index >= gridState.gridTiles.size()) continue;
         const GridTile &tile = gridState.gridTiles.at(index);
         if (tile.empty || tile.path.isEmpty()) continue;
-        setup.tiles.push_back({IONs::pathFromUtf8(tile.path.toStdString()),
-                               index / gridState.gridColumns,
-                               index % gridState.gridColumns});
+        setup.tiles.push_back({.path = IONs::pathFromUtf8(tile.path.toStdString()),
+                               .row = index / gridState.gridColumns,
+                               .column = index % gridState.gridColumns});
     }
     return setup;
 }

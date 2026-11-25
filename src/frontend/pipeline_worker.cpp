@@ -29,7 +29,11 @@
 namespace {
 
     // Expression régulière pour décoder les messages backend : "Step X/Y OK" ou "Step X/Y failed".
-    const QRegularExpression STEP_PROGRESS_REGEX(QStringLiteral(R"(Step\s+(\d+)/(\d+)\s+([A-Za-z]+))"));
+    const QRegularExpression &stepProgressRegex()
+    {
+        static const QRegularExpression regex(QStringLiteral(R"(Step\s+(\d+)/(\d+)\s+([A-Za-z]+))"));
+        return regex;
+    }
 
     // Largeur cible de la vignette d'aperçu pour préserver les performances de l'UI.
     constexpr int PREVIEW_TARGET_WIDTH = 1200;
@@ -156,7 +160,7 @@ namespace {
         if (size.width <= 0 || size.height <= 0 || !std::filesystem::exists(mosaic.imagePath)) return {};
         const double scale = std::min(1.0, static_cast<double>(PREVIEW_TARGET_WIDTH) / size.width);
         const cv::Size previewSize(std::max(1, cvRound(size.width * scale)), std::max(1, cvRound(size.height * scale)));
-        cv::Mat preview(previewSize, CV_8UC3, cv::Scalar::all(0));
+        cv::Mat preview(previewSize, cv::traits::Type<cv::Vec3b>::value, cv::Scalar::all(0));
         const IONs::PyramidalTiffReaderClass reader(mosaic.imagePath);
         for (int top = 0; top < size.height; top += DataNs::BLOCK_SIZE) {
             const cv::Rect band(0, top, size.width, std::min(DataNs::BLOCK_SIZE, size.height - top));
@@ -275,7 +279,7 @@ void PipelineWorkerClass::handleLogMessage(const QString& message, int totalStep
 
     // Décode le format standard des messages backend : "Step X/Y OK" ou "Step X/Y failed"
     // La progression n'est pas temporisée : elle reflète l'achèvement effectif de chaque algorithme.
-    const QRegularExpressionMatch match = STEP_PROGRESS_REGEX.match(message);
+    const QRegularExpressionMatch match = stepProgressRegex().match(message);
     if (!match.hasMatch()) return;
 
     const int stepIndex = match.captured(1).toInt();
