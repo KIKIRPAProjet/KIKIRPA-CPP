@@ -32,6 +32,9 @@ private:
     void setupConnections();
     // Demande confirmation, en annonçant la place récupérée, puis vide le cache des pyramides du projet.
     void freePyramidCache();
+    // Vrai, et le dit à l'utilisateur, si un calcul tourne : il lit les fichiers qu'on allait supprimer.
+    bool warnIfPipelineRunning();
+    void updateCacheButtonState();
 
     // Les sous-fonctions de mise à jour
     void updateParameters(const ProjectGrid::State &gridState);

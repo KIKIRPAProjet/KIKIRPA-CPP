@@ -2,7 +2,7 @@
 #include "image_layer_loader.h"
 
 #include "core/data/algorithm_types.h"
-#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 #include "frontendutils.h"
 
@@ -49,7 +49,11 @@ ImageLayer loadLowResolutionLayer(
         return {};
     }
 
-    const IONs::PyramidalTiffReaderClass reader(tile.getTiff());
+    // Par TilePixelReaderClass et non par le cache directement : depuis le 24/11/2026 le cache ne contient
+    // plus le niveau 0 quand l'image de l'œuvre sait servir une région. Lire le cache à la main rendrait
+    // alors le niveau 1 en croyant tenir la pleine résolution, soit un calque à la moitié de son échelle,
+    // sans aucune erreur. Cette classe est la seule à savoir où vit chaque niveau.
+    const IONs::TilePixelReaderClass reader(tile.getSource(), tile.getTiff());
     cv::Mat pixels;
     std::string errorMessage;
     if (!reader.readLevel(level, pixels, errorMessage)) {
