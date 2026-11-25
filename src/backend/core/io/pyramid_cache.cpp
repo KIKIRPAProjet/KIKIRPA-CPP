@@ -23,6 +23,7 @@
 #include <ios>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace IONs {
 
@@ -108,7 +109,7 @@ namespace IONs {
                 errorMessage = "cannot read " + pathToUtf8(sourcePath);
                 return false;
             }
-            std::vector<uint8_t> iccProfile;
+            std::vector<std::uint8_t> iccProfile;
             double scaleX = 1.0;
             double scaleY = 1.0;
             std::string metaError;

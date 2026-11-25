@@ -272,7 +272,7 @@ namespace {
     int runFrontend(int argumentCount, char** arguments) {
         QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
         // Les images haute résolution (TIFF d'art KIK-IRPA) dépassent facilement la limite par défaut de 256 Mo.
-        QImageReader::setAllocationLimit(0);
+        QImageReader::setAllocationLimit(0); // NOLINT(misc-include-cleaner)
         QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
         QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
         // Icône de toutes les fenêtres (barre de titre, barre des tâches, Alt+Tab) ; resources/resources.qrc.

@@ -256,7 +256,8 @@ namespace StepsNs {
 
         bool openWriters(MosaicWriters& writers, const DataNs::Mosaic& mosaic, std::string& errorMessage,
                          const std::vector<std::uint8_t>& iccProfile = {}) {
-            return writers.image.open(mosaic.imagePath, mosaic.canvasSize, CV_16UC3, errorMessage, iccProfile) &&
+            writers.image.setIccProfile(iccProfile);
+            return writers.image.open(mosaic.imagePath, mosaic.canvasSize, CV_16UC3, errorMessage) &&
                    writers.provenance.open(mosaic.provenancePath, mosaic.canvasSize, CV_16UC1, errorMessage) &&
                    writers.mask.open(mosaic.maskPath, mosaic.canvasSize, CV_8UC1, errorMessage);
         }

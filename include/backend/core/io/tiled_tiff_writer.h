@@ -7,9 +7,11 @@
 #include <tiffio.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace IONs {
@@ -39,7 +41,10 @@ namespace IONs {
             // déclarés RGB : l'appelant fournit des blocs déjà en RGB (pas en BGR d'OpenCV).
             // Crée le dossier de destination si besoin. Renvoie false avec la cause dans errorMessage.
             bool open(const std::filesystem::path& outputPath, cv::Size imageSize, int imageType,
-                      std::string& errorMessage, const std::vector<std::uint8_t>& iccProfile = {});
+                      std::string& errorMessage);
+
+            // Profil ICC à embarquer dans le fichier : à appeler avant open(). Vide (par défaut) : aucun profil.
+            void setIccProfile(std::vector<std::uint8_t> profile) { iccProfile = std::move(profile); }
 
             // Écrit le bloc dont le coin haut-gauche est `blockOrigin` (multiple de BLOCK_SIZE, dans l'image).
             // `block` a le type donné à open() et la taille du bloc : BLOCK_SIZE, ou moins sur les bords droit et bas.
@@ -67,6 +72,7 @@ namespace IONs {
             std::unique_ptr<TIFF, decltype(&TIFFClose)> tiffFile{nullptr, &TIFFClose};
             cv::Mat tileBuffer;               // un bloc complet : libtiff n'écrit que des blocs entiers
             std::vector<bool> writtenBlocks;  // un indicateur par bloc de la grille, ligne par ligne
+            std::vector<std::uint8_t> iccProfile;   // profil ICC à embarquer ; vide : aucun
 
     };
 

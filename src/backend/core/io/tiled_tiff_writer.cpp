@@ -19,6 +19,7 @@
 #include <limits>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace IONs {
 
@@ -54,9 +55,8 @@ namespace IONs {
         }
 
         // Dimensions, canaux, bits par canal, origine en haut à gauche, canaux entrelacés (RGBRGB), modèle
-        // colorimétrique, compression LZW, taille des blocs et profil ICC éventuel.
-        bool configureTiff(TIFF* tiffFile, cv::Size imageSize, int imageType, std::string& errorMessage,
-                           const std::vector<std::uint8_t>& iccProfile = {}) {
+        // colorimétrique, compression LZW et taille des blocs.
+        bool configureTiff(TIFF* tiffFile, cv::Size imageSize, int imageType, std::string& errorMessage) {
             const auto channelCount = static_cast<std::uint16_t>(CV_MAT_CN(imageType));
             const auto bitsPerSample = static_cast<std::uint16_t>(CV_ELEM_SIZE1(imageType) * BITS_PER_BYTE);
             const std::uint16_t photometric = channelCount == 1 ? PHOTOMETRIC_MINISBLACK : PHOTOMETRIC_RGB;
@@ -75,12 +75,16 @@ namespace IONs {
                 errorMessage = "cannot configure TIFF image";
                 return false;
             }
-            if (!iccProfile.empty()) {
-                if (!TIFFSetField(tiffFile, TIFFTAG_ICCPROFILE, static_cast<std::uint32_t>(iccProfile.size()),
-                                  iccProfile.data())) {
-                    errorMessage = "cannot configure TIFF ICC profile";
-                    return false;
-                }
+            return true;
+        }
+
+        // Embarque le profil ICC, s'il y en a un.
+        bool embedIccProfile(TIFF* tiffFile, const std::vector<std::uint8_t>& iccProfile, std::string& errorMessage) {
+            if (iccProfile.empty()) return true;
+            if (!TIFFSetField(tiffFile, TIFFTAG_ICCPROFILE, static_cast<std::uint32_t>(iccProfile.size()),
+                              iccProfile.data())) {
+                errorMessage = "cannot configure TIFF ICC profile";
+                return false;
             }
             return true;
         }
@@ -112,7 +116,7 @@ namespace IONs {
     TiledTiffWriterClass::~TiledTiffWriterClass() { abandon(); }
 
     bool TiledTiffWriterClass::open(const fs::path& outputPath, cv::Size imageSize, int imageType,
-                                    std::string& errorMessage, const std::vector<std::uint8_t>& iccProfile) {
+                                    std::string& errorMessage) {
         if (tiffFile) {
             errorMessage = "TIFF writer is already open";
             return false;
@@ -129,7 +133,8 @@ namespace IONs {
             abandon();
             return false;
         }
-        if (!configureTiff(tiffFile.get(), imageSize, imageType, errorMessage, iccProfile)) {
+        if (!configureTiff(tiffFile.get(), imageSize, imageType, errorMessage) ||
+            !embedIccProfile(tiffFile.get(), iccProfile, errorMessage)) {
             abandon();
             return false;
         }
