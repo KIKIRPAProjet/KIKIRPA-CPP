@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QFrame>
 
 TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, PipelineRunnerClass *pipelineRunner, QWidget *parent)
     : QWidget(parent), m_mainWindow(mainWindow), m_pipelineRunner(pipelineRunner)
@@ -100,18 +101,6 @@ void TopToolbars::createModesBar()
 
     createModeButtons(stages, stageLayout);
 
-    auto *prevPairBtn = FrontendUtils::makeButton(tr("Précédente"), stages);
-    prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
-    prevPairBtn->setVisible(false);
-    stageLayout->addWidget(prevPairBtn);
-    connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
-
-    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante"), stages);
-    nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
-    nextDubiousBtn->setVisible(false);
-    stageLayout->addWidget(nextDubiousBtn);
-    connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
-
     stageLayout->addStretch();
     createActionButtons(stages, stageLayout);
 
@@ -159,17 +148,25 @@ void TopToolbars::createOptionsBar()
 {
     QWidget *modeOptions = new QWidget(this);
     auto *optionsLayout = new QHBoxLayout(modeOptions);
-    optionsLayout->setContentsMargins(10, 3, 10, 3);
+    optionsLayout->setContentsMargins(12, 5, 12, 5);
 
     auto *modeLabel = new QLabel(tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"));
     modeLabel->setObjectName(QStringLiteral("modeDescription"));
+    modeLabel->setStyleSheet(QStringLiteral("font-size:13px; font-weight:500; color:#e0e0e0;"));
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
 
     static_cast<QVBoxLayout *>(layout())->addWidget(modeOptions);
+
+    auto *separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Plain);
+    separator->setFixedHeight(3);
+    separator->setStyleSheet(QStringLiteral("background-color:#202020; border:none;"));
+    static_cast<QVBoxLayout *>(layout())->addWidget(separator);
 }
 
-void TopToolbars::updateTitle(const QString &/*projectName*/, const QString &/*modality*/)
+void TopToolbars::updateTitle(const QString &/*projectName*/)
 {
     // Conservé vide : le nom du projet est directement affiché dans la barre de titre de la fenêtre.
 }
@@ -189,9 +186,6 @@ void TopToolbars::updateDubiousState(int dubiousCount)
         } else {
             alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
-    }
-    if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
-        nextDubiousBtn->setEnabled(dubiousCount > 0);
     }
 }
 

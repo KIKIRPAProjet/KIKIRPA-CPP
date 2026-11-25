@@ -23,6 +23,7 @@
 #include "frontendutils.h"
 #include "homepage.h"
 #include "left_toolbar.h"
+#include "logpanel.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -32,7 +33,6 @@
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
-#include "bottom_tabs.h"
 #include "right_panel.h"
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
@@ -62,6 +62,10 @@
 #include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
+#include <QDialog>
+#include <QHBoxLayout>
+#include <QStyle>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <filesystem>
@@ -125,6 +129,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupPairAlignmentConnections();
 
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        connect(canvasView, &ArtworkCanvas::pairClicked, this, &MainWindow::selectPair);
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
     }
@@ -235,8 +240,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
-        if (workspaceUI->bottomTabs())
-            workspaceUI->bottomTabs()->setVisible(true);
+        if (workspaceUI->logPanel())
+            workspaceUI->logPanel()->setVisible(true);
         sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
@@ -354,7 +359,7 @@ void MainWindow::setupMenuConnections()
             pipelineRunner, &PipelineRunnerClass::showComparison);
     connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
         logVisible = !logVisible;
-        workspaceUI->bottomTabs()->setVisible(logVisible);
+        workspaceUI->logPanel()->setVisible(logVisible);
     });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
@@ -389,20 +394,20 @@ void MainWindow::setupPairAlignmentConnections()
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             connect(alignTab, &AlignmentTab::pairSelectionRequested,
                     this, &MainWindow::selectPair);
+            connect(alignTab, &AlignmentTab::pairIsolationRequested, this, [this](int pairIndex) {
+                selectPair(pairIndex);
+                if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+                    canvasView->setPairIsolated(true);
+            });
             connect(alignTab, &AlignmentTab::nextDubiousRequested,
                     this, &MainWindow::selectNextDubiousPair);
             connect(alignTab, &AlignmentTab::pairValidated,
                     this, &MainWindow::validatePair);
             connect(alignTab, &AlignmentTab::manualOffsetApplied,
                     this, &MainWindow::applyManualPairOffset);
+            connect(alignTab, &AlignmentTab::manualPointsApplied,
+                    this, &MainWindow::applyManualPairPoints);
         }
-    }
-
-    if (TopToolbars *top = workspaceUI->topToolbars()) {
-        connect(top, &TopToolbars::previousPairRequested,
-                this, &MainWindow::selectPreviousPair);
-        connect(top, &TopToolbars::nextDubiousPairRequested,
-                this, &MainWindow::selectNextDubiousPair);
     }
 
     refreshPairViews();
@@ -421,18 +426,7 @@ void MainWindow::selectPair(int pairIndex)
     }
 
     const auto &pair = m_pairs.at(m_currentPairIndex);
-    updateStatus(tr("Paire sélectionnée : %1 (%2)")
-                     .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
-}
-
-void MainWindow::selectPreviousPair()
-{
-    if (m_pairs.isEmpty())
-        return;
-    setMode(3);
-    const int prevIndex = (m_currentPairIndex - 1 + m_pairs.size()) % m_pairs.size();
-    selectPair(prevIndex);
+    updateStatus(tr("Paire sélectionnée : %1 (%2)").arg(pair.pairLabel(), FrontendNs::describePairForOperator(pair).state));
 }
 
 //
@@ -443,12 +437,13 @@ void MainWindow::selectNextDubiousPair()
     setMode(3);
     for (int offset = 1; offset <= m_pairs.size(); ++offset) {
         const int idx = (m_currentPairIndex + offset) % m_pairs.size();
-        if (m_pairs.at(idx).isDubious()) {
+        // Paires à vérifier et paires en échec, comme le filtre « À vérifier seulement » de l'onglet Paire.
+        if (m_pairs.at(idx).isDubious() || m_pairs.at(idx).status == FrontendUtils::PairStatus::Failed) {
             selectPair(idx);
             return;
         }
     }
-    updateStatus(tr("Aucune paire douteuse restante à inspecter."));
+    updateStatus(tr("Aucune paire à vérifier."));
 }
 
 //une fois une paire validée, mise à jour du status
@@ -477,17 +472,70 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
     pair.intervention = tr("manuelle (%1 ; %2 px)")
                             .arg(QString::number(dx, 'f', 1).replace('.', ','),
                                  QString::number(dy, 'f', 1).replace('.', ','));
+    const FrontendNs::ManualCorrection correction = FrontendNs::manualCorrectionFor(pair, dx, dy);
+    const QString pairLabel = pair.pairLabel();
     refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
 
+void MainWindow::applyManualPairPoints(int pairIndex, const QVector<QPointF> &pointsInA,
+                                       const QVector<QPointF> &pointsInB)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    if (pointsInA.isEmpty() || pointsInA.size() != pointsInB.size())
+        return;
+
+    auto &pair = m_pairs[pairIndex];
+    FrontendNs::ManualCorrection correction;
+    correction.tileIdA = pair.tileIndexA;
+    correction.tileIdB = pair.tileIndexB;
+    std::vector<double> offsetsX;
+    std::vector<double> offsetsY;
+    const int count = static_cast<int>(pointsInA.size());
+    offsetsX.reserve(count);
+    offsetsY.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const QPointF &ptA = pointsInA.at(i);
+        const QPointF &ptB = pointsInB.at(i);
+        correction.pointsInA.push_back({ptA.x(), ptA.y()});
+        correction.pointsInB.push_back({ptB.x(), ptB.y()});
+        offsetsX.push_back(ptA.x() - ptB.x());
+        offsetsY.push_back(ptA.y() - ptB.y());
+    }
+    const auto medianOf = [](std::vector<double> values) {
+        const std::size_t mid = values.size() / 2;
+        std::sort(values.begin(), values.end());
+        return (values.size() % 2 == 1) ? values[mid] : (values[mid - 1] + values[mid]) / 2.0;
+    };
+
+    pair.dx = medianOf(std::move(offsetsX));
+    pair.dy = medianOf(std::move(offsetsY));
+    pair.pointsInA = pointsInA;
+    pair.pointsInB = pointsInB;
+    pair.isInlier = QVector<bool>(count, true);
+    pair.totalMatches = count;
+    pair.inlierCount = count;
+    pair.shownInliers = count;
+    pair.shownOutliers = 0;
+    pair.status = FrontendUtils::PairStatus::Validated;
+    pair.statusReason = tr("corrigée à la main");
+    pair.intervention = tr("manuelle (%1 point(s))").arg(count);
+    const QString pairLabel = pair.pairLabel();
+    refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
+
+void MainWindow::submitManualCorrection(const QString &pairLabel, const FrontendNs::ManualCorrection &correction)
+{
     FrontendNs::PipelineChoices choices = projectGrid->state().pipelineChoices;
-    choices.manualCorrections =
-        FrontendNs::withCorrection(choices.manualCorrections, FrontendNs::manualCorrectionFor(pair, dx, dy));
+    choices.manualCorrections = FrontendNs::withCorrection(choices.manualCorrections, correction);
     projectGrid->setPipelineChoices(choices);
     const auto steps = FrontendUtils::pipelineSteps(choices);
     const auto manualStep = std::find_if(steps.begin(), steps.end(), [](const FrontendUtils::PipelineStepInfo &step) {
         return step.technicalName == "manual-matches";
     });
-    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pair.pairLabel()));
+    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pairLabel));
     if (manualStep != steps.end())
         requestRun(static_cast<int>(manualStep - steps.begin()) + 1);
 }
@@ -649,15 +697,81 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    
     const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
-    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
-                        QMessageBox::Open | QMessageBox::Cancel, this);
-    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
-    resumeButton->setEnabled(summary.canResume);
-    opening.exec();
-    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Ouvrir le projet"));
+    dialog.setMinimumWidth(440);
+
+    auto *mainLayout = new QVBoxLayout(&dialog);
+    mainLayout->setContentsMargins(20, 20, 20, 16);
+    mainLayout->setSpacing(18);
+
+    // Contenu : icône d'information + résumé du projet
+    auto *contentLayout = new QHBoxLayout;
+    contentLayout->setSpacing(14);
+    contentLayout->setAlignment(Qt::AlignTop);
+
+    auto *iconLabel = new QLabel(&dialog);
+    iconLabel->setPixmap(dialog.style()->standardPixmap(QStyle::SP_MessageBoxInformation));
+    iconLabel->setAlignment(Qt::AlignTop);
+    contentLayout->addWidget(iconLabel);
+
+    auto *textLabel = new QLabel(summary.text(), &dialog);
+    textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    contentLayout->addWidget(textLabel, 1);
+    mainLayout->addLayout(contentLayout);
+
+    // Barre des boutons
+    auto *btnLayout = new QHBoxLayout;
+    btnLayout->setSpacing(10);
+
+    // Bouton Annuler tout à gauche avec style discret
+    auto *cancelBtn = new QPushButton(tr("Annuler"), &dialog);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:transparent; border:1px solid #484848; color:#9e9e9e; }"
+        "QPushButton:hover { background:#333333; color:#d5d5d5; border-color:#5a5a5a; }"));
+    btnLayout->addWidget(cancelBtn);
+
+    // Espace élastique qui repousse Annuler à gauche et les deux Ouvrir à droite
+    btnLayout->addStretch(1);
+
+    // Bouton Ouvrir classique
+    auto *openBtn = new QPushButton(tr("Ouvrir"), &dialog);
+    openBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(openBtn);
+
+    // Bouton Ouvrir et reprendre (mis en valeur en bleu s'il est disponible)
+    auto *resumeBtn = new QPushButton(tr("Ouvrir et reprendre"), &dialog);
+    resumeBtn->setCursor(Qt::PointingHandCursor);
+    resumeBtn->setEnabled(summary.canResume);
+    if (summary.canResume) {
+        resumeBtn->setProperty("primary", true);
+    }
+    btnLayout->addWidget(resumeBtn);
+
+    mainLayout->addLayout(btnLayout);
+
+    bool accepted = false;
+    bool resume = false;
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(openBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = false;
+        dialog.accept();
+    });
+    connect(resumeBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = true;
+        dialog.accept();
+    });
+
+    if (dialog.exec() != QDialog::Accepted || !accepted)
         return;
-    const bool resume = opening.clickedButton() == resumeButton;
+    
     switchingProject = true;
     mosaicFilePath.clear();
     pipelineRunner->invalidateImageLayers();
@@ -773,18 +887,16 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     const bool isPairMode = (currentMode == 3);
+    if (auto *overviewBtn = workspaceUI->workspace()->findChild<QWidget *>(
+            QStringLiteral("pairOverviewButton"))) {
+        overviewBtn->setVisible(isPairMode);
+    }
     if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
         QStringLiteral("pairOverlayButton"))) {
         overlayBtn->setVisible(isPairMode);
     }
-    if (auto* prevPairBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("prevPairButton"))) {
-        prevPairBtn->setVisible(isPairMode);
-    }
-    if (auto* nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("nextDubiousButton"))) {
-        nextDubiousBtn->setVisible(isPairMode);
-    }
+    if (!isPairMode && workspaceUI->rightPanel() && workspaceUI->rightPanel()->alignmentTab())
+        workspaceUI->rightPanel()->alignmentTab()->cancelPointPickingUi();
     // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
     const bool isExportMode = (currentMode == kModeExport);
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
@@ -811,10 +923,7 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
@@ -1149,7 +1258,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Tab) {
         sideBarVisible = !sideBarVisible;
         workspaceUI->rightTabs()->setVisible(sideBarVisible);
-        workspaceUI->bottomTabs()->setVisible(sideBarVisible);
+        workspaceUI->logPanel()->setVisible(sideBarVisible);
         event->accept();
         return;
     }

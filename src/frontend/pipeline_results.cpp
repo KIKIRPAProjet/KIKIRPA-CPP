@@ -8,12 +8,15 @@
 #include <opencv2/imgproc.hpp>
 
 #include <QFileInfo>
+#include <QCoreApplication>
 #include <QObject>
 #include <QPointF>
 #include <QRectF>
 #include <QSizeF>
+#include <QStringList>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -266,6 +269,81 @@ namespace FrontendNs {
                 }
             }
         }
+    }
+
+    namespace {
+
+        // Raisons connues, reconnues par un mot-clé de leur texte (anglais du backend ou français de l'interface). La
+        // première qui correspond l'emporte : les plus précises d'abord.
+        struct ReasonText {
+            const char *keyword;
+            const char *sentence;
+        };
+        constexpr std::array<ReasonText, 15> REASON_TEXTS = {{
+            {"different sizes", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles n'ont pas la même taille : elles ne peuvent pas être comparées.")},
+            {"cannot read", QT_TRANSLATE_NOOP("PairOperatorText", "Une des deux images n'a pas pu être lue.")},
+            {"not enough common content", QT_TRANSLATE_NOOP("PairOperatorText", "La zone commune contient trop peu de détails (fond noir, reflets, zone uniforme) ou elle est trop petite.")},
+            {"outside the rail margin", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
+            {"touches the border", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
+            {"ambiguous correlation peak", QT_TRANSLATE_NOOP("PairOperatorText", "Aucun décalage net : la zone commune est peu texturée ou répétitive.")},
+            {"motif répété", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage est incertain : la zone commune contient un motif répété.")},
+            {"pic de corrélation ambigu", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage est incertain : plusieurs positions conviennent presque aussi bien.")},
+            {"aucun point local fiable", QT_TRANSLATE_NOOP("PairOperatorText", "Aucun point de contrôle fiable dans la zone commune (zone sans texture ou bruitée).")},
+            {"patchs locaux peu ressemblants", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles se ressemblent peu une fois superposées (fond sombre ou bruit).")},
+            {"contrôle NCC faible", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles se ressemblent peu une fois superposées.")},
+            {"points locaux en désaccord", QT_TRANSLATE_NOOP("PairOperatorText", "Les points de contrôle ne sont pas d'accord avec le décalage mesuré.")},
+            {"score de confiance faible", QT_TRANSLATE_NOOP("PairOperatorText", "Les points trouvés sont peu sûrs.")},
+            {"peu de points", QT_TRANSLATE_NOOP("PairOperatorText", "Peu de points communs ont été trouvés.")},
+            {"nombre de points insuffisant", QT_TRANSLATE_NOOP("PairOperatorText", "Trop peu de points communs ont été trouvés.")},
+        }};
+
+        QString translatedReason(const char *sentence) { return QCoreApplication::translate("PairOperatorText", sentence); }
+
+        // Phrase de la raison connue, sinon celle par défaut de l'état.
+        QString reasonSentence(const PairAlignmentInfo &pair) {
+            for (const ReasonText &reason : REASON_TEXTS)
+                if (pair.statusReason.contains(QString::fromUtf8(reason.keyword), Qt::CaseInsensitive))
+                    return translatedReason(reason.sentence);
+            if (pair.status == PairStatus::Failed) return QObject::tr("Ces deux tuiles n'ont pas pu être reliées.");
+            if (pair.status == PairStatus::Dubious) return QObject::tr("La mesure de cette paire est incertaine.");
+            return {};
+        }
+
+        QString technicalDetails(const PairAlignmentInfo &pair) {
+            QStringList lines;
+            if (!pair.statusReason.isEmpty()) lines << QObject::tr("Raison donnée par le calcul : %1").arg(pair.statusReason);
+            if (pair.totalMatches > 0)
+                lines << QObject::tr("Confiance moyenne des points (0 à 1) : %1")
+                             .arg(QString::number(pair.meanConfidence, 'f', 2).replace('.', ','));
+            lines << QObject::tr("NCC, ressemblance de la zone commune (-1 à 1) : %1").arg(FrontendUtils::formatMeasure(pair.nccScore, 2));
+            return lines.join(QLatin1Char('\n'));
+        }
+
+    }
+
+    PairOperatorText describePairForOperator(const PairAlignmentInfo &pair) {
+        PairOperatorText text{QString(), QString(), technicalDetails(pair)};
+        switch (pair.status) {
+        case PairStatus::Failed:
+            text.state = QObject::tr("Échec");
+            text.explanation = reasonSentence(pair) + QObject::tr(" Saisissez le décalage avec « Corriger… ».");
+            break;
+        case PairStatus::Dubious:
+            text.state = QObject::tr("À vérifier");
+            text.explanation = reasonSentence(pair) + QObject::tr(" Vérifiez la superposition, puis validez ou corrigez.");
+            break;
+        case PairStatus::Validated:
+            text.state = QObject::tr("Validée");
+            text.explanation = pair.statusReason.contains(QStringLiteral("main"))
+                                   ? QObject::tr("Corrigée à la main : le calcul utilise le décalage saisi.")
+                                   : QObject::tr("Validée par l'opérateur.");
+            break;
+        case PairStatus::Reliable:
+            text.state = QObject::tr("Fiable");
+            text.explanation = QObject::tr("Les deux tuiles se superposent correctement.");
+            break;
+        }
+        return text;
     }
 
     ManualCorrection manualCorrectionFor(const PairAlignmentInfo &pair, double dx, double dy) {
