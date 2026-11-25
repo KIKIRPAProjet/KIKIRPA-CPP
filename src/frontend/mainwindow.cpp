@@ -91,21 +91,21 @@ QString technicalStepNameAt(const QString &scriptJson,
 {
     if (stepNumber <= 0)
         return {};
+    const auto index = static_cast<std::size_t>(stepNumber - 1);
     if (!scriptJson.isEmpty()) {
-        try {
-            const nlohmann::json parsed = nlohmann::json::parse(scriptJson.toStdString());
-            if (parsed.contains("pipeline") && parsed["pipeline"].contains("steps")) {
-                const auto &steps = parsed["pipeline"]["steps"];
-                const auto index = static_cast<std::size_t>(stepNumber - 1);
-                if (steps.is_array() && index < steps.size()) {
-                    return QString::fromStdString(steps.at(index).value("name", std::string()));
+        const nlohmann::json parsed = nlohmann::json::parse(scriptJson.toStdString(), nullptr, false);
+        if (parsed.is_object() && parsed.contains("pipeline") && parsed["pipeline"].is_object()
+            && parsed["pipeline"].contains("steps") && parsed["pipeline"]["steps"].is_array()) {
+            const auto &steps = parsed["pipeline"]["steps"];
+            if (index < steps.size() && steps[index].is_object()) {
+                const auto nameIt = steps[index].find("name");
+                if (nameIt != steps[index].end() && nameIt->is_string()) {
+                    return QString::fromStdString(nameIt->get<std::string>());
                 }
             }
-        } catch (const std::exception &) {
         }
     }
     const auto steps = FrontendUtils::pipelineSteps(choices);
-    const auto index = static_cast<std::size_t>(stepNumber - 1);
     if (index < steps.size()) {
         return QString::fromStdString(steps.at(index).technicalName);
     }
