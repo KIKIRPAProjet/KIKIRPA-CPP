@@ -11,6 +11,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QFrame>
 
 TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, PipelineRunnerClass *pipelineRunner, QWidget *parent)
     : QWidget(parent), m_mainWindow(mainWindow), m_pipelineRunner(pipelineRunner)
@@ -155,14 +156,22 @@ void TopToolbars::createOptionsBar()
 {
     QWidget *modeOptions = new QWidget(this);
     auto *optionsLayout = new QHBoxLayout(modeOptions);
-    optionsLayout->setContentsMargins(10, 3, 10, 3);
+    optionsLayout->setContentsMargins(12, 5, 12, 5);
 
     auto *modeLabel = new QLabel(tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"));
     modeLabel->setObjectName(QStringLiteral("modeDescription"));
+    modeLabel->setStyleSheet(QStringLiteral("font-size:13px; font-weight:500; color:#e0e0e0;"));
     optionsLayout->addWidget(modeLabel);
     optionsLayout->addStretch();
 
     static_cast<QVBoxLayout *>(layout())->addWidget(modeOptions);
+
+    auto *separator = new QFrame(this);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Plain);
+    separator->setFixedHeight(3);
+    separator->setStyleSheet(QStringLiteral("background-color:#202020; border:none;"));
+    static_cast<QVBoxLayout *>(layout())->addWidget(separator);
 }
 
 void TopToolbars::updateTitle(const QString &/*projectName*/, const QString &/*modality*/)

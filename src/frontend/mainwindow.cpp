@@ -62,6 +62,10 @@
 #include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
+#include <QDialog>
+#include <QHBoxLayout>
+#include <QStyle>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <filesystem>
@@ -591,15 +595,81 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    
     const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
-    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
-                        QMessageBox::Open | QMessageBox::Cancel, this);
-    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
-    resumeButton->setEnabled(summary.canResume);
-    opening.exec();
-    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Ouvrir le projet"));
+    dialog.setMinimumWidth(440);
+
+    auto *mainLayout = new QVBoxLayout(&dialog);
+    mainLayout->setContentsMargins(20, 20, 20, 16);
+    mainLayout->setSpacing(18);
+
+    // Contenu : icône d'information + résumé du projet
+    auto *contentLayout = new QHBoxLayout;
+    contentLayout->setSpacing(14);
+    contentLayout->setAlignment(Qt::AlignTop);
+
+    auto *iconLabel = new QLabel(&dialog);
+    iconLabel->setPixmap(dialog.style()->standardPixmap(QStyle::SP_MessageBoxInformation));
+    iconLabel->setAlignment(Qt::AlignTop);
+    contentLayout->addWidget(iconLabel);
+
+    auto *textLabel = new QLabel(summary.text(), &dialog);
+    textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    contentLayout->addWidget(textLabel, 1);
+    mainLayout->addLayout(contentLayout);
+
+    // Barre des boutons
+    auto *btnLayout = new QHBoxLayout;
+    btnLayout->setSpacing(10);
+
+    // Bouton Annuler tout à gauche avec style discret
+    auto *cancelBtn = new QPushButton(tr("Annuler"), &dialog);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:transparent; border:1px solid #484848; color:#9e9e9e; }"
+        "QPushButton:hover { background:#333333; color:#d5d5d5; border-color:#5a5a5a; }"));
+    btnLayout->addWidget(cancelBtn);
+
+    // Espace élastique qui repousse Annuler à gauche et les deux Ouvrir à droite
+    btnLayout->addStretch(1);
+
+    // Bouton Ouvrir classique
+    auto *openBtn = new QPushButton(tr("Ouvrir"), &dialog);
+    openBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(openBtn);
+
+    // Bouton Ouvrir et reprendre (mis en valeur en bleu s'il est disponible)
+    auto *resumeBtn = new QPushButton(tr("Ouvrir et reprendre"), &dialog);
+    resumeBtn->setCursor(Qt::PointingHandCursor);
+    resumeBtn->setEnabled(summary.canResume);
+    if (summary.canResume) {
+        resumeBtn->setProperty("primary", true);
+    }
+    btnLayout->addWidget(resumeBtn);
+
+    mainLayout->addLayout(btnLayout);
+
+    bool accepted = false;
+    bool resume = false;
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(openBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = false;
+        dialog.accept();
+    });
+    connect(resumeBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = true;
+        dialog.accept();
+    });
+
+    if (dialog.exec() != QDialog::Accepted || !accepted)
         return;
-    const bool resume = opening.clickedButton() == resumeButton;
+    
     switchingProject = true;
     mosaicFilePath.clear();
     pipelineRunner->invalidateImageLayers();
