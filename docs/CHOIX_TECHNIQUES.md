@@ -36,6 +36,28 @@ ONNX Runtime est utilisé par le backend pour exécuter l'inférence du step d'a
 - **Modèle utilisé** : Le pipeline utilise des exports bout-en-bout issus de [fabio-sim/LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX), combinant l'extracteur de descripteurs et le réseau d'appariement LightGlue - ce qui nous permet de ne pas devoir nous occuper de "donner" les points-clés à LightGlue. Le modèle de référence validé est `raco_aliked_lightglue_pipeline_k1024.onnx` (extracteur ALIKED avec 1024 points clés). Le code supporte également les formats d'export par paires pour SuperPoint et DISK (SuperPoint se débrouillait très bien pendant la phase de test).
 - **Intégration et portabilité** : ONNX Runtime est automatiquement récupéré par CMake via des binaires précompilés officiels pour Windows (x64), Linux (x64) et macOS (universal2). L'inférence est parallélisée sur CPU en limitant l'utilisation des cœurs pour préserver la réactivité du système, avec support optionnel de l'accélération matérielle CoreML sous macOS (très utile pour accélérer significativement la vitesse d'inférence).
 
+### nlohmann/json
+
+nlohmann/json (version 3, `cmake/dependencies_manager.cmake`) est utilisé par le backend pour tout ce qui est au format JSON :
+
+- **Script du pipeline** : lecture et écriture de la configuration (liste des steps, paramètres, entrées et sorties). Les structures C++ sont converties automatiquement avec `NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE` (`StepConfig`, `PipelineConfig` dans `core/config/pipeline_config.h`).
+- **État du run et reprise** : `RunState` (`run.json`), dont le statut est converti par `NLOHMANN_JSON_SERIALIZE_ENUM`.
+- **Checkpoints** : le `manifest.json` de chaque étape et la sérialisation des sorties des steps (`to_json` / `from_json`, par exemple `SiftOutput`, `PairMatches`).
+- **Résultats des steps** : `getResult()` renvoie un objet JSON (compteurs, verdicts, messages d'erreur), lu par l'interface et écrit dans le journal.
+
+**Pourquoi nlohmann/json :**
+
+- **Syntaxe proche du C++ standard** : un objet JSON se manipule comme une `std::map` ou un `std::vector` (`json["clé"]`, `json.at(i)`, boucles `for`), ce qui rend le code lisible par toute l'équipe sans apprendre une API particulière.
+- **Conversion automatique des structures** : une macro suffit pour lire et écrire une structure C++, sans code de copie champ par champ. C'est important pour le pipeline, où chaque step a ses propres paramètres et sorties.
+- **Header-only et facile à intégrer** : pas de compilation séparée. CMake utilise l'installation du système si elle existe, sinon il télécharge la version 3.11.3 automatiquement.
+- **Indépendant de Qt** : le backend ne dépend pas de l'interface (voir « Architecture frontend / backend »). `QJsonDocument` de Qt aurait obligé le backend à dépendre de Qt.
+
+**Alternatives écartées :**
+
+- **QJson (Qt)** : rendait le backend dépendant de Qt.
+- **RapidJSON** : plus rapide, mais API plus bas niveau et plus verbeuse. La vitesse n'est pas un critère ici, car les fichiers JSON du projet sont petits (scripts, états, manifestes) ; le temps de calcul est dans le traitement d'image.
+- **Boost.JSON** : aurait ajouté Boost comme dépendance, lourde pour un seul usage.
+
 ### GoogleTest
 
 GoogleTest est utilisé pour la mise en place et l'exécution des tests unitaires du projet. Il permet de vérifier automatiquement le bon fonctionnement des différentes fonctionnalités développées, de détecter les régressions et de fiabiliser les évolutions du code, sans avoir à développer un système de test spécifique :
