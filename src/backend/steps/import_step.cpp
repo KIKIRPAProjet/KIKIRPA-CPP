@@ -259,9 +259,11 @@ namespace StepsNs {
             sortAndCheckGrid(imageFiles);
             // Comment les cases ont été trouvées : liste, noms des fichiers, ou ordre des noms.
             result["placement"] = cellSourceName(imageFiles.front().cellSource);
-            const fs::path outputDirectory = prepareOutputDirectory(parameters.directory);
             DataNs::TileList tiles;
-            for (const ImageFile& imageFile : imageFiles) tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), outputDirectory));
+            for (const ImageFile& imageFile : imageFiles) {
+                const fs::path tileCacheDirectory = prepareOutputDirectory(imageFile.filePath.parent_path());
+                tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), tileCacheDirectory));
+            }
             linkNeighbours(tiles);
             output.tiles = std::move(tiles);
         } catch (const std::exception& exception) {

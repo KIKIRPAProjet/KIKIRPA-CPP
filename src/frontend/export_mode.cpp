@@ -71,7 +71,15 @@ void MainWindow::showExportDialog()
     const QString defaultImagePath = outputDirectory.isEmpty()
         ? defaultImageName
         : QDir(outputDirectory).filePath(defaultImageName);
-    imagePathEdit->setText(defaultImagePath);
+    const QString baseSourcePath = !mosaicFilePath.isEmpty() ? mosaicFilePath : defaultImagePath;
+    const bool isCroppedInitially = canvas && canvas->isCropped();
+    if (isCroppedInitially) {
+        const QFileInfo sourceInfo(baseSourcePath);
+        imagePathEdit->setText(sourceInfo.dir().filePath(
+            sourceInfo.completeBaseName() + QStringLiteral("_recadree.") + sourceInfo.suffix()));
+    } else {
+        imagePathEdit->setText(baseSourcePath);
+    }
     auto *browseButton = new QPushButton(tr("Parcourir…"), &dialog);
     imagePathLayout->addWidget(imagePathEdit);
     imagePathLayout->addWidget(browseButton);
@@ -151,18 +159,34 @@ void MainWindow::showExportDialog()
 
         destination = requestedFile.absoluteFilePath();
 
-        int counter = 1;
-        while (QFileInfo::exists(destination)) {
-            const QString numberedName =
-                requestedFile.completeBaseName() +
-                QStringLiteral(" (%1).").arg(counter) + extension;
-            destination = destinationDirectory.filePath(numberedName);
-            ++counter;
-        }
+        const bool alreadyAtDestination =
+            (!mosaicFilePath.isEmpty() &&
+             (destination == mosaicFilePath ||
+              QFileInfo(destination).canonicalFilePath() == QFileInfo(mosaicFilePath).canonicalFilePath()));
 
         auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI ? workspaceUI->canvas() : nullptr);
         const bool isCropped = canvas && canvas->isCropped();
 
+        if (isCropped && alreadyAtDestination) {
+            QMessageBox::warning(&dialog, tr("Export impossible"),
+                tr("L'image recadrée ne peut pas écraser la mosaïque complète d'origine. Veuillez choisir un autre nom de fichier (par exemple « %1_recadree.tif »).")
+                    .arg(requestedFile.completeBaseName()));
+            return;
+        }
+
+        // 1. Logique de HEAD : incrémenter le nom si le fichier de destination existe déjà
+        if (!alreadyAtDestination) {
+            int counter = 1;
+            while (QFileInfo::exists(destination)) {
+                const QString numberedName =
+                    requestedFile.completeBaseName() +
+                    QStringLiteral(" (%1).").arg(counter) + extension;
+                destination = destinationDirectory.filePath(numberedName);
+                ++counter;
+            }
+        }
+
+        // 2. Logique de main : gestion de l'export avec ou sans recadrage
         if (isCropped) {
             const QRectF normalizedCropRect = canvas->cropNormalizedRect();
             IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(mosaicFilePath.toStdString()));
@@ -200,7 +224,7 @@ void MainWindow::showExportDialog()
                     return;
                 }
             }
-        } else {
+        } else if (!alreadyAtDestination) {
             QFile sourceFile(mosaicFilePath);
             if (!sourceFile.copy(destination)) {
                 QMessageBox::warning(&dialog, tr("Export impossible"),

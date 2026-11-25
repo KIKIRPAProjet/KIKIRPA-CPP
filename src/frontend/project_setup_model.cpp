@@ -260,6 +260,9 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(
         stepJson, "outputDirectory",
         IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
+    const std::string exportFilename =
+        (setup.projectName.empty() ? "mosaic" : safeFileStem(setup.projectName)) + ".tif";
+    replaceParameter(stepJson, "filename", exportFilename);
   }
   return stepJson;
 }

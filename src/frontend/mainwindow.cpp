@@ -51,6 +51,8 @@
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QLineEdit>
+#include <QAbstractSpinBox>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPixmap>
@@ -615,11 +617,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     const int tileCount = projectGrid->state().tilePaths.size();
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, tileCount);
-    if (tileCount == 0) {
-        updateStatus(tr("Projet créé. Aucun fichier image reconnu dans le dossier des tuiles."));
-    } else {
-        updateStatus(tr("Projet créé avec %1 tuile(s) trouvée(s).").arg(tileCount));
-    }
+    updateStatus(tr("Projet créé."));
     switchingProject = false;
     projectModified = false;
     refreshWindowTitle();
@@ -892,7 +890,7 @@ void MainWindow::refreshGridControls()
 void MainWindow::chooseTilesDirectory()
 {
     const QString directoryPath = QFileDialog::getExistingDirectory(
-        this, tr("Sélectionner un dossier de photos"), QString(),
+        this, tr("Sélectionner un dossier de tuiles"), QString(),
         QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (!directoryPath.isEmpty())
         projectGrid->importTiles(directoryPath);
@@ -967,7 +965,7 @@ void MainWindow::handleTilesImported(const QString &directory, int importedCount
 {
     pipelineRunner->invalidateImageLayers();
     setMode(1);
-    const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
+    const QString msg = tr("%1 tuile(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());
     updateStatus(msg);
     workspaceUI->appendLog(msg);

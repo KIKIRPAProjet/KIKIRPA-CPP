@@ -5,8 +5,10 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QResizeEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPushButton>
 #include <QWheelEvent>
 
 #include <utility>
@@ -28,7 +30,7 @@ constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour 
 constexpr int kModeGrid = 1;
 constexpr int kModeMasks = 2;
 constexpr int kModePair = 3;
-constexpr int MODE_SEAM = 4;
+constexpr int kModeSeam = 4;
 constexpr int kModeAssembly = 5;
 constexpr int kModeExport = 6;   // Image finale
 
@@ -41,10 +43,48 @@ ArtworkCanvas::ArtworkCanvas(QWidget *parent) : QWidget(parent)
     setMinimumSize(kMinimumWidth, kMinimumHeight);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
+
+    m_importFolderButton = FrontendUtils::makeButton(tr("Importer un dossier de tuiles…"), this);
+    m_importFolderButton->setToolTip(tr("Importer toutes les tuiles d'un dossier dans la grille (Ctrl+I)"));
+    m_importFolderButton->setVisible(false);
+    connect(m_importFolderButton, &QPushButton::clicked, this, [this]() {
+        if (importFolderCallback)
+            importFolderCallback();
+    });
     m_imageCache.setMaxCost(kImageCacheMaxBytes);
 }
 
-//enregistrement de la nouvelle paire choisie + envoie l'update pour afficher les bonnes paires à l'écran
+void ArtworkCanvas::setMode(int mode)
+{
+    modeValue = mode;
+    updateImportButtonPosition();
+    update();
+}
+
+void ArtworkCanvas::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateImportButtonPosition();
+}
+
+void ArtworkCanvas::updateImportButtonPosition()
+{
+    if (!m_importFolderButton)
+        return;
+    if (modeValue != kModeGrid) {
+        m_importFolderButton->setVisible(false);
+        return;
+    }
+    m_importFolderButton->setVisible(true);
+    m_importFolderButton->adjustSize();
+
+    // Emplacement fixe dans le coin supérieur droit du canevas
+    const int x = qMax(18, width() - m_importFolderButton->width() - 18);
+    const int y = 8;
+    m_importFolderButton->move(x, y);
+}
+
+// Enregistrement de la nouvelle paire choisie + mise à jour de l'affichage
 void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
 {
     currentPair = pair;
@@ -88,14 +128,45 @@ void ArtworkCanvas::setGridState(int rows, int columns,
     gridColumns = columns;
     gridTiles = tiles;
     selectedGridCell = selectedCell;
+    updateImportButtonPosition();
     update();
 }
 
 void ArtworkCanvas::setGridCallbacks(std::function<void(int)> selectionChanged,
-                                     std::function<void(int, int)> cellsSwapped)
+                                     std::function<void(int, int)> cellsSwapped,
+                                     std::function<void(int)> cellDoubleClicked,
+                                     std::function<void()> cellDeleteRequested)
 {
     selectionChangedCallback = std::move(selectionChanged);
     cellsSwappedCallback = std::move(cellsSwapped);
+    cellDoubleClickedCallback = std::move(cellDoubleClicked);
+    cellDeleteRequestedCallback = std::move(cellDeleteRequested);
+}
+
+void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (modeValue == kModeGrid && event->button() == Qt::LeftButton) {
+        const int cell = gridCellAt(event->pos());
+        if (cell >= 0) {
+            selectedGridCell = cell;
+            if (selectionChangedCallback)
+                selectionChangedCallback(selectedGridCell);
+            if (cellDoubleClickedCallback)
+                cellDoubleClickedCallback(cell);
+            update();
+            event->accept();
+            return;
+        }
+    }
+    if (modeValue == kModeExport && m_activeTool == kCropTool) {
+        const QPoint scenePos = viewTransform().inverted().map(event->pos());   // repère de l'image non zoomée
+        if (m_cropSelectionRect.isValid() && m_cropSelectionRect.contains(scenePos)) {
+            applyCrop();
+            event->accept();
+            return;
+        }
+    }
+    QWidget::mouseDoubleClickEvent(event);
 }
 
 bool ArtworkCanvas::hasActiveImages() const
@@ -154,7 +225,8 @@ ArtworkCanvas::CropHandle ArtworkCanvas::hitTestCropHandle(const QPoint &pos) co
 
 void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
 {
-    if (!hasActiveImages()) {
+    // En mode Image finale, la mosaïque peut exister sans tuiles actives : pas de carte d'import.
+    if (!hasActiveImages() && modeValue != kModeExport) {
         if (event->button() == Qt::LeftButton && emptyImportCardRect().contains(event->pos())) {
             emit importTilesRequested();
             event->accept();
@@ -213,22 +285,55 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
     QWidget::mousePressEvent(event);
 }
 
-void ArtworkCanvas::mouseDoubleClickEvent(QMouseEvent *event)
+// Gestion clavier unique (fusion des deux anciennes définitions)
+void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
 {
-    if (modeValue == kModeExport && m_activeTool == kCropTool) {
-        const QPoint scenePos = viewTransform().inverted().map(event->pos());   // repère de l'image non zoomée
-        if (m_cropSelectionRect.isValid() && m_cropSelectionRect.contains(scenePos)) {
-            applyCrop();
+    // Grille : suppression de la tuile sélectionnée
+    if (modeValue == kModeGrid
+        && (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete)) {
+        if (cellDeleteRequestedCallback) {
+            cellDeleteRequestedCallback();
             event->accept();
             return;
         }
     }
-    QWidget::mouseDoubleClickEvent(event);
+
+    // Alignement : Échap annule la saisie de points / quitte la vue isolée ou superposée
+    if (modeValue == kModePair && event->key() == Qt::Key_Escape) {
+        if (m_pickingPoints) {
+            stopPointPicking();
+            emit pointPickingCancelled();
+            event->accept();
+            return;
+        }
+        if (pairOverlayMode || m_pairIsolated) {
+            setPairOverlayMode(false);
+            setPairIsolated(false);
+            event->accept();
+            return;
+        }
+    }
+
+    // Image finale : validation / annulation du recadrage
+    if (modeValue == kModeExport && m_activeTool == kCropTool) {
+        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
+            applyCrop();
+            event->accept();
+            return;
+        }
+        if (event->key() == Qt::Key_Escape) {
+            cancelCropSelection();
+            event->accept();
+            return;
+        }
+    }
+
+    QWidget::keyPressEvent(event);
 }
 
 void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!hasActiveImages()) {
+    if (!hasActiveImages() && modeValue != kModeExport) {
         const bool hovered = emptyImportCardRect().contains(event->pos());
         if (hovered != m_emptyCardHovered) {
             m_emptyCardHovered = hovered;
@@ -370,7 +475,6 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
     QWidget::mouseMoveEvent(event);
 }
 
-
 void ArtworkCanvas::leaveEvent(QEvent *event)
 {
     if (m_emptyCardHovered) {
@@ -453,37 +557,6 @@ void ArtworkCanvas::wheelEvent(QWheelEvent *event)
     event->accept();
 }
 
-void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
-{
-    if (modeValue == kModePair && event->key() == Qt::Key_Escape) {
-        if (m_pickingPoints) {
-            stopPointPicking();
-            emit pointPickingCancelled();
-            event->accept();
-            return;
-        }
-        if (pairOverlayMode || m_pairIsolated) {
-            setPairOverlayMode(false);
-            setPairIsolated(false);
-            event->accept();
-            return;
-        }
-    }
-    if (modeValue == kModeExport && m_activeTool == kCropTool) {
-        if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-            applyCrop();
-            event->accept();
-            return;
-        }
-        if (event->key() == Qt::Key_Escape) {
-            cancelCropSelection();
-            event->accept();
-            return;
-        }
-    }
-    QWidget::keyPressEvent(event);
-}
-
 int ArtworkCanvas::gridCellAt(const QPoint &point) const
 {
     for (int index = 0; index < gridCellRects.size(); ++index)
@@ -539,10 +612,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     }
 
     // Assemblage et Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
-    if (modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+    if (modeValue == kModeAssembly || modeValue == kModeSeam) {
         beginViewTransform();
         const bool layersDrawn = modeValue == kModeAssembly && !fusedMosaicVisible && drawAssemblyLayers(p);
-        const bool drawn = layersDrawn || drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
+        const bool drawn = layersDrawn || drawMosaicPreview(p, modeValue == kModeSeam || seamVisible);
         p.restore();
         if (drawn) {
             p.setPen(QColor("#dddddd"));
@@ -556,7 +629,7 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    if (modeValue == MODE_SEAM) {
+    if (modeValue == kModeSeam) {
         drawCenteredMessage(p, tr("Lancez l'assemblage pour afficher les lignes de couture calculées."));
         return;
     }
@@ -710,7 +783,8 @@ void ArtworkCanvas::stopPointPicking()
     update();
 }
 
-void ArtworkCanvas::setMosaicPreview(const QImage &image) {
+void ArtworkCanvas::setMosaicPreview(const QImage &image)
+{
     m_mosaicPreview = image;
     m_originalMosaicPreview = image;
     m_isCropped = false;

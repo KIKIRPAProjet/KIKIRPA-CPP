@@ -34,7 +34,7 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *openAction = fileMenu->addAction(tr("Ouvrir un projet…"));
     openAction->setShortcut(QKeySequence::Open);
     connect(openAction, &QAction::triggered, this, &MenuBarManager::openProjectRequested);
-    auto *importAction = fileMenu->addAction(tr("Importer un dossier de photos…"));
+    auto *importAction = fileMenu->addAction(tr("Importer un dossier de tuiles…"));
     importAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+I")));
     connect(importAction, &QAction::triggered, this, &MenuBarManager::importTilesRequested);
     auto *saveAction = fileMenu->addAction(tr("Enregistrer le projet"));

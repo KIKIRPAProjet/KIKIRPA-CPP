@@ -251,19 +251,11 @@ void HomePage::createProject()
         return;
 
     const QString selectedTileDirectory = QFileDialog::getExistingDirectory(
-        this, tr("Choisir le dossier des tuiles"));
+        this, tr("Choisir le dossier de travail"));
     if (selectedTileDirectory.isEmpty())
         return;
 
-    const QFileInfoList tileFiles = QDir(selectedTileDirectory).entryInfoList(
-        {QStringLiteral("*.tif"), QStringLiteral("*.tiff")},
-        QDir::Files, QDir::Name);
-    QStringList tilePaths;
-    for (const QFileInfo &tileFile : tileFiles)
-        tilePaths.append(tileFile.absoluteFilePath());
-
-    emit projectCreationRequested(name, selectedTileDirectory,
-                                  QString(), tilePaths);
+    emit projectCreationRequested(name, QString(), selectedTileDirectory, QStringList());
 }
 
 void HomePage::openProject()

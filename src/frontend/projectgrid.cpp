@@ -137,7 +137,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     const QFileInfoList imageFiles = directory.entryInfoList(
         imageFilters, QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
     if (imageFiles.isEmpty()) {
-        emit messageRequested(tr("Aucune photo trouvée"),
+        emit messageRequested(tr("Aucune tuile trouvée"),
             tr("Le dossier sélectionné ne contient aucune image TIFF compatible "
                "(.tif ou .tiff)."), true);
         return;
@@ -152,8 +152,8 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     }
 
     if (paths.isEmpty()) {
-        emit messageRequested(tr("Photos déjà importées"),
-            tr("Toutes les photos de ce dossier sont déjà dans le projet."), false);
+        emit messageRequested(tr("Tuiles déjà importées"),
+            tr("Toutes les tuiles de ce dossier sont déjà dans le projet."), false);
         return;
     }
 
@@ -444,6 +444,80 @@ void ProjectGrid::toggleSelectedCellEmpty()
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
     emit gridChanged();
+}
+
+void ProjectGrid::addTileToSelectedCell(const QString &path)
+{
+    if (path.isEmpty())
+        return;
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridRows * gridState.gridColumns) {
+        emit statusRequested(tr("Sélectionnez une case de la grille."));
+        return;
+    }
+    while (gridState.gridTiles.size() <= cell)
+        gridState.gridTiles.append(GridTile{});
+
+    const QString oldPath = gridState.gridTiles.at(cell).path;
+    gridState.gridTiles[cell].path = path;
+    gridState.gridTiles[cell].empty = false;
+    gridState.gridTiles[cell].rotation = 0;
+    gridState.gridTiles[cell].flipped = false;
+
+    if (!gridState.tilePaths.contains(path))
+        gridState.tilePaths.append(path);
+
+    if (!oldPath.isEmpty() && oldPath != path) {
+        bool oldStillUsed = false;
+        for (const GridTile &t : std::as_const(gridState.gridTiles)) {
+            if (t.path == oldPath) {
+                oldStillUsed = true;
+                break;
+            }
+        }
+        if (!oldStillUsed)
+            gridState.tilePaths.removeAll(oldPath);
+    }
+
+    if (gridState.tileDirectory.isEmpty())
+        gridState.tileDirectory = QFileInfo(path).absolutePath();
+
+    gridState.gridValidated = false;
+    startBackgroundPyramidGeneration();
+    emit gridUpdated();
+    emit statusRequested(tr("Tuile ajoutée à la case sélectionnée : %1").arg(QFileInfo(path).fileName()));
+}
+
+void ProjectGrid::removeSelectedTile()
+{
+    const int cell = gridState.selectedGridCell;
+    if (cell < 0 || cell >= gridState.gridTiles.size()) {
+        emit statusRequested(tr("Sélectionnez une case de la grille."));
+        return;
+    }
+    const QString oldPath = gridState.gridTiles.at(cell).path;
+    if (oldPath.isEmpty() && !gridState.gridTiles.at(cell).empty) {
+        emit statusRequested(tr("La case sélectionnée ne contient pas de tuile."));
+        return;
+    }
+
+    gridState.gridTiles[cell] = GridTile{};
+
+    if (!oldPath.isEmpty()) {
+        bool oldStillUsed = false;
+        for (const GridTile &t : std::as_const(gridState.gridTiles)) {
+            if (t.path == oldPath) {
+                oldStillUsed = true;
+                break;
+            }
+        }
+        if (!oldStillUsed)
+            gridState.tilePaths.removeAll(oldPath);
+    }
+
+    gridState.gridValidated = false;
+    emit gridUpdated();
+    emit statusRequested(tr("Tuile retirée de la case sélectionnée."));
 }
 
 void ProjectGrid::startBackgroundPyramidGeneration()

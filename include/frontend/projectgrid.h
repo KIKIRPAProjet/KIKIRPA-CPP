@@ -75,6 +75,8 @@ public:
     void rotateSelectedTile();
     void flipSelectedTile();
     void toggleSelectedCellEmpty();
+    void addTileToSelectedCell(const QString &path);
+    void removeSelectedTile();
     // Arrête la préparation des pyramides en arrière-plan après l'image en cours, par exemple quand le calcul démarre :
     // l'import du backend crée lui-même les pyramides manquantes, sans deux lectures d'image en même temps.
     void cancelBackgroundPyramidGeneration();

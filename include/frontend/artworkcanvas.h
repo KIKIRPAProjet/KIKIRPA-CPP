@@ -21,8 +21,11 @@
 
 class QKeyEvent;
 class QMouseEvent;
+class QKeyEvent;
+class QResizeEvent;
 class QPaintEvent;
 class QPainter;
+class QPushButton;
 class QWheelEvent;
 
 /**
@@ -37,7 +40,8 @@ class ArtworkCanvas final : public QWidget
 public:
     explicit ArtworkCanvas(QWidget *parent = nullptr);
 
-    void setMode(int mode) { modeValue = mode; update(); }
+    void setMode(int mode);
+    void setImportFolderCallback(std::function<void()> callback) { importFolderCallback = std::move(callback); }
     void setZoom(int zoom) { zoomPercent = zoom; update(); }
     void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {})
     {
@@ -90,7 +94,9 @@ public:
     void setGridState(int rows, int columns, const QVector<GridTile>& tiles,
         int selectedCell);
     void setGridCallbacks(std::function<void(int)> selectionChanged,
-                          std::function<void(int, int)> cellsSwapped);
+                          std::function<void(int, int)> cellsSwapped,
+                          std::function<void(int)> cellDoubleClicked = nullptr,
+                          std::function<void()> cellDeleteRequested = nullptr);
     void toggleComparison() { comparison = !comparison; update(); }
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
     void toggleMask() { maskVisible = !maskVisible; update(); }
@@ -171,6 +177,7 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
     void paintEvent(QPaintEvent *) override;
     void leaveEvent(QEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
@@ -196,6 +203,8 @@ private:
     bool handlePointPickingClick(const QPointF &scenePos);
     void drawCenteredMessage(QPainter &p, const QString &message);
 
+    void updateImportButtonPosition();
+
     bool hasActiveImages() const;
     QRect emptyImportCardRect() const;
     int gridCellAt(const QPoint &point) const;
@@ -216,6 +225,8 @@ private:
 
     CropHandle hitTestCropHandle(const QPoint &pos) const;
 
+    QPushButton *m_importFolderButton = nullptr;
+    std::function<void()> importFolderCallback;
     int modeValue = 4;
     int zoomPercent = 100;
     QStringList imagePaths;
@@ -227,6 +238,8 @@ private:
     QVector<QRect> gridCellRects;
     std::function<void(int)> selectionChangedCallback;
     std::function<void(int, int)> cellsSwappedCallback;
+    std::function<void(int)> cellDoubleClickedCallback;
+    std::function<void()> cellDeleteRequestedCallback;
     int gridRows = 3;
     int gridColumns = 2;
     int selectedGridCell = 0;
