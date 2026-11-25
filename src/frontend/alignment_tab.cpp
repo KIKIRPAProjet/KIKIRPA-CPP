@@ -509,9 +509,11 @@ void AlignmentTab::showManualAdjustmentDialog()
 
     if (dialog.exec() == QDialog::Accepted)
         emit manualOffsetApplied(m_currentPairIndex, dx->value(), dy->value());
+        m_mainWindow->updateStatus(tr("Correction enregistrée : dx %1 px, dy %2 px.")
+                                       .arg(dx->value())
+                                       .arg(dy->value()));
+    }
 }
-<<<<<<< HEAD
-=======
 
 void AlignmentTab::updateInfo(const QString &projectName, const ProjectGrid::State &gridState)
 {
@@ -524,4 +526,3 @@ void AlignmentTab::updateInfo(const QString &projectName, const ProjectGrid::Sta
                                         .arg(gridState.verticalOverlap));
 }
 
->>>>>>> origin
