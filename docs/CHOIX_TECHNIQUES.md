@@ -36,6 +36,16 @@ ONNX Runtime est utilisé par le backend pour exécuter l'inférence du step d'a
 - **Modèle utilisé** : Le pipeline utilise des exports bout-en-bout issus de [fabio-sim/LightGlue-ONNX](https://github.com/fabio-sim/LightGlue-ONNX), combinant l'extracteur de descripteurs et le réseau d'appariement LightGlue - ce qui nous permet de ne pas devoir nous occuper de "donner" les points-clés à LightGlue. Le modèle de référence validé est `raco_aliked_lightglue_pipeline_k1024.onnx` (extracteur ALIKED avec 1024 points clés). Le code supporte également les formats d'export par paires pour SuperPoint et DISK (SuperPoint se débrouillait très bien pendant la phase de test).
 - **Intégration et portabilité** : ONNX Runtime est automatiquement récupéré par CMake via des binaires précompilés officiels pour Windows (x64), Linux (x64) et macOS (universal2). L'inférence est parallélisée sur CPU en limitant l'utilisation des cœurs pour préserver la réactivité du système, avec support optionnel de l'accélération matérielle CoreML sous macOS (très utile pour accélérer significativement la vitesse d'inférence).
 
+### GoogleTest
+
+GoogleTest est utilisé pour la mise en place et l'exécution des tests unitaires du projet. Il permet de vérifier automatiquement le bon fonctionnement des différentes fonctionnalités développées, de détecter les régressions et de fiabiliser les évolutions du code, sans avoir à développer un système de test spécifique :
+
+- **`gtest`** : fournit les mécanismes nécessaires à l'écriture des tests unitaires, notamment les assertions (`EXPECT_EQ`, `ASSERT_TRUE`, `EXPECT_NEAR`, etc.), les tests indépendants (`TEST`) et les tests avec initialisation commune (`TEST_F`).
+- **`gmock`** : permet de créer des objets simulés (*mocks*) afin de remplacer certaines dépendances lors des tests, de contrôler les interactions entre composants et de tester des comportements sans dépendre de leur implémentation réelle.
+- **Exécution et rapports** : permet de regrouper les tests en suites, de les exécuter automatiquement et d'obtenir des résultats détaillés en cas d'échec, facilitant ainsi l'identification des problèmes.
+
+GoogleTest a été choisi car il s'agit d'un framework de test largement utilisé dans l'écosystème C++, offrant une syntaxe claire, des mécanismes d'assertion complets et une intégration simple avec les systèmes de compilation et d'intégration continue. Il permet ainsi de garantir plus facilement la fiabilité du code et de limiter l'apparition de régressions lors des développements. Il est ce que pytest est à Python ou vitest à Node.js
+
 
 ## Architecture frontend / backend
 
