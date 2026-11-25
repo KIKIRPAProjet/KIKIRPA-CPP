@@ -26,23 +26,28 @@
 #include <QSaveFile>
 
 #include <array>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
 namespace {
 
-constexpr int LAST_PROJECT_MODE = 6;   // 0 Projet … 4 Ligne de couture, 5 Assemblage, 6 Export
+constexpr int LAST_PROJECT_MODE = 4;   // 0 Projet, 1 Tuiles, 2 Alignement, 3 Ligne de couture, 4 Image finale
+// Anciens fichiers : la clé "mode" comptait aussi les pages Masques (2) et Assemblage (5), retirées depuis.
+constexpr std::array<int, 7> LEGACY_MODE_TO_PAGE = {0, 1, 1, 2, 3, 3, 4};
 
 // Les anciens projets n'ont pas de script ; ils restent consultables avec le mode par défaut.
 bool readResumeData(const QJsonObject &project, ProjectData &loaded, QString *errorMessage)
 {
-    const QJsonValue mode = project.value(QStringLiteral("mode"));
+    const bool legacy = !project.contains(QStringLiteral("page"));
+    const QJsonValue mode = project.value(legacy ? QStringLiteral("mode") : QStringLiteral("page"));
+    const int lastMode = legacy ? static_cast<int>(LEGACY_MODE_TO_PAGE.size()) - 1 : LAST_PROJECT_MODE;
     if (!mode.isUndefined() && (!mode.isDouble() || mode.toDouble() != mode.toInt(-1) ||
-                               mode.toInt(-1) < 0 || mode.toInt(-1) > LAST_PROJECT_MODE)) {
+                               mode.toInt(-1) < 0 || mode.toInt(-1) > lastMode)) {
         if (errorMessage) *errorMessage = QStringLiteral("La page de travail enregistrée est invalide.");
         return false;
     }
-    loaded.mode = mode.toInt(0);
+    loaded.mode = legacy ? LEGACY_MODE_TO_PAGE.at(static_cast<std::size_t>(mode.toInt(0))) : mode.toInt(0);
     if (!project.contains(QStringLiteral("backendScript"))) return true;
     const QJsonValue script = project.value(QStringLiteral("backendScript"));
     if (!script.isObject()) {
@@ -237,7 +242,7 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     project.insert(QStringLiteral("formatVersion"), QStringLiteral("1.0"));
     project.insert(QStringLiteral("projectName"), projectName);
     project.insert(QStringLiteral("savedAt"), QDateTime::currentDateTime().toString(Qt::ISODate));
-    project.insert(QStringLiteral("mode"), mode);
+    project.insert(QStringLiteral("page"), mode);
     project.insert(QStringLiteral("tileDirectory"), gridState.tileDirectory);
     project.insert(QStringLiteral("outputDirectory"), outputDirectory);
     project.insert(QStringLiteral("gridRows"), gridState.gridRows);

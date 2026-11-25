@@ -605,7 +605,7 @@ TEST_F(PipelineWorkerTestClass, FullTwoByTwoGridPipelineRunUpToExport) {
     EXPECT_GT(mosaic.rows, TILE_HEIGHT);
 }
 
-TEST_F(PipelineWorkerTestClass, AssemblyControlsChangeRenderedPixelsAfterFullPipeline) {
+TEST_F(PipelineWorkerTestClass, LayerControlsChangeRenderedPixelsInFinalImage) {
     constexpr int firstPatchLeft = 124;
     constexpr int secondPatchLeft = 164;
     const auto firstPath = tilesDirectory / "img_C00_R00.tif";
@@ -649,7 +649,7 @@ TEST_F(PipelineWorkerTestClass, AssemblyControlsChangeRenderedPixelsAfterFullPip
     EXPECT_NEAR((layers[1].worldRect.left() - layers[0].worldRect.left()) * pyramidScale, TILE_SHIFT, 2.0);
     EXPECT_NEAR((layers[1].worldRect.top() - layers[0].worldRect.top()) * pyramidScale, 0.0, 2.0);
 
-    auto *assembly = window.findChild<QPushButton *>(QStringLiteral("mode5"));
+    auto *assembly = window.findChild<QPushButton *>(QStringLiteral("mode4"));   // Image finale
     auto *global = window.findChild<QSlider *>(QStringLiteral("globalOpacitySlider"));
     auto *individual = window.findChild<QSlider *>(QStringLiteral("layerOpacitySlider"));
     auto *selector = window.findChild<QComboBox *>(QStringLiteral("layerSelector"));
@@ -696,7 +696,7 @@ TEST_F(PipelineWorkerTestClass, AssemblyControlsChangeRenderedPixelsAfterFullPip
     EXPECT_EQ(grayAt(canvas->grab().toImage(), zoomedProbe), FIRST_TIFF_GRAY);
 }
 
-TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
+TEST_F(PipelineWorkerTestClass, FinalImageKeepsSeamPairAndZoomedExportCrop) {
     MainWindow window;
     auto *runner = window.findChild<PipelineRunnerClass *>();
     auto *canvas = window.findChild<ArtworkCanvas *>();
@@ -730,7 +730,7 @@ TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
         ASSERT_TRUE(button->isEnabled());
         button->click();
     };
-    selectMode("mode5");
+    selectMode("mode4");   // Image finale, calques superposés
     const QImage withSeams = canvas->grab().toImage();
     canvas->setSeamVisible(false);
     const QImage withoutSeams = canvas->grab().toImage();
@@ -740,11 +740,14 @@ TEST_F(PipelineWorkerTestClass, AssemblyKeepsSeamPairAndZoomedExportCrop) {
     ASSERT_NE(fused, nullptr);
     fused->click();
     const QImage fusedWithoutSeams = canvas->grab().toImage();
-    selectMode("mode4");
+    canvas->setSeamVisible(true);   // la case « Lignes de couture » agit aussi sur la mosaïque fusionnée
     EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
-    selectMode("mode3");
+    canvas->setSeamVisible(false);
+    selectMode("mode3");   // Ligne de couture
     EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
-    selectMode("mode6");
+    selectMode("mode2");   // Alignement
+    EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
+    selectMode("mode4");   // Image finale
     EXPECT_EQ(canvas->mosaicPreview(), originalMosaic);
 
     canvas->setActiveTool(CROP_TOOL);

@@ -298,7 +298,7 @@ std::pair<TilePlacement, TilePlacement> superposedPairPlacements(const FrontendU
 
 bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
 {
-    // Les coutures des vues Assemblage et Ligne de couture utilisent le repère de la mosaïque entière.
+    // Les coutures des vues Ligne de couture et Image finale utilisent le repère de la mosaïque entière.
     if (m_originalMosaicPreview.isNull())
         return false;
     const QRect target = rect().adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
@@ -310,6 +310,11 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
     p.drawImage(topLeft, fitted);
     if (withSeams) drawSeamLines(p, QRectF(topLeft, fitted.size()), m_seamLines);
     return true;
+}
+
+void ArtworkCanvas::drawSeamOverlay(QPainter &p, const QRectF &imageRect)
+{
+    drawSeamLines(p, imageRect, m_seamLines);
 }
 
 bool ArtworkCanvas::drawAssemblyLayers(QPainter &p)

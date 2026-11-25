@@ -60,6 +60,17 @@ TEST_F(ProjectSerializerTestClass, LoadsLegacyProjectWithoutScriptOrMode) {
     EXPECT_FALSE(ProjectSerializer::summarize(loaded).canResume);
 }
 
+TEST_F(ProjectSerializerTestClass, ConvertsLegacyModeToCurrentPage) {
+    writeJson(projectPath(), {{"mode", 6}});
+    ProjectData loaded;
+    ASSERT_TRUE(ProjectSerializer::loadFromFile(projectPath(), &loaded));
+    EXPECT_EQ(loaded.mode, 4);   // ancienne page Image finale
+
+    writeJson(projectPath(), {{"mode", 5}});
+    ASSERT_TRUE(ProjectSerializer::loadFromFile(projectPath(), &loaded));
+    EXPECT_EQ(loaded.mode, 3);   // ancienne page Assemblage : Ligne de couture
+}
+
 TEST_F(ProjectSerializerTestClass, RejectsInvalidMode) {
     writeJson(projectPath(), {{"mode", 100}});
     ProjectData loaded;

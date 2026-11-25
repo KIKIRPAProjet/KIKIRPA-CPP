@@ -81,8 +81,8 @@
 #endif
 
 namespace {
-constexpr int ASSEMBLY_MODE = 5;
-constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+constexpr int kModeAlignment = 2;   // Alignement (voir FrontendUtils::MODE_NAMES)
+constexpr int kModeExport = 4;   // Image finale
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
@@ -310,7 +310,7 @@ void MainWindow::setupMenuConnections()
             qApp, &QApplication::quit);
     connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
         sideBarVisible = !sideBarVisible;
-        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        refreshRightPanelVisibility();
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -396,7 +396,7 @@ void MainWindow::selectPair(int pairIndex)
     m_currentPairIndex = qBound(0, pairIndex, m_pairs.size() - 1);
     refreshPairViews();
 
-    if (currentMode == 3 && workspaceUI->rightPanel()) {
+    if (currentMode == kModeAlignment && workspaceUI->rightPanel()) {
         workspaceUI->rightPanel()->showPairTab();
     }
 
@@ -409,7 +409,7 @@ void MainWindow::selectNextDubiousPair()
 {
     if (m_pairs.isEmpty())
         return;
-    setMode(3);
+    setMode(kModeAlignment);
     for (int offset = 1; offset <= m_pairs.size(); ++offset) {
         const int idx = (m_currentPairIndex + offset) % m_pairs.size();
         // Paires à vérifier et paires en échec, comme le filtre « À vérifier seulement » de l'onglet Paire.
@@ -550,7 +550,7 @@ void MainWindow::refreshPairViews()
         status->updatePairSummary(m_pairs.isEmpty() ? 0 : m_currentPairIndex + 1, m_pairs.size(), dubiousCount, failedCount);
     }
 
-    if (currentMode == 3 && !m_pairs.isEmpty()) {
+    if (currentMode == kModeAlignment && !m_pairs.isEmpty()) {
         if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription"))) {
             label->setText(tr("Vue Paire : %1 (gauche) et %2 (droite) · zoom synchronisé · zone orange = recouvrement")
                                .arg(currentPair.tileA, currentPair.tileB));
@@ -763,42 +763,38 @@ void MainWindow::setMode(int mode)
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     if (QTabWidget *tabs = workspaceUI->rightTabs()) {
-        const bool isGridMode = (currentMode == 1);
-        const bool isPairMode = (currentMode == 3);
-        const bool isLayersMode = (currentMode != 1);
-
-        if (tabs->count() >= 4) {
-            tabs->setTabEnabled(0, isGridMode);
-            tabs->setTabToolTip(0, isGridMode ? QString() : tr("Disponible uniquement en mode Tuiles"));
-
-            tabs->setTabEnabled(1, true); // Chaîne toujours accessible
-
-            tabs->setTabEnabled(2, isPairMode);
-            tabs->setTabToolTip(2, isPairMode ? QString() : tr("Disponible uniquement en mode Alignement"));
-
-            tabs->setTabEnabled(3, isLayersMode);
-            tabs->setTabToolTip(3, isLayersMode ? QString() : tr("Indisponible en mode Tuiles"));
+        // Onglets par mode (0 Grille, 1 Chaîne, 2 Paire, 3 Calques) : Tuiles -> Grille et Chaîne,
+        // Alignement -> Paire, Image finale -> Calques. Projet et Ligne de couture n'ont pas de panneau de droite.
+        const auto isShown = [this](int index) {
+            if (currentMode == 1)
+                return index == 0 || index == 1;
+            if (currentMode == kModeAlignment)
+                return index == 2;
+            if (currentMode == kModeExport)
+                return index == 3;
+            return false;
+        };
+        for (int index = 0; index < tabs->count(); ++index) {
+            tabs->setTabVisible(index, isShown(index));
+            tabs->setTabEnabled(index, isShown(index));
         }
-
-        if (isGridMode) {
-            tabs->setCurrentIndex(0);
-        } else if (currentMode == 2 || currentMode == ASSEMBLY_MODE) {
-            tabs->setCurrentIndex(3);
-        } else if (isPairMode) {
-            tabs->setCurrentIndex(2);
-        } else if (tabs->currentIndex() >= 0 && !tabs->isTabEnabled(tabs->currentIndex())) {
-            tabs->setCurrentIndex(1); // Chaîne par défaut
+        if (tabs->currentIndex() < 0 || !isShown(tabs->currentIndex())) {
+            for (int index = 0; index < tabs->count(); ++index) {
+                if (isShown(index)) {
+                    tabs->setCurrentIndex(index);
+                    break;
+                }
+            }
         }
     }
+    refreshRightPanelVisibility();
     if (auto *button = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(currentMode)))
         button->setChecked(true);
 
     const QStringList descriptions = {
         tr("Projet : aperçu général"), tr("Vue Grille de tuiles : organiser et vérifier l'import"),
-        tr("Tuile r00_c00 : rouge : bords sombres proposés · bleu : lasso en cours"),
         tr("Vue Paire : points de contrôle et correction"),
         tr("Ligne de couture : frontières entre les tuiles, calculées par l'assemblage"),
-        tr("Calques : mosaïque, tuiles, coutures, erreur d'alignement"),
         tr("Image finale : TIFF 16 bits, profil ICC conservé")
     };
     if (auto *label = workspaceUI->workspace()->findChild<QLabel *>(QStringLiteral("modeDescription")))
@@ -810,12 +806,12 @@ void MainWindow::setMode(int mode)
     if (workspaceUI->canvas())
         workspaceUI->canvas()->setVisible(currentMode != 0);
     if (workspaceUI->leftToolbar())
-        workspaceUI->leftToolbar()->setVisible(currentMode == 2 || currentMode == 3 || currentMode == kModeExport);
+        workspaceUI->leftToolbar()->setVisible(currentMode == kModeAlignment || currentMode == kModeExport);
     if (auto *canvasControls = workspaceUI->workspace()->findChild<QWidget *>(
                 QStringLiteral("canvasControls"))) {
         canvasControls->setVisible(currentMode != 0);
     }
-    const bool isPairMode = (currentMode == 3);
+    const bool isPairMode = (currentMode == kModeAlignment);
     if (auto *overviewBtn = workspaceUI->workspace()->findChild<QWidget *>(
             QStringLiteral("pairOverviewButton"))) {
         overviewBtn->setVisible(isPairMode);
@@ -852,12 +848,23 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    if (currentMode == 3) {
+    if (currentMode == kModeAlignment) {
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
     }
     updateStatus(tr("Mode : %1").arg(FrontendUtils::MODE_NAMES.at(currentMode)));
+}
+
+void MainWindow::refreshRightPanelVisibility()
+{
+    QTabWidget *tabs = workspaceUI->rightTabs();
+    if (!tabs)
+        return;
+    bool hasShownTab = false;
+    for (int index = 0; index < tabs->count(); ++index)
+        hasShownTab = hasShownTab || tabs->isTabVisible(index);
+    tabs->setVisible(sideBarVisible && hasShownTab);
 }
 
 void MainWindow::refreshProjectInfo()
@@ -867,7 +874,7 @@ void MainWindow::refreshProjectInfo()
 
     const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
     const QString lockedTip = hasTiles ? QString() : tr("Importez d'abord un dossier de tuiles");
-    for (int m = 2; m <= 5; ++m) {
+    for (int m = kModeAlignment; m < kModeExport; ++m) {
         if (auto *btn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(m))) {
             btn->setEnabled(hasTiles);
             btn->setToolTip(lockedTip);
@@ -1188,7 +1195,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
         sideBarVisible = !sideBarVisible;
-        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        refreshRightPanelVisibility();
         workspaceUI->logPanel()->setVisible(sideBarVisible);
         event->accept();
         return;

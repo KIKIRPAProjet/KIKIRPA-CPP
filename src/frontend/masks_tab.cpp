@@ -25,19 +25,14 @@ MasksTab::MasksTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *paren
 {
     auto *layersLayout = new QVBoxLayout(this);
     layersLayout->addWidget(new QLabel(tr("Calques")));
-    const QStringList layerNames = {tr("Lignes de couture"), tr("Erreur d'alignement"),
-                                    tr("Masques")};
+    const QStringList layerNames = {tr("Lignes de couture"), tr("Erreur d'alignement")};
     for (const QString &name : layerNames) {
         auto *check = new QCheckBox(name);
         check->setChecked(true);
         layersLayout->addWidget(check);
         connect(check, &QCheckBox::toggled, this, [this, name](bool checked) {
             m_mainWindow->updateStatus(tr("Calque « %1 » %2.").arg(name, checked ? tr("affiché") : tr("masqué")));
-            if (name == tr("Masques")) {
-                m_mainWindow->maskVisible = checked;
-                m_canvas->setMaskVisible(checked);
-            }
-            else if(name == tr("Lignes de couture")){
+            if (name == tr("Lignes de couture")) {
                 m_canvas->setSeamVisible(checked);
             }
             else if (name == tr("Erreur d'alignement")) {

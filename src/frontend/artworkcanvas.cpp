@@ -6,7 +6,6 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QWheelEvent>
 
 #include <utility>
@@ -26,11 +25,9 @@ constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour 
 
 // Modes de l'espace de travail (voir FrontendUtils::MODE_NAMES).
 constexpr int kModeGrid = 1;
-constexpr int kModeMasks = 2;
-constexpr int kModePair = 3;
-constexpr int MODE_SEAM = 4;
-constexpr int kModeAssembly = 5;
-constexpr int kModeExport = 6;   // Image finale
+constexpr int kModePair = 2;
+constexpr int MODE_SEAM = 3;
+constexpr int kModeExport = 4;   // Image finale
 
 // Index de l'outil de recadrage dans la barre latérale gauche.
 constexpr int kCropTool = 9;
@@ -511,10 +508,28 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
     };
 
     if (modeValue == kModeExport) {
+        // Calques superposés (onglet Calques), sauf si la mosaïque fusionnée est demandée ou pendant un recadrage,
+        // qui s'applique toujours à la mosaïque fusionnée.
+        const bool cropping = m_activeTool == kCropTool || m_isCropped;
+        if (!fusedMosaicVisible && !cropping) {
+            beginViewTransform();
+            const bool layersDrawn = drawAssemblyLayers(p);
+            p.restore();
+            if (layersDrawn) {
+                p.setPen(QColor("#dddddd"));
+                p.drawText(QRect(14, height() - 30, 160, 20), Qt::AlignLeft,
+                           QString::number(zoomPercent) + QStringLiteral(" %"));
+                return;
+            }
+        }
         if (!m_mosaicPreview.isNull()) {
             const QRect displayedRect = mosaicDisplayedRect();
             beginViewTransform();
             p.drawImage(QRectF(displayedRect), m_mosaicPreview);
+            // Mosaïque fusionnée demandée dans l'onglet Calques : la case « Lignes de couture » s'y applique aussi.
+            // Pas sur une image recadrée : les coutures sont dans le repère de la mosaïque entière.
+            if (fusedMosaicVisible && seamVisible && !cropping)
+                drawSeamOverlay(p, QRectF(displayedRect));
 
             // Surcouche interactive de recadrage si l'outil est sélectionné
             if (m_activeTool == kCropTool) {
@@ -538,11 +553,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         return;
     }
 
-    // Assemblage et Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
-    if (modeValue == kModeAssembly || modeValue == MODE_SEAM) {
+    // Ligne de couture : la mosaïque et ses coutures suivent le zoom, le message et le pourcentage non.
+    if (modeValue == MODE_SEAM) {
         beginViewTransform();
-        const bool layersDrawn = modeValue == kModeAssembly && !fusedMosaicVisible && drawAssemblyLayers(p);
-        const bool drawn = layersDrawn || drawMosaicPreview(p, modeValue == MODE_SEAM || seamVisible);
+        const bool drawn = drawMosaicPreview(p, true);
         p.restore();
         if (drawn) {
             p.setPen(QColor("#dddddd"));
@@ -595,34 +609,6 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
         drawPhoto(p, firstImageRect, imagePaths.first());
     else
         drawPainting(p, firstImageRect);
-
-    if (modeValue == kModeMasks && maskVisible) {
-        QPainterPath maskPath;
-        maskPath.moveTo(x0 + imageW * 0.10, y0);
-        maskPath.lineTo(x0 + imageW * 0.98, y0);
-        maskPath.lineTo(x0 + imageW * 0.98, y0 + imageH * 0.06);
-        maskPath.lineTo(x0 + imageW * 0.12, y0 + imageH * 0.10);
-        maskPath.closeSubpath();
-        p.fillPath(maskPath, QColor(185, 39, 36, 150));
-        p.setPen(QPen(QColor("#ef5149"), 2));
-        p.drawPath(maskPath);
-        p.setPen(QColor("#eeeeee"));
-        p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
-                   tr("Masque d'exclusion : proposition"));
-    } else if (modeValue == kModeAssembly) {
-        // Pas encore de mosaïque calculée : la première tuile, sans couture ni erreur simulées.
-        if (comparison) {
-            p.setPen(QPen(QColor("#f0cf36"), 2));
-            p.drawLine(x0 + imageW / 2, y0, x0 + imageW / 2, y0 + imageH);
-            p.fillRect(QRect(x0, y0, imageW / 2, imageH), QColor(225, 188, 40, 30));
-        }
-        p.setPen(QPen(QColor("#e4ca37"), 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRect(QRect(x0, y0, imageW, imageH));
-        p.setPen(QColor("#dddddd"));
-        p.drawText(QRect(x0, y0 - 24, imageW, 20), Qt::AlignLeft,
-                   tr("La mosaïque s'affichera ici après l'assemblage."));
-    }
 
     p.restore();
     p.setPen(QColor("#dddddd"));

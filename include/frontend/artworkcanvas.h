@@ -26,7 +26,7 @@ class QPainter;
 class QWheelEvent;
 
 /**
- * Zone d'affichage centrale : œuvre, grille de tuiles, paire, masque et couture.
+ * Zone d'affichage centrale : œuvre, grille de tuiles, paire, couture et image finale.
  * L'implémentation est répartie entre artworkcanvas.cpp (événements, paintEvent)
  * et artworkcanvas_draw.cpp (fonctions de dessin).
  */
@@ -47,7 +47,7 @@ public:
         update();
     }
 
-    // Facteur de rendu commun aux couches TIFF en mode Assemblage.
+    // Facteur de rendu commun aux couches TIFF en mode Image finale.
     void setGlobalImageLayerOpacity(qreal opacity)
     {
         globalImageLayerOpacity = qBound(qreal(0), opacity, qreal(1));
@@ -93,14 +93,12 @@ public:
                           std::function<void(int, int)> cellsSwapped);
     void toggleComparison() { comparison = !comparison; update(); }
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
-    void toggleMask() { maskVisible = !maskVisible; update(); }
-    void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     // Définit et mémorise l'aperçu de la mosaïque assemblée pour le mode Image finale.
     void setMosaicPreview(const QImage &image);
 
     // Retourne l'aperçu actuel de la mosaïque (recadré ou original).
     const QImage &mosaicPreview() const { return m_mosaicPreview; }
-    // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
+    // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Ligne de couture et Image finale.
     void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
     void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
@@ -112,7 +110,7 @@ public:
         m_allPairs = pairs;
         update();
     }
-    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture dans les modes Assemblage et Export
+    void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture en mode Image finale
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
     void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
     void setPairIsolated(bool isolated);   // afficher uniquement les 2 tuiles de la paire courante
@@ -183,6 +181,8 @@ private:
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
     bool drawAssemblyLayers(QPainter &p);
+    // Lignes de couture calculées, ajustées au rectangle où la mosaïque entière est dessinée.
+    void drawSeamOverlay(QPainter &p, const QRectF &imageRect);
     // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawMosaicPreview(QPainter &p, bool withSeams);
     // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,
@@ -216,7 +216,7 @@ private:
 
     CropHandle hitTestCropHandle(const QPoint &pos) const;
 
-    int modeValue = 4;
+    int modeValue = 3;
     int zoomPercent = 100;
     QStringList imagePaths;
     QVector<ImageLayer> imageLayers;
@@ -232,7 +232,6 @@ private:
     int selectedGridCell = 0;
     int dragStartCell = -1;
     int dragTargetCell = -1;
-    bool maskVisible = true;
     bool comparison = false;
     QImage m_mosaicPreview;
     SeamLines m_seamLines;
