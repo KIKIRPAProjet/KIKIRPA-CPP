@@ -83,6 +83,34 @@
 namespace {
 constexpr int ASSEMBLY_MODE = 5;
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+
+// Retrouve le nom technique d'une étape à partir du script exécuté (ou des choix de la chaîne en repli).
+QString technicalStepNameAt(const QString &scriptJson,
+                            const FrontendNs::PipelineChoices &choices,
+                            int stepNumber)
+{
+    if (stepNumber <= 0)
+        return {};
+    if (!scriptJson.isEmpty()) {
+        try {
+            const nlohmann::json parsed = nlohmann::json::parse(scriptJson.toStdString());
+            if (parsed.contains("pipeline") && parsed["pipeline"].contains("steps")) {
+                const auto &steps = parsed["pipeline"]["steps"];
+                const auto index = static_cast<std::size_t>(stepNumber - 1);
+                if (steps.is_array() && index < steps.size()) {
+                    return QString::fromStdString(steps.at(index).value("name", std::string()));
+                }
+            }
+        } catch (const std::exception &) {
+        }
+    }
+    const auto steps = FrontendUtils::pipelineSteps(choices);
+    const auto index = static_cast<std::size_t>(stepNumber - 1);
+    if (index < steps.size()) {
+        return QString::fromStdString(steps.at(index).technicalName);
+    }
+    return {};
+}
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
@@ -251,19 +279,22 @@ void MainWindow::setupPipelineConnections()
                 workspaceUI->currentStepLabel()->setText(stepName);
                 workspaceUI->setActiveStep(stepNumber);
 
-                if (stepName.contains(QLatin1String("OK"))) {
+                if (!pipelineResultsStale && stepName.contains(QLatin1String("OK"))) {
+                    const QString techName = technicalStepNameAt(
+                        pipelineRunner->getScriptJson(),
+                        projectGrid->state().pipelineChoices,
+                        stepNumber);
                     if (auto *top = workspaceUI->topToolbars()) {
-                        if (stepNumber >= 1) {
+                        if (techName == QLatin1String("import")) {
                             top->setModeEnabled(1, true); // 2 Tuiles
                             top->setModeEnabled(2, true); // 3 Masques
-                        }
-                        if (stepNumber >= 2) {
+                        } else if (techName == QLatin1String("phase-correlation")
+                                   || techName == QLatin1String("sift")
+                                   || techName == QLatin1String("lightglue")
+                                   || techName == QLatin1String("vote-2d")
+                                   || techName == QLatin1String("manual-matches")) {
                             top->setModeEnabled(3, true); // 4 Alignement (après appariement)
-                        }
-                        if (stepNumber >= 5) {
-                            top->setModeEnabled(4, true); // 5 Ligne de couture (après GraphCut)
-                        }
-                        if (stepNumber >= 6) {
+                        } else if (techName == QLatin1String("fusion")) {
                             top->setModeEnabled(5, true); // 6 Assemblage (après fusion)
                         }
                     }
@@ -287,6 +318,14 @@ void MainWindow::setupPipelineConnections()
             workspaceUI, &WorkspaceUI::appendLog);
     connect(pipelineRunner, &PipelineRunnerClass::imageLayersReady,
             workspaceUI, &WorkspaceUI::setImageLayers);
+    connect(pipelineRunner, &PipelineRunnerClass::intermediatePreviewReady,
+            this, [this](const QImage &image) {
+                if (pipelineResultsStale || image.isNull())
+                    return;
+                if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+                    canvas->setMosaicPreview(image);
+                }
+            });
     connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
@@ -587,11 +626,24 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
     if (pipelineResultsStale)
         return;
+    int preservedPairIndex = 0;
+    bool selectedPairPreserved = false;
+    if (!m_pairs.isEmpty() && m_currentPairIndex >= 0 && m_currentPairIndex < m_pairs.size() && !results.pairs.isEmpty()) {
+        const auto &prevPair = m_pairs.at(m_currentPairIndex);
+        for (int i = 0; i < results.pairs.size(); ++i) {
+            const auto &candidate = results.pairs.at(i);
+            if (candidate.tileIndexA == prevPair.tileIndexA && candidate.tileIndexB == prevPair.tileIndexB) {
+                preservedPairIndex = i;
+                selectedPairPreserved = true;
+                break;
+            }
+        }
+    }
     m_pairs = results.pairs;
-    m_currentPairIndex = 0;
+    m_currentPairIndex = selectedPairPreserved ? preservedPairIndex : 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         canvasView->setSeamLines(results.seams);
-        canvasView->setAlignmentOverview(results.tiles, results.pairs);
+        canvasView->setAlignmentOverview(results.tiles, results.pairs, selectedPairPreserved);
     }
     refreshPairViews();
 
@@ -609,6 +661,10 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
         // Si le calcul a produit des lignes de couture
         if (!results.seams.isEmpty()) {
             top->setModeEnabled(4, true); // Débloque mode "5 Ligne de couture"
+        }
+        // Si la fusion a produit la mosaïque
+        if (results.hasFusion) {
+            top->setModeEnabled(5, true); // Débloque mode "6 Assemblage"
         }
     }
 }
@@ -634,6 +690,9 @@ void MainWindow::invalidatePipelineResults()
         if (hasTiles) {
             top->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
             top->setModeEnabled(2, true); // Débloque mode "3 Masques"
+        }
+        if (!top->isModeEnabled(currentMode)) {
+            setMode(0);
         }
     }
     updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
@@ -801,7 +860,8 @@ void MainWindow::applyLoadedProject(const QString &path)
     }
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(projectData.mode);
+    const auto *top = workspaceUI->topToolbars();
+    setMode((top && top->isModeEnabled(projectData.mode)) ? projectData.mode : 0);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);

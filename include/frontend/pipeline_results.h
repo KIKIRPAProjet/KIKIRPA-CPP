@@ -42,6 +42,7 @@ struct PipelineResults {
     QVector<ResultTile> tiles;
     QVector<FrontendUtils::PairAlignmentInfo> pairs;   // paires appariées, puis paires en échec
     SeamLines seams;   // vide sans couture
+    bool hasFusion = false;   // vrai dès que la mosaïque fusionnée est disponible
 };
 Q_DECLARE_METATYPE(PipelineResults)
 

@@ -286,7 +286,12 @@ void PipelineWorkerClass::handleLogMessage(const QString& message, int totalStep
 
     emit progressChanged((stepIndex * 100) / qMax(1, stepCount));
     if (status.compare(QLatin1String("OK"), Qt::CaseInsensitive) == 0) {
-        const QImage preview = (stepIndex >= 5) ? generatePreviewImage() : QImage();
+        const auto& dataStore = pipeline->getDataStore();
+        const bool hasPreviewSource = dataStore.has("territories") || dataStore.has("mosaic");
+        const QImage preview = hasPreviewSource ? generatePreviewImage() : QImage();
+        if (!preview.isNull()) {
+            emit intermediatePreviewReady(preview);
+        }
         emit resultsReady(collectResults(preview.size()));
         emit stepCompleted(stepIndex, stepCount, QString());
         if (stepIndex < stepCount) {
@@ -456,6 +461,7 @@ PipelineResults PipelineWorkerClass::collectResults(const QSize& previewSize) {
             results.seams = FrontendNs::buildSeamLines(
                 dataStore.get<std::vector<DataNs::TileTerritory>>("territories"), previewSize,
                 static_cast<double>(previewSize.width()) / mosaicWidth);
+        results.hasFusion = dataStore.has("mosaic");
     } catch (const std::exception& exception) {
         emit logMessageReceived(tr("Avertissement lecture des résultats : %1").arg(exception.what()), QStringLiteral("warning"));
     }

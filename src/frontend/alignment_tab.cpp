@@ -314,9 +314,15 @@ void AlignmentTab::createDetails(QVBoxLayout *layout)
 
 void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs, int currentPairIndex)
 {
+    const bool hadValidPrevious = !m_pairs.isEmpty() && m_currentPairIndex >= 0 && m_currentPairIndex < m_pairs.size();
+    const int nextIndex = pairs.isEmpty() ? 0 : qBound(0, currentPairIndex, static_cast<int>(pairs.size()) - 1);
+    const bool sameSelectedPair = hadValidPrevious && !pairs.isEmpty()
+        && m_pairs.at(m_currentPairIndex).tileIndexA == pairs.at(nextIndex).tileIndexA
+        && m_pairs.at(m_currentPairIndex).tileIndexB == pairs.at(nextIndex).tileIndexB;
+
     m_pairs = pairs;
     m_shortTileNames = shortTileNames(m_pairs);
-    m_currentPairIndex = m_pairs.isEmpty() ? 0 : qBound(0, currentPairIndex, static_cast<int>(m_pairs.size()) - 1);
+    m_currentPairIndex = nextIndex;
 
     std::array<int, 4> counts{};   // ordre de stateOrder : échec, à vérifier, validée, fiable
     for (const auto &pair : m_pairs)
@@ -330,7 +336,9 @@ void AlignmentTab::setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pai
 
     rebuildTable();
     m_details->setVisible(!m_pairs.isEmpty());
-    cancelPointPickingUi();
+    if (!sameSelectedPair) {
+        cancelPointPickingUi();
+    }
     if (m_pairs.isEmpty())
         return;
     setCurrentPair(m_pairs.at(m_currentPairIndex));

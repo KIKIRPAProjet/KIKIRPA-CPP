@@ -44,6 +44,7 @@ class PipelineWorkerClass : public QObject {
         void logMessageReceived(const QString& message, const QString& severity);
         void pipelinePaused(int lastCompletedStepIndex, const QString& lastCompletedStepName);
         void pipelineFinished(bool success, const QString& errorMessage, const QImage& previewImage);
+        void intermediatePreviewReady(const QImage& previewImage);
         void imageLayersReady(const QVector<ImageLayer>& layers, const QRectF& bounds);
         void pipelineCancelled();
         void mosaicFileReady(const QString& imagePath);
