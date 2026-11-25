@@ -224,11 +224,4 @@ void TopToolbars::resetModesAvailability()
         const int modeIndex = m_modeGroup->id(button);
         button->setEnabled(modeIndex == 0);
     }
-    if (QAbstractButton *checked = m_modeGroup->checkedButton()) {
-        if (!checked->isEnabled()) {
-            if (QAbstractButton *mode0 = m_modeGroup->button(0)) {
-                mode0->setChecked(true);
-            }
-        }
-    }
 }
