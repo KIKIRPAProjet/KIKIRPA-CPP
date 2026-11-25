@@ -76,7 +76,7 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     connect(assemblyMenu->addAction(tr("Tout lancer"), QKeySequence(Qt::Key_F5)),
             &QAction::triggered, this, [this]() { emit runRequested(1); });
     connect(assemblyMenu->addAction(tr("Relancer à partir de…")),
-            &QAction::triggered, this, [this]() { emit runRequested(6); });
+            &QAction::triggered, this, [this]() { emit runRequested(0); });
     connect(assemblyMenu->addAction(tr("Comparer deux exécutions…")),
             &QAction::triggered, this, &MenuBarManager::comparisonRequested);
 

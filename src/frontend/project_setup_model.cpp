@@ -235,6 +235,9 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(
         stepJson, "path",
         IONs::pathToUtf8(fs::absolute(setup.inputDirectory).lexically_normal()));
+    replaceParameter(
+        stepJson, "outputDirectory",
+        IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));
     // Les tuiles et leur case viennent de la grille : le format des noms n'est pas utilisé par le backend.
     replaceParameter(stepJson, "tiles", createImportTilesJson(setup));
   } else if (stepName == "phase-correlation") {
@@ -256,7 +259,7 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "corrections", createCorrectionsJson(setup.pipelineChoices.manualCorrections));
   } else if (stepName == "intensity-correction") {
     replaceParameter(stepJson, "method", setup.pipelineChoices.intensityMethod);
-  } else if (stepName == "export") {
+  } else if (stepName == "fusion" || stepName == "export") {
     replaceParameter(
         stepJson, "outputDirectory",
         IONs::pathToUtf8(fs::absolute(setup.outputDirectory).lexically_normal()));

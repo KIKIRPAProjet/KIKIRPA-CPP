@@ -34,7 +34,7 @@
 
 namespace {
 
-// Image dont la pyramide est à préparer : la source et le dossier du cache, à côté d'elle (là où l'aperçu la cherche).
+// Image dont la pyramide est à préparer : la source et le dossier du cache du projet.
 struct PyramidTask
 {
     std::filesystem::path source;
@@ -78,6 +78,12 @@ ProjectGrid::~ProjectGrid()
 const ProjectGrid::State &ProjectGrid::state() const
 {
     return gridState;
+}
+
+void ProjectGrid::setPyramidCacheDirectory(const QString &directory)
+{
+    pyramidCacheDirectory = directory;
+    FrontendUtils::setPyramidCacheDirectory(directory);
 }
 
 void ProjectGrid::setState(const State &state)
@@ -476,7 +482,9 @@ void ProjectGrid::startBackgroundPyramidGeneration()
         if (tile.path.isEmpty() || tile.empty)
             continue;
         const std::filesystem::path source = IONs::pathFromUtf8(tile.path.toStdString());
-        const std::filesystem::path cacheDirectory = IONs::pyramidCacheDirectory(source.parent_path());
+        const std::filesystem::path cacheDirectory = pyramidCacheDirectory.isEmpty()
+            ? IONs::pyramidCacheDirectory(source.parent_path())
+            : IONs::pathFromUtf8(pyramidCacheDirectory.toStdString()) / ".cache" / "pyramids";
         if (IONs::isPyramidCacheValid(source, IONs::pyramidCachePath(cacheDirectory, source)))
             ++reusedCount;
         else
@@ -487,6 +495,7 @@ void ProjectGrid::startBackgroundPyramidGeneration()
     pyramidSuccesses = 0;
     pyramidFailures = 0;
     if (tasks.isEmpty()) {
+        emit pyramidLoadingChanged(false);
         if (reusedCount > 0) {
             const QString cachedMessage = tr("Vignettes optimisées déjà présentes (%1 tuiles réutilisées).")
                 .arg(reusedCount);
@@ -499,6 +508,7 @@ void ProjectGrid::startBackgroundPyramidGeneration()
     const QString startMessage = tr("Préparation des vignettes optimisées (0/%1)...").arg(pyramidTotal);
     emit statusRequested(startMessage);
     emit logRequested(startMessage);
+    emit pyramidLoadingChanged(true);
     pyramidWatcher.setFuture(QtConcurrent::run(generatePyramids, tasks));
 }
 
@@ -534,9 +544,11 @@ void ProjectGrid::handlePyramidGenerationFinished()
 {
     const int processed = pyramidSuccesses + pyramidFailures;
     if (pyramidWatcher.isCanceled()) {
-        if (pyramidCancelRequested)
+        if (pyramidCancelRequested) {
             emit logRequested(tr("Préparation des vignettes interrompue (%1/%2) : le calcul prépare les pyramides restantes.")
                                   .arg(processed).arg(pyramidTotal));
+            emit pyramidLoadingChanged(false);
+        }
         return;
     }
     const QString finalMessage = pyramidFailures == 0
@@ -544,4 +556,5 @@ void ProjectGrid::handlePyramidGenerationFinished()
         : tr("%1 vignettes optimisées, %2 échec(s).").arg(pyramidSuccesses).arg(pyramidFailures);
     emit statusRequested(finalMessage);
     emit logRequested(finalMessage);
+    emit pyramidLoadingChanged(false);
 }

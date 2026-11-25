@@ -92,6 +92,7 @@ public:
                           std::function<void(int, int)> cellsSwapped);
     void toggleComparison() { comparison = !comparison; update(); }
     void setComparisonVisible(bool visible) { comparison = visible; update(); }
+    void setPyramidLoading(bool loading);
     void toggleMask() { maskVisible = !maskVisible; update(); }
     void setMaskVisible(bool visible) { maskVisible = visible; update(); }
     // Définit et mémorise l'aperçu de la mosaïque assemblée pour le mode Image finale.
@@ -211,6 +212,7 @@ private:
     int dragTargetCell = -1;
     bool maskVisible = true;
     bool comparison = false;
+    bool m_pyramidLoading = false;
     QImage m_mosaicPreview;
     SeamLines m_seamLines;
     QVector<ResultTile> m_resultTiles;

@@ -15,7 +15,7 @@ namespace StepsNs {
     using Json = StepNs::Json;
 
     struct FusionInput {
-        // Dossier des trois TIFF de la mosaïque. Vide : <dossier des images>/.cache/mosaic, à côté du cache d'import.
+        // Dossier des trois TIFF de la mosaïque. Vide : <dossier des images>/.cache/mosaic.
         std::string outputDirectory;
     };
 

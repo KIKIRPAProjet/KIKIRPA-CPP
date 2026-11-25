@@ -547,8 +547,13 @@ void ArtworkCanvas::drawPhoto(QPainter &p, const QRect &r, const QString &path,
     }
     if (image.isNull()) {
         p.fillRect(r, QColor("#262626"));
-        p.setPen(QColor("#d35b55"));
-        p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
+        if (m_pyramidLoading) {
+            p.setPen(QColor("#d5d5d5"));
+            p.drawText(r, Qt::AlignCenter, tr("Chargement…"));
+        } else {
+            p.setPen(QColor("#d35b55"));
+            p.drawText(r, Qt::AlignCenter, tr("Image illisible"));
+        }
         return;
     }
 

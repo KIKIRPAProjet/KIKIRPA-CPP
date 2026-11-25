@@ -49,6 +49,12 @@ void ArtworkCanvas::setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair)
     currentPair = pair;
     update();
 }
+
+void ArtworkCanvas::setPyramidLoading(bool loading)
+{
+    m_pyramidLoading = loading;
+    update();
+}
 QTransform ArtworkCanvas::viewTransform() const
 {
     const qreal scale = zoomPercent / 100.0;

@@ -79,6 +79,7 @@ public:
     void rotateSelectedTile();
     void flipSelectedTile();
     void toggleSelectedCellEmpty();
+    void setPyramidCacheDirectory(const QString &directory);
     // Arrête la préparation des pyramides en arrière-plan après l'image en cours, par exemple quand le calcul démarre :
     // l'import du backend crée lui-même les pyramides manquantes, sans deux lectures d'image en même temps.
     void cancelBackgroundPyramidGeneration();
@@ -86,6 +87,7 @@ public:
 signals:
     void gridUpdated();
     void gridChanged();
+    void pyramidLoadingChanged(bool loading);
     void gridValidated(bool valid);
     void gridValidationCompleted(bool valid, int activeTileCount, const QStringList &errors);
     void referenceImageLoaded(const QString &path);
@@ -108,4 +110,5 @@ private:
     int pyramidSuccesses = 0;
     int pyramidFailures = 0;
     bool pyramidCancelRequested = false;   // annulée par cancelBackgroundPyramidGeneration (lancement du calcul)
+    QString pyramidCacheDirectory;
 };

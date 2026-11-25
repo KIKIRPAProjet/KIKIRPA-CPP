@@ -57,10 +57,43 @@ namespace StepsNs {
         // Paramètres du step, relus dans la configuration.
         struct ImportParameters {
             fs::path directory;
+            fs::path outputDirectory;
             std::string format;
             int columns = 0;
             Json tiles;
         };
+
+        fs::path configuredOutputDirectory(const Json& configJson) {
+            if (!configJson.contains("parameters") || !configJson.at("parameters").is_array())
+                return {};
+            for (const Json& parameter : configJson.at("parameters")) {
+                if (parameter.value("name", "") == "outputDirectory")
+                    return IONs::pathFromUtf8(parameter.value("value", ""));
+            }
+            return {};
+        }
+
+        Json parameterValue(const Json& configJson, const char* name) {
+            if (configJson.contains("parameters") && configJson.at("parameters").is_array()) {
+                for (const Json& parameter : configJson.at("parameters"))
+                    if (parameter.value("name", "") == name)
+                        return parameter.value("value", Json());
+            }
+            return Json();
+        }
+
+        ImportParameters readImportParameters(const Json& configJson) {
+            const Json path = parameterValue(configJson, "path");
+            const Json format = parameterValue(configJson, "format");
+            const Json columns = parameterValue(configJson, "columns");
+            const Json tiles = parameterValue(configJson, "tiles");
+            return {
+                IONs::pathFromUtf8(path.is_string() ? path.get<std::string>() : "images/"),
+                configuredOutputDirectory(configJson),
+                format.is_string() ? format.get<std::string>() : R"(img_C(\d+)_R(\d+)\.tif)",
+                columns.is_number_integer() ? columns.get<int>() : 0,
+                tiles.is_array() ? tiles : Json::array()};
+        }
 
         bool isTiff(const fs::path& path) {
             std::string extension = IONs::pathToUtf8(path.extension());
@@ -165,6 +198,21 @@ namespace StepsNs {
             }
         }
 
+        struct PreparedImport {
+            ImportParameters parameters;
+            std::vector<ImageFile> imageFiles;
+        };
+
+        PreparedImport prepareImport(const Json& configJson) {
+            PreparedImport prepared{readImportParameters(configJson), {}};
+            if (!fs::is_directory(prepared.parameters.directory))
+                throw std::invalid_argument("not a directory: " +
+                                            IONs::pathToUtf8(prepared.parameters.directory));
+            prepared.imageFiles = listImageFiles(prepared.parameters);
+            sortAndCheckGrid(prepared.imageFiles);
+            return prepared;
+        }
+
         // Dossier des TIFF pyramidaux : créé s'il n'existe pas, puis vérifié (le deuxième appel renvoie false sans
         // erreur si le dossier existe déjà ; une erreur est signalée par errorCode).
         fs::path prepareOutputDirectory(const fs::path& directory) {
@@ -218,7 +266,8 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "import";
         stepConfig.parameters = {{"string", "path", initialInput.path}, {"string", "format", initialInput.format},
-                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles}};
+                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles},
+                                 {"string", "outputDirectory", initialInput.outputDirectory}};
         stepConfig.outputs = {{"Tiles", "tiles"}};
         configJson = stepConfig;
     }
@@ -229,8 +278,7 @@ namespace StepsNs {
     // invalides ou aucune image : JSON nul (execute() échouera de toute façon).
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
-            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
-                                              getParameter("columns").get<int>(), getParameter("tiles")};
+            const ImportParameters parameters = readImportParameters(configJson);
             std::map<std::string, Json> filesByName;
             for (const ImageFile& imageFile : listImageFiles(parameters)) {
                 const bool listed = imageFile.cellSource == CellSource::List;
@@ -250,16 +298,15 @@ namespace StepsNs {
     // chaque image, créer son TIFF pyramidal et sa fiche ; 5. relier les voisines ; 6. publier les tuiles.
     bool ImportStepClass::execute() {
         try {
-            // Paramètres relus dans la configuration : un JSON chargé après la construction remplace les valeurs par défaut.
-            const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
-                                              getParameter("columns").get<int>(), getParameter("tiles")};
-            if (!fs::is_directory(parameters.directory))
-                throw std::invalid_argument("not a directory: " + IONs::pathToUtf8(parameters.directory));
-            std::vector<ImageFile> imageFiles = listImageFiles(parameters);
-            sortAndCheckGrid(imageFiles);
+            const PreparedImport prepared = prepareImport(configJson);
+            const ImportParameters& parameters = prepared.parameters;
+            const std::vector<ImageFile>& imageFiles = prepared.imageFiles;
             // Comment les cases ont été trouvées : liste, noms des fichiers, ou ordre des noms.
             result["placement"] = cellSourceName(imageFiles.front().cellSource);
-            const fs::path outputDirectory = prepareOutputDirectory(parameters.directory);
+            const fs::path outputDirectory = parameters.outputDirectory.empty()
+                ? prepareOutputDirectory(parameters.directory)
+                : parameters.outputDirectory / ".cache" / "pyramids";
+            fs::create_directories(outputDirectory);
             DataNs::TileList tiles;
             for (const ImageFile& imageFile : imageFiles) tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), outputDirectory));
             linkNeighbours(tiles);
