@@ -91,6 +91,8 @@ private:
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
+    // Affiche le panneau de droite seulement s'il est demandé et que le mode courant y montre un onglet.
+    void refreshRightPanelVisibility();
 
 private slots:
     void initializeNewProject(const QString &name, const QString &tileDirectory,
@@ -114,11 +116,10 @@ private:
     QString projectPath;
     QString outputDirectory;
     bool projectCreated = false;
-    int currentMode = 4;
+    int currentMode = 3;
     int zoomPercent = 100;
     bool sideBarVisible = true;
     bool logVisible = false;
-    bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
     bool isClosing = false;

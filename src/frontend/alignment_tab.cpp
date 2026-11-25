@@ -186,7 +186,7 @@ void AlignmentTab::createSummary(QVBoxLayout *layout)
 
     connect(m_toCheckOnly, &QCheckBox::toggled, this, [this](bool) { rebuildTable(); });
     connect(m_nextToCheckButton, &QPushButton::clicked, this, [this]() {
-        m_mainWindow->setMode(3);
+        m_mainWindow->setMode(2);   // Alignement
         emit nextDubiousRequested();
     });
 }

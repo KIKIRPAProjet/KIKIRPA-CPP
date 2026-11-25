@@ -71,9 +71,6 @@ constexpr int kCenterWidth = 760;
 constexpr int kRightPanelWidth = 280;
 constexpr int kBodyHeight = 560;
 constexpr int kBottomTabsHeight = 165;
-constexpr int kPaintToolFirst = 3;   // Pinceau
-constexpr int kPaintToolLast = 6;    // Rectangle
-constexpr int kMaskMode = 2;
 }
 
 WorkspaceUI::WorkspaceUI(MainWindow *mainWindow, HomePage *homePage,
@@ -198,10 +195,6 @@ void WorkspaceUI::createWorkspace()
     connect(m_leftToolbar, &LeftToolbar::toolSelected, this,
             [this](int index, const QString &name) {
         m_mainWindow->updateStatus(tr("Outil actif : %1").arg(name));
-        if (m_mainWindow->currentMode == kMaskMode
-                && index >= kPaintToolFirst && index <= kPaintToolLast) {
-            m_centerArea->canvas()->toggleMask();
-        }
         if (m_centerArea && m_centerArea->canvas()) {
             m_centerArea->canvas()->setActiveTool(index);
         }

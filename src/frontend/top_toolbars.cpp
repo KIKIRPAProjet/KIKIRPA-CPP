@@ -176,11 +176,11 @@ void TopToolbars::setExportVisible(bool visible)
 
 void TopToolbars::updateDubiousState(int dubiousCount)
 {
-    if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode3"))) {
+    if (auto *alignBtn = findChild<QPushButton *>(QStringLiteral("mode2"))) {
         if (dubiousCount > 0) {
-            alignBtn->setText(QStringLiteral("4   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(3)).arg(dubiousCount));
+            alignBtn->setText(QStringLiteral("3   %1 (! %2)").arg(FrontendUtils::MODE_NAMES.at(2)).arg(dubiousCount));
         } else {
-            alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
+            alignBtn->setText(QStringLiteral("3   %1").arg(FrontendUtils::MODE_NAMES.at(2)));
         }
     }
 }
