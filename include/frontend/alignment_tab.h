@@ -1,58 +1,80 @@
 #pragma once
 
+#include <QMap>
+#include <QPointF>
+#include <QString>
 #include <QWidget>
 #include <QVector>
-#include "projectgrid.h"
 #include "frontendutils.h"
 
 class MainWindow;
 class ArtworkCanvas;
-class QLabel;
-class QComboBox;
 class QCheckBox;
+class QLabel;
 class QPushButton;
+class QTableWidget;
+class QVBoxLayout;
+class QWidget;
 
+// Onglet « Paire » : le tableau de toutes les paires calculées (état, points, écart), triable, puis la fiche de la paire
+// choisie (explication en clair, mesures) avec ses deux actions, « Corriger… » et « Valider ».
 class AlignmentTab : public QWidget
 {
     Q_OBJECT
 public:
     explicit AlignmentTab(MainWindow *mainWindow, ArtworkCanvas *canvas, QWidget *parent = nullptr);
 
-    void updateInfo(const QString &projectName, const ProjectGrid::State &gridState);
     void setPairs(const QVector<FrontendUtils::PairAlignmentInfo> &pairs, int currentPairIndex);
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
+    void cancelPointPickingUi();
 
 signals:
     void pairSelectionRequested(int pairIndex);
+    void pairIsolationRequested(int pairIndex);
     void nextDubiousRequested();
     void pairValidated(int pairIndex);
     void manualOffsetApplied(int pairIndex, double dx, double dy);
+    void manualPointsApplied(int pairIndex, const QVector<QPointF> &pointsInA, const QVector<QPointF> &pointsInB);
 
 private:
+    void createSummary(QVBoxLayout *layout);
+    void createTable(QVBoxLayout *layout);
+    void createDetails(QVBoxLayout *layout);
+    void rebuildTable();
+    void fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair);
+    void selectCurrentRow();
+    void startInteractiveCorrection();
+    void refreshPickingUi();
     void showManualAdjustmentDialog();
-    void rebuildPairSelector();
+    QString shortPairLabel(const FrontendUtils::PairAlignmentInfo &pair) const;
 
     MainWindow *m_mainWindow;
     ArtworkCanvas *m_canvas;
 
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;
+    QMap<QString, QString> m_shortTileNames;   // nom complet -> nom sans la partie commune à toutes les tuiles
 
-    QComboBox *m_pairCombo = nullptr;
-    QCheckBox *m_onlyDubiousCheck = nullptr;
-    QPushButton *m_nextDubiousButton = nullptr;
+    QLabel *m_summaryLabel = nullptr;
+    QCheckBox *m_toCheckOnly = nullptr;
+    QPushButton *m_nextToCheckButton = nullptr;
+    QTableWidget *m_table = nullptr;
 
+    QWidget *m_details = nullptr;
     QLabel *m_pairTitleLabel = nullptr;
-    QLabel *m_statusBadgeLabel = nullptr;
-    QLabel *m_reasonValueLabel = nullptr;
-    QLabel *m_confidenceValueLabel = nullptr;
+    QLabel *m_stateLabel = nullptr;
+    QLabel *m_explanationLabel = nullptr;
     QLabel *m_offsetValueLabel = nullptr;
-    QLabel *m_pointsShownValueLabel = nullptr;
+    QLabel *m_pointsValueLabel = nullptr;
     QLabel *m_errorValueLabel = nullptr;
-    QLabel *m_interventionValueLabel = nullptr;
+    QLabel *m_correctionTitleLabel = nullptr;
+    QLabel *m_correctionValueLabel = nullptr;
+    QPushButton *m_correctButton = nullptr;
     QPushButton *m_validateButton = nullptr;
-
-    QLabel *m_projectNameLabel = nullptr;
-    QLabel *m_tileCountLabel = nullptr;
-    QLabel *m_projectMetadataLabel = nullptr;
+    QWidget *m_actionsBar = nullptr;
+    QWidget *m_pickingBar = nullptr;
+    QLabel *m_pickingHintLabel = nullptr;
+    QPushButton *m_applyPointsButton = nullptr;
+    QPushButton *m_undoPointButton = nullptr;
+    QPushButton *m_cancelPickingButton = nullptr;
 };

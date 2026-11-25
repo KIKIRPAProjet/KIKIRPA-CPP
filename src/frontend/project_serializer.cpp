@@ -188,11 +188,6 @@ bool ProjectSerializer::loadFromFile(const QString &path, ProjectData *projectDa
         valueFor(QStringLiteral("overlapsLinked"), QStringLiteral("overlaps_linked")).toBool(true);
     if (gridState.overlapsLinked)
         gridState.verticalOverlap = gridState.horizontalOverlap;
-    gridState.modality = valueFor(QStringLiteral("modality"), QStringLiteral("modality"))
-                             .toString(QStringLiteral("Infrarouge"));
-    gridState.scaleMmPerPixel = qMax(
-        0.0, valueFor(QStringLiteral("scaleMmPerPixel"),
-                      QStringLiteral("scale_mm_per_pixel")).toDouble());
     gridState.uncertaintyMargin = qMax(
         0.0, valueFor(QStringLiteral("uncertaintyMargin"),
                       QStringLiteral("uncertainty_margin")).toDouble());
@@ -251,8 +246,6 @@ bool ProjectSerializer::saveToFile(const QString &path, const QString &projectNa
     project.insert(QStringLiteral("horizontalOverlap"), gridState.horizontalOverlap);
     project.insert(QStringLiteral("verticalOverlap"), gridState.verticalOverlap);
     project.insert(QStringLiteral("overlapsLinked"), gridState.overlapsLinked);
-    project.insert(QStringLiteral("modality"), gridState.modality);
-    project.insert(QStringLiteral("scaleMmPerPixel"), gridState.scaleMmPerPixel);
     project.insert(QStringLiteral("uncertaintyMargin"), gridState.uncertaintyMargin);
     project.insert(QStringLiteral("automaticUncertainty"), gridState.automaticUncertainty);
     project.insert(QStringLiteral("referenceImage"), gridState.referenceImagePath);

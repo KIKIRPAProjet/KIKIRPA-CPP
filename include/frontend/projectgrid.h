@@ -43,8 +43,6 @@ public:
         int horizontalOverlap = 20;
         int verticalOverlap = 20;
         bool overlapsLinked = true;
-        QString modality = QStringLiteral("Infrarouge");
-        double scaleMmPerPixel = 0.0;
         double uncertaintyMargin = 0.0;
         bool automaticUncertainty = true;
         bool gridValidated = false;
@@ -71,8 +69,6 @@ public:
     void setHorizontalOverlap(int overlap);
     void setVerticalOverlap(int overlap);
     void setOverlapsLinked(bool linked);
-    void setModality(const QString &modality);
-    void setScaleMmPerPixel(double scale);
     void setAutomaticUncertainty(bool automatic);
     void setUncertaintyMargin(double margin);
     void setPipelineChoices(const FrontendNs::PipelineChoices &choices);
@@ -85,6 +81,7 @@ public:
 
 signals:
     void gridUpdated();
+    void gridChanged();
     void gridValidated(bool valid);
     void gridValidationCompleted(bool valid, int activeTileCount, const QStringList &errors);
     void referenceImageLoaded(const QString &path);

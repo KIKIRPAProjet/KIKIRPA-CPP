@@ -11,10 +11,15 @@
 #include <QHBoxLayout>
 #include <QImage>
 #include <QLabel>
+#include <QLinearGradient>
 #include <QListWidget>
+#include <QPainter>
+#include <QPolygonF>
 #include <QPushButton>
 #include <QPixmap>
 #include <QStringList>
+#include <QTimer>
+#include <QTransform>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -24,6 +29,189 @@ QString translate(const char *text)
 {
     return QCoreApplication::translate("DialogHelpers", text);
 }
+
+// Widget d'animation des crédits avec perspective fuyante façon générique d'ouverture Star Wars.
+class CreditsCrawlWidget final : public QWidget
+{
+public:
+    explicit CreditsCrawlWidget(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setMinimumSize(640, 440);
+        auto *timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, [this]() {
+            scrollY -= 1;
+            if (scrollY + textLogicalHeight < -40.0)
+                scrollY = static_cast<double>(height());
+            update();
+        });
+        timer->start(30);
+    }
+
+protected:
+        void showEvent(QShowEvent *event) override
+    {
+        QWidget::showEvent(event);
+        scrollInitialized = false;
+        rebuildTextBuffer();
+    }
+
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QWidget::resizeEvent(event);
+        rebuildTextBuffer();
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+
+        const int w = width();
+        const int h = height();
+        if (!scrollInitialized) {
+            scrollY = static_cast<double>(h);
+            scrollInitialized = true;
+        }
+        painter.fillRect(rect(), Qt::black);
+
+        // Champ d'étoiles déterministe en arrière-plan.
+        painter.setPen(Qt::NoPen);
+        for (int i = 0; i < 110; ++i) {
+            const int starX = (i * 197 + 43) % qMax(1, w);
+            const int starY = (i * 313 + 71) % qMax(1, h);
+            const int size = (i % 7 == 0) ? 2 : 1;
+            const int brightness = 130 + (i * 37) % 125;
+            painter.setBrush(QColor(brightness, brightness, brightness));
+            painter.drawRect(starX, starY, size, size);
+        }
+
+        if (textBuffer.isNull())
+            rebuildTextBuffer();
+
+        // Projection en trapèze vers le haut pour reproduire la perspective inclinée.
+        const QPolygonF sourceQuad({
+            QPointF(0.0, 0.0),
+            QPointF(static_cast<double>(w), 0.0),
+            QPointF(static_cast<double>(w), static_cast<double>(h)),
+            QPointF(0.0, static_cast<double>(h))
+        });
+        const QPolygonF targetQuad({
+            QPointF(w * 0.34, h * 0.06),
+            QPointF(w * 0.66, h * 0.06),
+            QPointF(w * 1.15, h * 1.05),
+            QPointF(-w * 0.15, h * 1.05)
+        });
+
+        QTransform perspective;
+        if (QTransform::quadToQuad(sourceQuad, targetQuad, perspective)) {
+            painter.save();
+            painter.setTransform(perspective);
+            const QRectF destination(0.0, scrollY, static_cast<double>(w), textLogicalHeight);
+            painter.drawImage(destination, textBuffer);
+            painter.restore();
+        }
+
+        // Fondu progressif au noir en haut pour effacer le texte dans le lointain.
+        QLinearGradient fade(0.0, 0.0, 0.0, h * 0.42);
+        fade.setColorAt(0.0, QColor(0, 0, 0, 255));
+        fade.setColorAt(0.45, QColor(0, 0, 0, 220));
+        fade.setColorAt(1.0, QColor(0, 0, 0, 0));
+        painter.fillRect(QRect(0, 0, w, static_cast<int>(h * 0.42)), fade);
+    }
+
+private:
+    void rebuildTextBuffer()
+    {
+        const int logicalWidth = qMax(320, width());
+        const double scale= qMax(1.0, devicePixelRatioF());
+        const int margin = logicalWidth / 8;
+        const int textWidth = logicalWidth - 2 * margin;
+
+        const QString episodeTitle = translate("POLYPTIK");
+        //Je désaprouve ce nom 
+        //Dikri Adam
+        const QString subtitle = translate("CRÉDITS DU PROJET");
+        const QString body = translate(
+            "Projet d'assemblage d'images haute résolution\n"
+            "par les étudiants de la faculté polytechnique de Mons\n"
+            "Master 1 IG 2026\n\n"
+            "Équipe du projet\n\n")
+        + QStringLiteral(
+            "Abdellah Boumaiza\n"
+            "Abdelouahed Sabbar\n"
+            "Abderrahim Mghimimi\n"
+            "Adam Dikri\n"
+            "Adrien Poncelet\n"
+            "Amory Devillez\n"
+            "Anthony Debucquoy\n"
+            "Christian Claus\n"
+            "Eva Bovijn\n"
+            "Hugo Honorez\n"
+            "Jonas Spruyt\n"
+            "Kevin Nya\n"
+            "Ludovic Deleau\n"
+            "Mathias Bartolas\n"
+            "Matthias Giangreco\n"
+            "Nathan Debilloez\n"
+            "Nicolas Arnould\n"
+            "Valérie Georis\n"
+            "Zakaria Rezzouk\n\n\n"
+            "Logo : Eldralin\n\n"
+            );
+
+        QFont titleFont = font();
+        titleFont.setPointSize(22);
+        titleFont.setWeight(QFont::Bold);
+
+        QFont subtitleFont = font();
+        subtitleFont.setPointSize(28);
+        subtitleFont.setWeight(QFont::Black);
+
+        QFont bodyFont = font();
+        bodyFont.setPointSize(17);
+        bodyFont.setWeight(QFont::DemiBold);
+
+        const QRect titleBounds = QFontMetrics(titleFont).boundingRect(
+            QRect(0, 0, textWidth, 1000), Qt::AlignHCenter | Qt::TextWordWrap, episodeTitle);
+        const QRect subtitleBounds = QFontMetrics(subtitleFont).boundingRect(
+            QRect(0, 0, textWidth, 1000), Qt::AlignHCenter | Qt::TextWordWrap, subtitle);
+        const QRect bodyBounds = QFontMetrics(bodyFont).boundingRect(
+            QRect(0, 0, textWidth, 4000), Qt::AlignHCenter | Qt::TextWordWrap, body);
+
+        textLogicalHeight = static_cast<double>(
+            titleBounds.height() + 18 + subtitleBounds.height() + 36 + bodyBounds.height() + 40);
+
+        textBuffer = QImage(qRound(logicalWidth * scale), qRound(textLogicalHeight * scale),
+                    QImage::Format_ARGB32_Premultiplied);
+        textBuffer.fill(Qt::transparent);
+
+        QPainter bufferPainter(&textBuffer);
+        bufferPainter.setRenderHint(QPainter::TextAntialiasing);
+        bufferPainter.scale(scale, scale);
+        bufferPainter.setPen(QColor(QStringLiteral("#FFE81F")));
+
+        int y = 0;
+        bufferPainter.setFont(titleFont);
+        bufferPainter.drawText(QRect(margin, y, textWidth, titleBounds.height() + 8),
+                               Qt::AlignHCenter | Qt::TextWordWrap, episodeTitle);
+        y += titleBounds.height() + 18;
+
+        bufferPainter.setFont(subtitleFont);
+        bufferPainter.drawText(QRect(margin, y, textWidth, subtitleBounds.height() + 8),
+                               Qt::AlignHCenter | Qt::TextWordWrap, subtitle);
+        y += subtitleBounds.height() + 36;
+
+        bufferPainter.setFont(bodyFont);
+        bufferPainter.drawText(QRect(margin, y, textWidth, bodyBounds.height() + 16),
+                               Qt::AlignHCenter | Qt::TextWordWrap, body);
+    }
+
+    QImage textBuffer;
+    double textLogicalHeight = 400.0;
+    double scrollY = 440.0;
+    bool scrollInitialized = false;
+};
 }
 
 void DialogHelpers::showReferenceComparisonDialog(QWidget *parent,
@@ -141,4 +329,59 @@ bool DialogHelpers::confirmRunRestart(QWidget *parent, int firstStep)
     QObject::connect(buttons, &QDialogButtonBox::rejected,
                      &confirmation, &QDialog::reject);
     return confirmation.exec() == QDialog::Accepted;
+}
+
+
+
+void DialogHelpers::showCreditsDialog(QWidget *parent)
+{
+    
+
+    QDialog dialog(parent, Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint |
+                           Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
+    dialog.setWindowTitle(translate("Crédits"));
+    dialog.setStyleSheet(QStringLiteral("QDialog { background:#000000; }"));
+
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(0, 0, 0, 8);
+    layout->setSpacing(6);
+    layout->addWidget(new CreditsCrawlWidget(&dialog), 1);
+
+    auto *logoBadge = new QWidget(&dialog);
+    logoBadge->setStyleSheet(QStringLiteral(
+        "QWidget { background:#121212; border:1px solid #2a2a2a; border-radius:6px; }"
+        "QLabel { background:transparent; border:none; color:#d5d5d5; font-size:11px; }"));
+    auto *logoLayout = new QHBoxLayout(logoBadge);
+    logoLayout->setContentsMargins(20, 10, 20, 10);
+    logoLayout->setSpacing(16);
+    const QStringList logoResources = {
+        QStringLiteral(":/credits/umons.png"),
+        QStringLiteral(":/credits/polytech.png"),
+        QStringLiteral(":/credits/faculte_sciences.png")
+    };
+    const QStringList logoCaptions = {
+        translate("Université de Mons"),
+        translate("Faculté Polytechnique"),
+        translate("Faculté des Sciences")
+    };
+    logoLayout->addStretch(1);
+    for (int i = 0; i < logoResources.size(); ++i) {
+        const QPixmap pixmap(logoResources.at(i));
+        if (pixmap.isNull())
+            continue;
+        auto *logoLabel = new QLabel(logoBadge);
+        logoLabel->setAlignment(Qt::AlignCenter);
+        logoLabel->setPixmap(pixmap.scaledToHeight(42, Qt::SmoothTransformation));
+        logoLabel->setToolTip(logoCaptions.at(i));
+        logoLayout->addWidget(logoLabel);
+        logoLayout->addStretch(1);
+    }
+
+    auto *logoRow = new QHBoxLayout;
+    logoRow->setContentsMargins(12, 0, 12, 0);
+    logoRow->addWidget(logoBadge, 1);
+    layout->addLayout(logoRow);
+
+    dialog.showMaximized();
+    dialog.exec();
 }
