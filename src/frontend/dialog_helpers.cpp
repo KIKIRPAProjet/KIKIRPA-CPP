@@ -156,7 +156,8 @@ private:
             "Nathan Debilloez\n"
             "Nicolas Arnould\n"
             "Valérie Georis\n"
-            "Zakaria Rezzouk\n\n"
+            "Zakaria Rezzouk\n\n\n"
+            "Logo : Eldralin\n\n"
             );
 
         QFont titleFont = font();
