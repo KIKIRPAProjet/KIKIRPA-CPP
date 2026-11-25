@@ -28,6 +28,11 @@ public:
     // modèle sur ce poste est remplacé par la méthode par défaut, dans le projet aussi.
     void updateChoices(const FrontendNs::PipelineChoices &requestedChoices);
 
+    // Affiche l'état sauvegardé dans la liste des étapes : « (sauvegardée) » pour les étapes faites, gras et
+    // « (reprise ici) » pour l'étape où le calcul reprendra, texte grisé pour les suivantes, et un résumé sous la liste.
+    // savedStepCount < 0 : aucun calcul sauvegardé.
+    void showSavedState(int savedStepCount);
+
 private:
     // Construit les menus de méthodes, puis la liste des étapes et le bouton de relance ciblée.
     void setupMethodControls(QVBoxLayout *layout);
@@ -40,6 +45,9 @@ private:
     // Note « Vote 2D automatique », affichée seulement avec SIFT et LightGlue.
     void refreshVoteNote(const FrontendNs::PipelineChoices &choices);
 
+    // Remet les mentions, le style et le résumé d'après m_savedStepCount.
+    void applySavedState();
+
     // Lit les méthodes affichées et les enregistre dans le projet.
     void applyChoices();
 
@@ -47,6 +55,7 @@ private:
     ProjectGrid *m_projectGrid;
     QFormLayout *m_methodsForm = nullptr;
     QListWidget *m_stepList = nullptr;
+    QLabel *m_savedStateLabel = nullptr;
     QComboBox *m_overlapCombo = nullptr;
     QComboBox *m_matchingCombo = nullptr;
     QLabel *m_voteNote = nullptr;
@@ -55,4 +64,5 @@ private:
     QComboBox *m_verificationCombo = nullptr;
     bool m_isLightGlueAvailable = false;   // modèle présent à côté de l'exécutable (FrontendUtils::lightGlueModelPath)
     int m_activeStep = 0;
+    int m_savedStepCount = -1;   // étapes sauvegardées (showSavedState), -1 sans calcul sauvegardé
 };

@@ -12,14 +12,17 @@
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QEvent>
+#include <QFont>
 #include <QFormLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QPalette>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
 #include <QVBoxLayout>
+#include <QVariant>
 
 namespace {
 
@@ -164,6 +167,10 @@ void AssemblyTab::setupStepList(QVBoxLayout *layout)
     m_stepList->setTextElideMode(Qt::ElideRight);
     m_stepList->setToolTip(tr("Double-clic : relancer à partir de cette étape"));
     layout->addWidget(m_stepList);
+    // Résumé de l'état sauvegardé, sous la liste (showSavedState)
+    m_savedStateLabel = FrontendUtils::mutedLabel(QString(), layout->parentWidget());
+    m_savedStateLabel->setWordWrap(true);
+    layout->addWidget(m_savedStateLabel);
     auto *relaunch = FrontendUtils::makeButton(tr("Relancer à partir d'ici"), layout->parentWidget());
     layout->addWidget(relaunch);
 
@@ -188,6 +195,7 @@ void AssemblyTab::applyChoices()
     if (choices == m_projectGrid->state().pipelineChoices)
         return;
     m_projectGrid->setPipelineChoices(choices);   // le projet prévient l'interface, qui rappelle updateChoices
+    m_mainWindow->refreshSavedState();             // les checkpoints des étapes changées ne sont plus valides
     m_mainWindow->updateStatus(tr("Méthodes modifiées, les étapes suivantes sont à refaire."));
 }
 
@@ -232,14 +240,17 @@ void AssemblyTab::refreshStepList(const FrontendNs::PipelineChoices &choices)
     // Mêmes étapes : la liste est gardée telle quelle, avec l'étape sélectionnée pour « Relancer à partir d'ici ».
     bool isUnchanged = m_stepList->count() == static_cast<int>(steps.size());
     for (int row = 0; isUnchanged && row < m_stepList->count(); ++row)
-        isUnchanged = m_stepList->item(row)->text() == steps[static_cast<std::size_t>(row)].displayName;
+        isUnchanged = m_stepList->item(row)->data(BASE_TEXT_ROLE).toString() ==
+                      steps[static_cast<std::size_t>(row)].displayName;
     if (isUnchanged)
         return;
     m_stepList->clear();
     for (std::size_t i = 0; i < steps.size(); ++i) {
         auto *item = new QListWidgetItem(steps[i].displayName, m_stepList);
         item->setData(Qt::UserRole, static_cast<int>(i + 1));
+        item->setData(BASE_TEXT_ROLE, steps[i].displayName);   // libellé sans la marque d'état sauvegardé
     }
+    applySavedState();
     // Toutes les étapes visibles sans barre de défilement : c'est l'onglet entier qui défile.
     int height = 2 * m_stepList->frameWidth();
     for (int row = 0; row < m_stepList->count(); ++row)
@@ -263,4 +274,40 @@ void AssemblyTab::setActiveStep(int stepNumber)
     // Sélectionne et fait défiler automatiquement jusqu'à l'étape active.
     m_stepList->setCurrentRow(stepNumber - 1);
     m_stepList->scrollToItem(m_stepList->item(stepNumber - 1));
+}
+
+void AssemblyTab::showSavedState(int savedStepCount)
+{
+    m_savedStepCount = savedStepCount;
+    applySavedState();
+}
+
+void AssemblyTab::applySavedState()
+{
+    const int stepCount = m_stepList->count();
+    for (int row = 0; row < stepCount; ++row) {
+        QListWidgetItem *item = m_stepList->item(row);
+        const QString baseText = item->data(BASE_TEXT_ROLE).toString();
+        // Sauvegardée : mention en fin de ligne ; reprise : gras et mention ; à refaire : texte grisé.
+        const bool hasState = m_savedStepCount >= 0;
+        QString suffix;
+        if (hasState && row < m_savedStepCount) suffix = tr(" (sauvegardée)");
+        else if (hasState && row == m_savedStepCount) suffix = tr(" (reprise ici)");
+        item->setText(baseText + suffix);
+        QFont font = item->font();
+        font.setBold(hasState && row == m_savedStepCount);
+        item->setFont(font);
+        if (hasState && row > m_savedStepCount)
+            item->setForeground(m_stepList->palette().color(QPalette::Disabled, QPalette::Text));
+        else
+            item->setData(Qt::ForegroundRole, QVariant());
+    }
+
+    if (m_savedStepCount < 0 || stepCount == 0)
+        m_savedStateLabel->setText(tr("Aucun calcul sauvegardé pour ce projet."));
+    else if (m_savedStepCount >= stepCount)
+        m_savedStateLabel->setText(tr("Toutes les étapes sont sauvegardées (%1/%1).").arg(stepCount));
+    else
+        m_savedStateLabel->setText(tr("%1/%2 étape(s) sauvegardée(s). Le calcul reprendra à l'étape %3.")
+                                       .arg(m_savedStepCount).arg(stepCount).arg(m_savedStepCount + 1));
 }

@@ -201,11 +201,20 @@ void GridTab::setupConnections()
             [this](int value) { m_projectGrid->setGridColumns(value); });
     // Recouvrement
     connect(m_horizontalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
-            [this](int value) { m_projectGrid->setHorizontalOverlap(value); });
+            [this](int value) {
+                m_projectGrid->setHorizontalOverlap(value);
+                m_mainWindow->refreshSavedState();   // le recouvrement change le script
+            });
     connect(m_verticalOverlapSpin, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this,
-            [this](int value) { m_projectGrid->setVerticalOverlap(value); });
+            [this](int value) {
+                m_projectGrid->setVerticalOverlap(value);
+                m_mainWindow->refreshSavedState();   // le recouvrement change le script
+            });
     connect(m_linkedOverlapCheck, &QCheckBox::toggled, this,
-            [this](bool linked) { m_projectGrid->setOverlapsLinked(linked); });
+            [this](bool linked) {
+                m_projectGrid->setOverlapsLinked(linked);
+                m_mainWindow->refreshSavedState();
+            });
 
     // Incertitude
     connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this,

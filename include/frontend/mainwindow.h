@@ -91,6 +91,8 @@ private:
     void showExportDialog();
     void updateStatus(const QString &message);
     void refreshProgressVisibility();
+    // Affiche dans l'onglet Chaîne les étapes sauvegardées (tâche 16), lues dans <dossier de checkpoints>/run.json.
+    void refreshSavedState();
 
 private slots:
     void initializeNewProject(const QString &name, const QString &tileDirectory,

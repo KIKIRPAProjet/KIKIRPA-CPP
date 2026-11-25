@@ -5,6 +5,7 @@
 #include "core/config/pipeline_config.h"
 #include "core/io/unicode_path.h"
 #include "core/pipeline/run_state.h"
+#include "core/pipeline/saved_state.h"
 #include "core/step/step.h"
 
 #include <cstddef>
@@ -20,8 +21,6 @@
 #include <vector>
 
 namespace PipelineNs {
-
-    namespace fs = std::filesystem;
 
     namespace {
 
@@ -43,11 +42,8 @@ namespace PipelineNs {
         //    (les données des steps précédents manqueraient).
         size_t resolveStart(const std::vector<std::unique_ptr<StepNs::StepClass>>& steps, const RunState& runState,
                             const CheckpointNs::CheckpointClass& checkpoint, const PipelineClass::Logger& log) {
-            // On avance tant que le step d'index validStepCount est déjà fait ET a un checkpoint valide ; on s'arrête au premier qui ne l'est pas.
-            size_t validStepCount = 0;
-            while (validStepCount < runState.completedSteps.size() && validStepCount < steps.size() &&
-                runState.completedSteps[validStepCount] == stepName(*steps[validStepCount]) && checkpoint.valid(validStepCount, *steps[validStepCount]))
-                ++validStepCount;
+            // Même règle que l'affichage de l'état sauvegardé (saved_state.h).
+            const size_t validStepCount = countSavedSteps(steps, runState, checkpoint);
             if (checkpoint.enabled() && validStepCount < runState.completedSteps.size())
                 report(log, "checkpoint of step " + std::to_string(validStepCount + 1) + " ('" + runState.completedSteps[validStepCount] +
                                 "') is missing or outdated: resuming from there", false);
@@ -103,16 +99,16 @@ namespace PipelineNs {
     void PipelineClass::saveScript(const Logger& log) const {
         if (scriptPath.empty()) return;
         try {
-            if (scriptPath.has_parent_path()) fs::create_directories(scriptPath.parent_path());
+            if (scriptPath.has_parent_path()) std::filesystem::create_directories(scriptPath.parent_path());
             // Fichier temporaire puis renommage : le script n'est jamais écrit à moitié.
-            fs::path temporaryPath = scriptPath;
+            std::filesystem::path temporaryPath = scriptPath;
             temporaryPath += ".tmp";
             {
                 std::ofstream output(temporaryPath, std::ios::binary);
                 output << exportScript().dump(2) << '\n';
                 if (!output) throw std::runtime_error("write failed");
             }
-            fs::rename(temporaryPath, scriptPath);
+            std::filesystem::rename(temporaryPath, scriptPath);
         } catch (const std::exception& exception) {
             report(log, "warning: cannot write " + IONs::pathToUtf8(scriptPath) + ": " + exception.what(), true);
         }
@@ -120,6 +116,7 @@ namespace PipelineNs {
 
     // Quatre phases : 1. choisir le step de départ ; 2. remettre l'état à zéro ; 3. restaurer les sorties des steps sautés ;
     // 4. exécuter les steps restants. Le script est réécrit à chaque changement d'état, pour qu'un crash soit rattrapable.
+    // NOLINTNEXTLINE(readability-function-size) : les quatre phases se lisent d'un bloc, dans l'ordre (voir ci-dessus)
     bool PipelineClass::run(const Logger& log) {
         const size_t stepCount = steps.size();
         const CheckpointNs::CheckpointClass checkpoint(IONs::pathFromUtf8(runState.checkpointDirectory));
@@ -174,7 +171,10 @@ namespace PipelineNs {
                 errorMessage = exception.what();
             }
             if (!succeeded) {
-                report(log, messagePrefix + " failed: " + (errorMessage.empty() ? step->getResult().dump() : errorMessage), true);
+                std::string failureMessage = messagePrefix;
+                failureMessage += " failed: ";
+                failureMessage += errorMessage.empty() ? step->getResult().dump() : errorMessage;
+                report(log, failureMessage, true);
                 runState.status = RunStatus::Failed;
                 saveScript(log);
                 return false;   // reprise possible : completedSteps et checkpoints sont à jour
@@ -182,11 +182,19 @@ namespace PipelineNs {
 
             // Step réussi : on sauvegarde ses sorties PUIS on le déclare fait, jamais l'inverse.
             std::string failureReason;
-            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason))
-                report(log, messagePrefix + " warning: checkpoint incomplete (" + failureReason + "), this step will be redone on resume", false);
+            if (checkpoint.enabled() && !checkpoint.save(stepIndex, *step, dataStore, failureReason)) {
+                std::string warningMessage = messagePrefix;
+                warningMessage += " warning: checkpoint incomplete (";
+                warningMessage += failureReason;
+                warningMessage += "), this step will be redone on resume";
+                report(log, warningMessage, false);
+            }
             runState.completedSteps.push_back(stepName(*step));
             saveScript(log);
-            report(log, messagePrefix + " OK " + step->getResult().dump(), false);
+            std::string successMessage = messagePrefix;
+            successMessage += " OK ";
+            successMessage += step->getResult().dump();
+            report(log, successMessage, false);
         }
         if (startIndex == stepCount && stepCount > 0) report(log, "nothing to do: all steps are already done", false);
         runState.status = RunStatus::Completed;

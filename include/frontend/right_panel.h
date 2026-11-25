@@ -26,6 +26,7 @@ public:
     void updateGridState(const ProjectGrid::State &gridState);
     void setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds = {});
     void setActiveStep(int stepNumber);
+    void showSavedState(int savedStepCount);
 
 private:
     MainWindow *m_mainWindow;

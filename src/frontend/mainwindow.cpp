@@ -31,6 +31,9 @@
 #include "pipeline_results.h"
 #include "pipeline_runner.h"
 #include "workspace_ui.h"
+#include "core/pipeline/pipeline.h"
+#include "core/pipeline/pipeline_builder.h"
+#include "core/pipeline/saved_state.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
 #include "right_panel.h"
@@ -68,8 +71,11 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <exception>
 #include <filesystem>
+#include <fstream>
 #include <functional>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -194,6 +200,9 @@ void MainWindow::setupProjectGridConnections()
                     markProjectModified();
                 refreshProjectInfo();
             });
+    // Grille validée : le script peut avoir changé (le recouvrement et les méthodes rafraîchissent aussi, voir
+    // GridTab et AssemblyTab::applyChoices). Pas sur gridUpdated, émis aussi à la sélection d'une case.
+    connect(projectGrid, &ProjectGrid::gridValidated, this, &MainWindow::refreshSavedState);
     connect(projectGrid, &ProjectGrid::referenceImageLoaded,
             this, [this]() {
                 if (!switchingProject)
@@ -249,6 +258,7 @@ void MainWindow::setupPipelineConnections()
             this, [this](int stepNumber, const QString &stepName) {
                 workspaceUI->currentStepLabel()->setText(stepName);
                 workspaceUI->setActiveStep(stepNumber);
+                refreshSavedState();   // run.json vient d'être réécrit pour l'étape terminée
     });
     connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
@@ -258,6 +268,12 @@ void MainWindow::setupPipelineConnections()
             this, &MainWindow::removeCancelRunButton);
     connect(pipelineRunner, &PipelineRunnerClass::runCancelled,
             this, &MainWindow::removeCancelRunButton);
+    // État sauvegardé de l'onglet Chaîne mis à jour en fin de run, après une annulation et après une pause.
+    connect(pipelineRunner, &PipelineRunnerClass::runFinished, this, &MainWindow::refreshSavedState);
+    connect(pipelineRunner, &PipelineRunnerClass::runCancelled, this, &MainWindow::refreshSavedState);
+    connect(pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, [this](bool isPaused) {
+        if (isPaused) refreshSavedState();
+    });
     connect(pipelineRunner, &PipelineRunnerClass::comparisonRequested,
             this, &MainWindow::showComparisonDialog);
     connect(pipelineRunner, &PipelineRunnerClass::comparisonVisibilityChanged,
@@ -608,6 +624,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     projectPath.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
+    workspaceUI->showSavedState(-1);   // pas encore de calcul : ne pas garder l'état du projet précédent
 
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
     setMode(0);
@@ -739,6 +756,7 @@ void MainWindow::applyLoadedProject(const QString &path)
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
     updateStatus(tr("Projet ouvert sans recalcul. Vérifiez les chemins des tuiles."));
+    refreshSavedState();
     if (resume) {
         pipelineRunner->setScriptJson(QString::fromStdString(projectData.backendScript.dump()));
         pipelineRunner->setStartFromStepName(QString());
@@ -747,6 +765,43 @@ void MainWindow::applyLoadedProject(const QString &path)
     switchingProject = false;
     projectModified = false;
     refreshWindowTitle();
+}
+
+void MainWindow::refreshSavedState()
+{
+    if (projectGrid->state().tilePaths.isEmpty()) {
+        workspaceUI->showSavedState(-1);
+        return;
+    }
+    // Comme la reprise (PipelineWorkerClass::initializePipeline) : le script des méthodes choisies, et les étapes
+    // faites lues dans <dossier de checkpoints>/run.json, le fichier que le lanceur réécrit après chaque étape.
+    std::optional<PipelineNs::PipelineClass> builtPipeline;
+    try {
+        builtPipeline.emplace(PipelineNs::buildPipeline(nlohmann::json::parse(generatePipelineScript(1).toStdString())));
+    } catch (const std::exception &) {
+        // Projet pas encore prêt (grille incomplète, par exemple) : rien à afficher, et pas de message d'erreur.
+        workspaceUI->showSavedState(-1);
+        return;
+    }
+    try {
+        PipelineNs::PipelineClass &pipeline = *builtPipeline;
+        PipelineNs::RunState runState = pipeline.getRunState();
+        const std::filesystem::path statePath =
+            std::filesystem::absolute(IONs::pathFromUtf8(runState.checkpointDirectory)) / "run.json";
+        if (runState.checkpointDirectory.empty() || !std::filesystem::exists(statePath)) {
+            workspaceUI->showSavedState(-1);
+            return;
+        }
+        std::ifstream input(statePath, std::ios::binary);
+        const nlohmann::json stateJson = nlohmann::json::parse(input);
+        if (stateJson.contains("run"))
+            runState.completedSteps = PipelineNs::RunState::fromJson(stateJson.at("run")).completedSteps;
+        pipeline.setRunState(runState);
+        workspaceUI->showSavedState(static_cast<int>(PipelineNs::countSavedSteps(pipeline)));
+    } catch (const std::exception &exception) {
+        workspaceUI->showSavedState(-1);
+        updateStatus(tr("État sauvegardé illisible : %1").arg(QString::fromStdString(exception.what())));
+    }
 }
 
 void MainWindow::openCurrentProjectFromHome()
