@@ -23,6 +23,7 @@
 #include "frontendutils.h"
 #include "homepage.h"
 #include "left_toolbar.h"
+#include "logpanel.h"
 #include "menubar_manager.h"
 #include "project_serializer.h"
 #include "project_setup_model.h"
@@ -32,11 +33,11 @@
 #include "workspace_ui.h"
 #include "core/io/unicode_path.h"
 #include "alignment_tab.h"
-#include "bottom_tabs.h"
 #include "right_panel.h"
 #include "top_toolbars.h"
 #include "workspace_status_bar.h"
 
+#include <iostream>
 #include <nlohmann/json.hpp>
 
 #include <QAbstractItemView>
@@ -61,6 +62,10 @@
 #include <QTimer>
 #include <QtMath>
 #include <QProgressDialog>
+#include <QDialog>
+#include <QHBoxLayout>
+#include <QStyle>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <filesystem>
@@ -72,10 +77,31 @@
 #ifdef Q_OS_WIN
 #include <wincodec.h>
 #include <windows.h>
+#include <dwmapi.h>
 #endif
 
 namespace {
+constexpr int ASSEMBLY_MODE = 5;
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+#ifdef Q_OS_WIN
+void applyWindowsDarkTitleBar(QWidget *widget)
+{
+    auto *hwnd = reinterpret_cast<HWND>(widget->winId());
+    if (!hwnd)
+        return;
+    constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+    constexpr DWORD kDwmwaCaptionColor = 35;
+    constexpr DWORD kDwmwaTextColor = 36;
+    // Active le mode sombre natif de la barre de titre (Windows 10 2004+ et Windows 11).
+    const BOOL useDarkMode = TRUE;
+    DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &useDarkMode, sizeof(useDarkMode));
+    // Windows 11 uniquement (ignoré sans erreur sous Windows 10) : couleur exacte du QMenuBar (#242424).
+    const COLORREF captionColor = RGB(0x24, 0x24, 0x24);
+    const COLORREF textColor = RGB(0xDE, 0xDE, 0xDE);
+    DwmSetWindowAttribute(hwnd, kDwmwaCaptionColor, &captionColor, sizeof(captionColor));
+    DwmSetWindowAttribute(hwnd, kDwmwaTextColor, &textColor, sizeof(textColor));
+}
+#endif
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -84,6 +110,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     resize(1228, 780);
     setMinimumSize(920, 600);
     applyStyleSheet();
+    #ifdef Q_OS_WIN
+        applyWindowsDarkTitleBar(this);
+    #endif
 
     projectGrid = new ProjectGrid(this);
     pipelineRunner = new PipelineRunnerClass(this);
@@ -100,6 +129,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     setupPairAlignmentConnections();
 
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        connect(canvasView, &ArtworkCanvas::pairClicked, this, &MainWindow::selectPair);
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
     }
@@ -154,6 +184,10 @@ void MainWindow::setupProjectGridConnections()
             markProjectModified();
         refreshProjectInfo();
     });
+    connect(projectGrid, &ProjectGrid::gridChanged, this, [this]() {
+        if (!switchingProject)
+            invalidatePipelineResults();
+    });
     connect(projectGrid, &ProjectGrid::gridValidated,
             this, [this](bool) {
                 if (!switchingProject)
@@ -186,6 +220,10 @@ void MainWindow::setupProjectGridConnections()
 
 void MainWindow::setupPipelineConnections()
 {
+    connect(pipelineRunner, &PipelineRunnerClass::runStarted,
+            this, [this]() {
+                pipelineResultsStale = false;
+            });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
             mosaicFilePath = imagePath;
@@ -196,13 +234,14 @@ void MainWindow::setupPipelineConnections()
     connect(pipelineRunner, &PipelineRunnerClass::runStarted,
             this, [this]() {
                 mosaicFilePath.clear();
+                workspaceUI->setImageLayers({});
                 projectGrid->cancelBackgroundPyramidGeneration();
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
-        if (workspaceUI->bottomTabs())
-            workspaceUI->bottomTabs()->setVisible(true);
-        panelsVisible = true;
+        if (workspaceUI->logPanel())
+            workspaceUI->logPanel()->setVisible(true);
+        sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
             workspaceUI->progressBar(), &QProgressBar::setValue);
@@ -227,6 +266,8 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::imageLayersReady,
+            workspaceUI, &WorkspaceUI::setImageLayers);
     connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
@@ -267,10 +308,9 @@ void MainWindow::setupMenuConnections()
     });
     connect(menuBarManager, &MenuBarManager::quitRequested,
             qApp, &QApplication::quit);
-    connect(menuBarManager, &MenuBarManager::togglePanelsRequested, this, [this]() {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+    connect(menuBarManager, &MenuBarManager::toggleSideBar, this, [this]() {
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
     });
     connect(menuBarManager, &MenuBarManager::zoomInRequested, this, [this]() {
         zoomPercent = qMin(1600, zoomPercent + 10);
@@ -287,15 +327,25 @@ void MainWindow::setupMenuConnections()
         workspaceUI->zoomLabel()->setText(QStringLiteral("100 %"));
         static_cast<ArtworkCanvas *>(workspaceUI->canvas())->resetView();
     });
-   
+
     connect(menuBarManager, &MenuBarManager::runRequested,
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
+        logVisible = !logVisible;
+        workspaceUI->logPanel()->setVisible(logVisible);
+    });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
-            tr("KIK-IRPA Assemblage : prototype d'interface.\n"
-               "Les traitements d'image nécessitent le backend, qui n'est pas encore connecté."));
+            tr("KIK-IRPA Assemblage, version 1.0.0\n\n"
+               "Assemblage de photographies d'œuvres d'art en une image haute résolution.\n\n"
+               "Réalisé pour l'Institut royal du Patrimoine artistique (KIK-IRPA) "
+               "par des étudiants de l'Université de Mons "
+               "(Faculté Polytechnique et Faculté des Sciences)."));
+    });
+    connect(menuBarManager, &MenuBarManager::creditsRequested, this, [this]() {
+        DialogHelpers::showCreditsDialog(this);
     });
 }
 
@@ -319,20 +369,20 @@ void MainWindow::setupPairAlignmentConnections()
         if (AlignmentTab *alignTab = right->alignmentTab()) {
             connect(alignTab, &AlignmentTab::pairSelectionRequested,
                     this, &MainWindow::selectPair);
+            connect(alignTab, &AlignmentTab::pairIsolationRequested, this, [this](int pairIndex) {
+                selectPair(pairIndex);
+                if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+                    canvasView->setPairIsolated(true);
+            });
             connect(alignTab, &AlignmentTab::nextDubiousRequested,
                     this, &MainWindow::selectNextDubiousPair);
             connect(alignTab, &AlignmentTab::pairValidated,
                     this, &MainWindow::validatePair);
             connect(alignTab, &AlignmentTab::manualOffsetApplied,
                     this, &MainWindow::applyManualPairOffset);
+            connect(alignTab, &AlignmentTab::manualPointsApplied,
+                    this, &MainWindow::applyManualPairPoints);
         }
-    }
-
-    if (TopToolbars *top = workspaceUI->topToolbars()) {
-        connect(top, &TopToolbars::previousPairRequested,
-                this, &MainWindow::selectPreviousPair);
-        connect(top, &TopToolbars::nextDubiousPairRequested,
-                this, &MainWindow::selectNextDubiousPair);
     }
 
     refreshPairViews();
@@ -351,18 +401,7 @@ void MainWindow::selectPair(int pairIndex)
     }
 
     const auto &pair = m_pairs.at(m_currentPairIndex);
-    updateStatus(tr("Paire sélectionnée : %1 (%2)")
-                     .arg(pair.pairLabel(),
-                          pair.isDubious() ? tr("douteuse : %1").arg(pair.statusReason) : tr("fiable")));
-}
-
-void MainWindow::selectPreviousPair()
-{
-    if (m_pairs.isEmpty())
-        return;
-    setMode(3);
-    const int prevIndex = (m_currentPairIndex - 1 + m_pairs.size()) % m_pairs.size();
-    selectPair(prevIndex);
+    updateStatus(tr("Paire sélectionnée : %1 (%2)").arg(pair.pairLabel(), FrontendNs::describePairForOperator(pair).state));
 }
 
 //
@@ -373,12 +412,13 @@ void MainWindow::selectNextDubiousPair()
     setMode(3);
     for (int offset = 1; offset <= m_pairs.size(); ++offset) {
         const int idx = (m_currentPairIndex + offset) % m_pairs.size();
-        if (m_pairs.at(idx).isDubious()) {
+        // Paires à vérifier et paires en échec, comme le filtre « À vérifier seulement » de l'onglet Paire.
+        if (m_pairs.at(idx).isDubious() || m_pairs.at(idx).status == FrontendUtils::PairStatus::Failed) {
             selectPair(idx);
             return;
         }
     }
-    updateStatus(tr("Aucune paire douteuse restante à inspecter."));
+    updateStatus(tr("Aucune paire à vérifier."));
 }
 
 //une fois une paire validée, mise à jour du status
@@ -407,17 +447,70 @@ void MainWindow::applyManualPairOffset(int pairIndex, double dx, double dy)
     pair.intervention = tr("manuelle (%1 ; %2 px)")
                             .arg(QString::number(dx, 'f', 1).replace('.', ','),
                                  QString::number(dy, 'f', 1).replace('.', ','));
+    const FrontendNs::ManualCorrection correction = FrontendNs::manualCorrectionFor(pair, dx, dy);
+    const QString pairLabel = pair.pairLabel();
     refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
 
+void MainWindow::applyManualPairPoints(int pairIndex, const QVector<QPointF> &pointsInA,
+                                       const QVector<QPointF> &pointsInB)
+{
+    if (pairIndex < 0 || pairIndex >= m_pairs.size())
+        return;
+    if (pointsInA.isEmpty() || pointsInA.size() != pointsInB.size())
+        return;
+
+    auto &pair = m_pairs[pairIndex];
+    FrontendNs::ManualCorrection correction;
+    correction.tileIdA = pair.tileIndexA;
+    correction.tileIdB = pair.tileIndexB;
+    std::vector<double> offsetsX;
+    std::vector<double> offsetsY;
+    const int count = static_cast<int>(pointsInA.size());
+    offsetsX.reserve(count);
+    offsetsY.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        const QPointF &ptA = pointsInA.at(i);
+        const QPointF &ptB = pointsInB.at(i);
+        correction.pointsInA.push_back({ptA.x(), ptA.y()});
+        correction.pointsInB.push_back({ptB.x(), ptB.y()});
+        offsetsX.push_back(ptA.x() - ptB.x());
+        offsetsY.push_back(ptA.y() - ptB.y());
+    }
+    const auto medianOf = [](std::vector<double> values) {
+        const std::size_t mid = values.size() / 2;
+        std::sort(values.begin(), values.end());
+        return (values.size() % 2 == 1) ? values[mid] : (values[mid - 1] + values[mid]) / 2.0;
+    };
+
+    pair.dx = medianOf(std::move(offsetsX));
+    pair.dy = medianOf(std::move(offsetsY));
+    pair.pointsInA = pointsInA;
+    pair.pointsInB = pointsInB;
+    pair.isInlier = QVector<bool>(count, true);
+    pair.totalMatches = count;
+    pair.inlierCount = count;
+    pair.shownInliers = count;
+    pair.shownOutliers = 0;
+    pair.status = FrontendUtils::PairStatus::Validated;
+    pair.statusReason = tr("corrigée à la main");
+    pair.intervention = tr("manuelle (%1 point(s))").arg(count);
+    const QString pairLabel = pair.pairLabel();
+    refreshPairViews();
+    submitManualCorrection(pairLabel, correction);
+}
+
+void MainWindow::submitManualCorrection(const QString &pairLabel, const FrontendNs::ManualCorrection &correction)
+{
     FrontendNs::PipelineChoices choices = projectGrid->state().pipelineChoices;
-    choices.manualCorrections =
-        FrontendNs::withCorrection(choices.manualCorrections, FrontendNs::manualCorrectionFor(pair, dx, dy));
+    choices.manualCorrections = FrontendNs::withCorrection(choices.manualCorrections, correction);
     projectGrid->setPipelineChoices(choices);
     const auto steps = FrontendUtils::pipelineSteps(choices);
     const auto manualStep = std::find_if(steps.begin(), steps.end(), [](const FrontendUtils::PipelineStepInfo &step) {
         return step.technicalName == "manual-matches";
     });
-    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pair.pairLabel()));
+    updateStatus(tr("Correction de %1 ajoutée au calcul : relancez-le pour l'appliquer.").arg(pairLabel));
     if (manualStep != steps.end())
         requestRun(static_cast<int>(manualStep - steps.begin()) + 1);
 }
@@ -467,6 +560,8 @@ void MainWindow::refreshPairViews()
 
 void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
+    if (pipelineResultsStale)
+        return;
     m_pairs = results.pairs;
     m_currentPairIndex = 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
@@ -474,6 +569,22 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
         canvasView->setAlignmentOverview(results.tiles, results.pairs);
     }
     refreshPairViews();
+}
+
+void MainWindow::invalidatePipelineResults()
+{
+    pipelineResultsStale = true;
+    m_pairs.clear();
+    m_currentPairIndex = 0;
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+        canvasView->setSeamLines(SeamLines());
+        canvasView->setAlignmentOverview({}, {});
+    }
+    refreshPairViews();
+    mosaicFilePath.clear();
+    if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
+        canvasView->setMosaicPreview(QImage());
+    updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
 }
 
 void MainWindow::initializeNewProject(const QString &name, const QString &selectedTileDirectory,
@@ -484,6 +595,7 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
         return;
     switchingProject = true;
     mosaicFilePath.clear();
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -527,17 +639,84 @@ void MainWindow::applyLoadedProject(const QString &path)
         QMessageBox::warning(this, tr("Ouverture impossible"), errorMessage);
         return;
     }
+    
     const ProjectResumeSummary summary = ProjectSerializer::summarize(projectData);
-    QMessageBox opening(QMessageBox::Information, tr("Ouvrir le projet"), summary.text(),
-                        QMessageBox::Open | QMessageBox::Cancel, this);
-    auto *resumeButton = opening.addButton(tr("Ouvrir et reprendre"), QMessageBox::AcceptRole);
-    resumeButton->setEnabled(summary.canResume);
-    opening.exec();
-    if (opening.clickedButton() == opening.button(QMessageBox::Cancel) || !opening.clickedButton())
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Ouvrir le projet"));
+    dialog.setMinimumWidth(440);
+
+    auto *mainLayout = new QVBoxLayout(&dialog);
+    mainLayout->setContentsMargins(20, 20, 20, 16);
+    mainLayout->setSpacing(18);
+
+    // Contenu : icône d'information + résumé du projet
+    auto *contentLayout = new QHBoxLayout;
+    contentLayout->setSpacing(14);
+    contentLayout->setAlignment(Qt::AlignTop);
+
+    auto *iconLabel = new QLabel(&dialog);
+    iconLabel->setPixmap(dialog.style()->standardPixmap(QStyle::SP_MessageBoxInformation));
+    iconLabel->setAlignment(Qt::AlignTop);
+    contentLayout->addWidget(iconLabel);
+
+    auto *textLabel = new QLabel(summary.text(), &dialog);
+    textLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    contentLayout->addWidget(textLabel, 1);
+    mainLayout->addLayout(contentLayout);
+
+    // Barre des boutons
+    auto *btnLayout = new QHBoxLayout;
+    btnLayout->setSpacing(10);
+
+    // Bouton Annuler tout à gauche avec style discret
+    auto *cancelBtn = new QPushButton(tr("Annuler"), &dialog);
+    cancelBtn->setCursor(Qt::PointingHandCursor);
+    cancelBtn->setStyleSheet(QStringLiteral(
+        "QPushButton { background:transparent; border:1px solid #484848; color:#9e9e9e; }"
+        "QPushButton:hover { background:#333333; color:#d5d5d5; border-color:#5a5a5a; }"));
+    btnLayout->addWidget(cancelBtn);
+
+    // Espace élastique qui repousse Annuler à gauche et les deux Ouvrir à droite
+    btnLayout->addStretch(1);
+
+    // Bouton Ouvrir classique
+    auto *openBtn = new QPushButton(tr("Ouvrir"), &dialog);
+    openBtn->setCursor(Qt::PointingHandCursor);
+    btnLayout->addWidget(openBtn);
+
+    // Bouton Ouvrir et reprendre (mis en valeur en bleu s'il est disponible)
+    auto *resumeBtn = new QPushButton(tr("Ouvrir et reprendre"), &dialog);
+    resumeBtn->setCursor(Qt::PointingHandCursor);
+    resumeBtn->setEnabled(summary.canResume);
+    if (summary.canResume) {
+        resumeBtn->setProperty("primary", true);
+    }
+    btnLayout->addWidget(resumeBtn);
+
+    mainLayout->addLayout(btnLayout);
+
+    bool accepted = false;
+    bool resume = false;
+
+    connect(cancelBtn, &QPushButton::clicked, &dialog, &QDialog::reject);
+    connect(openBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = false;
+        dialog.accept();
+    });
+    connect(resumeBtn, &QPushButton::clicked, &dialog, [&]() {
+        accepted = true;
+        resume = true;
+        dialog.accept();
+    });
+
+    if (dialog.exec() != QDialog::Accepted || !accepted)
         return;
-    const bool resume = opening.clickedButton() == resumeButton;
+    
     switchingProject = true;
     mosaicFilePath.clear();
+    pipelineRunner->invalidateImageLayers();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
     applyPipelineResults(PipelineResults());   // les paires et coutures du projet précédent ne s'appliquent plus
@@ -603,7 +782,7 @@ void MainWindow::setMode(int mode)
 
         if (isGridMode) {
             tabs->setCurrentIndex(0);
-        } else if (currentMode == 2) {
+        } else if (currentMode == 2 || currentMode == ASSEMBLY_MODE) {
             tabs->setCurrentIndex(3);
         } else if (isPairMode) {
             tabs->setCurrentIndex(2);
@@ -637,18 +816,16 @@ void MainWindow::setMode(int mode)
         canvasControls->setVisible(currentMode != 0);
     }
     const bool isPairMode = (currentMode == 3);
+    if (auto *overviewBtn = workspaceUI->workspace()->findChild<QWidget *>(
+            QStringLiteral("pairOverviewButton"))) {
+        overviewBtn->setVisible(isPairMode);
+    }
     if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
         QStringLiteral("pairOverlayButton"))) {
         overlayBtn->setVisible(isPairMode);
     }
-    if (auto* prevPairBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("prevPairButton"))) {
-        prevPairBtn->setVisible(isPairMode);
-    }
-    if (auto* nextDubiousBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("nextDubiousButton"))) {
-        nextDubiousBtn->setVisible(isPairMode);
-    }
+    if (!isPairMode && workspaceUI->rightPanel() && workspaceUI->rightPanel()->alignmentTab())
+        workspaceUI->rightPanel()->alignmentTab()->cancelPointPickingUi();
     // Boutons d'export et de recadrage uniquement en mode Image finale (kModeExport)
     const bool isExportMode = (currentMode == kModeExport);
     if (auto *applyCropBtn = workspaceUI->workspace()->findChild<QPushButton *>(
@@ -675,10 +852,7 @@ void MainWindow::setMode(int mode)
             }
         }
     }
-    if (currentMode == 1)
-        workspaceUI->bottomTabs()->setCurrentIndex(0);
     if (currentMode == 3) {
-        workspaceUI->bottomTabs()->setCurrentIndex(1);
         if (workspaceUI->rightPanel())
             workspaceUI->rightPanel()->showPairTab();
         refreshPairViews();
@@ -791,6 +965,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
+    pipelineRunner->invalidateImageLayers();
     setMode(1);
     const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());
@@ -1012,9 +1187,9 @@ void MainWindow::updateProgress(const QString &stepName, int percentage)
 void MainWindow::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Tab) {
-        panelsVisible = !panelsVisible;
-        workspaceUI->rightTabs()->setVisible(panelsVisible);
-        workspaceUI->bottomTabs()->setVisible(panelsVisible);
+        sideBarVisible = !sideBarVisible;
+        workspaceUI->rightTabs()->setVisible(sideBarVisible);
+        workspaceUI->logPanel()->setVisible(sideBarVisible);
         event->accept();
         return;
     }

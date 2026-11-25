@@ -91,6 +91,7 @@ void ProjectGrid::setState(const State &state)
     while (gridState.gridTiles.size() < gridState.gridRows * gridState.gridColumns)
         gridState.gridTiles.append(GridTile{});
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::createNewProject(const QString &tileDirectory, const QStringList &tilePaths)
@@ -125,6 +126,7 @@ void ProjectGrid::initializeGridFromPaths()
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
     startBackgroundPyramidGeneration();
 }
 
@@ -185,6 +187,7 @@ void ProjectGrid::importTiles(const QString &directoryPath)
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
     emit tilesImported(directoryPath, paths.size());
     startBackgroundPyramidGeneration();
 }
@@ -202,6 +205,7 @@ void ProjectGrid::importReferenceImage(const QString &path)
     gridState.referenceImagePath = QFileInfo(path).absoluteFilePath();
     gridState.gridValidated = false;
     emit referenceImageLoaded(gridState.referenceImagePath);
+    emit gridChanged();
     emit statusRequested(tr("Image de référence importée : %1").arg(QFileInfo(path).fileName()));
 }
 
@@ -296,6 +300,7 @@ void ProjectGrid::swapGridTiles(int first, int second)
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setSelectedGridCell(int cell)
@@ -314,6 +319,7 @@ void ProjectGrid::setGridRows(int rows)
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setGridColumns(int columns)
@@ -326,6 +332,7 @@ void ProjectGrid::setGridColumns(int columns)
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setCaptureOrder(int order)
@@ -334,6 +341,7 @@ void ProjectGrid::setCaptureOrder(int order)
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setHorizontalOverlap(int overlap)
@@ -343,6 +351,7 @@ void ProjectGrid::setHorizontalOverlap(int overlap)
         gridState.verticalOverlap = gridState.horizontalOverlap;
     gridState.gridValidated = false;
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setVerticalOverlap(int overlap)
@@ -352,6 +361,7 @@ void ProjectGrid::setVerticalOverlap(int overlap)
         gridState.horizontalOverlap = gridState.verticalOverlap;
     gridState.gridValidated = false;
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setOverlapsLinked(bool linked)
@@ -361,6 +371,7 @@ void ProjectGrid::setOverlapsLinked(bool linked)
         gridState.verticalOverlap = gridState.horizontalOverlap;
     gridState.gridValidated = false;
     emit gridUpdated();
+    emit gridChanged();
 }
 
 // Les méthodes ne touchent pas à la grille : elle reste validée.
@@ -370,22 +381,7 @@ void ProjectGrid::setPipelineChoices(const FrontendNs::PipelineChoices &choices)
         return;
     gridState.pipelineChoices = choices;
     emit gridUpdated();
-}
-
-void ProjectGrid::setModality(const QString &modality)
-{
-    if (gridState.modality == modality)
-        return;
-    gridState.modality = modality;
-    gridState.gridValidated = false;
-    emit gridUpdated();
-}
-
-void ProjectGrid::setScaleMmPerPixel(double scale)
-{
-    gridState.scaleMmPerPixel = scale;
-    gridState.gridValidated = false;
-    emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setAutomaticUncertainty(bool automatic)
@@ -393,6 +389,7 @@ void ProjectGrid::setAutomaticUncertainty(bool automatic)
     gridState.automaticUncertainty = automatic;
     gridState.gridValidated = false;
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::setUncertaintyMargin(double margin)
@@ -400,6 +397,7 @@ void ProjectGrid::setUncertaintyMargin(double margin)
     gridState.uncertaintyMargin = margin;
     gridState.gridValidated = false;
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::rotateSelectedTile()
@@ -414,6 +412,7 @@ void ProjectGrid::rotateSelectedTile()
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::flipSelectedTile()
@@ -428,6 +427,7 @@ void ProjectGrid::flipSelectedTile()
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::toggleSelectedCellEmpty()
@@ -443,6 +443,7 @@ void ProjectGrid::toggleSelectedCellEmpty()
     gridState.gridValidated = false;
     gridState.pipelineChoices.manualCorrections.clear();   // désignent des tuiles qui ont changé de case ou d'image
     emit gridUpdated();
+    emit gridChanged();
 }
 
 void ProjectGrid::startBackgroundPyramidGeneration()

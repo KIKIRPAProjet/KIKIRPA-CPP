@@ -36,7 +36,7 @@ private:
     friend class AssemblyTab;
     friend class AlignmentTab;
     friend class MasksTab;
-    friend class BottomTabs;
+    friend class LogPanel;
     friend class LeftToolbar;
     friend class RightPanel;
     friend class TopToolbars;
@@ -59,10 +59,11 @@ private:
     void setupPairAlignmentConnections();
 
     void selectPair(int pairIndex);
-    void selectPreviousPair();
     void selectNextDubiousPair();
     void validatePair(int pairIndex);
     void applyManualPairOffset(int pairIndex, double dx, double dy);
+    void applyManualPairPoints(int pairIndex, const QVector<QPointF> &pointsInA, const QVector<QPointF> &pointsInB);
+    void submitManualCorrection(const QString &pairLabel, const FrontendNs::ManualCorrection &correction);
     void refreshPairViews();
     // Remplace les paires et les lignes de couture affichées par celles du dernier calcul (vides : tout est effacé).
     void applyPipelineResults(const PipelineResults &results);
@@ -75,6 +76,7 @@ private:
                                  const QImage &referenceImage, const QImage &tileImage);
     void setMode(int mode);
     void refreshProjectInfo();
+    void invalidatePipelineResults();
     void saveProject();
     bool saveProjectToFile();
     bool confirmDiscardUnsavedChanges();
@@ -82,6 +84,7 @@ private:
     void refreshWindowTitle();
     bool projectModified = false;
     bool switchingProject = false;
+    bool pipelineResultsStale = false;
     // Construit et valide le script JSON décrivant la suite des étapes backend.
     QString generatePipelineScript(int firstStep) const;
     void requestRun(int firstStep);
@@ -113,7 +116,8 @@ private:
     bool projectCreated = false;
     int currentMode = 4;
     int zoomPercent = 100;
-    bool panelsVisible = true;
+    bool sideBarVisible = true;
+    bool logVisible = false;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;

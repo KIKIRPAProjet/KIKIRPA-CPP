@@ -9,7 +9,7 @@ class PipelineRunnerClass;
 class QHBoxLayout;
 class QPushButton;
 
-// Barre supérieure regroupant les modes d'affichage, la navigation dans les paires
+// Barre supérieure regroupant les modes d'affichage
 // et les commandes de contrôle du calcul asynchrone (Lancer, Pause, Reprendre).
 class TopToolbars : public QWidget
 {
@@ -17,14 +17,10 @@ class TopToolbars : public QWidget
 public:
     explicit TopToolbars(MainWindow *mainWindow, ProjectGrid *projectGrid, PipelineRunnerClass *pipelineRunner, QWidget *parent = nullptr);
 
-    void updateTitle(const QString &projectName, const QString &modality);
+    void updateTitle(const QString &projectName);
     void updateDubiousState(int dubiousCount);
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
-
-signals:
-    void previousPairRequested();
-    void nextDubiousPairRequested();
 
 public slots:
     // Aligne l'intitulé du bouton principal (Lancer / Pause / Reprendre) sur l'état du runner.

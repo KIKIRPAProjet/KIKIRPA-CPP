@@ -208,6 +208,38 @@ TEST(PipelineResultsTest, OverlapEstimateIsAttachedToItsPair) {
     EXPECT_DOUBLE_EQ(pairs.at(1).dy, 240.0) << "point de départ de la correction manuelle d'une paire en échec";
 }
 
+// Texte de l'onglet Paire : état en un mot, raison du calcul reformulée en clair avec l'action attendue, détails
+// techniques (raison brute, NCC) pour l'infobulle.
+TEST(PipelineResultsTest, OperatorTextExplainsAFailedPairInPlainFrench) {
+    FrontendUtils::PairAlignmentInfo pair;
+    pair.status = PairStatus::Failed;
+    pair.statusReason = QStringLiteral("ambiguous correlation peak within the rail margin (peak / second peak ratio 1.43)");
+    const PairOperatorText text = FrontendNs::describePairForOperator(pair);
+    EXPECT_EQ(text.state, QObject::tr("Échec"));
+    EXPECT_TRUE(text.explanation.contains(QStringLiteral("peu texturée")));
+    EXPECT_TRUE(text.explanation.contains(QStringLiteral("Corriger")));
+    EXPECT_TRUE(text.details.contains(QStringLiteral("ambiguous correlation peak"))) << "raison brute en infobulle";
+}
+
+TEST(PipelineResultsTest, OperatorTextAsksToCheckADubiousPair) {
+    const auto pairs = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, 2)}, {}, {});
+    const PairOperatorText text = FrontendNs::describePairForOperator(pairs.at(0));
+    EXPECT_EQ(text.state, QObject::tr("À vérifier"));
+    EXPECT_TRUE(text.explanation.contains(QStringLiteral("Peu de points")));
+    EXPECT_TRUE(text.details.contains(QStringLiteral("NCC")));
+}
+
+TEST(PipelineResultsTest, OperatorTextForReliableAndCorrectedPairs) {
+    const auto reliable = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, POINT_COUNT)},
+                                                     {phaseCorrelationResult("fiable")}, {});
+    EXPECT_EQ(FrontendNs::describePairForOperator(reliable.at(0)).state, QObject::tr("Fiable"));
+    const nlohmann::json manualResult = {{"correctedPairs", {{{"idA", 0}, {"idB", 1}, {"added", false}}}}};
+    const auto corrected = FrontendNs::buildPairInfos(makeTiles(), {makePair(0, 1, 1)}, {manualResult}, {});
+    const PairOperatorText text = FrontendNs::describePairForOperator(corrected.at(0));
+    EXPECT_EQ(text.state, QObject::tr("Validée"));
+    EXPECT_TRUE(text.explanation.contains(QStringLiteral("à la main")));
+}
+
 TEST(PipelineResultsTest, NoTerritoryGivesNoOverlay) {
     EXPECT_TRUE(FrontendNs::buildSeamLines({}, QSize(100, 50), 0.5).isEmpty());
 }
