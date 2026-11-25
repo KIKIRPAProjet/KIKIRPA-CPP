@@ -15,6 +15,14 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QSignalBlocker>
+#include <QButtonGroup>
+#include <QCheckBox>
+#include <QSlider>
+
+namespace {
+constexpr int PAIR_OPACITY_SLIDER_WIDTH = 110;
+constexpr int PAIR_OPACITY_LABEL_WIDTH = 38;
+}
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
@@ -116,10 +124,49 @@ void WorkspaceCenter::createCanvasAndControls()
     overviewBtn->setObjectName(QStringLiteral("pairOverviewButton"));
     overviewBtn->setVisible(false);
     overviewBtn->setEnabled(false);
-    auto *overlayDiff = FrontendUtils::makeButton(tr("Superposer (différence)"), canvasControls);
-    overlayDiff->setCheckable(true);
-    overlayDiff->setObjectName(QStringLiteral("pairOverlayButton"));
-    overlayDiff->setVisible(false);
+    // Vue d'une paire (mode Alignement) : côte à côte, ou B posée sur A avec une opacité réglable ou en différence.
+    auto *pairViewControls = new QWidget(canvasControls);
+    pairViewControls->setObjectName(QStringLiteral("pairViewControls"));
+    pairViewControls->setVisible(false);
+    pairViewControls->setEnabled(false);
+    pairViewControls->setToolTip(tr("Cliquez sur une paire pour l'ouvrir"));
+    auto *pairViewLayout = new QHBoxLayout(pairViewControls);
+    pairViewLayout->setContentsMargins(0, 0, 0, 0);
+    auto *sideBySideButton = FrontendUtils::makeButton(tr("Côte à côte"), pairViewControls);
+    auto *superposedButton = FrontendUtils::makeButton(tr("Superposé"), pairViewControls);
+    superposedButton->setObjectName(QStringLiteral("pairOverlayButton"));
+    sideBySideButton->setCheckable(true);
+    superposedButton->setCheckable(true);
+    auto *pairViewGroup = new QButtonGroup(pairViewControls);
+    pairViewGroup->addButton(sideBySideButton);
+    pairViewGroup->addButton(superposedButton);
+    pairViewLayout->addWidget(sideBySideButton);
+    pairViewLayout->addWidget(superposedButton);
+    sideBySideButton->setChecked(true);
+    auto *opacityLabel = FrontendUtils::mutedLabel(tr("Opacité de B"), pairViewControls);
+    auto *opacitySlider = new QSlider(Qt::Horizontal, pairViewControls);
+    opacitySlider->setObjectName(QStringLiteral("pairOpacitySlider"));
+    opacitySlider->setRange(0, 100);
+    opacitySlider->setValue(m_canvas->pairOverlayOpacity());
+    opacitySlider->setFixedWidth(PAIR_OPACITY_SLIDER_WIDTH);
+    auto *opacityValue = new QLabel(QStringLiteral("%1 %").arg(opacitySlider->value()), pairViewControls);
+    opacityValue->setMinimumWidth(PAIR_OPACITY_LABEL_WIDTH);
+    auto *differenceCheck = new QCheckBox(tr("Différence"), pairViewControls);
+    differenceCheck->setObjectName(QStringLiteral("pairDifferenceCheck"));
+    differenceCheck->setToolTip(tr("Ce qui coïncide devient noir : un détail dédoublé révèle un décalage"));
+    pairViewLayout->addSpacing(8);
+    pairViewLayout->addWidget(opacityLabel);
+    pairViewLayout->addWidget(opacitySlider);
+    pairViewLayout->addWidget(opacityValue);
+    pairViewLayout->addWidget(differenceCheck);
+    const auto refreshOverlayControls = [this, opacityLabel, opacitySlider, opacityValue, differenceCheck]() {
+        const bool superposed = m_canvas->isPairOverlayMode();
+        differenceCheck->setEnabled(superposed);
+        for (QWidget *widget : {static_cast<QWidget *>(opacityLabel), static_cast<QWidget *>(opacitySlider),
+                                static_cast<QWidget *>(opacityValue)})
+            widget->setEnabled(superposed && !differenceCheck->isChecked());
+    };
+    refreshOverlayControls();
 
     canvasControlsLayout->addWidget(minus);
     canvasControlsLayout->addWidget(plus);
@@ -127,7 +174,7 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
     canvasControlsLayout->addWidget(overviewBtn);
-    canvasControlsLayout->addWidget(overlayDiff);
+    canvasControlsLayout->addWidget(pairViewControls);
     canvasControlsLayout->addStretch();
 
     auto *applyCropButton = FrontendUtils::makeButton(tr("Valider le recadrage"), canvasControls);
@@ -180,16 +227,33 @@ void WorkspaceCenter::createCanvasAndControls()
         m_canvas->setPairIsolated(false);
         m_mainWindow->updateStatus(tr("Vue Alignement : toutes les tuiles et leurs paires."));
     });
-    connect(m_canvas, &ArtworkCanvas::pairViewModeChanged, this, [this, overviewBtn, overlayDiff]() {
-        const QSignalBlocker blocker(overlayDiff);
-        overlayDiff->setChecked(m_canvas->isPairOverlayMode());
-        overviewBtn->setEnabled(m_canvas->isPairIsolated() || m_canvas->isPairOverlayMode());
+    connect(m_canvas, &ArtworkCanvas::pairViewModeChanged, this,
+            [this, overviewBtn, pairViewControls, sideBySideButton, superposedButton, refreshOverlayControls]() {
+        const bool pairOpen = m_canvas->isPairIsolated() || m_canvas->isPairOverlayMode();
+        overviewBtn->setEnabled(pairOpen);
+        pairViewControls->setEnabled(pairOpen);
+        pairViewControls->setToolTip(pairOpen ? QString() : tr("Cliquez sur une paire pour l'ouvrir"));
+        const QSignalBlocker sideBlocker(sideBySideButton);
+        const QSignalBlocker superposedBlocker(superposedButton);
+        (m_canvas->isPairOverlayMode() ? superposedButton : sideBySideButton)->setChecked(true);
+        refreshOverlayControls();
     });
-    connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
-        m_canvas->setPairOverlayMode(checked);
-        m_mainWindow->updateStatus(checked
-            ? tr("Vue Paire : superposition (différence) activée.")
-            : tr("Vue Paire : examen des 2 tuiles côte à côte."));
+    connect(sideBySideButton, &QPushButton::clicked, this, [this]() {
+        m_canvas->setPairOverlayMode(false);
+        m_canvas->setPairIsolated(true);
+        m_mainWindow->updateStatus(tr("Vue Paire : les 2 tuiles côte à côte."));
+    });
+    connect(superposedButton, &QPushButton::clicked, this, [this]() {
+        m_canvas->setPairOverlayMode(true);
+        m_mainWindow->updateStatus(tr("Vue Paire : B posée sur A ; réglez son opacité pour vérifier la superposition."));
+    });
+    connect(opacitySlider, &QSlider::valueChanged, this, [this, opacityValue](int percent) {
+        m_canvas->setPairOverlayOpacity(percent);
+        opacityValue->setText(QStringLiteral("%1 %").arg(percent));
+    });
+    connect(differenceCheck, &QCheckBox::toggled, this, [this, refreshOverlayControls](bool checked) {
+        m_canvas->setPairDifference(checked);
+        refreshOverlayControls();
     });
     connect(applyCropButton, &QPushButton::clicked, this, [this]() {
         if (m_canvas->hasActiveCropSelection()) {

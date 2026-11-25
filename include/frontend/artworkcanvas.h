@@ -4,6 +4,7 @@
 #include "image_layer.h"
 #include "frontendutils.h"
 #include "pipeline_results.h"
+#include "pair_edit_session.h"
 
 #include <QRect>
 #include <QStringList>
@@ -18,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <utility>
 
 class QKeyEvent;
 class QMouseEvent;
@@ -112,16 +114,28 @@ public:
     }
     void setSeamVisible(bool visible); //afficher ou masquer la ligne de couture en mode Image finale
     void setAlignmentErrorVisible(bool visible); //afficher ou masquer l'erreur d'alignement par paire
-    void setPairOverlayMode(bool enabled); //superposer les deux tuiles (différence) en vue Paire
+    void setPairOverlayMode(bool enabled); //superposer B sur A en vue Paire
+    // Vue superposée : opacité de B (0 à 100 %), ou différence des deux tuiles (le noir indique ce qui coïncide).
+    void setPairOverlayOpacity(int percent);
+    int pairOverlayOpacity() const { return m_overlayOpacityPercent; }
+    void setPairDifference(bool enabled);
+    bool isPairDifference() const { return m_pairDifference; }
     void setPairIsolated(bool isolated);   // afficher uniquement les 2 tuiles de la paire courante
     bool isPairIsolated() const { return m_pairIsolated; }
     bool isPairOverlayMode() const { return pairOverlayMode; }
+    // Correction de la paire courante : les points donnés sont modifiables (sélection, déplacement, suppression, ajout),
+    // B est posée à leur décalage médian (sans point : au décalage de la paire). Arrêter la correction abandonne les
+    // modifications.
     void startPointPicking(const QVector<QPointF> &initialPointsA = {}, const QVector<QPointF> &initialPointsB = {});
-    void undoLastPickedPoint();
+    void undoLastPickedPoint();   // annule le point en attente dans A, sinon défait la dernière modification
+    void redoPickedPoint();
+    void removeSelectedPickedPoint();
+    void selectPickedPoint(int index);
     void stopPointPicking();
-    bool isPickingPoints() const { return m_pickingPoints; }
-    const QVector<QPointF> &pickedPointsInA() const { return m_manualPointsA; }
-    const QVector<QPointF> &pickedPointsInB() const { return m_manualPointsB; }
+    bool isPickingPoints() const { return m_edit.isActive(); }
+    const PairEditSession &pairEdit() const { return m_edit; }
+    const QVector<QPointF> &pickedPointsInA() const { return m_edit.pointsInA(); }
+    const QVector<QPointF> &pickedPointsInB() const { return m_edit.pointsInB(); }
     bool hasPendingPointInA() const { return m_pendingPointInA.has_value(); }
     void setCurrentPair(const FrontendUtils::PairAlignmentInfo &pair);
 
@@ -162,6 +176,8 @@ public:
         void pairViewModeChanged();
         void manualPointsChanged();
         void pointPickingCancelled();
+        void pointPickingApplyRequested();   // Entrée pendant une correction
+        void nextPairToCheckRequested();     // touche N hors correction
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -194,6 +210,14 @@ private:
     void drawManualPickingOverlay(QPainter &p, const QRectF &rectA, double scaleA,
                                   const QRectF &rectB, double scaleB);
     bool handlePointPickingClick(const QPointF &scenePos);
+    // Point de la correction sous ce point de la scène : son indice et s'il s'agit de son extrémité dans A ; -1 sinon.
+    std::pair<int, bool> pickedPointAt(const QPointF &scenePos) const;
+    void dragPickedPoint(const QPointF &scenePos);
+    // Paire affichée : pendant une correction, B est posée au décalage des points modifiés.
+    FrontendUtils::PairAlignmentInfo displayedPair() const;
+    // Décalage de B dans A de la paire courante ; paire jamais mesurée : B posée à côté de A.
+    QPointF defaultPairOffset() const;
+    bool handlePointPickingKey(QKeyEvent *event);
     void drawCenteredMessage(QPainter &p, const QString &message);
 
     bool hasActiveImages() const;
@@ -241,11 +265,13 @@ private:
     bool alignmentErrorVisible = true;
     bool pairOverlayMode = false;
     bool m_pairIsolated = false;
-    bool m_pickingPoints = false;
+    PairEditSession m_edit;
     std::optional<QPointF> m_pendingPointInA;
     QPointF m_hoverScenePos;
-    QVector<QPointF> m_manualPointsA;
-    QVector<QPointF> m_manualPointsB;
+    int m_dragPointIndex = -1;   // point de la correction déplacé à la souris, -1 sinon
+    bool m_dragPointInA = true;
+    int m_overlayOpacityPercent = 50;
+    bool m_pairDifference = false;
     FrontendUtils::PairAlignmentInfo currentPair;
 
     QPointF m_panOffset;

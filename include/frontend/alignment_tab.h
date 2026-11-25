@@ -45,6 +45,8 @@ private:
     void selectCurrentRow();
     void startInteractiveCorrection();
     void refreshPickingUi();
+    void fillPointsTable();
+    void applyCorrection();
     void showManualAdjustmentDialog();
     QString shortPairLabel(const FrontendUtils::PairAlignmentInfo &pair) const;
 
@@ -74,7 +76,11 @@ private:
     QWidget *m_actionsBar = nullptr;
     QWidget *m_pickingBar = nullptr;
     QLabel *m_pickingHintLabel = nullptr;
-    QPushButton *m_applyPointsButton = nullptr;
+    QLabel *m_pickingOffsetLabel = nullptr;
+    QTableWidget *m_pointsTable = nullptr;
+    QPushButton *m_deletePointButton = nullptr;
     QPushButton *m_undoPointButton = nullptr;
+    QPushButton *m_redoPointButton = nullptr;
+    QPushButton *m_applyPointsButton = nullptr;
     QPushButton *m_cancelPickingButton = nullptr;
 };

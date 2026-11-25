@@ -4,6 +4,7 @@
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
@@ -193,10 +194,33 @@ void ArtworkCanvas::mousePressEvent(QMouseEvent *event)
         }
     }
 
-    if (modeValue == kModePair && m_pickingPoints && event->button() == Qt::RightButton) {
-        undoLastPickedPoint();
-        event->accept();
-        return;
+    if (modeValue == kModePair && m_edit.isActive()) {
+        const QPointF scenePos = viewTransform().inverted().map(QPointF(event->pos()));
+        const auto [index, inA] = pickedPointAt(scenePos);
+        // Clic droit : abandonne le point en attente, sinon supprime le point visé.
+        if (event->button() == Qt::RightButton) {
+            if (m_pendingPointInA.has_value()) {
+                m_pendingPointInA.reset();
+            } else if (index >= 0) {
+                m_edit.remove(index);
+            }
+            emit manualPointsChanged();
+            update();
+            event->accept();
+            return;
+        }
+        // Clic gauche sur un point : il est sélectionné et suit la souris jusqu'au relâchement.
+        if (event->button() == Qt::LeftButton && index >= 0 && !m_pendingPointInA.has_value()) {
+            m_edit.select(index);
+            m_edit.beginMove();
+            m_dragPointIndex = index;
+            m_dragPointInA = inA;
+            setCursor(Qt::SizeAllCursor);
+            emit manualPointsChanged();
+            update();
+            event->accept();
+            return;
+        }
     }
 
     if (event->button() == Qt::LeftButton || event->button() == Qt::MiddleButton) {
@@ -254,11 +278,17 @@ void ArtworkCanvas::mouseMoveEvent(QMouseEvent *event)
         event->accept();
         return;
     }
-    if (modeValue == kModePair && m_pickingPoints) {
+    if (modeValue == kModePair && m_edit.isActive()) {
         m_hoverScenePos = viewTransform().inverted().map(QPointF(event->pos()));
-        setCursor(Qt::CrossCursor);
-        if (m_pendingPointInA.has_value())
+        if (m_dragPointIndex >= 0) {
+            dragPickedPoint(m_hoverScenePos);
+            emit manualPointsChanged();
             update();
+        } else {
+            setCursor(pickedPointAt(m_hoverScenePos).first >= 0 ? Qt::PointingHandCursor : Qt::CrossCursor);
+            if (m_pendingPointInA.has_value())
+                update();
+        }
         event->accept();
         return;
     }
@@ -392,6 +422,13 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
         event->accept();
         return;
     }
+    if (m_dragPointIndex >= 0) {
+        m_dragPointIndex = -1;
+        setCursor(Qt::CrossCursor);
+        emit manualPointsChanged();
+        event->accept();
+        return;
+    }
     if (m_panning) {
         m_panning = false;
         unsetCursor();
@@ -399,7 +436,7 @@ void ArtworkCanvas::mouseReleaseEvent(QMouseEvent *event)
         const bool isClick = (event->pos() - m_pressPos).manhattanLength() < QApplication::startDragDistance();
         if (isClick && event->button() == Qt::LeftButton) {
             const QPointF scenePos = viewTransform().inverted().map(QPointF(event->pos()));
-            if (modeValue == kModePair && m_pickingPoints) {
+            if (modeValue == kModePair && m_edit.isActive()) {
                 handlePointPickingClick(scenePos);
             } else if (isPairOverviewShown()) {
                 const int pairIndex = pairAt(scenePos);
@@ -452,13 +489,17 @@ void ArtworkCanvas::wheelEvent(QWheelEvent *event)
 
 void ArtworkCanvas::keyPressEvent(QKeyEvent *event)
 {
+    if (modeValue == kModePair && m_edit.isActive() && handlePointPickingKey(event)) {
+        event->accept();
+        return;
+    }
+    if (modeValue == kModePair && !m_edit.isActive() && event->key() == Qt::Key_N
+        && event->modifiers() == Qt::NoModifier) {
+        emit nextPairToCheckRequested();
+        event->accept();
+        return;
+    }
     if (modeValue == kModePair && event->key() == Qt::Key_Escape) {
-        if (m_pickingPoints) {
-            stopPointPicking();
-            emit pointPickingCancelled();
-            event->accept();
-            return;
-        }
         if (pairOverlayMode || m_pairIsolated) {
             setPairOverlayMode(false);
             setPairIsolated(false);
@@ -659,41 +700,110 @@ void ArtworkCanvas::setPairIsolated(bool isolated)
 void ArtworkCanvas::startPointPicking(const QVector<QPointF> &initialPointsA,
                                       const QVector<QPointF> &initialPointsB)
 {
-    m_pickingPoints = true;
     m_pendingPointInA.reset();
-    const int count = static_cast<int>(qMin(initialPointsA.size(), initialPointsB.size()));
-    m_manualPointsA = initialPointsA.mid(0, count);
-    m_manualPointsB = initialPointsB.mid(0, count);
-    setPairOverlayMode(false);
-    setPairIsolated(true);
+    m_dragPointIndex = -1;
+    m_edit.start(initialPointsA, initialPointsB, defaultPairOffset());
+    if (!pairOverlayMode)
+        setPairIsolated(true);   // la vue choisie (côte à côte ou superposée) est conservée
+    setFocus();
     emit manualPointsChanged();
     update();
 }
 
 void ArtworkCanvas::undoLastPickedPoint()
 {
-    if (m_pendingPointInA.has_value()) {
+    if (m_pendingPointInA.has_value())
         m_pendingPointInA.reset();
-    } else if (!m_manualPointsA.isEmpty() && !m_manualPointsB.isEmpty()) {
-        m_manualPointsA.removeLast();
-        m_manualPointsB.removeLast();
-    }
+    else
+        m_edit.undo();
     emit manualPointsChanged();
+    update();
+}
+
+void ArtworkCanvas::redoPickedPoint()
+{
+    m_edit.redo();
+    emit manualPointsChanged();
+    update();
+}
+
+void ArtworkCanvas::removeSelectedPickedPoint()
+{
+    m_edit.remove(m_edit.selected());
+    emit manualPointsChanged();
+    update();
+}
+
+void ArtworkCanvas::selectPickedPoint(int index)
+{
+    m_edit.select(index);
     update();
 }
 
 void ArtworkCanvas::stopPointPicking()
 {
-    if (!m_pickingPoints && !m_pendingPointInA.has_value()
-        && m_manualPointsA.isEmpty() && m_manualPointsB.isEmpty()) {
+    if (!m_edit.isActive() && !m_pendingPointInA.has_value())
         return;
-    }
-    m_pickingPoints = false;
+    m_edit.stop();
     m_pendingPointInA.reset();
-    m_manualPointsA.clear();
-    m_manualPointsB.clear();
+    m_dragPointIndex = -1;
     unsetCursor();
     update();
+}
+
+void ArtworkCanvas::setPairOverlayOpacity(int percent)
+{
+    m_overlayOpacityPercent = qBound(0, percent, 100);
+    update();
+}
+
+void ArtworkCanvas::setPairDifference(bool enabled)
+{
+    m_pairDifference = enabled;
+    update();
+}
+
+// Raccourcis de la correction : Suppr, Ctrl+Z / Ctrl+Y, flèches (B de 1 px, Maj : 10 px), Entrée, Échap.
+bool ArtworkCanvas::handlePointPickingKey(QKeyEvent *event)
+{
+    if (event->matches(QKeySequence::Undo)) {
+        undoLastPickedPoint();
+        return true;
+    }
+    if (event->matches(QKeySequence::Redo)) {
+        redoPickedPoint();
+        return true;
+    }
+    const double step = (event->modifiers() & Qt::ShiftModifier) ? 10.0 : 1.0;
+    QPointF nudge;
+    switch (event->key()) {
+    case Qt::Key_Delete:
+    case Qt::Key_Backspace:
+        removeSelectedPickedPoint();
+        return true;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+        emit pointPickingApplyRequested();
+        return true;
+    case Qt::Key_Escape:
+        if (m_pendingPointInA.has_value()) {
+            m_pendingPointInA.reset();
+            update();
+        } else {
+            stopPointPicking();
+            emit pointPickingCancelled();
+        }
+        return true;
+    case Qt::Key_Left: nudge = QPointF(-step, 0.0); break;
+    case Qt::Key_Right: nudge = QPointF(step, 0.0); break;
+    case Qt::Key_Up: nudge = QPointF(0.0, -step); break;
+    case Qt::Key_Down: nudge = QPointF(0.0, step); break;
+    default: return false;
+    }
+    m_edit.nudge(nudge);
+    emit manualPointsChanged();
+    update();
+    return true;
 }
 
 void ArtworkCanvas::setMosaicPreview(const QImage &image) {

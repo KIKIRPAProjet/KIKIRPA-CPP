@@ -130,6 +130,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
     if (auto *canvasView = qobject_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         connect(canvasView, &ArtworkCanvas::pairClicked, this, &MainWindow::selectPair);
+        connect(canvasView, &ArtworkCanvas::nextPairToCheckRequested, this, &MainWindow::selectNextDubiousPair);
         connect(canvasView, &ArtworkCanvas::importTilesRequested,
                 this, &MainWindow::chooseTilesDirectory);
     }
@@ -816,9 +817,9 @@ void MainWindow::setMode(int mode)
             QStringLiteral("pairOverviewButton"))) {
         overviewBtn->setVisible(isPairMode);
     }
-    if (auto* overlayBtn = workspaceUI->workspace()->findChild<QWidget*>(
-        QStringLiteral("pairOverlayButton"))) {
-        overlayBtn->setVisible(isPairMode);
+    if (auto *pairViewControls = workspaceUI->workspace()->findChild<QWidget *>(
+            QStringLiteral("pairViewControls"))) {
+        pairViewControls->setVisible(isPairMode);
     }
     if (!isPairMode && workspaceUI->rightPanel() && workspaceUI->rightPanel()->alignmentTab())
         workspaceUI->rightPanel()->alignmentTab()->cancelPointPickingUi();

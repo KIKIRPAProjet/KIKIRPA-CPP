@@ -5,6 +5,7 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QImage>
+#include <QLineF>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
@@ -45,9 +46,6 @@ constexpr qreal POINT_RADIUS = 5.5;
 constexpr qreal MANUAL_POINT_RADIUS = 4.8;
 constexpr qreal MANUAL_LINE_WIDTH = 1.2;
 constexpr qreal PAIR_HIT_TOLERANCE_PX = 5.0;   // distance d'écran à laquelle un clic touche un lien ou une jonction
-const QColor POINT_COLOR(56, 189, 248);              // bleu ciel : points appariés et leurs liens
-const QColor LINK_COLOR(56, 189, 248, 190);
-const QColor MANUAL_COLOR(78, 201, 120);             // vert : points placés à la main par l'opérateur
 const QColor MANUAL_PENDING_COLOR(251, 191, 36);     // ambre : point en attente de son correspondant dans B
 const QColor BOUNDARY_COLOR(251, 113, 133);          // rose corail : couture, point rejeté, jonction en échec
 const QColor OVERLAP_COLOR(251, 191, 36, 200);       // ambre : bord de la zone de recouvrement
@@ -170,36 +168,83 @@ qreal scaledPointRadius(qreal baseRadius, int zoomPercent)
     return screenRadius / zoomScale;
 }
 
-// Tous les points appariés de la paire (bleu : retenus, rose : rejetés), reliés d'une tuile à l'autre.
-void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
-                    const TilePlacement &placementB, bool overlay, int zoomPercent)
+// Couleur d'un point selon son écart une fois B posée sur A : vert sous 1 px, ambre jusqu'à 3 px, rose au-delà.
+constexpr double GOOD_RESIDUAL_PX = 1.0;
+constexpr double FAIR_RESIDUAL_PX = 3.0;
+constexpr int MAX_NUMBERED_POINTS = 80;   // au-delà, les numéros encombreraient la vue
+const QColor GOOD_COLOR(78, 201, 120);
+const QColor REJECTED_COLOR(170, 170, 170);
+const QColor SELECTED_RING(255, 255, 255);
+
+QColor residualColor(double residual)
 {
-    const int count = static_cast<int>(qMin(pair.pointsInA.size(), pair.pointsInB.size()));
-    const int stride = qMax(1, count / MAX_DRAWN_POINTS);
-    const qreal radius = scaledPointRadius(POINT_RADIUS, zoomPercent);
-    QPainterPath retainedLinks;
-    QPainterPath rejectedLinks;
-    QVector<std::pair<QPointF, bool>> dots;
-    for (int index = 0; index < count; index += stride) {
-        const bool inlier = index >= pair.isInlier.size() || pair.isInlier.at(index);
-        const QPointF pointA = placementA.map(pair.pointsInA.at(index));
-        const QPointF pointB = placementB.map(pair.pointsInB.at(index));
-        QPainterPath &links = inlier ? retainedLinks : rejectedLinks;
-        links.moveTo(pointA);
-        links.lineTo(pointB);
-        dots.append({pointA, inlier});
-        dots.append({pointB, inlier});
-    }
-    if (!overlay) {
-        strokePath(p, retainedLinks, LINK_COLOR, LINE_WIDTH);
-        strokePath(p, rejectedLinks, BOUNDARY_COLOR, LINE_WIDTH, Qt::DashLine);
-    }
+    if (residual < GOOD_RESIDUAL_PX) return GOOD_COLOR;
+    if (residual <= FAIR_RESIDUAL_PX) return MANUAL_PENDING_COLOR;
+    return BOUNDARY_COLOR;
+}
+
+// Points d'une paire ouverte (côte à côte ou superposée), colorés selon leur écart au décalage offset. En vue
+// côte à côte, chaque point de A est relié à son point de B ; en vue superposée, le trait relie le point de A à celui
+// de B posé sur A : sa longueur montre l'écart. Les points rejetés par l'appariement sont des cercles gris vides.
+struct PairPointsStyle {
+    bool overlay = false;
+    int zoomPercent = 100;
+    int selected = -1;
+    bool numbered = false;
+};
+
+void drawResidualPoints(QPainter &p, const QVector<QPointF> &pointsInA, const QVector<QPointF> &pointsInB,
+                        const QVector<bool> &isInlier, const QPointF &offset, const TilePlacement &placementA,
+                        const TilePlacement &placementB, const PairPointsStyle &style)
+{
+    const int count = static_cast<int>(qMin(pointsInA.size(), pointsInB.size()));
+    const int stride = style.numbered ? 1 : qMax(1, count / MAX_DRAWN_POINTS);
+    const qreal radius = scaledPointRadius(POINT_RADIUS, style.zoomPercent);
+    const qreal zoomScale = qMax(1.0, style.zoomPercent / 100.0);
+    QFont indexFont = p.font();
+    indexFont.setPointSizeF(qMax(2.0, 8.5 / zoomScale));
+    p.setFont(indexFont);
+    const QPointF labelOffset(radius + 2.0 / zoomScale, -radius);
+    const bool numbered = style.numbered && count <= MAX_NUMBERED_POINTS;
+
     QPen ring(POINT_RING, LINE_WIDTH);
     ring.setCosmetic(true);
-    p.setPen(ring);
-    for (const auto &[point, inlier] : dots) {
-        p.setBrush(inlier ? POINT_COLOR : BOUNDARY_COLOR);
-        p.drawEllipse(point, radius, radius);
+    QPen selectedRing(SELECTED_RING, BOUNDARY_WIDTH);
+    selectedRing.setCosmetic(true);
+    for (int index = 0; index < count; index += stride) {
+        const bool inlier = index >= isInlier.size() || isInlier.at(index);
+        const QPointF pointA = placementA.map(pointsInA.at(index));
+        const QPointF pointB = placementB.map(pointsInB.at(index));
+        const double residual = QLineF(pointsInA.at(index), pointsInB.at(index) + offset).length();
+        const QColor color = inlier ? residualColor(residual) : REJECTED_COLOR;
+        QPainterPath link;
+        link.moveTo(pointA);
+        link.lineTo(pointB);
+        QColor linkColor = color;
+        linkColor.setAlpha(style.overlay ? 255 : 150);
+        strokePath(p, link, linkColor, LINE_WIDTH, inlier ? Qt::SolidLine : Qt::DashLine);
+
+        const QVector<QPointF> ends = style.overlay ? QVector<QPointF>{pointA} : QVector<QPointF>{pointA, pointB};
+        for (const QPointF &end : ends) {
+            p.setPen(ring);
+            p.setBrush(inlier ? QBrush(color) : QBrush(Qt::NoBrush));
+            if (!inlier) p.setPen(QPen(REJECTED_COLOR, LINE_WIDTH));
+            p.drawEllipse(end, radius, radius);
+            if (index == style.selected) {
+                p.setPen(selectedRing);
+                p.setBrush(Qt::NoBrush);
+                p.drawEllipse(end, radius * 1.9, radius * 1.9);
+            }
+            if (numbered) {
+                p.setPen(color);
+                p.drawText(end + labelOffset, QString::number(index + 1));
+            }
+        }
+        if (style.overlay) {   // extrémité dans B : petit cercle vide au bout du trait
+            p.setPen(QPen(color, LINE_WIDTH));
+            p.setBrush(Qt::NoBrush);
+            p.drawEllipse(pointB, radius * 0.6, radius * 0.6);
+        }
     }
     p.setBrush(Qt::NoBrush);
 }
@@ -386,7 +431,9 @@ void ArtworkCanvas::drawTilesOverview(QPainter &p)
             const auto placementB = placements.find(pair.tileIndexB);
             if (placementA == placements.end() || placementB == placements.end()) continue;
             if (pass == 0) drawPairOverlap(p, pair, placementA->second, placementB->second, false);
-            else if (pass == 1) drawPairPoints(p, pair, placementA->second, placementB->second, false, zoomPercent);
+            else if (pass == 1) drawResidualPoints(p, pair.pointsInA, pair.pointsInB, pair.isInlier,
+                                                   QPointF(pair.dx, pair.dy), placementA->second, placementB->second,
+                                                   {false, zoomPercent, -1, false});
             else if (pair.totalMatches == 0) drawFailedJunction(p, placementA->second.rect, placementB->second.rect);
         }
     }
@@ -419,99 +466,170 @@ int ArtworkCanvas::pairAt(const QPointF &scenePos) const
     return smallestZonePair;
 }
 
+namespace {
+
+// Décalage de B dans A pour poser une paire jamais mesurée : à 80 % de la largeur (ou de la hauteur) de A.
+QPointF unmeasuredOffset(const FrontendUtils::PairAlignmentInfo &pair)
+{
+    return (pair.direction == QObject::tr("vertical")) ? QPointF(0.0, pair.tileSizeA.height() * 0.8)
+                                                       : QPointF(pair.tileSizeA.width() * 0.8, 0.0);
+}
+
+bool isUnmeasured(const FrontendUtils::PairAlignmentInfo &pair)
+{
+    return pair.totalMatches == 0 && pair.overlapInA.isEmpty() && qFuzzyIsNull(pair.dx) && qFuzzyIsNull(pair.dy);
+}
+
+QRectF focusedArea(const QRect &widgetRect)
+{
+    return QRectF(widgetRect).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+}
+
+QRectF superposedArea(const QRect &widgetRect)
+{
+    return QRectF(widgetRect).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN + LABEL_BAND, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+}
+
+}
+
+FrontendUtils::PairAlignmentInfo ArtworkCanvas::displayedPair() const
+{
+    if (!m_edit.isActive())
+        return currentPair;
+    FrontendUtils::PairAlignmentInfo pair = currentPair;
+    const QPointF offset = m_edit.offset();
+    pair.dx = offset.x();
+    pair.dy = offset.y();
+    pair.totalMatches = qMax(1, m_edit.count());   // B est posée au décalage saisi, même sans point
+    pair.overlapInA = QRect();                       // la zone commune suit le décalage modifié
+    pair.overlapInB = QRect();
+    return pair;
+}
+
+QPointF ArtworkCanvas::defaultPairOffset() const
+{
+    return isUnmeasured(currentPair) ? unmeasuredOffset(currentPair) : QPointF(currentPair.dx, currentPair.dy);
+}
+
 // Uniquement les 2 tuiles de la paire courante, côte à côte ou l'une sous l'autre, avec leurs points.
 void ArtworkCanvas::drawFocusedPair(QPainter &p)
 {
-    const QRectF area = QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
-    const auto [placementA, placementB] = focusedPairPlacements(currentPair, area);
-    drawPhoto(p, placementA.rect.toRect(), currentPair.imagePathA);
-    drawPhoto(p, placementB.rect.toRect(), currentPair.imagePathB);
-    drawTileLabel(p, placementA.rect, currentPair.tileA, true);
-    drawTileLabel(p, placementB.rect, currentPair.tileB, true);
-    drawPairOverlap(p, currentPair, placementA, placementB, false);
-    drawPairPoints(p, currentPair, placementA, placementB, false, zoomPercent);
-    if (currentPair.totalMatches == 0)
-        drawFailedJunction(p, placementA.rect, placementB.rect);
-    if (m_pickingPoints)
+    const FrontendUtils::PairAlignmentInfo pair = displayedPair();
+    const auto [placementA, placementB] = focusedPairPlacements(pair, focusedArea(rect()));
+    drawPhoto(p, placementA.rect.toRect(), pair.imagePathA);
+    drawPhoto(p, placementB.rect.toRect(), pair.imagePathB);
+    drawTileLabel(p, placementA.rect, pair.tileA, true);
+    drawTileLabel(p, placementB.rect, pair.tileB, true);
+    drawPairOverlap(p, pair, placementA, placementB, false);
+    if (m_edit.isActive()) {
+        drawResidualPoints(p, m_edit.pointsInA(), m_edit.pointsInB(), {}, m_edit.offset(), placementA, placementB,
+                           {false, zoomPercent, m_edit.selected(), true});
         drawManualPickingOverlay(p, placementA.rect, placementA.scale, placementB.rect, placementB.scale);
+        return;
+    }
+    drawResidualPoints(p, pair.pointsInA, pair.pointsInB, pair.isInlier, QPointF(pair.dx, pair.dy), placementA,
+                       placementB, {false, zoomPercent, -1, false});
+    if (pair.totalMatches == 0)
+        drawFailedJunction(p, placementA.rect, placementB.rect);
 }
 
-// B posée sur A à sa translation mesurée, le tout agrandi à la taille de la vue, le nom de la paire au-dessus.
+// B posée sur A à son décalage (mesuré, ou modifié pendant une correction), le tout agrandi à la taille de la vue.
+// B est dessinée avec l'opacité choisie, ou en différence : ce qui coïncide devient noir.
 void ArtworkCanvas::drawSuperposedPair(QPainter &p)
 {
-    const QRectF area =
-        QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN + LABEL_BAND, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
-    const auto [placementA, placementB] = superposedPairPlacements(currentPair, area);
-    drawPhoto(p, placementA.rect.toRect(), currentPair.imagePathA);
-    p.setOpacity(OVERLAY_OPACITY);
-    drawPhoto(p, placementB.rect.toRect(), currentPair.imagePathB);
-    p.setOpacity(1.0);
-    drawPairOverlap(p, currentPair, placementA, placementB, true);
-    drawPairPoints(p, currentPair, placementA, placementB, true, zoomPercent);
-    drawTileLabel(p, placementA.rect | placementB.rect, currentPair.pairLabel(), true);
-    if (m_pickingPoints)
+    const FrontendUtils::PairAlignmentInfo pair = displayedPair();
+    const auto [placementA, placementB] = superposedPairPlacements(pair, superposedArea(rect()));
+    drawPhoto(p, placementA.rect.toRect(), pair.imagePathA);
+    p.save();
+    if (m_pairDifference)
+        p.setCompositionMode(QPainter::CompositionMode_Difference);
+    else
+        p.setOpacity(m_overlayOpacityPercent / 100.0);
+    drawPhoto(p, placementB.rect.toRect(), pair.imagePathB);
+    p.restore();
+    drawPairOverlap(p, pair, placementA, placementB, true);
+    if (m_edit.isActive()) {
+        drawResidualPoints(p, m_edit.pointsInA(), m_edit.pointsInB(), {}, m_edit.offset(), placementA, placementB,
+                           {true, zoomPercent, m_edit.selected(), true});
+    } else {
+        drawResidualPoints(p, pair.pointsInA, pair.pointsInB, pair.isInlier, QPointF(pair.dx, pair.dy), placementA,
+                           placementB, {true, zoomPercent, -1, false});
+    }
+    drawTileLabel(p, placementA.rect | placementB.rect, pair.pairLabel(), true);
+    if (m_edit.isActive())
         drawManualPickingOverlay(p, placementA.rect, placementA.scale, placementB.rect, placementB.scale);
 }
 
+// Point placé dans A qui attend son correspondant dans B, relié au curseur.
 void ArtworkCanvas::drawManualPickingOverlay(QPainter &p, const QRectF &rectA, double scaleA,
-                                             const QRectF &rectB, double scaleB)
+                                             const QRectF & /*rectB*/, double /*scaleB*/)
 {
+    if (!m_pendingPointInA.has_value())
+        return;
     p.save();
-    QPainterPath links;
-    const int count = static_cast<int>(qMin(m_manualPointsA.size(), m_manualPointsB.size()));
-    for (int i = 0; i < count; ++i) {
-        const QPointF pA = rectA.topLeft() + m_manualPointsA.at(i) * scaleA;
-        const QPointF pB = rectB.topLeft() + m_manualPointsB.at(i) * scaleB;
-        links.moveTo(pA);
-        links.lineTo(pB);
-    }
-    strokePath(p, links, MANUAL_COLOR, MANUAL_LINE_WIDTH);
-
     const qreal radius = scaledPointRadius(MANUAL_POINT_RADIUS, zoomPercent);
-    const qreal zoomScale = qMax(1.0, zoomPercent / 100.0);
-    QFont indexFont = p.font();
-    indexFont.setPointSizeF(qMax(2.0, 9.0 / zoomScale));
-    p.setFont(indexFont);
-    const QPointF labelOffset(4.0 / zoomScale, -3.0 / zoomScale);
-
+    const QPointF pending = rectA.topLeft() + (*m_pendingPointInA) * scaleA;
+    QPainterPath guide;
+    guide.moveTo(pending);
+    guide.lineTo(m_hoverScenePos);
+    strokePath(p, guide, MANUAL_PENDING_COLOR, MANUAL_LINE_WIDTH, Qt::DashLine);
     QPen ring(POINT_RING, LINE_WIDTH);
     ring.setCosmetic(true);
-    for (int i = 0; i < count; ++i) {
-        const QPointF pA = rectA.topLeft() + m_manualPointsA.at(i) * scaleA;
-        const QPointF pB = rectB.topLeft() + m_manualPointsB.at(i) * scaleB;
-        const QString indexText = QString::number(i + 1);
-        for (const QPointF &pt : {pA, pB}) {
-            p.setPen(ring);
-            p.setBrush(MANUAL_COLOR);
-            p.drawEllipse(pt, radius, radius);
-            p.setPen(MANUAL_COLOR);
-            p.drawText(pt + labelOffset, indexText);
+    p.setPen(ring);
+    p.setBrush(MANUAL_PENDING_COLOR);
+    p.drawEllipse(pending, radius, radius);
+    p.restore();
+}
+
+std::pair<int, bool> ArtworkCanvas::pickedPointAt(const QPointF &scenePos) const
+{
+    if (!m_edit.isActive() || !hasBackendData(currentPair))
+        return {-1, true};
+    const FrontendUtils::PairAlignmentInfo pair = displayedPair();
+    const auto [placementA, placementB] = pairOverlayMode ? superposedPairPlacements(pair, superposedArea(rect()))
+                                                          : focusedPairPlacements(pair, focusedArea(rect()));
+    const qreal tolerance = (scaledPointRadius(POINT_RADIUS, zoomPercent) * zoomPercent / 100.0 + PAIR_HIT_TOLERANCE_PX)
+                            * 100.0 / qMax(1, zoomPercent);
+    int best = -1;
+    bool bestInA = true;
+    qreal bestDistance = tolerance;
+    for (int index = 0; index < m_edit.count(); ++index) {
+        const qreal distanceA = QLineF(placementA.map(m_edit.pointsInA().at(index)), scenePos).length();
+        const qreal distanceB = QLineF(placementB.map(m_edit.pointsInB().at(index)), scenePos).length();
+        if (distanceA <= bestDistance) {
+            best = index;
+            bestInA = true;
+            bestDistance = distanceA;
+        }
+        if (distanceB < bestDistance) {
+            best = index;
+            bestInA = false;
+            bestDistance = distanceB;
         }
     }
+    return {best, bestInA};
+}
 
-    if (m_pendingPointInA.has_value()) {
-        const QPointF pPending = rectA.topLeft() + (*m_pendingPointInA) * scaleA;
-        QPainterPath guide;
-        guide.moveTo(pPending);
-        guide.lineTo(m_hoverScenePos);
-        strokePath(p, guide, MANUAL_PENDING_COLOR, MANUAL_LINE_WIDTH, Qt::DashLine);
-        p.setPen(ring);
-        p.setBrush(MANUAL_PENDING_COLOR);
-        p.drawEllipse(pPending, radius, radius);
-    }
-    p.restore();
+void ArtworkCanvas::dragPickedPoint(const QPointF &scenePos)
+{
+    const FrontendUtils::PairAlignmentInfo pair = displayedPair();
+    const auto [placementA, placementB] = pairOverlayMode ? superposedPairPlacements(pair, superposedArea(rect()))
+                                                          : focusedPairPlacements(pair, focusedArea(rect()));
+    const TilePlacement &placement = m_dragPointInA ? placementA : placementB;
+    const QSize size = m_dragPointInA ? currentPair.tileSizeA : currentPair.tileSizeB;
+    const QPointF point = placement.unmap(scenePos);
+    m_edit.moveTo(m_dragPointIndex, m_dragPointInA,
+                  QPointF(qBound(0.0, point.x(), static_cast<double>(size.width())),
+                          qBound(0.0, point.y(), static_cast<double>(size.height()))));
 }
 
 bool ArtworkCanvas::handlePointPickingClick(const QPointF &scenePos)
 {
     if (!hasBackendData(currentPair))
         return false;
-    const QRectF area = pairOverlayMode
-        ? QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN + LABEL_BAND, -PREVIEW_MARGIN, -PREVIEW_MARGIN)
-        : QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
-    const auto [placementA, placementB] = pairOverlayMode
-        ? superposedPairPlacements(currentPair, area)
-        : focusedPairPlacements(currentPair, area);
+    const FrontendUtils::PairAlignmentInfo pair = displayedPair();
+    const auto [placementA, placementB] = pairOverlayMode ? superposedPairPlacements(pair, superposedArea(rect()))
+                                                          : focusedPairPlacements(pair, focusedArea(rect()));
     const auto clampToTile = [](const QPointF &point, const QSize &size) {
         return QPointF(qBound(0.0, point.x(), static_cast<double>(size.width())),
                        qBound(0.0, point.y(), static_cast<double>(size.height())));
@@ -524,8 +642,7 @@ bool ArtworkCanvas::handlePointPickingClick(const QPointF &scenePos)
         return true;
     }
     if (m_pendingPointInA.has_value() && placementB.rect.contains(scenePos)) {
-        m_manualPointsA.append(*m_pendingPointInA);
-        m_manualPointsB.append(clampToTile(placementB.unmap(scenePos), currentPair.tileSizeB));
+        m_edit.add(*m_pendingPointInA, clampToTile(placementB.unmap(scenePos), currentPair.tileSizeB));
         m_pendingPointInA.reset();
         emit manualPointsChanged();
         update();

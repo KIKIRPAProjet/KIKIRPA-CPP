@@ -18,6 +18,7 @@
 #include "alignment_tab.h"
 #include "mainwindow.h"
 #include "artworkcanvas.h"
+#include "pair_edit_session.h"
 #include "frontendutils.h"
 #include "pipeline_results.h"
 
@@ -31,9 +32,11 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMap>
 #include <QPushButton>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QStringList>
 #include <QTableWidget>
@@ -52,6 +55,10 @@ constexpr int PAIR_INDEX_ROLE = Qt::UserRole;
 constexpr int SORT_KEY_ROLE = Qt::UserRole + 1;
 constexpr int TABLE_MINIMUM_HEIGHT = 180;
 constexpr double MAXIMUM_OFFSET_PX = 100000.0;
+constexpr int POINTS_TABLE_MAX_HEIGHT = 220;
+// Couleur de l'écart d'un point, comme sur le canevas : vert sous 1 px, ambre jusqu'à 3 px, rose au-delà.
+constexpr double GOOD_RESIDUAL_PX = 1.0;
+constexpr double FAIR_RESIDUAL_PX = 3.0;
 
 // Cellule triée sur une valeur (ordre des états, nombre, écart) plutôt que sur son texte.
 class SortableItem : public QTableWidgetItem
@@ -267,6 +274,7 @@ void AlignmentTab::createDetails(QVBoxLayout *layout)
     actions->addWidget(m_validateButton);
     detailsLayout->addWidget(m_actionsBar);
 
+    // Correction : la liste des points de la paire, du plus grand écart au plus petit, et les actions sur ces points.
     m_pickingBar = new QWidget(m_details);
     auto *pickingLayout = new QVBoxLayout(m_pickingBar);
     pickingLayout->setContentsMargins(0, 4, 0, 0);
@@ -274,17 +282,48 @@ void AlignmentTab::createDetails(QVBoxLayout *layout)
     m_pickingHintLabel = FrontendUtils::mutedLabel(QString(), m_pickingBar);
     m_pickingHintLabel->setWordWrap(true);
     pickingLayout->addWidget(m_pickingHintLabel);
+    m_pickingOffsetLabel = valueLabel(m_pickingBar);
+    pickingLayout->addWidget(m_pickingOffsetLabel);
+
+    m_pointsTable = new QTableWidget(0, 2, m_pickingBar);
+    m_pointsTable->setHorizontalHeaderLabels({tr("Point"), tr("Écart")});
+    m_pointsTable->verticalHeader()->setVisible(false);
+    m_pointsTable->horizontalHeader()->setStretchLastSection(true);
+    m_pointsTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_pointsTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_pointsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_pointsTable->setMaximumHeight(POINTS_TABLE_MAX_HEIGHT);
+    m_pointsTable->setToolTip(tr("Écart : distance entre le point dans A et son point dans B une fois B posée sur A"));
+    pickingLayout->addWidget(m_pointsTable);
+
+    auto *editButtons = new QHBoxLayout;
+    editButtons->setContentsMargins(0, 0, 0, 0);
+    m_deletePointButton = FrontendUtils::makeButton(tr("Supprimer"), m_pickingBar);
+    m_deletePointButton->setToolTip(tr("Supprimer le point sélectionné (Suppr, ou clic droit sur le point)"));
+    m_undoPointButton = FrontendUtils::makeButton(tr("Défaire"), m_pickingBar);
+    m_undoPointButton->setToolTip(tr("Défaire la dernière modification (Ctrl+Z)"));
+    m_redoPointButton = FrontendUtils::makeButton(tr("Refaire"), m_pickingBar);
+    m_redoPointButton->setToolTip(tr("Refaire la modification défaite (Ctrl+Y)"));
+    editButtons->addWidget(m_deletePointButton);
+    editButtons->addWidget(m_undoPointButton);
+    editButtons->addWidget(m_redoPointButton);
+    pickingLayout->addLayout(editButtons);
+
     auto *pickingButtons = new QHBoxLayout;
     pickingButtons->setContentsMargins(0, 0, 0, 0);
     m_applyPointsButton = FrontendUtils::makeButton(tr("Appliquer"), m_pickingBar, true);
-    m_applyPointsButton->setEnabled(false);
-    m_undoPointButton = FrontendUtils::makeButton(tr("Retirer"), m_pickingBar);
-    m_undoPointButton->setToolTip(tr("Retirer le dernier point placé (clic droit)"));
+    m_applyPointsButton->setToolTip(tr("Relancer le calcul avec ces points (Entrée)"));
     m_cancelPickingButton = FrontendUtils::makeButton(tr("Annuler"), m_pickingBar);
+    m_cancelPickingButton->setToolTip(tr("Abandonner les modifications (Échap)"));
     pickingButtons->addWidget(m_applyPointsButton);
-    pickingButtons->addWidget(m_undoPointButton);
     pickingButtons->addWidget(m_cancelPickingButton);
     pickingLayout->addLayout(pickingButtons);
+
+    auto *shortcutsLabel = FrontendUtils::mutedLabel(
+        tr("Suppr : supprimer · Flèches : décaler B de 1 px (Maj : 10 px) · Ctrl+Z, Ctrl+Y · Entrée : appliquer · "
+           "Échap : annuler"), m_pickingBar);
+    shortcutsLabel->setWordWrap(true);
+    pickingLayout->addWidget(shortcutsLabel);
     m_pickingBar->setVisible(false);
     detailsLayout->addWidget(m_pickingBar);
 
@@ -292,23 +331,23 @@ void AlignmentTab::createDetails(QVBoxLayout *layout)
 
     connect(m_correctButton, &QPushButton::clicked, this, &AlignmentTab::startInteractiveCorrection);
     connect(m_validateButton, &QPushButton::clicked, this, [this]() { emit pairValidated(m_currentPairIndex); });
-    connect(m_undoPointButton, &QPushButton::clicked, this, [this]() {
-        if (m_canvas)
-            m_canvas->undoLastPickedPoint();
-    });
     connect(m_cancelPickingButton, &QPushButton::clicked, this, &AlignmentTab::cancelPointPickingUi);
-    connect(m_applyPointsButton, &QPushButton::clicked, this, [this]() {
-        if (!m_canvas)
-            return;
-        const QVector<QPointF> pointsInA = m_canvas->pickedPointsInA();
-        const QVector<QPointF> pointsInB = m_canvas->pickedPointsInB();
-        cancelPointPickingUi();
-        if (!pointsInA.isEmpty() && pointsInA.size() == pointsInB.size())
-            emit manualPointsApplied(m_currentPairIndex, pointsInA, pointsInB);
-    });
+    connect(m_applyPointsButton, &QPushButton::clicked, this, &AlignmentTab::applyCorrection);
     if (m_canvas) {
+        connect(m_deletePointButton, &QPushButton::clicked, m_canvas, &ArtworkCanvas::removeSelectedPickedPoint);
+        connect(m_undoPointButton, &QPushButton::clicked, m_canvas, &ArtworkCanvas::undoLastPickedPoint);
+        connect(m_redoPointButton, &QPushButton::clicked, m_canvas, &ArtworkCanvas::redoPickedPoint);
+        auto *deleteShortcut = new QShortcut(QKeySequence::Delete, m_pointsTable);
+        deleteShortcut->setContext(Qt::WidgetShortcut);
+        connect(deleteShortcut, &QShortcut::activated, m_canvas, &ArtworkCanvas::removeSelectedPickedPoint);
+        connect(m_pointsTable, &QTableWidget::itemSelectionChanged, this, [this]() {
+            const QList<QTableWidgetItem *> selected = m_pointsTable->selectedItems();
+            m_canvas->selectPickedPoint(selected.isEmpty() ? -1 : selected.first()->data(Qt::UserRole).toInt());
+            m_deletePointButton->setEnabled(!selected.isEmpty());
+        });
         connect(m_canvas, &ArtworkCanvas::manualPointsChanged, this, &AlignmentTab::refreshPickingUi);
         connect(m_canvas, &ArtworkCanvas::pointPickingCancelled, this, &AlignmentTab::cancelPointPickingUi);
+        connect(m_canvas, &ArtworkCanvas::pointPickingApplyRequested, this, &AlignmentTab::applyCorrection);
     }
 }
 
@@ -445,29 +484,80 @@ void AlignmentTab::startInteractiveCorrection()
         return;
     m_actionsBar->setVisible(false);
     m_pickingBar->setVisible(true);
-    const bool alreadyManual = pair.status == FrontendUtils::PairStatus::Validated
-                               && pair.statusReason.contains(QStringLiteral("main"));
-    if (alreadyManual)
-        m_canvas->startPointPicking(pair.pointsInA, pair.pointsInB);
-    else
-        m_canvas->startPointPicking();
+    // On part des points retenus par le calcul : les points rejetés ne servent déjà pas au positionnement.
+    QVector<QPointF> pointsInA;
+    QVector<QPointF> pointsInB;
+    const auto count = qMin(pair.pointsInA.size(), pair.pointsInB.size());
+    for (qsizetype index = 0; index < count; ++index) {
+        if (index < pair.isInlier.size() && !pair.isInlier.at(index))
+            continue;
+        pointsInA.append(pair.pointsInA.at(index));
+        pointsInB.append(pair.pointsInB.at(index));
+    }
+    m_canvas->startPointPicking(pointsInA, pointsInB);
     refreshPickingUi();
-    m_mainWindow->updateStatus(tr("Correction manuelle : cliquez un point dans A puis dans B (%1).").arg(pair.pairLabel()));
+    m_mainWindow->updateStatus(tr("Correction de %1 : modifiez les points, puis appliquez.").arg(pair.pairLabel()));
 }
 
 void AlignmentTab::refreshPickingUi()
 {
-    if (!m_canvas)
+    if (!m_canvas || !m_canvas->isPickingPoints())
         return;
-    const int count = static_cast<int>(m_canvas->pickedPointsInA().size());
-    const bool pending = m_canvas->hasPendingPointInA();
-    m_pickingHintLabel->setText(pending
-        ? tr("%1 paire(s) — cliquez le même détail dans B (clic droit : retirer).")
-              .arg(count)
-        : tr("%1 paire(s) — cliquez un détail dans A, puis le même dans B.")
-              .arg(count));
-    m_applyPointsButton->setEnabled(count > 0);
-    m_undoPointButton->setEnabled(pending || count > 0);
+    const PairEditSession &edit = m_canvas->pairEdit();
+    m_pickingHintLabel->setText(m_canvas->hasPendingPointInA()
+        ? tr("Cliquez le même détail dans B (clic droit ou Échap : abandonner ce point).")
+        : tr("Cliquez un détail dans A, puis le même dans B, pour ajouter un point. Glissez un point pour le déplacer."));
+    const QPointF offset = edit.offset();
+    m_pickingOffsetLabel->setText(tr("%1 point(s) · décalage de B : dx = %2 px ; dy = %3 px")
+                                      .arg(edit.count()).arg(formatPixels(offset.x()), formatPixels(offset.y())));
+    fillPointsTable();
+    m_deletePointButton->setEnabled(edit.selected() >= 0);
+    m_undoPointButton->setEnabled(edit.canUndo() || m_canvas->hasPendingPointInA());
+    m_redoPointButton->setEnabled(edit.canRedo());
+}
+
+void AlignmentTab::fillPointsTable()
+{
+    const PairEditSession &edit = m_canvas->pairEdit();
+    const QSignalBlocker blocker(m_pointsTable);
+    const QVector<int> order = edit.indicesByResidual();
+    m_pointsTable->setRowCount(static_cast<int>(order.size()));
+    int selectedRow = -1;
+    for (int row = 0; row < order.size(); ++row) {
+        const int index = order.at(row);
+        const double residual = edit.residual(index);
+        auto *pointItem = new QTableWidgetItem(QString::number(index + 1));
+        auto *residualItem = new QTableWidgetItem(tr("%1 px").arg(formatPixels(residual)));
+        residualItem->setForeground(residual < GOOD_RESIDUAL_PX ? QColor(78, 201, 120)
+                                    : residual <= FAIR_RESIDUAL_PX ? QColor(251, 191, 36) : QColor(251, 113, 133));
+        for (QTableWidgetItem *item : {pointItem, residualItem})
+            item->setData(Qt::UserRole, index);
+        m_pointsTable->setItem(row, 0, pointItem);
+        m_pointsTable->setItem(row, 1, residualItem);
+        if (index == edit.selected())
+            selectedRow = row;
+    }
+    if (selectedRow >= 0) {
+        m_pointsTable->selectRow(selectedRow);
+        m_pointsTable->scrollToItem(m_pointsTable->item(selectedRow, 0));
+    } else {
+        m_pointsTable->clearSelection();
+    }
+}
+
+// Points modifiés : ils remplacent ceux de la paire au prochain calcul. Sans point, seul le décalage de B est envoyé.
+void AlignmentTab::applyCorrection()
+{
+    if (!m_canvas || !m_canvas->isPickingPoints())
+        return;
+    const QVector<QPointF> pointsInA = m_canvas->pickedPointsInA();
+    const QVector<QPointF> pointsInB = m_canvas->pickedPointsInB();
+    const QPointF offset = m_canvas->pairEdit().offset();
+    cancelPointPickingUi();
+    if (!pointsInA.isEmpty() && pointsInA.size() == pointsInB.size())
+        emit manualPointsApplied(m_currentPairIndex, pointsInA, pointsInB);
+    else
+        emit manualOffsetApplied(m_currentPairIndex, offset.x(), offset.y());
 }
 
 void AlignmentTab::cancelPointPickingUi()
