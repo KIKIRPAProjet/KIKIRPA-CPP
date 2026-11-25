@@ -67,13 +67,6 @@ void RightPanel::updateGridState(const ProjectGrid::State &gridState)
     }
 }
 
-void RightPanel::updateProjectInfo(const QString &projectName, const ProjectGrid::State &gridState)
-{
-    if (m_alignmentTab) {
-        m_alignmentTab->updateInfo(projectName, gridState);
-    }
-}
-
 void RightPanel::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
 {
     if (m_masksTab) {

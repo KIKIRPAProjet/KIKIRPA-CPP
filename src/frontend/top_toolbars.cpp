@@ -97,18 +97,6 @@ void TopToolbars::createModesBar()
 
     createModeButtons(stages, stageLayout);
 
-    auto *prevPairBtn = FrontendUtils::makeButton(tr("Précédente"), stages);
-    prevPairBtn->setObjectName(QStringLiteral("prevPairButton"));
-    prevPairBtn->setVisible(false);
-    stageLayout->addWidget(prevPairBtn);
-    connect(prevPairBtn, &QPushButton::clicked, this, &TopToolbars::previousPairRequested);
-
-    auto *nextDubiousBtn = FrontendUtils::makeButton(tr("Douteuse suivante"), stages);
-    nextDubiousBtn->setObjectName(QStringLiteral("nextDubiousButton"));
-    nextDubiousBtn->setVisible(false);
-    stageLayout->addWidget(nextDubiousBtn);
-    connect(nextDubiousBtn, &QPushButton::clicked, this, &TopToolbars::nextDubiousPairRequested);
-
     stageLayout->addStretch();
     createActionButtons(stages, stageLayout);
 
@@ -194,8 +182,5 @@ void TopToolbars::updateDubiousState(int dubiousCount)
         } else {
             alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
-    }
-    if (auto *nextDubiousBtn = findChild<QPushButton *>(QStringLiteral("nextDubiousButton"))) {
-        nextDubiousBtn->setEnabled(dubiousCount > 0);
     }
 }

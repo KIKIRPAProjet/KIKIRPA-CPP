@@ -59,10 +59,11 @@ private:
     void setupPairAlignmentConnections();
 
     void selectPair(int pairIndex);
-    void selectPreviousPair();
     void selectNextDubiousPair();
     void validatePair(int pairIndex);
     void applyManualPairOffset(int pairIndex, double dx, double dy);
+    void applyManualPairPoints(int pairIndex, const QVector<QPointF> &pointsInA, const QVector<QPointF> &pointsInB);
+    void submitManualCorrection(const QString &pairLabel, const FrontendNs::ManualCorrection &correction);
     void refreshPairViews();
     // Remplace les paires et les lignes de couture affichées par celles du dernier calcul (vides : tout est effacé).
     void applyPipelineResults(const PipelineResults &results);

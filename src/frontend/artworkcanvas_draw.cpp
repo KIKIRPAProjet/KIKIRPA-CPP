@@ -10,9 +10,11 @@
 #include <QPainterPath>
 #include <QTransform>
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <map>
 #include <utility>
-#include <algorithm>
 
 namespace {
 constexpr int kGridGapX = 18;
@@ -39,9 +41,14 @@ constexpr qreal OVERLAY_OPACITY = 0.65;
 // se reconnaît au nom de ses tuiles.
 constexpr qreal LINE_WIDTH = 1.0;       // liens entre points, bord des zones de recouvrement
 constexpr qreal BOUNDARY_WIDTH = 1.5;   // coutures, jonction d'une paire en échec
-constexpr qreal POINT_RADIUS = 2.5;
+constexpr qreal POINT_RADIUS = 5.5;
+constexpr qreal MANUAL_POINT_RADIUS = 4.8;
+constexpr qreal MANUAL_LINE_WIDTH = 1.2;
+constexpr qreal PAIR_HIT_TOLERANCE_PX = 5.0;   // distance d'écran à laquelle un clic touche un lien ou une jonction
 const QColor POINT_COLOR(56, 189, 248);              // bleu ciel : points appariés et leurs liens
 const QColor LINK_COLOR(56, 189, 248, 190);
+const QColor MANUAL_COLOR(78, 201, 120);             // vert : points placés à la main par l'opérateur
+const QColor MANUAL_PENDING_COLOR(251, 191, 36);     // ambre : point en attente de son correspondant dans B
 const QColor BOUNDARY_COLOR(251, 113, 133);          // rose corail : couture, point rejeté, jonction en échec
 const QColor OVERLAP_COLOR(251, 191, 36, 200);       // ambre : bord de la zone de recouvrement
 const QColor OVERLAP_FILL(251, 191, 36, 22);
@@ -86,6 +93,7 @@ struct TilePlacement {
     double scale = 1.0;
     QPointF map(const QPointF &tilePoint) const { return rect.topLeft() + tilePoint * scale; }
     QRectF map(const QRectF &tileRect) const { return {map(tileRect.topLeft()), map(tileRect.bottomRight())}; }
+    QPointF unmap(const QPointF &scenePoint) const { return (scenePoint - rect.topLeft()) / qMax(MIN_SCALE, scale); }
 };
 
 // Rectangle où drawPhoto dessine une image de taille imageSize dans cell : ratio conservé, centrée.
@@ -154,12 +162,21 @@ void drawPairOverlap(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, 
     strokePath(p, zones, OVERLAP_COLOR, LINE_WIDTH);
 }
 
+// Rayon dans le repère scène : diminue doucement à l'écran quand on zoome (plancher 4 px).
+qreal scaledPointRadius(qreal baseRadius, int zoomPercent)
+{
+    const qreal zoomScale = qMax(1.0, zoomPercent / 100.0);
+    const qreal screenRadius = qMax(4.0, baseRadius / std::pow(zoomScale, 0.25));
+    return screenRadius / zoomScale;
+}
+
 // Tous les points appariés de la paire (bleu : retenus, rose : rejetés), reliés d'une tuile à l'autre.
 void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
-                    const TilePlacement &placementB, bool overlay)
+                    const TilePlacement &placementB, bool overlay, int zoomPercent)
 {
     const int count = static_cast<int>(qMin(pair.pointsInA.size(), pair.pointsInB.size()));
     const int stride = qMax(1, count / MAX_DRAWN_POINTS);
+    const qreal radius = scaledPointRadius(POINT_RADIUS, zoomPercent);
     QPainterPath retainedLinks;
     QPainterPath rejectedLinks;
     QVector<std::pair<QPointF, bool>> dots;
@@ -182,26 +199,54 @@ void drawPairPoints(QPainter &p, const FrontendUtils::PairAlignmentInfo &pair, c
     p.setPen(ring);
     for (const auto &[point, inlier] : dots) {
         p.setBrush(inlier ? POINT_COLOR : BOUNDARY_COLOR);
-        p.drawEllipse(point, POINT_RADIUS, POINT_RADIUS);
+        p.drawEllipse(point, radius, radius);
     }
     p.setBrush(Qt::NoBrush);
 }
 
 // Paire en échec : la jonction entre les deux tuiles est soulignée d'un trait rose, au milieu de l'espace qui
 // les sépare (au-dessus de la bande du nom de la tuile du dessous), sur toute la longueur du bord commun.
+QLineF failedJunctionLine(const QRectF &rectA, const QRectF &rectB)
+{
+    if (rectB.left() >= rectA.right()) {   // B à droite de A
+        const qreal x = (rectA.right() + rectB.left()) / 2.0;
+        return {x, qMax(rectA.top(), rectB.top()), x, qMin(rectA.bottom(), rectB.bottom())};
+    }
+    const qreal y = (rectA.bottom() + rectB.top() - LABEL_BAND) / 2.0;   // B sous A
+    return {qMax(rectA.left(), rectB.left()), y, qMin(rectA.right(), rectB.right()), y};
+}
+
 void drawFailedJunction(QPainter &p, const QRectF &rectA, const QRectF &rectB)
 {
     QPainterPath junction;
-    if (rectB.left() >= rectA.right()) {   // B à droite de A
-        const qreal x = (rectA.right() + rectB.left()) / 2.0;
-        junction.moveTo(x, qMax(rectA.top(), rectB.top()));
-        junction.lineTo(x, qMin(rectA.bottom(), rectB.bottom()));
-    } else {                               // B sous A
-        const qreal y = (rectA.bottom() + rectB.top() - LABEL_BAND) / 2.0;
-        junction.moveTo(qMax(rectA.left(), rectB.left()), y);
-        junction.lineTo(qMin(rectA.right(), rectB.right()), y);
-    }
+    const QLineF line = failedJunctionLine(rectA, rectB);
+    junction.moveTo(line.p1());
+    junction.lineTo(line.p2());
     strokePath(p, junction, BOUNDARY_COLOR, BOUNDARY_WIDTH);
+}
+
+qreal distanceToSegment(const QPointF &point, const QLineF &segment)
+{
+    const QPointF along = segment.p2() - segment.p1();
+    const qreal lengthSquared = QPointF::dotProduct(along, along);
+    const qreal t = lengthSquared > 0.0 ? qBound(0.0, QPointF::dotProduct(point - segment.p1(), along) / lengthSquared, 1.0) : 0.0;
+    return QLineF(point, segment.p1() + t * along).length();
+}
+
+// Le point est-il sur un lien entre deux points appariés, ou sur la jonction d'une paire en échec ?
+bool isOnPairLine(const FrontendUtils::PairAlignmentInfo &pair, const TilePlacement &placementA,
+                  const TilePlacement &placementB, const QPointF &point, qreal tolerance)
+{
+    if (pair.totalMatches == 0)
+        return distanceToSegment(point, failedJunctionLine(placementA.rect, placementB.rect)) <= tolerance;
+    const int count = static_cast<int>(qMin(pair.pointsInA.size(), pair.pointsInB.size()));
+    const int stride = qMax(1, count / MAX_DRAWN_POINTS);
+    for (int index = 0; index < count; index += stride) {
+        const QLineF link(placementA.map(pair.pointsInA.at(index)), placementB.map(pair.pointsInB.at(index)));
+        if (distanceToSegment(point, link) <= tolerance)
+            return true;
+    }
+    return false;
 }
 
 // Nom au-dessus de la tuile, dans la bande réservée : rien n'est dessiné sur l'image. En blanc et en gras pour les
@@ -218,6 +263,36 @@ void drawTileLabel(QPainter &p, const QRectF &tileRect, const QString &name, boo
     p.setPen(highlighted ? SELECTED_LABEL_COLOR : LABEL_COLOR);
     p.drawText(label, Qt::AlignLeft | Qt::AlignVCenter, p.fontMetrics().elidedText(name, Qt::ElideMiddle, label.width()));
     p.restore();
+}
+
+std::pair<TilePlacement, TilePlacement> focusedPairPlacements(const FrontendUtils::PairAlignmentInfo &pair,
+                                                              const QRectF &area)
+{
+    const bool vertical = pair.direction == QObject::tr("vertical");
+    const QVector<ResultTile> twoTiles{
+        {0, pair.tileA, pair.imagePathA, pair.tileSizeA, 0, 0},
+        {1, pair.tileB, pair.imagePathB, pair.tileSizeB, vertical ? 1 : 0, vertical ? 0 : 1}
+    };
+    const std::map<int, TilePlacement> placements = layoutTiles(twoTiles, area);
+    return {placements.at(0), placements.at(1)};
+}
+
+std::pair<TilePlacement, TilePlacement> superposedPairPlacements(const FrontendUtils::PairAlignmentInfo &pair,
+                                                                 const QRectF &area)
+{
+    QPointF offset(pair.dx, pair.dy);
+    if (pair.totalMatches == 0 && pair.overlapInA.isEmpty() && qFuzzyIsNull(pair.dx) && qFuzzyIsNull(pair.dy)) {
+        offset = (pair.direction == QObject::tr("vertical"))
+                     ? QPointF(0.0, pair.tileSizeA.height() * 0.8)
+                     : QPointF(pair.tileSizeA.width() * 0.8, 0.0);
+    }
+    const QRectF bounds = QRectF(QPointF(0, 0), QSizeF(pair.tileSizeA)) | QRectF(offset, QSizeF(pair.tileSizeB));
+    const double scale = qMax(MIN_SCALE, qMin(area.width() / bounds.width(), area.height() / bounds.height()));
+    const QPointF topLeftA =
+        area.center() - QPointF(bounds.width(), bounds.height()) * scale / 2.0 - bounds.topLeft() * scale;
+    const TilePlacement placementA{QRectF(topLeftA, QSizeF(pair.tileSizeA) * scale), scale};
+    const TilePlacement placementB{QRectF(placementA.map(offset), QSizeF(pair.tileSizeB) * scale), scale};
+    return {placementA, placementB};
 }
 }
 
@@ -274,8 +349,12 @@ void ArtworkCanvas::drawCenteredMessage(QPainter &p, const QString &message)
 
 void ArtworkCanvas::drawPairView(QPainter &p)
 {
-    if (pairOverlayMode && hasBackendData(currentPair) && currentPair.totalMatches > 0) {
+    if (pairOverlayMode && hasBackendData(currentPair)) {
         drawSuperposedPair(p);
+        return;
+    }
+    if (m_pairIsolated && hasBackendData(currentPair)) {
+        drawFocusedPair(p);
         return;
     }
     if (m_resultTiles.isEmpty()) {
@@ -302,31 +381,152 @@ void ArtworkCanvas::drawTilesOverview(QPainter &p)
             const auto placementB = placements.find(pair.tileIndexB);
             if (placementA == placements.end() || placementB == placements.end()) continue;
             if (pass == 0) drawPairOverlap(p, pair, placementA->second, placementB->second, false);
-            else if (pass == 1) drawPairPoints(p, pair, placementA->second, placementB->second, false);
+            else if (pass == 1) drawPairPoints(p, pair, placementA->second, placementB->second, false, zoomPercent);
             else if (pair.totalMatches == 0) drawFailedJunction(p, placementA->second.rect, placementB->second.rect);
         }
     }
 }
 
+// Paire sous le point (repère de la vue non zoomée) : un lien ou une jonction d'abord, sinon la plus petite zone de
+// recouvrement qui le contient (deux zones se chevauchent dans les coins). -1 si aucune.
+int ArtworkCanvas::pairAt(const QPointF &scenePos) const
+{
+    const QRectF area = QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const std::map<int, TilePlacement> placements = layoutTiles(m_resultTiles, area);
+    const qreal tolerance = PAIR_HIT_TOLERANCE_PX * 100.0 / qMax(1, zoomPercent);   // px d'écran, quel que soit le zoom
+    int smallestZonePair = -1;
+    qreal smallestZoneArea = std::numeric_limits<qreal>::max();
+    for (const FrontendUtils::PairAlignmentInfo &pair : m_allPairs) {
+        const auto placementA = placements.find(pair.tileIndexA);
+        const auto placementB = placements.find(pair.tileIndexB);
+        if (placementA == placements.end() || placementB == placements.end()) continue;
+        if (isOnPairLine(pair, placementA->second, placementB->second, scenePos, tolerance)) return pair.pairIndex;
+        const auto [inA, inB] = overlapAreas(pair);
+        if (inA.isEmpty()) continue;
+        for (const QRectF &zone : {placementA->second.map(inA), placementB->second.map(inB)}) {
+            const qreal zoneArea = zone.width() * zone.height();
+            if (zone.contains(scenePos) && zoneArea < smallestZoneArea) {
+                smallestZonePair = pair.pairIndex;
+                smallestZoneArea = zoneArea;
+            }
+        }
+    }
+    return smallestZonePair;
+}
+
+// Uniquement les 2 tuiles de la paire courante, côte à côte ou l'une sous l'autre, avec leurs points.
+void ArtworkCanvas::drawFocusedPair(QPainter &p)
+{
+    const QRectF area = QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const auto [placementA, placementB] = focusedPairPlacements(currentPair, area);
+    drawPhoto(p, placementA.rect.toRect(), currentPair.imagePathA);
+    drawPhoto(p, placementB.rect.toRect(), currentPair.imagePathB);
+    drawTileLabel(p, placementA.rect, currentPair.tileA, true);
+    drawTileLabel(p, placementB.rect, currentPair.tileB, true);
+    drawPairOverlap(p, currentPair, placementA, placementB, false);
+    drawPairPoints(p, currentPair, placementA, placementB, false, zoomPercent);
+    if (currentPair.totalMatches == 0)
+        drawFailedJunction(p, placementA.rect, placementB.rect);
+    if (m_pickingPoints)
+        drawManualPickingOverlay(p, placementA.rect, placementA.scale, placementB.rect, placementB.scale);
+}
+
 // B posée sur A à sa translation mesurée, le tout agrandi à la taille de la vue, le nom de la paire au-dessus.
 void ArtworkCanvas::drawSuperposedPair(QPainter &p)
 {
-    const QRectF bounds = QRectF(QPointF(0, 0), QSizeF(currentPair.tileSizeA)) |
-                          QRectF(QPointF(currentPair.dx, currentPair.dy), QSizeF(currentPair.tileSizeB));
     const QRectF area =
         QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN + LABEL_BAND, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
-    const double scale = qMin(area.width() / bounds.width(), area.height() / bounds.height());
-    const QPointF topLeftA = area.center() - QPointF(bounds.width(), bounds.height()) * scale / 2.0 - bounds.topLeft() * scale;
-    const TilePlacement placementA{QRectF(topLeftA, QSizeF(currentPair.tileSizeA) * scale), scale};
-    const TilePlacement placementB{QRectF(placementA.map(QPointF(currentPair.dx, currentPair.dy)),
-                                          QSizeF(currentPair.tileSizeB) * scale), scale};
+    const auto [placementA, placementB] = superposedPairPlacements(currentPair, area);
     drawPhoto(p, placementA.rect.toRect(), currentPair.imagePathA);
     p.setOpacity(OVERLAY_OPACITY);
     drawPhoto(p, placementB.rect.toRect(), currentPair.imagePathB);
     p.setOpacity(1.0);
     drawPairOverlap(p, currentPair, placementA, placementB, true);
-    drawPairPoints(p, currentPair, placementA, placementB, true);
+    drawPairPoints(p, currentPair, placementA, placementB, true, zoomPercent);
     drawTileLabel(p, placementA.rect | placementB.rect, currentPair.pairLabel(), true);
+    if (m_pickingPoints)
+        drawManualPickingOverlay(p, placementA.rect, placementA.scale, placementB.rect, placementB.scale);
+}
+
+void ArtworkCanvas::drawManualPickingOverlay(QPainter &p, const QRectF &rectA, double scaleA,
+                                             const QRectF &rectB, double scaleB)
+{
+    p.save();
+    QPainterPath links;
+    const int count = static_cast<int>(qMin(m_manualPointsA.size(), m_manualPointsB.size()));
+    for (int i = 0; i < count; ++i) {
+        const QPointF pA = rectA.topLeft() + m_manualPointsA.at(i) * scaleA;
+        const QPointF pB = rectB.topLeft() + m_manualPointsB.at(i) * scaleB;
+        links.moveTo(pA);
+        links.lineTo(pB);
+    }
+    strokePath(p, links, MANUAL_COLOR, MANUAL_LINE_WIDTH);
+
+    const qreal radius = scaledPointRadius(MANUAL_POINT_RADIUS, zoomPercent);
+    const qreal zoomScale = qMax(1.0, zoomPercent / 100.0);
+    QFont indexFont = p.font();
+    indexFont.setPointSizeF(qMax(2.0, 9.0 / zoomScale));
+    p.setFont(indexFont);
+    const QPointF labelOffset(4.0 / zoomScale, -3.0 / zoomScale);
+
+    QPen ring(POINT_RING, LINE_WIDTH);
+    ring.setCosmetic(true);
+    for (int i = 0; i < count; ++i) {
+        const QPointF pA = rectA.topLeft() + m_manualPointsA.at(i) * scaleA;
+        const QPointF pB = rectB.topLeft() + m_manualPointsB.at(i) * scaleB;
+        const QString indexText = QString::number(i + 1);
+        for (const QPointF &pt : {pA, pB}) {
+            p.setPen(ring);
+            p.setBrush(MANUAL_COLOR);
+            p.drawEllipse(pt, radius, radius);
+            p.setPen(MANUAL_COLOR);
+            p.drawText(pt + labelOffset, indexText);
+        }
+    }
+
+    if (m_pendingPointInA.has_value()) {
+        const QPointF pPending = rectA.topLeft() + (*m_pendingPointInA) * scaleA;
+        QPainterPath guide;
+        guide.moveTo(pPending);
+        guide.lineTo(m_hoverScenePos);
+        strokePath(p, guide, MANUAL_PENDING_COLOR, MANUAL_LINE_WIDTH, Qt::DashLine);
+        p.setPen(ring);
+        p.setBrush(MANUAL_PENDING_COLOR);
+        p.drawEllipse(pPending, radius, radius);
+    }
+    p.restore();
+}
+
+bool ArtworkCanvas::handlePointPickingClick(const QPointF &scenePos)
+{
+    if (!hasBackendData(currentPair))
+        return false;
+    const QRectF area = pairOverlayMode
+        ? QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN + LABEL_BAND, -PREVIEW_MARGIN, -PREVIEW_MARGIN)
+        : QRectF(rect()).adjusted(PREVIEW_MARGIN, PREVIEW_MARGIN, -PREVIEW_MARGIN, -PREVIEW_MARGIN);
+    const auto [placementA, placementB] = pairOverlayMode
+        ? superposedPairPlacements(currentPair, area)
+        : focusedPairPlacements(currentPair, area);
+    const auto clampToTile = [](const QPointF &point, const QSize &size) {
+        return QPointF(qBound(0.0, point.x(), static_cast<double>(size.width())),
+                       qBound(0.0, point.y(), static_cast<double>(size.height())));
+    };
+
+    if ((!pairOverlayMode || !m_pendingPointInA.has_value()) && placementA.rect.contains(scenePos)) {
+        m_pendingPointInA = clampToTile(placementA.unmap(scenePos), currentPair.tileSizeA);
+        emit manualPointsChanged();
+        update();
+        return true;
+    }
+    if (m_pendingPointInA.has_value() && placementB.rect.contains(scenePos)) {
+        m_manualPointsA.append(*m_pendingPointInA);
+        m_manualPointsB.append(clampToTile(placementB.unmap(scenePos), currentPair.tileSizeB));
+        m_pendingPointInA.reset();
+        emit manualPointsChanged();
+        update();
+        return true;
+    }
+    return false;
 }
 
 void ArtworkCanvas::drawEmptyState(QPainter &p)
