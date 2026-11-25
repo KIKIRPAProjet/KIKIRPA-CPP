@@ -175,7 +175,7 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
     }
 
     if (m_topToolbars) {
-        m_topToolbars->updateTitle(projectName, gridState.modality);
+        m_topToolbars->updateTitle(projectName);
     }
 }
 

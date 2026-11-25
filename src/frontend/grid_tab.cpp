@@ -13,7 +13,6 @@
 #include <QLabel>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
-#include <QComboBox>
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QPushButton>
@@ -23,11 +22,8 @@
 namespace {
 constexpr int kMaxGridSize = 20;
 constexpr int kMaxOverlapPercent = 90;
-constexpr double kMaxScale = 1000000.0;
 constexpr double kMaxUncertainty = 1000000.0;
-constexpr int kScaleDecimals = 6;
 constexpr int kUncertaintyDecimals = 3;
-constexpr double kScaleStep = 0.01;
 
 // Met à jour un contrôle sans déclencher ses signaux (évite les mises à jour récursives).
 template <typename Widget, typename Setter, typename Value>
@@ -135,7 +131,7 @@ QWidget *GridTab::createGridDimensionsGroup(QWidget *parent)
 }
 
 /**
- * construit le groupe gérant les dimensions physiques de la grille, le recouvrement et la modalité de capture.
+ * construit le groupe gérant les dimensions physiques de la grille, le recouvrement et l'incertitude.
  */
 QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
 {
@@ -171,19 +167,6 @@ QWidget *GridTab::createGridCaptureGroup(QWidget *parent)
     advancedWidget->setVisible(false);
     auto *advancedForm = new QFormLayout(advancedWidget);
     advancedForm->setContentsMargins(0, 4, 0, 0);
-
-    m_modalityCombo = new QComboBox(advancedWidget);
-    m_modalityCombo->addItems({tr("Infrarouge"), tr("Lumière visible"), tr("Ultraviolet"),
-                               tr("Radiographie"), tr("Autre")});
-    advancedForm->addRow(tr("Modalité"), m_modalityCombo);
-
-    m_scaleSpin = new QDoubleSpinBox(advancedWidget);
-    m_scaleSpin->setRange(0.0, kMaxScale);
-    m_scaleSpin->setDecimals(kScaleDecimals);
-    m_scaleSpin->setSingleStep(kScaleStep);
-    m_scaleSpin->setSpecialValueText(tr("À renseigner"));
-    m_scaleSpin->setSuffix(tr(" mm / pixel"));
-    advancedForm->addRow(tr("Échelle"), m_scaleSpin);
 
     m_automaticUncertaintyCheck = new QCheckBox(tr("Automatique"), advancedWidget);
     m_automaticUncertaintyCheck->setChecked(m_projectGrid->state().automaticUncertainty);
@@ -224,11 +207,7 @@ void GridTab::setupConnections()
     connect(m_linkedOverlapCheck, &QCheckBox::toggled, this,
             [this](bool linked) { m_projectGrid->setOverlapsLinked(linked); });
 
-    // Modalité, échelle et incertitude
-    connect(m_modalityCombo, &QComboBox::currentTextChanged, this,
-            [this](const QString &value) { m_projectGrid->setModality(value); });
-    connect(m_scaleSpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this,
-            [this](double value) { m_projectGrid->setScaleMmPerPixel(value); });
+    // Incertitude
     connect(m_automaticUncertaintyCheck, &QCheckBox::toggled, this,
             [this](bool automatic) { m_projectGrid->setAutomaticUncertainty(automatic); });
     connect(m_uncertaintySpin, static_cast<void (QDoubleSpinBox::*)(double)>(&QDoubleSpinBox::valueChanged), this,
@@ -264,22 +243,11 @@ void GridTab::updateParameters(const ProjectGrid::State &gridState)
     setSilently(m_horizontalOverlapSpin, &QSpinBox::setValue, gridState.horizontalOverlap);
     setSilently(m_verticalOverlapSpin, &QSpinBox::setValue, gridState.verticalOverlap);
     setSilently(m_linkedOverlapCheck, &QCheckBox::setChecked, gridState.overlapsLinked);
-    setSilently(m_scaleSpin, &QDoubleSpinBox::setValue, gridState.scaleMmPerPixel);
     setSilently(m_automaticUncertaintyCheck, &QCheckBox::setChecked, gridState.automaticUncertainty);
     setSilently(m_uncertaintySpin, &QDoubleSpinBox::setValue, gridState.uncertaintyMargin);
 
     if (m_uncertaintySpin)
         m_uncertaintySpin->setEnabled(!gridState.automaticUncertainty);
-
-    if (m_modalityCombo) {
-        const QSignalBlocker blocker(m_modalityCombo);
-        const int index = m_modalityCombo->findText(gridState.modality);
-        m_modalityCombo->setCurrentIndex(
-            index >= 0 ? index : m_modalityCombo->findText(tr("Autre")));
-        // Modalité inconnue : on la ramène à « Autre » dans le modèle aussi.
-        if (index < 0)
-            m_projectGrid->setModality(m_modalityCombo->currentText());
-    }
 }
 
 /**

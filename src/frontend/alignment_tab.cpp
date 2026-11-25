@@ -357,12 +357,7 @@ void AlignmentTab::updateInfo(const QString &projectName, const ProjectGrid::Sta
     m_tileCountLabel->setText(
         tr("%1 tuile(s) chargée(s)").arg(gridState.tilePaths.size()));
 
-    const QString scaleText = gridState.scaleMmPerPixel > 0.0
-        ? tr("%1 mm/pixel").arg(gridState.scaleMmPerPixel, 0, 'g', 8)
-        : tr("à renseigner");
-
-    m_projectMetadataLabel->setText(tr("Modalité : %1\nÉchelle : %2\nRecouvrement : %3 % / %4 %")
-                                        .arg(gridState.modality, scaleText)
+    m_projectMetadataLabel->setText(tr("Recouvrement : %1 % / %2 %")
                                         .arg(gridState.horizontalOverlap)
                                         .arg(gridState.verticalOverlap));
 }
