@@ -16,11 +16,11 @@
 #include "workspace_ui.h"
 #include "artworkcanvas.h"
 #include "homepage.h"
+#include "logpanel.h"
 #include "mainwindow.h"
 #include "projectgrid.h"
 #include "pipeline_runner.h"
 #include "grid_tab.h"
-#include "bottom_tabs.h"
 #include "workspace_status_bar.h"
 #include "workspace_center.h"
 #include "left_toolbar.h"
@@ -65,7 +65,7 @@
 #include <algorithm>
 
 namespace {
-constexpr int kSplitterHandleWidth = 5;
+constexpr int kSplitterHandleWidth = 3;
 constexpr int kLeftToolbarWidth = 42;
 constexpr int kCenterWidth = 760;
 constexpr int kRightPanelWidth = 280;
@@ -106,8 +106,6 @@ QLabel *WorkspaceUI::zoomLabel() const
 }
 
 QTabWidget *WorkspaceUI::rightTabs() const { return m_rightPanel; }
-
-QTabWidget *WorkspaceUI::bottomTabs() const { return m_bottomTabs; }
 
 GridTab *WorkspaceUI::gridtab() const
 {
@@ -154,6 +152,12 @@ void WorkspaceUI::updateFromGridState(const QString &projectName,
 
     // Le titre de la fenêtre principale est géré par MainWindow (avec setWindowModified).
 }
+void WorkspaceUI::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
+{
+    if (m_rightPanel) {
+        m_rightPanel->setImageLayers(layers, bounds);
+    }
+}
 
 /**
  * Met à jour les informations du projet dans l'interface utilisateur.
@@ -166,12 +170,8 @@ void WorkspaceUI::updateProjectInfo(const QString &projectName, const ProjectGri
         m_centerArea->updateProjectInfo(projectName, gridState);
     }
 
-    if (m_rightPanel) {
-        m_rightPanel->updateProjectInfo(projectName, gridState);
-    }
-
     if (m_topToolbars) {
-        m_topToolbars->updateTitle(projectName, gridState.modality);
+        m_topToolbars->updateTitle(projectName);
     }
 }
 
@@ -227,20 +227,27 @@ void WorkspaceUI::createWorkspace()
     body->setStretchFactor(2, 0);
     body->setSizes({kLeftToolbarWidth, kCenterWidth, kRightPanelWidth});
 
-    m_bottomTabs = new BottomTabs(m_mainWindow);
-    m_bottomTabs->setVisible(false);
+    m_logPanel = new LogPanel(m_mainWindow);
+    m_logPanel->setVisible(false);
 
     auto *contentSplitter = new QSplitter(Qt::Vertical);
     contentSplitter->setHandleWidth(kSplitterHandleWidth);
     contentSplitter->setChildrenCollapsible(false);
     contentSplitter->addWidget(body);
-    contentSplitter->addWidget(m_bottomTabs);
+    contentSplitter->addWidget(m_logPanel);
 
     contentSplitter->setStretchFactor(0, 1);
     contentSplitter->setStretchFactor(1, 0);
     contentSplitter->setSizes({kBodyHeight, kBottomTabsHeight});
 
     root->addWidget(contentSplitter, 1);
+
+    auto *bottomSeparator = new QFrame(m_workspace);
+    bottomSeparator->setFrameShape(QFrame::HLine);
+    bottomSeparator->setFrameShadow(QFrame::Plain);
+    bottomSeparator->setFixedHeight(3);
+    bottomSeparator->setStyleSheet(QStringLiteral("background-color:#202020; border:none;"));
+    root->addWidget(bottomSeparator);
 
     m_statusBar = new WorkspaceStatusBar(m_mainWindow);
     root->addWidget(m_statusBar);
@@ -250,8 +257,8 @@ void WorkspaceUI::createWorkspace()
 
 void WorkspaceUI::appendLog(const QString &message)
 {
-    if (m_bottomTabs) {
-        m_bottomTabs->appendLog(message);
+    if (m_logPanel) {
+        m_logPanel->appendLog(message, "info");
     }
 }
 

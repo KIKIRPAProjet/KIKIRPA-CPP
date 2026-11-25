@@ -8,7 +8,6 @@ class ArtworkCanvas;
 class QLabel;
 class QSpinBox;
 class QDoubleSpinBox;
-class QComboBox;
 class QCheckBox;
 class QPushButton;
 class QVBoxLayout;
@@ -55,8 +54,6 @@ private:
     QSpinBox *m_horizontalOverlapSpin = nullptr;
     QSpinBox *m_verticalOverlapSpin = nullptr;
     QCheckBox *m_linkedOverlapCheck = nullptr;
-    QComboBox *m_modalityCombo = nullptr;
-    QDoubleSpinBox *m_scaleSpin = nullptr;
     QCheckBox *m_automaticUncertaintyCheck = nullptr;
     QDoubleSpinBox *m_uncertaintySpin = nullptr;
     QLabel *m_referencePathLabel = nullptr;

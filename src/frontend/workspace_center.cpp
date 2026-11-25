@@ -14,6 +14,7 @@
 #include <QMessageBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QSignalBlocker>
 
 WorkspaceCenter::WorkspaceCenter(MainWindow *mainWindow, QWidget *parent)
     :QWidget(parent), m_mainWindow(mainWindow)
@@ -113,6 +114,11 @@ void WorkspaceCenter::createCanvasAndControls()
     fit->setToolTip(tr("Ajuster à la fenêtre (Ctrl+0)"));
     auto *oneToOne = FrontendUtils::makeButton(QStringLiteral("100 %"), canvasControls);
     oneToOne->setToolTip(tr("Réinitialiser le zoom à 100 %"));
+    auto *overviewBtn = FrontendUtils::makeButton(tr("Vue d'ensemble"), canvasControls);
+    overviewBtn->setToolTip(tr("Revenir à la vue de toutes les tuiles (Échap)"));
+    overviewBtn->setObjectName(QStringLiteral("pairOverviewButton"));
+    overviewBtn->setVisible(false);
+    overviewBtn->setEnabled(false);
     auto *overlayDiff = FrontendUtils::makeButton(tr("Superposer (différence)"), canvasControls);
     overlayDiff->setCheckable(true);
     overlayDiff->setObjectName(QStringLiteral("pairOverlayButton"));
@@ -123,6 +129,7 @@ void WorkspaceCenter::createCanvasAndControls()
     canvasControlsLayout->addWidget(m_zoomLabel);
     canvasControlsLayout->addWidget(fit);
     canvasControlsLayout->addWidget(oneToOne);
+    canvasControlsLayout->addWidget(overviewBtn);
     canvasControlsLayout->addWidget(overlayDiff);
     canvasControlsLayout->addStretch();
 
@@ -166,6 +173,20 @@ void WorkspaceCenter::createCanvasAndControls()
     connect(m_canvas, &ArtworkCanvas::zoomChanged, this, [this](int zoom) {
         m_mainWindow->zoomPercent = zoom;
         m_zoomLabel->setText(QStringLiteral("%1 %").arg(zoom));
+    });
+    connect(overviewBtn, &QPushButton::clicked, this, [this]() {
+        if (m_canvas->isPickingPoints()) {
+            m_canvas->stopPointPicking();
+            emit m_canvas->pointPickingCancelled();
+        }
+        m_canvas->setPairOverlayMode(false);
+        m_canvas->setPairIsolated(false);
+        m_mainWindow->updateStatus(tr("Vue Alignement : toutes les tuiles et leurs paires."));
+    });
+    connect(m_canvas, &ArtworkCanvas::pairViewModeChanged, this, [this, overviewBtn, overlayDiff]() {
+        const QSignalBlocker blocker(overlayDiff);
+        overlayDiff->setChecked(m_canvas->isPairOverlayMode());
+        overviewBtn->setEnabled(m_canvas->isPairIsolated() || m_canvas->isPairOverlayMode());
     });
     connect(overlayDiff, &QPushButton::toggled, this, [this](bool checked) {
         m_canvas->setPairOverlayMode(checked);

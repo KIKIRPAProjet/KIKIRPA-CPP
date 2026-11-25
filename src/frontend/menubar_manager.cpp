@@ -52,8 +52,16 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     connect(quitAction, &QAction::triggered, this, &MenuBarManager::quitRequested);
 
     auto *viewMenu = menuBar->addMenu(tr("Affichage"));
-    connect(viewMenu->addAction(tr("Afficher / masquer les panneaux")),
-            &QAction::triggered, this, &MenuBarManager::togglePanelsRequested);
+	auto *pannelMenu = viewMenu->addMenu(tr("Pannels"));
+	auto *toggleSideBar = pannelMenu->addAction(tr("Paneau"));
+	toggleSideBar->setCheckable(true);
+	toggleSideBar->setChecked(true);
+    connect(toggleSideBar, &QAction::toggled, this, &MenuBarManager::toggleSideBar);
+    auto *toggleLog = pannelMenu->addAction(tr("Journal"));
+	toggleLog->setCheckable(true);
+	toggleLog->setChecked(false);
+    connect(toggleLog, &QAction::toggled, this, &MenuBarManager::toggleLog);
+	viewMenu->addSeparator();
     auto *zoomIn = viewMenu->addAction(tr("Zoom avant"));
     zoomIn->setShortcut(QKeySequence::ZoomIn);
     connect(zoomIn, &QAction::triggered, this, &MenuBarManager::zoomInRequested);
@@ -75,4 +83,6 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
     auto *helpMenu = menuBar->addMenu(tr("Aide"));
     connect(helpMenu->addAction(tr("À propos")),
             &QAction::triggered, this, &MenuBarManager::aboutRequested);
+    connect(helpMenu->addAction(tr("Crédits…")),
+            &QAction::triggered, this, &MenuBarManager::creditsRequested);
 }
