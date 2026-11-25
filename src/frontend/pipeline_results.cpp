@@ -62,7 +62,7 @@ namespace FrontendNs {
             if (!result.contains("confidence") || !result.at("confidence").is_array()) return;
             for (const nlohmann::json &entry : result.at("confidence")) {
                 if (!hasPairIds(entry) || !entry.value("etat", nlohmann::json()).is_string()) continue;
-                PairVerdict verdict{entry.at("etat").get<std::string>()};
+                PairVerdict verdict{.state = entry.at("etat").get<std::string>()};
                 if (entry.value("ncc", nlohmann::json()).is_number()) verdict.ncc = entry.at("ncc").get<double>();
                 findings.verdicts[pairKey(entry)] = verdict;
             }
@@ -157,7 +157,8 @@ namespace FrontendNs {
             if (verdict != findings.verdicts.end()) applyVerdict(info, verdict->second);
             else softenWithoutVerdict(info);
             // Le verdict de l'appariement porte sur les points remplacés : la correction de l'opérateur prime.
-            if (findings.correctedPairs.count({pairMatches.tileIdA, pairMatches.tileIdB}) != 0) {
+            if (findings.correctedPairs.find({pairMatches.tileIdA, pairMatches.tileIdB}) !=
+                findings.correctedPairs.end()) {
                 info.status = PairStatus::Validated;
                 info.statusReason = QObject::tr("corrigée à la main");
                 info.intervention = QObject::tr("manuelle (%1 point(s))").arg(info.totalMatches);
@@ -195,7 +196,7 @@ namespace FrontendNs {
 
         // Pixels dont un voisin (droite ou dessous) appartient au territoire d'une autre tuile.
         cv::Mat seamMask(const cv::Mat &labels) {
-            cv::Mat mask = cv::Mat::zeros(labels.size(), CV_8UC1);
+            cv::Mat mask = cv::Mat::zeros(labels.size(), CV_8U);
             for (int row = 0; row < labels.rows; ++row) {
                 for (int column = 0; column < labels.cols; ++column) {
                     const int label = labels.at<int>(row, column);
@@ -226,10 +227,10 @@ namespace FrontendNs {
         QVector<ResultTile> results;
         for (const auto &tile : tiles) {
             if (!tile) continue;
-            results.append({tile->getId(), tileName(tile.get(), tile->getId()),
-                            QString::fromStdString(IONs::pathToUtf8(tile->getSource())),
-                            QSize(tile->getLevel(0).width, tile->getLevel(0).height), tile->getGridRow(),
-                            tile->getGridColumn()});
+            results.append({.id = tile->getId(), .name = tileName(tile.get(), tile->getId()),
+                            .imagePath = QString::fromStdString(IONs::pathToUtf8(tile->getSource())),
+                            .size = QSize(tile->getLevel(0).width, tile->getLevel(0).height), .row = tile->getGridRow(),
+                            .column = tile->getGridColumn()});
         }
         return results;
     }
@@ -248,8 +249,9 @@ namespace FrontendNs {
                                      norm != norms.end() ? std::optional<double>(norm->second) : std::nullopt));
         }
         for (const auto &[key, reason] : findings.failureReasons) {
-            const bool alreadyListed = std::any_of(pairs.begin(), pairs.end(), [&key = key](const PairAlignmentInfo &pair) {
-                return pair.tileIndexA == key.first && pair.tileIndexB == key.second;
+            const PairKey currentKey = key;
+            const bool alreadyListed = std::any_of(pairs.cbegin(), pairs.cend(), [currentKey](const PairAlignmentInfo &pair) {
+                return pair.tileIndexA == currentKey.first && pair.tileIndexB == currentKey.second;
             });
             if (!alreadyListed) pairs.append(failedPair(static_cast<int>(pairs.size()), key, reason, tiles));
         }
@@ -280,21 +282,21 @@ namespace FrontendNs {
             const char *sentence;
         };
         constexpr std::array<ReasonText, 15> REASON_TEXTS = {{
-            {"different sizes", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles n'ont pas la même taille : elles ne peuvent pas être comparées.")},
-            {"cannot read", QT_TRANSLATE_NOOP("PairOperatorText", "Une des deux images n'a pas pu être lue.")},
-            {"not enough common content", QT_TRANSLATE_NOOP("PairOperatorText", "La zone commune contient trop peu de détails (fond noir, reflets, zone uniforme) ou elle est trop petite.")},
-            {"outside the rail margin", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
-            {"touches the border", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
-            {"ambiguous correlation peak", QT_TRANSLATE_NOOP("PairOperatorText", "Aucun décalage net : la zone commune est peu texturée ou répétitive.")},
-            {"motif répété", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage est incertain : la zone commune contient un motif répété.")},
-            {"pic de corrélation ambigu", QT_TRANSLATE_NOOP("PairOperatorText", "Le décalage est incertain : plusieurs positions conviennent presque aussi bien.")},
-            {"aucun point local fiable", QT_TRANSLATE_NOOP("PairOperatorText", "Aucun point de contrôle fiable dans la zone commune (zone sans texture ou bruitée).")},
-            {"patchs locaux peu ressemblants", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles se ressemblent peu une fois superposées (fond sombre ou bruit).")},
-            {"contrôle NCC faible", QT_TRANSLATE_NOOP("PairOperatorText", "Les deux tuiles se ressemblent peu une fois superposées.")},
-            {"points locaux en désaccord", QT_TRANSLATE_NOOP("PairOperatorText", "Les points de contrôle ne sont pas d'accord avec le décalage mesuré.")},
-            {"score de confiance faible", QT_TRANSLATE_NOOP("PairOperatorText", "Les points trouvés sont peu sûrs.")},
-            {"peu de points", QT_TRANSLATE_NOOP("PairOperatorText", "Peu de points communs ont été trouvés.")},
-            {"nombre de points insuffisant", QT_TRANSLATE_NOOP("PairOperatorText", "Trop peu de points communs ont été trouvés.")},
+            {.keyword = "different sizes", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Les deux tuiles n'ont pas la même taille : elles ne peuvent pas être comparées.")},
+            {.keyword = "cannot read", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Une des deux images n'a pas pu être lue.")},
+            {.keyword = "not enough common content", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "La zone commune contient trop peu de détails (fond noir, reflets, zone uniforme) ou elle est trop petite.")},
+            {.keyword = "outside the rail margin", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
+            {.keyword = "touches the border", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Le décalage trouvé est trop loin du recouvrement prévu par la grille.")},
+            {.keyword = "ambiguous correlation peak", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Aucun décalage net : la zone commune est peu texturée ou répétitive.")},
+            {.keyword = "motif répété", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Le décalage est incertain : la zone commune contient un motif répété.")},
+            {.keyword = "pic de corrélation ambigu", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Le décalage est incertain : plusieurs positions conviennent presque aussi bien.")},
+            {.keyword = "aucun point local fiable", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Aucun point de contrôle fiable dans la zone commune (zone sans texture ou bruitée).")},
+            {.keyword = "patchs locaux peu ressemblants", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Les deux tuiles se ressemblent peu une fois superposées (fond sombre ou bruit).")},
+            {.keyword = "contrôle NCC faible", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Les deux tuiles se ressemblent peu une fois superposées.")},
+            {.keyword = "points locaux en désaccord", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Les points de contrôle ne sont pas d'accord avec le décalage mesuré.")},
+            {.keyword = "score de confiance faible", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Les points trouvés sont peu sûrs.")},
+            {.keyword = "peu de points", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Peu de points communs ont été trouvés.")},
+            {.keyword = "nombre de points insuffisant", QT_TRANSLATE_NOOP("PairOperatorText", .sentence = "Trop peu de points communs ont été trouvés.")},
         }};
 
         QString translatedReason(const char *sentence) { return QCoreApplication::translate("PairOperatorText", sentence); }
@@ -346,7 +348,7 @@ namespace FrontendNs {
         return text;
     }
 
-    ManualCorrection manualCorrectionFor(const PairAlignmentInfo &pair, double dx, double dy) {
+    ManualCorrection manualCorrectionFor(const PairAlignmentInfo &pair, const double dx, const double dy) {
         const QPointF offset(dx, dy);
         const QRectF common = QRectF(QPointF(0, 0), QSizeF(pair.tileSizeA)) & QRectF(offset, QSizeF(pair.tileSizeB));
         const QPointF pointInA = common.isEmpty() ? offset : common.center();
@@ -368,7 +370,7 @@ namespace FrontendNs {
     SeamLines buildSeamLines(const std::vector<DataNs::TileTerritory> &territories, const QSize &previewSize,
                              double previewScale) {
         if (territories.empty() || previewSize.isEmpty() || !(previewScale > 0.0)) return {};
-        cv::Mat labels(previewSize.height(), previewSize.width(), CV_32SC1, cv::Scalar(-1));
+        cv::Mat labels(previewSize.height(), previewSize.width(), cv::traits::Type<int>::value, cv::Scalar(-1));
         for (const DataNs::TileTerritory &territory : territories)
             for (std::size_t polygonIndex = 0; polygonIndex < territory.polygons.size(); ++polygonIndex)
                 cv::fillPoly(labels, scaledContours(territory, polygonIndex, previewScale), cv::Scalar(territory.tileIndex));

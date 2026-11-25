@@ -35,11 +35,15 @@
 
 namespace FrontendUtils {
 
-const QStringList MODE_NAMES = {
-    QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
-    QObject::tr("Alignement"), QObject::tr("Ligne de couture"), QObject::tr("Assemblage"),
-    QObject::tr("Image finale")
-};
+const QStringList &modeNames()
+{
+    static const QStringList names = {
+        QObject::tr("Projet"), QObject::tr("Tuiles"), QObject::tr("Masques"),
+        QObject::tr("Alignement"), QObject::tr("Ligne de couture"), QObject::tr("Assemblage"),
+        QObject::tr("Image finale")
+    };
+    return names;
+}
 
 // Libellé affiché de chaque step du registre que l'interface peut mettre dans le script.
 static QString stepDisplayName(const std::string &technicalName)
@@ -64,7 +68,7 @@ std::vector<PipelineStepInfo> pipelineSteps(const FrontendNs::PipelineChoices &c
     std::vector<PipelineStepInfo> steps;
     for (const std::string &technicalName : FrontendNs::pipelineStepNames(choices)) {
         const QString number = QString::number(static_cast<int>(steps.size()) + 1);
-        steps.push_back({technicalName, number + QStringLiteral("  ") + stepDisplayName(technicalName)});
+        steps.push_back({.technicalName = technicalName, .displayName = number + QStringLiteral("  ") + stepDisplayName(technicalName)});
     }
     return steps;
 }

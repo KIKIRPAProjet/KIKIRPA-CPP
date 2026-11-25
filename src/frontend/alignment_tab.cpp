@@ -21,7 +21,6 @@
 #include "frontendutils.h"
 #include "pipeline_results.h"
 
-#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QColor>
 #include <QDialog>
@@ -35,10 +34,7 @@
 #include <QMap>
 #include <QPushButton>
 #include <QSignalBlocker>
-#include <QStringList>
-#include <QTableWidget>
 #include <QTableWidgetItem>
-#include <QVBoxLayout>
 
 #include <array>
 
@@ -57,7 +53,7 @@ constexpr double MAXIMUM_OFFSET_PX = 100000.0;
 class SortableItem : public QTableWidgetItem
 {
 public:
-    SortableItem(const QString &text, double sortKey) : QTableWidgetItem(text) { setData(SORT_KEY_ROLE, sortKey); }
+    SortableItem(const QString &text, double sortKey) : QTableWidgetItem(text) { QTableWidgetItem::setData(SORT_KEY_ROLE, sortKey); }
     bool operator<(const QTableWidgetItem &other) const override
     {
         return data(SORT_KEY_ROLE).toDouble() < other.data(SORT_KEY_ROLE).toDouble();
@@ -217,7 +213,7 @@ void AlignmentTab::createTable(QVBoxLayout *layout)
         if (pairIndex != m_currentPairIndex)
             emit pairSelectionRequested(pairIndex);
     });
-    connect(m_table, &QTableWidget::itemDoubleClicked, this, [this](QTableWidgetItem *item) {
+    connect(m_table, &QTableWidget::itemDoubleClicked, this, [this](const QTableWidgetItem *item) {
         if (!item)
             return;
         const int pairIndex = m_table->item(item->row(), COLUMN_PAIR)->data(PAIR_INDEX_ROLE).toInt();
@@ -353,8 +349,7 @@ void AlignmentTab::rebuildTable()
     selectCurrentRow();
 }
 
-void AlignmentTab::fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair)
-{
+void AlignmentTab::fillRow(const int row, const FrontendUtils::PairAlignmentInfo &pair) const {
     const PairOperatorText text = FrontendNs::describePairForOperator(pair);
     auto *pairItem = new QTableWidgetItem(shortPairLabel(pair));
     pairItem->setData(PAIR_INDEX_ROLE, pair.pairIndex);
@@ -380,8 +375,7 @@ void AlignmentTab::fillRow(int row, const FrontendUtils::PairAlignmentInfo &pair
     m_table->setItem(row, COLUMN_ERROR, errorItem);
 }
 
-void AlignmentTab::selectCurrentRow()
-{
+void AlignmentTab::selectCurrentRow() const {
     const QSignalBlocker blocker(m_table);
     m_table->clearSelection();
     for (int row = 0; row < m_table->rowCount(); ++row) {
@@ -455,8 +449,7 @@ void AlignmentTab::startInteractiveCorrection()
     m_mainWindow->updateStatus(tr("Correction manuelle : cliquez un point dans A puis dans B (%1).").arg(pair.pairLabel()));
 }
 
-void AlignmentTab::refreshPickingUi()
-{
+void AlignmentTab::refreshPickingUi() const {
     if (!m_canvas)
         return;
     const int count = static_cast<int>(m_canvas->pickedPointsInA().size());
@@ -470,8 +463,7 @@ void AlignmentTab::refreshPickingUi()
     m_undoPointButton->setEnabled(pending || count > 0);
 }
 
-void AlignmentTab::cancelPointPickingUi()
-{
+void AlignmentTab::cancelPointPickingUi() const {
     if (m_canvas)
         m_canvas->stopPointPicking();
     if (m_pickingBar)

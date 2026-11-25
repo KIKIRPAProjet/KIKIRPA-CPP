@@ -94,13 +94,13 @@ QVector<ImageLayer> buildImageLayers(
         if (!tileIds.insert(tileId).second) {
             throw std::invalid_argument("Duplicate tile ID " + std::to_string(tileId));
         }
-        if (positionsById.count(tileId) == 0) {
+        if (positionsById.find(tileId) == positionsById.end()) {
             throw std::invalid_argument("Missing position for tile ID " + std::to_string(tileId));
         }
     }
 
     for (const auto& position : positions) {
-        if (tileIds.count(position.tileId) == 0) {
+        if (tileIds.find(position.tileId) == tileIds.end()) {
             throw std::invalid_argument("Position has no matching tile for ID " +
                                         std::to_string(position.tileId));
         }

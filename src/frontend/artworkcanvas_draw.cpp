@@ -102,7 +102,7 @@ TilePlacement fitTile(const QRectF &cell, const QSize &imageSize)
     const QSizeF size = QSizeF(imageSize).scaled(cell.size(), Qt::KeepAspectRatio);
     const QRectF rect(cell.left() + (cell.width() - size.width()) / 2.0, cell.top() + (cell.height() - size.height()) / 2.0,
                       size.width(), size.height());
-    return {rect, size.width() / qMax(1, imageSize.width())};
+    return {.rect = rect, .scale = size.width() / qMax(1, imageSize.width())};
 }
 
 bool hasBackendData(const FrontendUtils::PairAlignmentInfo &pair)
@@ -270,8 +270,8 @@ std::pair<TilePlacement, TilePlacement> focusedPairPlacements(const FrontendUtil
 {
     const bool vertical = pair.direction == QObject::tr("vertical");
     const QVector<ResultTile> twoTiles{
-        {0, pair.tileA, pair.imagePathA, pair.tileSizeA, 0, 0},
-        {1, pair.tileB, pair.imagePathB, pair.tileSizeB, vertical ? 1 : 0, vertical ? 0 : 1}
+        {.id = 0, .name = pair.tileA, .imagePath = pair.imagePathA, .size = pair.tileSizeA, .row = 0, .column = 0},
+        {.id = 1, .name = pair.tileB, .imagePath = pair.imagePathB, .size = pair.tileSizeB, .row = vertical ? 1 : 0, .column = vertical ? 0 : 1}
     };
     const std::map<int, TilePlacement> placements = layoutTiles(twoTiles, area);
     return {placements.at(0), placements.at(1)};
@@ -290,8 +290,8 @@ std::pair<TilePlacement, TilePlacement> superposedPairPlacements(const FrontendU
     const double scale = qMax(MIN_SCALE, qMin(area.width() / bounds.width(), area.height() / bounds.height()));
     const QPointF topLeftA =
         area.center() - QPointF(bounds.width(), bounds.height()) * scale / 2.0 - bounds.topLeft() * scale;
-    const TilePlacement placementA{QRectF(topLeftA, QSizeF(pair.tileSizeA) * scale), scale};
-    const TilePlacement placementB{QRectF(placementA.map(offset), QSizeF(pair.tileSizeB) * scale), scale};
+    const TilePlacement placementA{.rect = QRectF(topLeftA, QSizeF(pair.tileSizeA) * scale), .scale = scale};
+    const TilePlacement placementB{.rect = QRectF(placementA.map(offset), QSizeF(pair.tileSizeB) * scale), .scale = scale};
     return {placementA, placementB};
 }
 }

@@ -67,15 +67,13 @@ void RightPanel::updateGridState(const ProjectGrid::State &gridState)
     }
 }
 
-void RightPanel::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds)
-{
+void RightPanel::setImageLayers(const QVector<ImageLayer> &layers, const QRectF &bounds) const {
     if (m_masksTab) {
         m_masksTab->setImageLayers(layers, bounds);
     }
 }
 
-void RightPanel::setActiveStep(int stepNumber)
-{
+void RightPanel::setActiveStep(int stepNumber) const {
     if (m_assemblyTab) {
         m_assemblyTab->setActiveStep(stepNumber);
     }

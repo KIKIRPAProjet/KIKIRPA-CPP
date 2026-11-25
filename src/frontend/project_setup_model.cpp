@@ -32,9 +32,9 @@ namespace {
 bool isTiff(const fs::path &path) {
   std::string extension = IONs::pathToUtf8(path.extension());
   std::transform(extension.begin(), extension.end(), extension.begin(),
-                 [](unsigned char character) {
-                   return static_cast<char>(std::tolower(character));
-                 });
+                         [](unsigned char character) {
+                           return static_cast<char>(std::tolower(character));
+                         });
   return extension == ".tif" || extension == ".tiff";
 }
 
@@ -93,10 +93,10 @@ tilesFromCoordinates(const std::vector<fs::path> &paths,
     tiles.push_back(std::move(*tile));
   }
   std::sort(tiles.begin(), tiles.end(),
-            [](const ProjectTile &first, const ProjectTile &second) {
-              return first.row != second.row ? first.row < second.row
-                                             : first.column < second.column;
-            });
+                    [](const ProjectTile &first, const ProjectTile &second) {
+                      return first.row != second.row ? first.row < second.row
+                               : first.column < second.column;
+                    });
   return tiles;
 }
 
@@ -196,10 +196,10 @@ Json createGridJson(const ProjectSetup &setup) {
 Json createImportTilesJson(const ProjectSetup &setup) {
   std::vector<ProjectTile> orderedTiles = setup.tiles;
   std::sort(orderedTiles.begin(), orderedTiles.end(),
-            [](const ProjectTile &first, const ProjectTile &second) {
-              return first.row != second.row ? first.row < second.row
-                                             : first.column < second.column;
-            });
+                    [](const ProjectTile &first, const ProjectTile &second) {
+                      return first.row != second.row ? first.row < second.row
+                               : first.column < second.column;
+                    });
   Json tiles = Json::array();
   for (const ProjectTile &tile : orderedTiles)
     tiles.push_back(
@@ -242,7 +242,7 @@ Json createStepJson(const std::string &stepName, const ProjectSetup &setup) {
     replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);
     replaceParameter(stepJson, "niveau", setup.pyramidLevel);
     // La marge de ce step est en px du niveau analysé : celle du projet est en px de pleine résolution.
-    replaceParameter(stepJson, "marge", setup.railMargin / static_cast<double>(1 << setup.pyramidLevel));
+    replaceParameter(stepJson, "marge", setup.railMargin / std::ldexp(1.0, setup.pyramidLevel));
   } else if (stepName == "overlap-estimation" || stepName == "sift") {
     replaceParameter(stepJson, "overlap", setup.overlap);
     replaceParameter(stepJson, "verticalOverlap", setup.verticalOverlap);

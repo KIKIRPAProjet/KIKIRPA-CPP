@@ -29,7 +29,7 @@ namespace cv {
 
 namespace FrontendUtils {
 
-extern const QStringList MODE_NAMES;
+const QStringList &modeNames();
 
 struct PipelineStepInfo {
     std::string technicalName;

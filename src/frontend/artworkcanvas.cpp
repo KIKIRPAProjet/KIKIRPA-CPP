@@ -3,11 +3,9 @@
 
 #include <QApplication>
 #include <QEvent>
-#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QWheelEvent>
 
 #include <utility>
 
@@ -24,7 +22,7 @@ constexpr int kMaxZoomPercent = 1600;
 constexpr double kZoomWheelFactor = 1.15;
 constexpr qsizetype kImageCacheMaxBytes = 256 * 1024 * 1024; // 256 Mo max pour le cache d'aperçus
 
-// Modes de l'espace de travail (voir FrontendUtils::MODE_NAMES).
+// Modes de l'espace de travail (voir FrontendUtils::modeNames()).
 constexpr int kModeGrid = 1;
 constexpr int kModeMasks = 2;
 constexpr int kModePair = 3;
