@@ -312,6 +312,11 @@ bool ArtworkCanvas::drawMosaicPreview(QPainter &p, bool withSeams)
     return true;
 }
 
+void ArtworkCanvas::drawSeamOverlay(QPainter &p, const QRectF &imageRect)
+{
+    drawSeamLines(p, imageRect, m_seamLines);
+}
+
 bool ArtworkCanvas::drawAssemblyLayers(QPainter &p)
 {
     if (imageLayers.isEmpty()) return false;

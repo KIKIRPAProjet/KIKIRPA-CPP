@@ -526,6 +526,10 @@ void ArtworkCanvas::paintEvent(QPaintEvent *)
             const QRect displayedRect = mosaicDisplayedRect();
             beginViewTransform();
             p.drawImage(QRectF(displayedRect), m_mosaicPreview);
+            // Mosaïque fusionnée demandée dans l'onglet Calques : la case « Lignes de couture » s'y applique aussi.
+            // Pas sur une image recadrée : les coutures sont dans le repère de la mosaïque entière.
+            if (fusedMosaicVisible && seamVisible && !cropping)
+                drawSeamOverlay(p, QRectF(displayedRect));
 
             // Surcouche interactive de recadrage si l'outil est sélectionné
             if (m_activeTool == kCropTool) {

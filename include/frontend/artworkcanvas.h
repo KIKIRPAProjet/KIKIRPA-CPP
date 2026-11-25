@@ -181,6 +181,8 @@ private:
     void drawPhoto(QPainter &p, const QRect &r, const QString &path,
                    int rotation = 0, bool flipped = false);
     bool drawAssemblyLayers(QPainter &p);
+    // Lignes de couture calculées, ajustées au rectangle où la mosaïque entière est dessinée.
+    void drawSeamOverlay(QPainter &p, const QRectF &imageRect);
     // Aperçu de la mosaïque ajusté à la vue, avec ou sans le calque des coutures ; false s'il n'y a pas d'aperçu.
     bool drawMosaicPreview(QPainter &p, bool withSeams);
     // Mode Alignement avec les données du backend : toutes les tuiles à leur case et les points de toutes les paires,

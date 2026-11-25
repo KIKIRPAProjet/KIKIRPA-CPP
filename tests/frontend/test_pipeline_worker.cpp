@@ -740,6 +740,9 @@ TEST_F(PipelineWorkerTestClass, FinalImageKeepsSeamPairAndZoomedExportCrop) {
     ASSERT_NE(fused, nullptr);
     fused->click();
     const QImage fusedWithoutSeams = canvas->grab().toImage();
+    canvas->setSeamVisible(true);   // la case « Lignes de couture » agit aussi sur la mosaïque fusionnée
+    EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
+    canvas->setSeamVisible(false);
     selectMode("mode3");   // Ligne de couture
     EXPECT_NE(canvas->grab().toImage(), fusedWithoutSeams);
     selectMode("mode2");   // Alignement
