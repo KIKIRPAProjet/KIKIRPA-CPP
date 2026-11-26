@@ -74,8 +74,10 @@ namespace {
 
     // Exécute le pipeline réel sur des tuiles fraîches et renvoie la correction estimée.
     // Si le pipeline échoue, son journal est affiché et la correction renvoyée est vide.
+    // Le dossier porte le nom du test : ctest lance chaque test dans son propre processus, parfois en parallèle.
     DataNs::IntensityCorrection runPipeline(const std::string& method) {
-        const fs::path directory = fs::temp_directory_path() / "kikirpa_test_intensity_correction";
+        const fs::path directory = fs::temp_directory_path() /
+            ("kikirpa_test_intensity_correction_" + std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
         createTiles(directory);
         PipelineNs::PipelineClass pipeline = PipelineNs::buildPipeline(buildScript(directory, method));
         std::string journal;
