@@ -570,7 +570,7 @@ L'**égalisation** suit exactement le même schéma (BrightnessEqualizerClass �
 | Afficher l'état sauvegardé | #124 | En conflit. |
 | Zoom et déplacement dans la vue | #125 | En conflit. |
 | Contours des tuiles, checkpoint d'intensité affiché | #107 | En conflit. |
-| Superposition des images avec réglage d'opacité | #128 | Fusionnée par erreur le 24/11, annulée le 26/11 par #253. Re-fusionner `feature/superposition-couches` telle quelle ne remettrait rien : il faut un revert du revert, ou de nouveaux commits. |
+| Superposition des images avec réglage d'opacité | #128 | Fusionnée par erreur le 24/11, annulée le 26/11 par #253. Re-fusionner `feature/superposition-couches` telle quelle ne remettrait rien : il faut un revert du revert, ou de nouveaux commits. **À refaire quand elle reviendra** : `image_layer_loader.cpp` lisait le cache en direct (`PyramidalTiffReaderClass(tile.getTiff())`), ce qui rend la demi-résolution **sans erreur** quand le cache n'a pas son niveau 0 ; le correctif (passer par `IONs::TilePixelReaderClass(tile.getSource(), tile.getTiff())`) est parti avec le fichier et ne reviendra pas tout seul — il est dans `faf5980`, à reprendre à la main. |
 | Ouvrir un projet et reprendre un run | #105 | En conflit, 49 fichiers ; renomme `docs/core/Pipeline.md` en minuscules (casse sous Windows). |
 
 **Documentation**
