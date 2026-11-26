@@ -47,6 +47,9 @@ namespace CheckpointNs {
             // Lève std::runtime_error si le checkpoint est illisible.
             void load(size_t stepIndex, const StepNs::StepClass& step, const std::string& key, const std::string& dataType, StepNs::DataStoreClass& dataStore) const;
 
+            // Recharge le compte rendu JSON sauvegardé avec le step. Les anciens checkpoints sans résultat restent acceptés.
+            void loadResult(size_t stepIndex, StepNs::StepClass& step) const;
+
             // Supprime les checkpoints des steps d'index >= firstStepIndex (devenus périmés).
             void removeFrom(size_t firstStepIndex) const;
 

@@ -31,6 +31,9 @@ namespace StepNs {
             // Compte rendu du dernier execute() (erreurs, compteurs...), affiché dans les messages du pipeline.
             virtual Json getResult() const { return result; }
 
+            // Restaure le compte rendu d'un step sauté lors de la reprise du pipeline.
+            void restoreResult(const Json& restoredResult) { result = restoredResult; }
+
             // Empreinte de ce que le step lit hors du pipeline (ex. fichiers sources : nom, taille, date). Enregistrée
             // dans le checkpoint : si elle change, le checkpoint est périmé. Par défaut nulle : seuls les paramètres comptent.
             virtual Json externalInputsFingerprint() const { return Json(); }
