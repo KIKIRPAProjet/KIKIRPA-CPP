@@ -28,9 +28,14 @@ class ProjectSetupTestClass : public ::testing::Test {
 
 protected:
   void SetUp() override {
+    // Un dossier par test : ctest lance chaque test dans son propre processus,
+    // parfois en parallèle. random_seed() ne suffit pas : sans --gtest_random_seed
+    // il dérive de l'heure en millisecondes, commune aux processus lancés ensemble.
     root = fs::temp_directory_path() /
            ("kikirpa_frontend_" +
-            std::to_string(::testing::UnitTest::GetInstance()->random_seed()));
+            std::string(::testing::UnitTest::GetInstance()
+                            ->current_test_info()
+                            ->name()));
     fs::remove_all(root);
     fs::create_directories(root / "input");
     fs::create_directories(root / "output");
