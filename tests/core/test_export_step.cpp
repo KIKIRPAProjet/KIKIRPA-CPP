@@ -138,6 +138,16 @@ namespace {
         }
     };
 
+    void expectNearRgbFrom16Bit(const cv::Vec3b& bgrPixel, double baseValue16) {
+        // Le TIFF est en RGB et IONs::readImage (OpenCV) décode le JPEG en BGR.
+        EXPECT_NEAR(bgrPixel[0], static_cast<int>(std::round((3 * baseValue16) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+        EXPECT_NEAR(bgrPixel[1], static_cast<int>(std::round((2 * baseValue16) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+        EXPECT_NEAR(bgrPixel[2], static_cast<int>(std::round(baseValue16 / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+    }
+
 }
 
 TEST(ExportStepTest, PublishesOnlyTheMosaicImage) {
@@ -295,22 +305,9 @@ TEST(ExportStepTest, PublishesBaselineJpegWhenFilenameIsJpg) {
     EXPECT_EQ(published.type(), CV_8UC3);
     EXPECT_EQ(published.size(), testCanvasSize());
 
-    // Le TIFF est en RGB et IONs::readImage (OpenCV) décode le JPEG en BGR.
-    const cv::Vec3b& leftPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET);
-    EXPECT_NEAR(leftPixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
-    EXPECT_NEAR(leftPixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
-    EXPECT_NEAR(leftPixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
-
-    const cv::Vec3b& rightPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, DataNs::BLOCK_SIZE + RIGHT_BLOCK_OFFSET);
-    EXPECT_NEAR(rightPixel[0], static_cast<int>(std::round((3 * RIGHT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
-    EXPECT_NEAR(rightPixel[1], static_cast<int>(std::round((2 * RIGHT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
-    EXPECT_NEAR(rightPixel[2], static_cast<int>(std::round(RIGHT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
-                PIXEL_TOLERANCE);
+    expectNearRgbFrom16Bit(published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET), LEFT_VALUE);
+    expectNearRgbFrom16Bit(published.at<cv::Vec3b>(SAMPLE_OFFSET, DataNs::BLOCK_SIZE + RIGHT_BLOCK_OFFSET),
+                           RIGHT_VALUE);
 }
 
 TEST(ExportStepTest, ExportsCroppedRegionToBaselineJpeg) {

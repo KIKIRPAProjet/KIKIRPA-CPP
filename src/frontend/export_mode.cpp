@@ -14,6 +14,8 @@
  * - quand ça lève une exception : si la boîte de dialogue ou l'enregistrement du fichier échoue.
  */
 //  gere l'export du projet et la creation du rapport
+// Code historique de la fenêtre d'export non encore découpé selon les seuils clang-tidy (CONVENTIONS.md §9).
+// NOLINTBEGIN
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
@@ -34,8 +36,10 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QEventLoop>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QIODevice>
 #include <QMessageBox>
@@ -44,6 +48,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QSaveFile>
+#include <QtConcurrentRun>
 #include <QVBoxLayout>
 #include <QFile>
 
@@ -81,10 +86,10 @@ void MainWindow::showExportDialog()
     auto *format = new QComboBox(&dialog);
     format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
                       tr("PSB"), tr("JPEG, perte de précision")});
-    constexpr int jpegFormatIndex = 3;
+    constexpr int JPEG_FORMAT_INDEX = 3;
 
     connect(browseButton, &QPushButton::clicked, &dialog, [this, &dialog, imagePathEdit, format]() {
-        const QString filter = format->currentIndex() == jpegFormatIndex
+        const QString filter = format->currentIndex() == JPEG_FORMAT_INDEX
             ? tr("Image JPEG (*.jpg *.jpeg);;Tous les fichiers (*.*)")
             : tr("Image TIFF (*.tif *.tiff);;Tous les fichiers (*.*)");
         const QString path = QFileDialog::getSaveFileName(
@@ -101,7 +106,7 @@ void MainWindow::showExportDialog()
             [imagePathEdit](int index) {
         QString path = imagePathEdit->text().trimmed();
         if (path.isEmpty()) return;
-        const QString targetExt = (index == jpegFormatIndex) ? QStringLiteral(".jpg") : QStringLiteral(".tif");
+        const QString targetExt = (index == JPEG_FORMAT_INDEX) ? QStringLiteral(".jpg") : QStringLiteral(".tif");
         const QFileInfo info(path);
         if (!info.suffix().isEmpty()) {
             path.chop(info.suffix().size() + 1);
@@ -125,8 +130,8 @@ void MainWindow::showExportDialog()
     layout.addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
-    connect(exportButton, &QPushButton::clicked, this, [this, &dialog, format, report, imagePathEdit]() {
-        const bool isJpeg = format->currentIndex() == jpegFormatIndex;
+    connect(exportButton, &QPushButton::clicked, &dialog, [this, &dialog, format, report, imagePathEdit]() {
+        const bool isJpeg = format->currentIndex() == JPEG_FORMAT_INDEX;
         if (format->currentIndex() != 0 && !isJpeg) {
             QMessageBox::information(&dialog, tr("Format non disponible"),
                 tr("Seuls les exports TIFF 16 bits et JPEG sont actuellement pris en charge."));
@@ -210,15 +215,30 @@ void MainWindow::showExportDialog()
         }
 
         if (isJpeg) {
-            std::string writeError;
-            if (!StepsNs::exportTiffRegionToBaselineJpeg(
-                    IONs::pathFromUtf8(mosaicFilePath.toStdString()),
-                    cropRegion,
-                    IONs::pathFromUtf8(destination.toStdString()),
-                    writeError)) {
+            const auto sourcePath = IONs::pathFromUtf8(mosaicFilePath.toStdString());
+            const auto destinationPath = IONs::pathFromUtf8(destination.toStdString());
+            dialog.setEnabled(false);
+            QFutureWatcher<QString> watcher;
+            QEventLoop loop(&dialog);
+            connect(&watcher, &QFutureWatcher<QString>::finished, &loop, &QEventLoop::quit);
+            connect(&dialog, &QDialog::finished, &loop, &QEventLoop::quit);
+            watcher.setFuture(QtConcurrent::run([sourcePath, cropRegion, destinationPath]() {
+                std::string writeError;
+                if (StepsNs::exportTiffRegionToBaselineJpeg(sourcePath, cropRegion, destinationPath, writeError))
+                    return QString();
+                return writeError.empty() ? QStringLiteral("erreur inconnue")
+                                          : QString::fromStdString(writeError);
+            }));
+            loop.exec();
+            if (!watcher.isFinished()) {
+                watcher.waitForFinished();
+                return;
+            }
+            dialog.setEnabled(true);
+            const QString errorText = watcher.result();
+            if (!errorText.isEmpty()) {
                 QMessageBox::warning(&dialog, tr("Export impossible"),
-                    tr("Impossible d'enregistrer le JPEG : %1")
-                        .arg(QString::fromStdString(writeError)));
+                    tr("Impossible d'enregistrer le JPEG : %1").arg(errorText));
                 return;
             }
         } else if (isCropped) {
@@ -287,3 +307,4 @@ void MainWindow::showExportDialog()
     });
     dialog.exec();
 }
+// NOLINTEND

@@ -256,6 +256,37 @@ namespace StepsNs {
             std::longjmp(errorContext->jumpBuffer, 1);
         }
 
+        // Chaque appel libjpeg susceptible de faire longjmp tourne sous son propre setjmp :
+        // aucun objet C++ non trivial (cv::Mat) ni cinfo/errorContext n'appartient à cette frame.
+        template <typename Action>
+        bool runJpegCall(JpegErrorContext& errorContext, std::string& errorMessage, Action&& action) {
+            if (setjmp(errorContext.jumpBuffer) != 0) {
+                errorMessage = std::string("JPEG encoding failed: ") + errorContext.message;
+                return false;
+            }
+            action();
+            return true;
+        }
+
+        struct JpegCompressor {
+            jpeg_compress_struct cinfo{};
+            JpegErrorContext errorContext;
+            bool created = false;
+
+            JpegCompressor() {
+                cinfo.err = jpeg_std_error(&errorContext.pub);
+                errorContext.pub.error_exit = &handleJpegErrorExit;
+            }
+
+            ~JpegCompressor() {
+                if (!created) return;
+                if (setjmp(errorContext.jumpBuffer) == 0) jpeg_destroy_compress(&cinfo);
+            }
+
+            JpegCompressor(const JpegCompressor&) = delete;
+            JpegCompressor& operator=(const JpegCompressor&) = delete;
+        };
+
         std::FILE* openBinaryOutput(const fs::path& path) {
 #ifdef _WIN32
             return _wfopen(path.c_str(), L"wb");
@@ -348,7 +379,7 @@ namespace StepsNs {
         }
 
         bool encodeJpegStrips(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
-                              jpeg_compress_struct& cinfo, std::string& errorMessage) {
+                              JpegCompressor& compressor, std::string& errorMessage) {
             for (int offsetY = 0; offsetY < plan.region.height; offsetY += DataNs::BLOCK_SIZE) {
                 const int sourceHeight = std::min(DataNs::BLOCK_SIZE, plan.region.height - offsetY);
                 const int destY0 = static_cast<int>(std::round(offsetY * plan.scale));
@@ -360,7 +391,9 @@ namespace StepsNs {
 
                 StripTarget strip{offsetY, sourceHeight, cv::Mat(destHeight, plan.outputSize.width, CV_8UC3)};
                 if (!fillStripBuffer(reader, plan, strip, errorMessage)) return false;
-                writeStripScanlines(cinfo, strip.buffer);
+                if (!runJpegCall(compressor.errorContext, errorMessage,
+                                 [&]() { writeStripScanlines(compressor.cinfo, strip.buffer); }))
+                    return false;
             }
             return true;
         }
@@ -377,33 +410,33 @@ namespace StepsNs {
 
         bool streamTiffToJpegFile(const IONs::PyramidalTiffReaderClass& reader, const JpegStreamPlan& plan,
                                   const fs::path& temporaryPath, std::string& errorMessage) {
-            std::FILE* outputFile = openBinaryOutput(temporaryPath);
+            std::unique_ptr<std::FILE, decltype(&std::fclose)> outputFile(openBinaryOutput(temporaryPath), &std::fclose);
             if (!outputFile) {
                 errorMessage = "cannot open temporary JPEG file '" + IONs::pathToUtf8(temporaryPath) + "'";
                 return false;
             }
-            jpeg_compress_struct cinfo{};
-            JpegErrorContext errorContext;
-            cinfo.err = jpeg_std_error(&errorContext.pub);
-            errorContext.pub.error_exit = &handleJpegErrorExit;
-            if (setjmp(errorContext.jumpBuffer) != 0) {
-                jpeg_destroy_compress(&cinfo);
-                std::fclose(outputFile);
-                errorMessage = std::string("JPEG encoding failed: ") + errorContext.message;
-                return false;
+            {
+                JpegCompressor compressor;
+                if (!runJpegCall(compressor.errorContext, errorMessage, [&]() {
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
+                        jpeg_create_compress(&compressor.cinfo);
+                        compressor.created = true;
+                        configureBaselineJpeg(compressor.cinfo, outputFile.get(), plan.outputSize);
+                        jpeg_start_compress(&compressor.cinfo, TRUE);
+                    })) {
+                    return false;
+                }
+                if (!encodeJpegStrips(reader, plan, compressor, errorMessage)) return false;
+                if (!runJpegCall(compressor.errorContext, errorMessage,
+                                 [&]() { jpeg_finish_compress(&compressor.cinfo); })) {
+                    return false;
+                }
             }
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-cstyle-cast)
-            jpeg_create_compress(&cinfo);
-            configureBaselineJpeg(cinfo, outputFile, plan.outputSize);
-            jpeg_start_compress(&cinfo, TRUE);
-            const bool encoded = encodeJpegStrips(reader, plan, cinfo, errorMessage);
-            if (encoded) jpeg_finish_compress(&cinfo);
-            jpeg_destroy_compress(&cinfo);
-            if (std::fclose(outputFile) != 0 && encoded) {
+            if (std::fclose(outputFile.release()) != 0) {
                 errorMessage = "cannot close temporary JPEG file '" + IONs::pathToUtf8(temporaryPath) + "'";
                 return false;
             }
-            return encoded;
+            return true;
         }
 
         struct JpegExportRequest {
@@ -412,32 +445,50 @@ namespace StepsNs {
             fs::path outputPath;
         };
 
-        bool exportTiffRegionToBaselineJpegImpl(const JpegExportRequest& request, cv::Size& exportedSize,
-                                                std::string& errorMessage) {
+        bool ensureParentDirectory(const fs::path& outputPath, std::string& errorMessage) {
+            const fs::path parentDirectory = outputPath.parent_path();
+            if (parentDirectory.empty()) return true;
+            std::error_code directoryError;
+            fs::create_directories(parentDirectory, directoryError);
+            if (!directoryError) return true;
+            errorMessage = "cannot create output directory '" + IONs::pathToUtf8(parentDirectory) +
+                           "': " + directoryError.message();
+            return false;
+        }
+
+        bool runJpegExport(const JpegExportRequest& request, cv::Size& exportedSize, std::string& errorMessage) {
             const IONs::PyramidalTiffReaderClass reader(request.tiffPath);
             JpegStreamPlan plan;
-            if (!buildJpegStreamPlan(reader, request.region, plan, errorMessage)) return false;
-
-            const fs::path parentDirectory = request.outputPath.parent_path();
-            if (!parentDirectory.empty()) {
-                std::error_code directoryError;
-                fs::create_directories(parentDirectory, directoryError);
-                if (directoryError) {
-                    errorMessage = "cannot create output directory '" + IONs::pathToUtf8(parentDirectory) +
-                                   "': " + directoryError.message();
-                    return false;
-                }
+            if (!buildJpegStreamPlan(reader, request.region, plan, errorMessage) ||
+                !ensureParentDirectory(request.outputPath, errorMessage)) {
+                return false;
             }
 
             const fs::path temporaryPath = IONs::makeTemporaryPath(request.outputPath);
-            if (!streamTiffToJpegFile(reader, plan, temporaryPath, errorMessage) ||
-                !IONs::replaceFile(temporaryPath, request.outputPath, errorMessage)) {
+            try {
+                if (!streamTiffToJpegFile(reader, plan, temporaryPath, errorMessage) ||
+                    !IONs::replaceFile(temporaryPath, request.outputPath, errorMessage)) {
+                    std::error_code removeError;
+                    fs::remove(temporaryPath, removeError);
+                    return false;
+                }
+            } catch (...) {
                 std::error_code removeError;
                 fs::remove(temporaryPath, removeError);
-                return false;
+                throw;
             }
             exportedSize = plan.outputSize;
             return true;
+        }
+
+        bool exportTiffRegionToBaselineJpegImpl(const JpegExportRequest& request, cv::Size& exportedSize,
+                                                std::string& errorMessage) {
+            try {
+                return runJpegExport(request, exportedSize, errorMessage);
+            } catch (const std::exception& exception) {
+                errorMessage = exception.what();
+                return false;
+            }
         }
 
         bool exportMosaic(const DataNs::Mosaic& mosaic, const Json& config, ExportOutput& output, Json& result) {
