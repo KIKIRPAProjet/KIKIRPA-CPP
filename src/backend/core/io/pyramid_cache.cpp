@@ -270,8 +270,18 @@ namespace IONs {
                 if (fs::remove(provenancePath(entry->path()), removeError)) ++removedCount;
             }
             // Un dossier de cache absent n'est pas un échec de parcours : il n'y a simplement rien à balayer.
-            if (enumerationFailed != nullptr)
-                *enumerationFailed = static_cast<bool>(walkError) && fs::exists(cacheDirectory, entryError);
+            // Mais fs::exists rend false pour DEUX raisons opposées : le dossier n'est pas là, ou son état n'a
+            // pas pu être lu (un partage réseau qui disparaît en plein ménage, justement le cas que ce
+            // drapeau doit signaler). C'est le code d'erreur qui les distingue, pas la valeur rendue :
+            // [fs.op.exists] efface le code quand l'état est connu, absence comprise, et le laisse posé quand
+            // la question est restée sans réponse. Sans ce test, le « et » s'annulait dans le seul cas où il
+            // comptait, et l'interface annonçait un ménage terminé après un parcours interrompu.
+            if (enumerationFailed != nullptr) {
+                std::error_code existsError;   // neuf : entryError peut traîner l'erreur d'une entrée
+                const bool directoryIsThere = fs::exists(cacheDirectory, existsError);
+                *enumerationFailed =
+                    static_cast<bool>(walkError) && (directoryIsThere || static_cast<bool>(existsError));
+            }
             return removedCount;
         }
 
