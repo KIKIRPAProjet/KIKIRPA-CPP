@@ -1,13 +1,11 @@
 // include/frontend/pipeline_runner.h
 #pragma once
 
-#include "image_layer.h"
 #include "pipeline_results.h"
 
 #include <QImage>
 #include <QObject>
 #include <QString>
-#include <QVector>
 
 class QThread;
 class PipelineWorkerClass;
@@ -32,9 +30,6 @@ class PipelineRunnerClass : public QObject {
 
         void setStartFromStepName(const QString& stepName) { startFromStepName = stepName; }
         const QString& getStartFromStepName() const { return startFromStepName; }
-
-        // Retire les couches lorsque le projet ou ses tuiles changent pendant un calcul.
-        void invalidateImageLayers();
 
     public slots:
         // Démarre l'exécution asynchrone du pipeline backend dans un QThread dédié.
@@ -65,7 +60,6 @@ class PipelineRunnerClass : public QObject {
         void logMessageWithSeverity(const QString& message, const QString& severity);
         void mosaicReady(const QImage& image);
         void intermediatePreviewReady(const QImage& image);
-        void imageLayersReady(const QVector<ImageLayer>& layers, const QRectF& bounds);
         void mosaicFileReady(const QString& imagePath);
         void resultsReady(const PipelineResults& results);
         void pausedStateChanged(bool isPaused);
@@ -90,7 +84,6 @@ class PipelineRunnerClass : public QObject {
         bool running = false;
         bool paused = false;
         bool comparisonVisible = false;
-        bool imageLayersInvalidated = false;
         int pausedStepNumber = 0;
 
 };
