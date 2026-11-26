@@ -87,10 +87,6 @@ void PipelineRunnerClass::setupProgressConnections() {
 // Branche les signaux de fin ou d'interruption du worker (mise en pause, annulation, succès final avec la mosaïque ou erreur) pour actualiser l'état global et libérer le thread.
 void PipelineRunnerClass::setupStateConnections() {
     connect(worker, &PipelineWorkerClass::mosaicFileReady, this, &PipelineRunnerClass::mosaicFileReady);
-    connect(worker, &PipelineWorkerClass::imageLayersReady,
-            this, [this](const QVector<ImageLayer>& layers, const QRectF& bounds) {
-        if (!imageLayersInvalidated) emit imageLayersReady(layers, bounds);
-    }, Qt::QueuedConnection);
     connect(worker, &PipelineWorkerClass::resultsReady, this, &PipelineRunnerClass::resultsReady);
     // Prise en compte de la mise en pause : libère le thread et informe les boutons de contrôle.
     connect(worker, &PipelineWorkerClass::pipelinePaused, this, [this](int atStep, const QString& name) {
@@ -130,17 +126,11 @@ void PipelineRunnerClass::handleWorkerFinished(bool success, const QString& erro
         if (!previewImage.isNull()) emit mosaicReady(previewImage);
         emit runFinished();
     } else {
-        emit imageLayersReady({}, {});
         emit stepChanged(0, tr("Erreur"));
         emit statusChanged(tr("Erreur lors de l'exécution : %1").arg(errorText));
         emit runFinished();
     }
     cleanUpThread();
-}
-
-void PipelineRunnerClass::invalidateImageLayers() {
-    imageLayersInvalidated = true;
-    emit imageLayersReady({}, {});
 }
 
 void PipelineRunnerClass::startRun(int firstStep, bool isResume) {
@@ -153,7 +143,6 @@ void PipelineRunnerClass::startRun(int firstStep, bool isResume) {
     progress = 0;
     running = true;
     paused = false;
-    imageLayersInvalidated = false;
 
     cleanUpThread();
 
