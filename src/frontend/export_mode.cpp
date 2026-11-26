@@ -84,9 +84,8 @@ void MainWindow::showExportDialog()
     layout.addLayout(imagePathLayout);
 
     auto *format = new QComboBox(&dialog);
-    format->addItems({tr("TIFF 16 bits"), tr("TIFF 8 bits, perte de précision"),
-                      tr("PSB"), tr("JPEG, perte de précision")});
-    constexpr int JPEG_FORMAT_INDEX = 3;
+    format->addItems({tr("TIFF 16 bits"), tr("JPEG, perte de précision")});
+    constexpr int JPEG_FORMAT_INDEX = 1;
 
     connect(browseButton, &QPushButton::clicked, &dialog, [this, &dialog, imagePathEdit, format]() {
         const QString filter = format->currentIndex() == JPEG_FORMAT_INDEX
@@ -132,11 +131,6 @@ void MainWindow::showExportDialog()
 
     connect(exportButton, &QPushButton::clicked, &dialog, [this, &dialog, format, report, imagePathEdit]() {
         const bool isJpeg = format->currentIndex() == JPEG_FORMAT_INDEX;
-        if (format->currentIndex() != 0 && !isJpeg) {
-            QMessageBox::information(&dialog, tr("Format non disponible"),
-                tr("Seuls les exports TIFF 16 bits et JPEG sont actuellement pris en charge."));
-            return;
-        }
         const QString chosenPath = imagePathEdit->text().trimmed();
         if (chosenPath.isEmpty()) {
             QMessageBox::warning(&dialog, tr("Champ requis"),
