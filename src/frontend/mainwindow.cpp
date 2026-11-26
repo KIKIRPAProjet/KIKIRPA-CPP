@@ -254,6 +254,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
+            if (pipelineResultsStale)
+                return;
             mosaicFilePath = imagePath;
         });
 
@@ -326,10 +328,14 @@ void MainWindow::setupPipelineConnections()
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
-                // Débloque les modes finaux :
+                if (pipelineResultsStale || image.isNull())
+                    return;
+
+                // Débloque les modes finaux et l'export :
                 if (auto *top = workspaceUI->topToolbars()) {
                     top->setModeEnabled(5, true); // Débloque 6 Assemblage
                     top->setModeEnabled(6, true); // Débloque 7 Image finale
+                    top->setExportVisible(true);
                 }
 
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {

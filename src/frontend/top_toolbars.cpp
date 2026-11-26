@@ -30,11 +30,8 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, 
         connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
 
-        // Affiche le bouton d'export dès que la mosaïque finale est prête.
-        connect(m_pipelineRunner, &PipelineRunnerClass::mosaicReady, this, [this]() {
-            setExportVisible(true);
-        });
         // Masque le bouton dès le démarrage d'un nouveau calcul pour éviter d'exporter un résultat obsolète.
+        // L'affichage du bouton à l'arrivée de mosaicReady est géré par MainWindow après vérification de péremption.
         connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
             setExportVisible(false);
         });
