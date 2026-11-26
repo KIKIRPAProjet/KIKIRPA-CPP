@@ -53,6 +53,7 @@ private:
     QComboBox *m_intensityCombo = nullptr;
     QComboBox *m_seamCombo = nullptr;
     QComboBox *m_verificationCombo = nullptr;
+    QComboBox *m_exportCombo = nullptr;
     bool m_isLightGlueAvailable = false;   // modèle présent à côté de l'exécutable (FrontendUtils::lightGlueModelPath)
     int m_activeStep = 0;
 };

@@ -13,25 +13,30 @@ namespace StepsNs {
     using Json = StepNs::Json;
 
     struct ExportInput {
+        static constexpr int DEFAULT_PREVIEW_MAX_SIDE = 6000;
+
         // Vide : dossier Téléchargements de l'utilisateur courant.
         std::string outputDirectory;
-        // Nom du fichier de sortie. Vide : "mosaic.tif".
+        // Nom du fichier de sortie. Vide : "mosaic.tif" ou "mosaic.jpg" selon format.
         std::string filename;
+        // "tiff" conserve la mosaïque RGB 16 bits ; "jpeg" produit un aperçu RGB 8 bits réduit ; "both" produit les deux.
+        std::string format = "tiff";
+        int previewMaxSide = DEFAULT_PREVIEW_MAX_SIDE;
     };
 
     struct ExportOutput {
-        std::filesystem::path imagePath;   // TIFF composite publié
+        std::filesystem::path imagePath;   // Image composite publiée
+        std::filesystem::path jpegPreviewPath;
         cv::Size canvasSize;               // dimensions globales en pixels
         bool isBigTiff = false;
+        std::string format = "tiff";
     };
 
-    // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename> (défaut mosaic.tif) : contrôle de son
-    // en-tête (dimensions, RGB 16 bits tuilé), puis copie sous un nom temporaire et renommage. Les pixels ne passent pas
-    // par la mémoire. Si un export de ce nom existe déjà, le fichier prend le numéro qui suit le plus élevé présent :
-    // " (1)", " (2)"... Le checkpoint du step reste valable tant que ce dernier export est là, inchangé.
+    // Publie l'image de la mosaïque assemblée sous outputDirectory/<filename>, ou son prochain numéro disponible.
+    // Le format TIFF est copié tel quel ; le format JPEG convertit la mosaïque RGB 16 bits en RGB 8 bits.
+    // Nom : "export". Paramètres : outputDirectory, filename, format ("tiff" par défaut ou "jpeg").
+    // Entrée : "Mosaic" ("mosaic"). Sortie : mosaic.tif/mosaic.jpg ou nom incrémenté.
     //
-    // Nom : "export". Paramètres : outputDirectory (string, vide = Téléchargements), filename (string, vide = mosaic.tif).
-    // Entrée : "Mosaic" ("mosaic"). Sortie de fichier : mosaic.tif ou nom incrémenté (ni provenance ni masque).
     // Ce step est terminal : il ne publie pas de donnée pour un step suivant.
     class ExportStepClass : public StepNs::StepClass {
 

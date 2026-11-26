@@ -5,6 +5,7 @@
 #include "core/data/tile.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <gtest/gtest.h>
@@ -12,11 +13,14 @@
 #include <opencv2/core.hpp>
 #include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -31,6 +35,9 @@ namespace {
     // Deux blocs : un complet et un bloc de bord.
     constexpr int CANVAS_WIDTH = DataNs::BLOCK_SIZE + 88;
     constexpr int CANVAS_HEIGHT = 300;
+    constexpr int JPEG_PREVIEW_SIDE = 300;
+    constexpr int PIXEL_TOLERANCE = 5;
+    constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
     constexpr double LEFT_VALUE = 100.0;
     constexpr double RIGHT_VALUE = 3000.0;
 
@@ -102,6 +109,40 @@ namespace {
                                       {"value", filename}});
         }
         const Json config = {{"name", "export"}, {"parameters", parameters}};
+        step.importConfig(config);
+    }
+
+    void configureJpegExport(StepsNs::ExportStepClass& step, const fs::path& directory) {
+        const Json config = {{"name", "export"},
+                             {"parameters", Json::array({Json{{"valueType", "string"},
+                                                               {"name", "outputDirectory"},
+                                                               {"value", directory.u8string()}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "filename"},
+                                                               {"value", "mosaic.jpg"}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "format"},
+                                                               {"value", "jpeg"}},
+                                                          Json{{"valueType", "int"},
+                                                               {"name", "previewMaxSide"},
+                                                               {"value", 300}}})}};
+        step.importConfig(config);
+    }
+
+    void configureBothExport(StepsNs::ExportStepClass& step, const fs::path& directory) {
+        const Json config = {{"name", "export"},
+                             {"parameters", Json::array({Json{{"valueType", "string"},
+                                                               {"name", "outputDirectory"},
+                                                               {"value", directory.u8string()}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "filename"},
+                                                               {"value", "mosaic.tif"}},
+                                                          Json{{"valueType", "string"},
+                                                               {"name", "format"},
+                                                               {"value", "both"}},
+                                                          Json{{"valueType", "int"},
+                                                               {"name", "previewMaxSide"},
+                                                               {"value", 300}}})}};
         step.importConfig(config);
     }
 
@@ -255,6 +296,29 @@ TEST(ExportStepTest, ReportsAMissingMosaicInput) {
     EXPECT_NE(step.getResult().value("error", "").find("mosaic"), std::string::npos);
 }
 
+TEST(ExportStepTest, PublishesJpegPreviewAsEightBitImage) {
+    ExportFixture fixture(CV_16UC3);
+    configureJpegExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const StepsNs::ExportOutput& output = fixture.step.getOutput();
+    EXPECT_EQ(output.imagePath, fixture.outputDirectory / "mosaic.jpg");
+    EXPECT_EQ(output.format, "jpeg");
+
+    const cv::Mat published = IONs::readImage(output.imagePath, cv::IMREAD_COLOR);
+    ASSERT_FALSE(published.empty());
+    EXPECT_EQ(published.type(), CV_8UC3);
+    EXPECT_LE(published.cols, JPEG_PREVIEW_SIDE);
+    EXPECT_LE(published.rows, JPEG_PREVIEW_SIDE);
+    
+    // Le pixel (0,0) subit une division par 257.0 pour passer de 16-bit à 8-bit.
+    // L'export JPEG convertit également de RGB (ordre initial) vers BGR (OpenCV)
+    const cv::Vec3b& pixel = published.at<cv::Vec3b>(0, 0);
+    EXPECT_NEAR(pixel[0], static_cast<int>(std::round((3 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE); // Canal Bleu (ancien Rouge)
+    EXPECT_NEAR(pixel[1], static_cast<int>(std::round((2 * LEFT_VALUE) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE); // Canal Vert (inchangé)
+    EXPECT_NEAR(pixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)), PIXEL_TOLERANCE);       // Canal Rouge (ancien Bleu)
+}
+
 // L'empreinte suit le fichier publié : le checkpoint de l'export se périme si ce fichier disparaît.
 TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     ExportFixture fixture(CV_16UC3);
@@ -262,8 +326,36 @@ TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     EXPECT_TRUE(fixture.step.externalInputsFingerprint().is_null());
 
     ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
-
     const auto fingerprint = fixture.step.externalInputsFingerprint();
     ASSERT_TRUE(fingerprint.is_object());
-    EXPECT_TRUE(fingerprint.at("exists").get<bool>());
+    ASSERT_TRUE(fingerprint.contains("files"));
+    ASSERT_EQ(fingerprint.at("files").size(), 1);
+    EXPECT_TRUE(fingerprint.at("files").at(0).at("exists").get<bool>());
+}
+
+TEST(ExportStepTest, PublishesTiffAndJpegPreviewInBothMode) {
+    ExportFixture fixture(CV_16UC3);
+    configureBothExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    EXPECT_EQ(fixture.step.getOutput().format, "both");
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.tif"));
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.jpg"));
+}
+
+TEST(ExportStepTest, MissingJpegInBothModeInvalidatesFingerprint) {
+    ExportFixture fixture(CV_16UC3);
+    configureBothExport(fixture.step, fixture.outputDirectory);
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const Json savedFingerprint = fixture.step.externalInputsFingerprint();
+
+    fs::remove(fixture.outputDirectory / "mosaic.jpg");
+
+    StepsNs::ExportStepClass resumedStep;
+    configureBothExport(resumedStep, fixture.outputDirectory);
+    resumedStep.setDataStore(fixture.dataStore);
+    EXPECT_NE(resumedStep.externalInputsFingerprint(), savedFingerprint);
+    ASSERT_TRUE(resumedStep.execute()) << "resume export failed: " << resumedStep.getResult().dump();
+    EXPECT_TRUE(fs::exists(fixture.outputDirectory / "mosaic.jpg"));
 }

@@ -42,13 +42,14 @@ struct PipelineChoices {
   std::string matchingStep = "phase-correlation";  // "phase-correlation", "sift" ou "lightglue"
   std::string intensityMethod = "gain-and-field";  // paramètre method de intensity-correction ("gain" ou "gain-and-field")
   std::string seamStep = "graphcut";               // "graphcut" ou "dynamic-programming-dijkstra" (territoires pour la fusion)
+  std::string exportFormat = "both";               // "tiff", "jpeg" ou "both"
   // Non vide : manual-matches est ajouté avant absolute-pos et remplace les points de ces paires.
   std::vector<ManualCorrection> manualCorrections;
 
   bool operator==(const PipelineChoices &other) const {
     return estimateOverlap == other.estimateOverlap && matchingStep == other.matchingStep &&
            intensityMethod == other.intensityMethod && seamStep == other.seamStep &&
-           manualCorrections == other.manualCorrections;
+           exportFormat == other.exportFormat && manualCorrections == other.manualCorrections;
   }
 };
 

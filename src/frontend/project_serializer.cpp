@@ -110,6 +110,7 @@ QJsonObject pipelineChoicesToJson(const FrontendNs::PipelineChoices &choices)
     json.insert(QStringLiteral("matchingStep"), QString::fromStdString(choices.matchingStep));
     json.insert(QStringLiteral("intensityMethod"), QString::fromStdString(choices.intensityMethod));
     json.insert(QStringLiteral("seamStep"), QString::fromStdString(choices.seamStep));
+    json.insert(QStringLiteral("exportFormat"), QString::fromStdString(choices.exportFormat));
     json.insert(QStringLiteral("manualCorrections"), correctionsToJson(choices.manualCorrections));
     return json;
 }
@@ -125,6 +126,7 @@ FrontendNs::PipelineChoices pipelineChoicesFromJson(const QJsonObject &json)
     choices.matchingStep = text("matchingStep", choices.matchingStep);
     choices.intensityMethod = text("intensityMethod", choices.intensityMethod);
     choices.seamStep = text("seamStep", choices.seamStep);
+    choices.exportFormat = text("exportFormat", choices.exportFormat);
     choices.manualCorrections = correctionsFromJson(json.value(QStringLiteral("manualCorrections")).toArray());
     return FrontendNs::validatedChoices(choices);
 }

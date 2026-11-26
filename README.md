@@ -1,5 +1,6 @@
 # KIKIRPA-CPP
 
+
 Logiciel d'assemblage (stitching) en C++ : il reconstruit une seule image d'une œuvre à partir de tuiles photographiées qui se recouvrent. Il est écrit en C++17, avec OpenCV, libtiff, ONNX Runtime et Qt 6.
 
 Le travail est découpé en étapes (*steps*) enchaînées par un pipeline décrit en JSON :
