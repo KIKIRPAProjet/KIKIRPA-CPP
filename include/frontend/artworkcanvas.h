@@ -54,11 +54,14 @@ public:
     // Calque des lignes de couture calculées (même taille que l'aperçu), affiché en modes Assemblage et Ligne de couture.
     void setSeamLines(const SeamLines &seams) { m_seamLines = seams; update(); }
     // Toutes les tuiles et toutes les paires du dernier calcul, pour la vue d'ensemble du mode Alignement.
-    void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs)
+    void setAlignmentOverview(const QVector<ResultTile> &tiles, const QVector<FrontendUtils::PairAlignmentInfo> &pairs,
+                              bool preserveViewState = false)
     {
-        stopPointPicking();
-        setPairOverlayMode(false);
-        setPairIsolated(false);
+        if (!preserveViewState) {
+            stopPointPicking();
+            setPairOverlayMode(false);
+            setPairIsolated(false);
+        }
         m_resultTiles = tiles;
         m_allPairs = pairs;
         update();

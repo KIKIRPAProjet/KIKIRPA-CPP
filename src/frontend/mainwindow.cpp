@@ -82,6 +82,34 @@
 
 namespace {
 constexpr int kModeExport = 6;   // Image finale (voir FrontendUtils::MODE_NAMES)
+
+// Retrouve le nom technique d'une étape à partir du script exécuté (ou des choix de la chaîne en repli).
+QString technicalStepNameAt(const QString &scriptJson,
+                            const FrontendNs::PipelineChoices &choices,
+                            int stepNumber)
+{
+    if (stepNumber <= 0)
+        return {};
+    const auto index = static_cast<std::size_t>(stepNumber - 1);
+    if (!scriptJson.isEmpty()) {
+        const nlohmann::json parsed = nlohmann::json::parse(scriptJson.toStdString(), nullptr, false);
+        if (parsed.is_object() && parsed.contains("pipeline") && parsed["pipeline"].is_object()
+            && parsed["pipeline"].contains("steps") && parsed["pipeline"]["steps"].is_array()) {
+            const auto &steps = parsed["pipeline"]["steps"];
+            if (index < steps.size() && steps[index].is_object()) {
+                const auto nameIt = steps[index].find("name");
+                if (nameIt != steps[index].end() && nameIt->is_string()) {
+                    return QString::fromStdString(nameIt->get<std::string>());
+                }
+            }
+        }
+    }
+    const auto steps = FrontendUtils::pipelineSteps(choices);
+    if (index < steps.size()) {
+        return QString::fromStdString(steps.at(index).technicalName);
+    }
+    return {};
+}
 #ifdef Q_OS_WIN
 void applyWindowsDarkTitleBar(QWidget *widget)
 {
@@ -145,13 +173,14 @@ void MainWindow::applyStyleSheet()
         "QMenuBar,QMenu { background:#242424; color:#dedede; }"
         "QMenuBar::item:selected,QMenu::item:selected { background:#3d6e9d; }"
         "QToolBar { background:#2c2c2c; border:0; spacing:4px; }"
-        "QPushButton,QToolButton,QComboBox,QSpinBox,QLineEdit { background:#3b3b3b;"
+        "QPushButton,QComboBox,QSpinBox,QLineEdit { background:#3b3b3b;"
         " color:#dedede; border:1px solid #4a4a4a; border-radius:3px; padding:5px 8px; }"
+        "QToolButton { background:#3b3b3b; color:#dedede; border:1px solid #4a4a4a; border-radius:3px; padding:5px 5px; }"
+        "TopToolbars QPushButton { padding:5px 12px; }"
         "QPushButton:hover,QToolButton:hover { background:#4a4a4a; }"
         "QPushButton[primary=\"true\"] { background:#397fb8; border-color:#438bca; color:white; }"
         "QPushButton[primary=\"true\"]:hover { background:#4b91cd; }"
-        "QPushButton:checked,QToolButton:checked { background:#2c5273; border-color:#438bca; color:#ffffff; }"
-        "QPushButton:disabled,QToolButton:disabled { background:#2b2b2b; border-color:#3a3a3a; color:#666666; }"
+        "QPushButton:checked,QToolButton:checked { background:#2c3a4a; border:1px solid #438bca; color:white; }"
         "QTabWidget::pane { border:1px solid #424242; }"
         "QTabBar::tab { background:#303030; color:#aaa; padding:7px 12px; }"
         "QTabBar::tab:selected { background:#3b3b3b; color:white; border-bottom:2px solid #438bca; }"
@@ -225,6 +254,8 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::mosaicFileReady,
         this, [this](const QString& imagePath) {
+            if (pipelineResultsStale)
+                return;
             mosaicFilePath = imagePath;
         });
 
@@ -247,6 +278,27 @@ void MainWindow::setupPipelineConnections()
             this, [this](int stepNumber, const QString &stepName) {
                 workspaceUI->currentStepLabel()->setText(stepName);
                 workspaceUI->setActiveStep(stepNumber);
+
+                if (!pipelineResultsStale && stepName.contains(QLatin1String("OK"))) {
+                    const QString techName = technicalStepNameAt(
+                        pipelineRunner->getScriptJson(),
+                        projectGrid->state().pipelineChoices,
+                        stepNumber);
+                    if (auto *top = workspaceUI->topToolbars()) {
+                        if (techName == QLatin1String("import")) {
+                            top->setModeEnabled(1, true); // 2 Tuiles
+                            top->setModeEnabled(2, true); // 3 Masques
+                        } else if (techName == QLatin1String("phase-correlation")
+                                   || techName == QLatin1String("sift")
+                                   || techName == QLatin1String("lightglue")
+                                   || techName == QLatin1String("vote-2d")
+                                   || techName == QLatin1String("manual-matches")) {
+                            top->setModeEnabled(3, true); // 4 Alignement (après appariement)
+                        } else if (techName == QLatin1String("fusion")) {
+                            top->setModeEnabled(5, true); // 6 Assemblage (après fusion)
+                        }
+                    }
+                }
     });
     connect(pipelineRunner, &PipelineRunnerClass::statusChanged,
             this, &MainWindow::updateStatus);
@@ -264,10 +316,28 @@ void MainWindow::setupPipelineConnections()
     });
     connect(pipelineRunner, &PipelineRunnerClass::logMessage,
             workspaceUI, &WorkspaceUI::appendLog);
+    connect(pipelineRunner, &PipelineRunnerClass::intermediatePreviewReady,
+            this, [this](const QImage &image) {
+                if (pipelineResultsStale || image.isNull())
+                    return;
+                if (auto *canvas = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
+                    canvas->setMosaicPreview(image);
+                }
+            });
     connect(pipelineRunner, &PipelineRunnerClass::resultsReady,
             this, &MainWindow::applyPipelineResults);
     connect(pipelineRunner, &PipelineRunnerClass::mosaicReady,
             this, [this](const QImage &image) {
+                if (pipelineResultsStale || image.isNull())
+                    return;
+
+                // Débloque les modes finaux et l'export :
+                if (auto *top = workspaceUI->topToolbars()) {
+                    top->setModeEnabled(5, true); // Débloque 6 Assemblage
+                    top->setModeEnabled(6, true); // Débloque 7 Image finale
+                    top->setExportVisible(true);
+                }
+
                 if (auto *canvas = dynamic_cast<ArtworkCanvas*>(workspaceUI->canvas())) {
                     canvas->setMosaicPreview(image);
                     setMode(kModeExport); // Image finale : forcera l'affichage de l'image
@@ -558,13 +628,47 @@ void MainWindow::applyPipelineResults(const PipelineResults &results)
 {
     if (pipelineResultsStale)
         return;
+    int preservedPairIndex = 0;
+    bool selectedPairPreserved = false;
+    if (!m_pairs.isEmpty() && m_currentPairIndex >= 0 && m_currentPairIndex < m_pairs.size() && !results.pairs.isEmpty()) {
+        const auto &prevPair = m_pairs.at(m_currentPairIndex);
+        for (int i = 0; i < results.pairs.size(); ++i) {
+            const auto &candidate = results.pairs.at(i);
+            if (candidate.tileIndexA == prevPair.tileIndexA && candidate.tileIndexB == prevPair.tileIndexB) {
+                preservedPairIndex = i;
+                selectedPairPreserved = true;
+                break;
+            }
+        }
+    }
     m_pairs = results.pairs;
-    m_currentPairIndex = 0;
+    m_currentPairIndex = selectedPairPreserved ? preservedPairIndex : 0;
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas())) {
         canvasView->setSeamLines(results.seams);
-        canvasView->setAlignmentOverview(results.tiles, results.pairs);
+        canvasView->setAlignmentOverview(results.tiles, results.pairs, selectedPairPreserved);
     }
     refreshPairViews();
+
+    if (auto *top = workspaceUI->topToolbars()) {
+        // Si le calcul a produit des tuiles
+        if (!results.tiles.isEmpty()) {
+            top->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+            top->setModeEnabled(2, true); // Débloque mode "3 Masques"
+        }
+
+        // Si le calcul a produit des correspondances de paires
+        if (!results.pairs.isEmpty()) {
+            top->setModeEnabled(3, true); // Débloque mode "4 Alignement"
+        }
+        // Si le calcul a produit des lignes de couture
+        if (!results.seams.isEmpty()) {
+            top->setModeEnabled(4, true); // Débloque mode "5 Ligne de couture"
+        }
+        // Si la fusion a produit la mosaïque
+        if (results.hasFusion) {
+            top->setModeEnabled(5, true); // Débloque mode "6 Assemblage"
+        }
+    }
 }
 
 void MainWindow::invalidatePipelineResults()
@@ -580,6 +684,18 @@ void MainWindow::invalidatePipelineResults()
     mosaicFilePath.clear();
     if (auto *canvasView = dynamic_cast<ArtworkCanvas *>(workspaceUI->canvas()))
         canvasView->setMosaicPreview(QImage());
+    if (auto *top = workspaceUI->topToolbars()) {
+        top->setExportVisible(false);
+        top->resetModesAvailability();
+        const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
+        if (hasTiles) {
+            top->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+            top->setModeEnabled(2, true); // Débloque mode "3 Masques"
+        }
+        if (!top->isModeEnabled(currentMode)) {
+            setMode(0);
+        }
+    }
     updateStatus(tr("Grille modifiée : les résultats précédents sont périmés."));
 }
 
@@ -597,7 +713,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a généré de mosaïque pour ce nouveau projet.
         top->setExportVisible(false);
+        top->resetModesAvailability(); // Verrouille tous les modes sauf le mode 0 (1 Projet)
     }
+
     projectName = name;
     outputDirectory = selectedOutputDirectory;
     projectPath.clear();
@@ -608,6 +726,10 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     setMode(0);
     refreshProjectInfo();
     const int tileCount = projectGrid->state().tilePaths.size();
+    if (tileCount > 0 && workspaceUI->topToolbars()) {
+        workspaceUI->topToolbars()->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+        workspaceUI->topToolbars()->setModeEnabled(2, true); // Débloque mode "3 Masques"
+    }
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, tileCount);
     if (tileCount == 0) {
@@ -717,6 +839,7 @@ void MainWindow::applyLoadedProject(const QString &path)
     if (auto *top = workspaceUI->topToolbars()) {
         // Masque le bouton d'export tant qu'aucun calcul n'a été exécuté dans la session.
         top->setExportVisible(false);
+        top->resetModesAvailability();
     }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
@@ -727,8 +850,17 @@ void MainWindow::applyLoadedProject(const QString &path)
     projectPath = path;
     projectCreated = true;
     refreshProjectInfo();
+
+    // Si le projet sauvegardé contient des tuiles, on les réactive
+    const int tileCount = projectGrid->state().tilePaths.size();
+    if (tileCount > 0 && workspaceUI->topToolbars()) {
+        workspaceUI->topToolbars()->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+        workspaceUI->topToolbars()->setModeEnabled(2, true); // Débloque mode "3 Masques"
+    }
+
     workspaceUI->pages()->setCurrentWidget(workspaceUI->workspace());
-    setMode(projectData.mode);
+    const auto *top = workspaceUI->topToolbars();
+    setMode((top && top->isModeEnabled(projectData.mode)) ? projectData.mode : 0);
     workspaceUI->homePage()->setCurrentProjectInfo(
         projectCreated, projectPath, projectName, projectGrid->state().tilePaths.size());
     workspaceUI->homePage()->rememberRecentProject(path);
@@ -752,6 +884,10 @@ void MainWindow::openCurrentProjectFromHome()
 
 void MainWindow::setMode(int mode)
 {
+    if (workspaceUI->topToolbars() && !workspaceUI->topToolbars()->isModeEnabled(mode)) {
+        return; // Le mode n'a pas encore de résultats calculés : on bloque la navigation
+    }
+
     if (!switchingProject && currentMode != mode)
         markProjectModified();
     currentMode = qBound(0, mode, static_cast<int>(FrontendUtils::MODE_NAMES.size()) - 1);
@@ -861,12 +997,6 @@ void MainWindow::refreshProjectInfo()
 
     const bool hasTiles = !projectGrid->state().tilePaths.isEmpty();
     const QString lockedTip = hasTiles ? QString() : tr("Importez d'abord un dossier de tuiles");
-    for (int m = 2; m <= 5; ++m) {
-        if (auto *btn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("mode%1").arg(m))) {
-            btn->setEnabled(hasTiles);
-            btn->setToolTip(lockedTip);
-        }
-    }
     if (auto *runBtn = workspaceUI->workspace()->findChild<QPushButton *>(QStringLiteral("runPipelineButton"))) {
         runBtn->setEnabled(hasTiles);
         runBtn->setToolTip(lockedTip);
@@ -959,6 +1089,10 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
 
 void MainWindow::handleTilesImported(const QString &directory, int importedCount)
 {
+    if (importedCount > 0 && workspaceUI->topToolbars()) {
+        workspaceUI->topToolbars()->setModeEnabled(1, true); // Débloque mode "2 Tuiles"
+        workspaceUI->topToolbars()->setModeEnabled(2, true); // Débloque mode "3 Masques"
+    }
     setMode(1);
     const QString msg = tr("%1 photo(s) importée(s) depuis « %2 ».")
         .arg(importedCount).arg(QFileInfo(directory).fileName());

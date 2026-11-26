@@ -30,11 +30,8 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, 
         connect(m_pipelineRunner, &PipelineRunnerClass::runCancelled, this, &TopToolbars::updateRunButtonState);
         connect(m_pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this, &TopToolbars::updateRunButtonState);
 
-        // Affiche le bouton d'export dès que la mosaïque finale est prête.
-        connect(m_pipelineRunner, &PipelineRunnerClass::mosaicReady, this, [this]() {
-            setExportVisible(true);
-        });
         // Masque le bouton dès le démarrage d'un nouveau calcul pour éviter d'exporter un résultat obsolète.
+        // L'affichage du bouton à l'arrivée de mosaicReady est géré par MainWindow après vérification de péremption.
         connect(m_pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
             setExportVisible(false);
         });
@@ -43,15 +40,19 @@ TopToolbars::TopToolbars(MainWindow *mainWindow, ProjectGrid * /*projectGrid*/, 
 
 void TopToolbars::createModeButtons(QWidget *stages, QHBoxLayout *stageLayout)
 {
-    auto *modeGroup = new QButtonGroup(stages);
-    modeGroup->setExclusive(true);
+    m_modeGroup = new QButtonGroup(stages);
+    m_modeGroup->setExclusive(true);
 
     for (int i = 0; i < FrontendUtils::MODE_NAMES.size(); ++i) {
         const QString label = QStringLiteral("%1   %2").arg(i + 1).arg(FrontendUtils::MODE_NAMES.at(i));
         auto *button = FrontendUtils::makeButton(label, stages);
         button->setCheckable(true);
         button->setObjectName(QStringLiteral("mode%1").arg(i));
-        modeGroup->addButton(button, i);
+        
+        // Seul le mode 0 (1 Projet) est actif au démarrage
+        button->setEnabled(i == 0);
+
+        m_modeGroup->addButton(button, i);
         stageLayout->addWidget(button);
         connect(button, &QPushButton::clicked, this, [this, i]() { m_mainWindow->setMode(i); });
     }
@@ -73,7 +74,7 @@ void TopToolbars::createActionButtons(QWidget *stages, QHBoxLayout *stageLayout)
         if (m_pipelineRunner) m_pipelineRunner->cancelRun();
     });
 
-    auto* saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
+    auto *saveButton = FrontendUtils::makeButton(tr("Enregistrer"), stages);
     saveButton->setObjectName(QStringLiteral("saveProjectButton"));
     saveButton->setToolTip(tr("Enregistrer le projet (Ctrl+S)"));
     stageLayout->addWidget(saveButton);
@@ -182,5 +183,42 @@ void TopToolbars::updateDubiousState(int dubiousCount)
         } else {
             alignBtn->setText(QStringLiteral("4   %1").arg(FrontendUtils::MODE_NAMES.at(3)));
         }
+    }
+}
+
+void TopToolbars::setModeEnabled(int modeIndex, bool enabled)
+{
+    if (!m_modeGroup) {
+        return;
+    }
+    if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
+        button->setEnabled(enabled);
+        if (enabled) {
+            button->setToolTip(tr("Afficher la vue %1").arg(FrontendUtils::MODE_NAMES.at(modeIndex)));
+        } else {
+            button->setToolTip(QString());
+        }
+    }
+}
+
+bool TopToolbars::isModeEnabled(int modeIndex) const
+{
+    if (!m_modeGroup) {
+        return false;
+    }
+    if (QAbstractButton *button = m_modeGroup->button(modeIndex)) {
+        return button->isEnabled();
+    }
+    return false;
+}
+
+void TopToolbars::resetModesAvailability()
+{
+    if (!m_modeGroup) {
+        return;
+    }
+    for (QAbstractButton *button : m_modeGroup->buttons()) {
+        const int modeIndex = m_modeGroup->id(button);
+        button->setEnabled(modeIndex == 0);
     }
 }

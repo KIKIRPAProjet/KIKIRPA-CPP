@@ -8,6 +8,7 @@ class ProjectGrid;
 class PipelineRunnerClass;
 class QHBoxLayout;
 class QPushButton;
+class QButtonGroup;
 
 // Barre supérieure regroupant les modes d'affichage
 // et les commandes de contrôle du calcul asynchrone (Lancer, Pause, Reprendre).
@@ -22,6 +23,13 @@ public:
     // Affiche ou masque le bouton d'exportation de la mosaïque finale selon sa disponibilité.
     void setExportVisible(bool visible);
 
+    // Active ou désactive l'accès à un mode donné dans la barre supérieure.
+    void setModeEnabled(int modeIndex, bool enabled);
+    // Indique si le bouton correspondant au mode est actuellement cliquable.
+    bool isModeEnabled(int modeIndex) const;
+    // Réinitialise la disponibilité : seul le mode 0 (Projet) reste actif.
+    void resetModesAvailability();
+
 public slots:
     // Aligne l'intitulé du bouton principal (Lancer / Pause / Reprendre) sur l'état du runner.
     void updateRunButtonState();
@@ -34,6 +42,8 @@ private:
 
     // Réagit au clic sur le bouton principal selon qu'on soit en cours de calcul, en pause ou au repos.
     void handleRunButtonClicked();
+
+    QButtonGroup *m_modeGroup = nullptr;
 
     MainWindow *m_mainWindow;
     PipelineRunnerClass *m_pipelineRunner;
