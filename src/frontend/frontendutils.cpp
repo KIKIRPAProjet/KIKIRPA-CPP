@@ -17,7 +17,7 @@
 #include "frontendutils.h"
 
 #include "core/io/pyramid_cache.h"
-#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 
 #include <opencv2/core/hal/interface.h>
@@ -204,13 +204,16 @@ QImage matToQImage(const cv::Mat &mat)
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
                       QImage::Format_Grayscale8).copy();
     }
+    // Les trois appelants lisent un niveau d'un TIFF pyramidal, qui contient ce qu'il déclare : du RGB à 3 canaux,
+    // du RGBA à 4 (core/io/pyramid_cache.h). Les formats Qt sont donc ceux de l'ordre des octets R, G, B, A, et non
+    // Format_BGR888 / Format_ARGB32, qui attendent l'ordre BGR(A) d'OpenCV.
     if (mat8.channels() == 3) {
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
-                      QImage::Format_BGR888).copy();
+                      QImage::Format_RGB888).copy();
     }
     if (mat8.channels() == 4) {
         return QImage(mat8.data, mat8.cols, mat8.rows, static_cast<int>(mat8.step),
-                      QImage::Format_ARGB32).copy();
+                      QImage::Format_RGBA8888).copy();
     }
     return {};
 }
@@ -237,12 +240,14 @@ QString findPyramidPathForSource(const QString &sourcePath)
     return QString::fromStdString(IONs::pathToUtf8(pyramid));
 }
 
-QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize)
+QImage readPyramidalPreview(const QString &sourcePath, const QString &pyramidPath, const QSize &maximumSize)
 {
     if (pyramidPath.isEmpty())
         return {};
 
-    IONs::PyramidalTiffReaderClass reader(IONs::pathFromUtf8(pyramidPath.toStdString()));
+    // Par le lecteur de tuile : les niveaux sont ceux de la pyramide, que le cache contienne le niveau 0 ou non.
+    const IONs::TilePixelReaderClass reader(IONs::pathFromUtf8(sourcePath.toStdString()),
+                                            IONs::pathFromUtf8(pyramidPath.toStdString()));
     const int levelCount = reader.getLevelCount();
     if (levelCount <= 0)
         return {};
@@ -338,7 +343,7 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 {
     const QString pyramidPath = FrontendUtils::findPyramidPathForSource(path);
     if (!pyramidPath.isEmpty()) {
-        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPath, maximumSize);
+        const QImage pyramidPreview = FrontendUtils::readPyramidalPreview(path, pyramidPath, maximumSize);
         if (!pyramidPreview.isNull())
             return pyramidPreview;
     }

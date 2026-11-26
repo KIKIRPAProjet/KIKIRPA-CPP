@@ -46,7 +46,9 @@ std::filesystem::path lightGlueModelPath();
 // Détection et lecture d'un TIFF pyramidal pour l'affichage fluide
 QImage matToQImage(const cv::Mat &mat);
 QString findPyramidPathForSource(const QString &sourcePath);
-QImage readPyramidalPreview(const QString &pyramidPath, const QSize &maximumSize);
+// `sourcePath` peut être vide : le niveau 0 est alors cherché dans le cache, comme avant que l'image de l'œuvre
+// puisse le porter (core/io/tile_pixel_reader.h).
+QImage readPyramidalPreview(const QString &sourcePath, const QString &pyramidPath, const QSize &maximumSize);
 
 //définition des 4 états possibles d'une paire de tuiles 
 enum class PairStatus : std::uint8_t {

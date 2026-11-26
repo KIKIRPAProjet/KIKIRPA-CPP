@@ -12,7 +12,7 @@ Mesure, pour chaque paire de tuiles voisines, la position de B par rapport à A 
 | Entrée | `tiles` | `Tiles` | `DataNs::TileList` | `import` |
 | Sortie | `overlapEstimates` | `OverlapEstimates` | `DataNs::OverlapEstimates` | `phase-correlation`, `sift`, `lightglue` (s'ils viennent après, voir [Qui lit cette sortie](#qui-lit-cette-sortie)) |
 
-Ce que le step **lit** de `tiles` : l'identifiant de chaque tuile, ses voisines de droite et du dessous (`getRight()`, `getBottom()`), et **les pixels des deux tuiles de chaque paire**, à pleine résolution, par `PhaseCorrelationStepClass::readPixels(tile, 0)`.
+Ce que le step **lit** de `tiles` : l'identifiant de chaque tuile, ses voisines de droite et du dessous (`getRight()`, `getBottom()`), et **les pixels des deux tuiles de chaque paire**, à pleine résolution et en RGB, par `PhaseCorrelationStepClass::readPixels(tile, 0)` (donc par le cache quand il contient le niveau demandé ; au niveau 0 un cache réduit n'a rien à servir, et les pixels viennent alors de l'image de l'œuvre, voir [TilePixelReader.md](../core/TilePixelReader.md)).
 
 Ce qu'il **écrit** dans `overlapEstimates` : une entrée par paire mesurée, avec
 
@@ -95,7 +95,7 @@ Nouveau type `OverlapEstimates`, déclaré dans [`core/checkpoint/checkpoint_typ
 
 Le step garde **deux tuiles à pleine résolution** en mémoire pendant la mesure d'une paire, puis les libère : avec des tuiles de 400 Mo, le pic est d'environ deux tuiles, comme `phase-correlation`.
 
-En revanche, une tuile est **relue une fois par paire à laquelle elle appartient** : au centre d'une grille, la même tuile est lue quatre fois depuis le disque. Sur une grille 10×10 (180 paires voisines), cela fait 360 lectures à pleine résolution. Deux pistes, non faites : mémoriser l'image de la tuile courante le temps de ses paires, et estimer à un niveau réduit (`readPixels` prend déjà un niveau, et une mesure au pixel près n'a pas besoin de la pleine résolution).
+En revanche, une tuile est **relue une fois par paire à laquelle elle appartient** : au centre d'une grille, la même tuile est lue quatre fois depuis le disque. Sur une grille 10×10 (180 paires voisines), cela fait 360 lectures à pleine résolution. Deux pistes, non faites : mémoriser l'image de la tuile courante le temps de ses paires, et estimer à un niveau réduit (`readPixels` prend déjà un niveau, une mesure au pixel près n'a pas besoin de la pleine résolution, et depuis le 24/11/2026 un niveau réduit est lu directement dans le cache — la seconde piste coûte donc un paramètre et rien d'autre).
 
 ## Tests
 

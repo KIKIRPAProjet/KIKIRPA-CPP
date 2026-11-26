@@ -5,8 +5,17 @@
 #include "mainwindow.h"
 #include "artworkcanvas.h"
 #include "frontendutils.h"
+#include "pipeline_runner.h"
+
+#include "core/io/pyramid_cache.h"
+#include "core/io/unicode_path.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <system_error>
+#include <QLocale>
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -63,6 +72,7 @@ GridTab::GridTab(MainWindow *mainWindow, ProjectGrid *projectGrid, ArtworkCanvas
     gridLayout->addWidget(createGridCaptureGroup(m_gridTabPage));
 
     createReferenceActions(gridLayout);
+    createCacheActions(gridLayout);
     gridLayout->addStretch();
 
     setWidget(m_gridTabPage);
@@ -103,6 +113,108 @@ void GridTab::createReferenceActions(QVBoxLayout *layout)
     layout->addWidget(m_importReferenceButton);
     layout->addWidget(m_compareReferenceButton);
     layout->addWidget(m_validateGridButton);
+}
+
+/**
+ * Construit le bouton qui vide le cache des pyramides du projet.
+ */
+void GridTab::createCacheActions(QVBoxLayout *layout)
+{
+    m_freeCacheButton = FrontendUtils::makeButton(tr("Libérer l'espace du cache"), m_gridTabPage);
+    layout->addWidget(m_freeCacheButton);
+}
+
+/**
+ * Vide le cache des pyramides du projet, après avoir annoncé la place récupérée et demandé confirmation.
+ * Les pyramides sont des données dérivées : elles sont reconstruites au prochain calcul ou à la prochaine
+ * ouverture du projet. Rien n'est supprimé pendant un calcul : ce serait provoquer une course avec le pipeline,
+ * qui lit ces fichiers.
+ */
+bool GridTab::warnIfPipelineRunning()
+{
+    if (m_mainWindow->pipelineRunner == nullptr || !m_mainWindow->pipelineRunner->isRunning())
+        return false;
+    QMessageBox::information(this, tr("Calcul en cours"),
+                             tr("Attendez la fin du calcul avant de supprimer le cache."));
+    return true;
+}
+
+void GridTab::updateCacheButtonState()
+{
+    m_freeCacheButton->setEnabled(!(m_mainWindow->pipelineRunner != nullptr &&
+                                    m_mainWindow->pipelineRunner->isRunning()) &&
+                                  !m_projectGrid->state().tileDirectory.isEmpty());
+}
+
+void GridTab::freePyramidCache()
+{
+    // Le bouton grisé ne suffit pas : c'est de la signalisation, pas une garantie. L'état du bouton peut
+    // dater, et un raccourci clavier ou un script de test appelle cette fonction directement.
+    if (warnIfPipelineRunning()) return;
+
+    const QString directory = m_projectGrid->state().tileDirectory;
+    if (directory.isEmpty()) {
+        QMessageBox::information(this, tr("Libérer l'espace"), tr("Aucun projet ouvert."));
+        return;
+    }
+    const std::filesystem::path cacheDirectory =
+        IONs::pyramidCacheDirectory(IONs::pathFromUtf8(directory.toStdString()));
+
+    std::error_code errorCode;
+    if (!std::filesystem::exists(cacheDirectory, errorCode)) {
+        QMessageBox::information(this, tr("Libérer l'espace"), tr("Le cache est déjà vide."));
+        return;
+    }
+
+    // La place récupérée est annoncée avant de demander : l'utilisateur doit savoir ce qu'il échange.
+    // Boucle explicite, et non « for (… : directory_iterator(…, errorCode)) » : l'error_code ne couvre que
+    // la construction, et l'incrément, lui, **lève**. Une erreur d'énumération remonterait donc en
+    // std::filesystem_error dans un slot Qt, qui ne rattrape pas les exceptions.
+    std::uintmax_t total = 0;
+    std::error_code entryError;
+    auto entry = std::filesystem::directory_iterator(cacheDirectory, errorCode);
+    for (const auto end = std::filesystem::directory_iterator(); !errorCode && entry != end;
+         entry.increment(errorCode)) {
+        // file_size rend (uintmax_t)-1 en cas d'erreur : sans ce test, un fichier illisible ferait un
+        // total absurde, annoncé à l'utilisateur dans la question.
+        if (!entry->is_regular_file(entryError) || entryError) continue;
+        const std::uintmax_t size = entry->file_size(entryError);
+        if (!entryError) total += size;
+    }
+    if (errorCode) {
+        QMessageBox::warning(this, tr("Libérer l'espace"),
+                             tr("Le cache n'a pas pu être parcouru : %1")
+                                 .arg(QString::fromStdString(errorCode.message())));
+        return;
+    }
+    if (total == 0) {
+        QMessageBox::information(this, tr("Libérer l'espace"), tr("Le cache est déjà vide."));
+        return;
+    }
+
+    const QString question = tr("Supprimer %1 de pyramides en cache ? Elles seront reconstruites au prochain "
+                                "calcul ou à la prochaine ouverture du projet.")
+                                 .arg(QLocale().formattedDataSize(static_cast<qint64>(total)));
+    if (QMessageBox::question(this, tr("Libérer l'espace"), question) != QMessageBox::Yes)
+        return;
+
+    // Encore une fois, et c'est celle qui compte : la boîte de confirmation fait tourner la boucle
+    // d'événements, donc un calcul a pu démarrer pendant que la question était à l'écran.
+    if (warnIfPipelineRunning()) return;
+
+    bool enumerationFailed = false;
+    const std::size_t removed = IONs::removeAllPyramids(cacheDirectory, &enumerationFailed);
+    // Un parcours interrompu ne doit pas être annoncé comme un ménage terminé : il reste des fichiers, et
+    // c'est un deuxième appui sur le bouton qui les emportera.
+    if (enumerationFailed) {
+        QMessageBox::warning(this, tr("Libérer l'espace"),
+                             tr("%n fichier(s) supprimé(s), mais le cache n'a pas pu être parcouru en entier. "
+                                "Réessayez pour supprimer le reste.",
+                                "", static_cast<int>(removed)));
+        return;
+    }
+    QMessageBox::information(this, tr("Libérer l'espace"),
+                             tr("%n fichier(s) supprimé(s) du cache.", "", static_cast<int>(removed)));
 }
 
 /**
@@ -226,6 +338,18 @@ void GridTab::setupConnections()
             m_projectGrid, &ProjectGrid::compareReferenceImage);
     connect(m_validateGridButton, &QPushButton::clicked,
             m_projectGrid, &ProjectGrid::validateGrid);
+    connect(m_freeCacheButton, &QPushButton::clicked, this, &GridTab::freePyramidCache);
+
+    // L'état de la grille ne change pas quand un calcul démarre : sans ces quatre signaux, le bouton
+    // resterait actif pendant tout le run.
+    if (m_mainWindow->pipelineRunner != nullptr) {
+        for (void (PipelineRunnerClass::*signal)() :
+             {&PipelineRunnerClass::runStarted, &PipelineRunnerClass::runFinished,
+              &PipelineRunnerClass::runCancelled})
+            connect(m_mainWindow->pipelineRunner, signal, this, &GridTab::updateCacheButtonState);
+        connect(m_mainWindow->pipelineRunner, &PipelineRunnerClass::pausedStateChanged, this,
+                [this](bool) { updateCacheButtonState(); });
+    }
 
     m_canvas->setGridCallbacks(
         [this](int cell) { m_projectGrid->setSelectedGridCell(cell); },
@@ -316,6 +440,9 @@ void GridTab::updateReferenceLabel(const ProjectGrid::State &gridState)
 
 void GridTab::updateState(const ProjectGrid::State &gridState)
 {
+    // Pas de suppression pendant un calcul : le pipeline lit ces mêmes fichiers.
+    updateCacheButtonState();
+
     updateParameters(gridState);
     updateSummary(gridState);
 }

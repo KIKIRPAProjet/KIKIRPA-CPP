@@ -16,6 +16,7 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -351,4 +352,44 @@ TEST(ImportStepTest, ReusedPyramidKeepsTheImageShape) {
     EXPECT_EQ(tile.getLevel(0).width, 2 * TILE_SIZE);
     EXPECT_EQ(tile.getLevel(0).height, TILE_SIZE);
     EXPECT_EQ(tile.getType(), CV_16UC3);
+}
+
+// L'empreinte suit la PRÉSENCE de la pyramide, pas sa date : la tâche de fond de l'interface les réécrit à l'identique
+// avec une date neuve, et le checkpoint de l'import ne doit pas en être périmé. En revanche, un cache supprimé doit
+// périmer le checkpoint, pour que l'import le reconstruise.
+TEST(ImportStepTest, FingerprintFollowsThePyramidPresenceButNotItsDate) {
+    const TestDirectory directory;
+    const Json tiles = writeFreeNamedGrid(directory.path);
+    StepsNs::ImportStepClass step = makeImportStep(directory.path, tiles);
+    ASSERT_TRUE(step.execute()) << step.getResult().dump();
+    const Json initial = step.externalInputsFingerprint();
+    ASSERT_FALSE(initial.is_null());
+
+    const fs::path pyramid = step.getOutput().tiles.front()->getTiff();
+    ASSERT_TRUE(fs::exists(pyramid));
+    fs::last_write_time(pyramid, fs::last_write_time(pyramid) + ONE_DAY);
+    EXPECT_EQ(step.externalInputsFingerprint(), initial);
+
+    ASSERT_TRUE(fs::remove(pyramid));
+    EXPECT_NE(step.externalInputsFingerprint(), initial);
+}
+
+// Le ménage de fin d'import retire les pyramides dont la source a disparu, et le compte dans son résultat.
+TEST(ImportStepTest, RemovesOrphanPyramidsAtTheEndOfTheRun) {
+    const TestDirectory directory;
+    const Json tiles = writeFreeNamedGrid(directory.path);
+    StepsNs::ImportStepClass firstRun = makeImportStep(directory.path, tiles);
+    ASSERT_TRUE(firstRun.execute()) << firstRun.getResult().dump();
+    EXPECT_EQ(firstRun.getResult().value("removedCachedFiles", -1), 0);
+    const fs::path orphanPyramid = firstRun.getOutput().tiles.back()->getTiff();
+
+    // La dernière image quitte le projet : sa pyramide n'a plus de source.
+    Json remaining = Json::array();
+    for (std::size_t index = 0; index + 1 < tiles.size(); ++index) remaining.push_back(tiles.at(index));
+    ASSERT_TRUE(fs::remove(directory.path / tiles.back().at("file").get<std::string>()));
+
+    StepsNs::ImportStepClass secondRun = makeImportStep(directory.path, remaining);
+    ASSERT_TRUE(secondRun.execute()) << secondRun.getResult().dump();
+    EXPECT_EQ(secondRun.getResult().value("removedCachedFiles", -1), 2);   // la pyramide et sa provenance
+    EXPECT_FALSE(fs::exists(orphanPyramid));
 }

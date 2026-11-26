@@ -15,7 +15,8 @@
 namespace IONs {
 
     // Écrit une image pleine résolution dans un TIFF tuilé, bloc par bloc, sans jamais l'avoir entière en mémoire.
-    // Blocs de DataNs::BLOCK_SIZE pixels de côté, compression LZW, TIFF classique ou BigTIFF selon la taille estimée.
+    // Blocs de DataNs::BLOCK_SIZE pixels de côté, compression Deflate avec prédicteur horizontal, TIFF classique
+    // ou BigTIFF selon la taille estimée.
     //
     // Utilisation : open(), writeBlock() une fois par bloc de la grille, dans n'importe quel ordre, puis close().
     // Le fichier est écrit sous un nom temporaire à côté de la destination, et renommé par close() seulement :
@@ -69,5 +70,13 @@ namespace IONs {
             std::vector<bool> writtenBlocks;  // un indicateur par bloc de la grille, ligne par ligne
 
     };
+
+    // Copie la région `region` du niveau 0 de `sourcePath` (un TIFF tuilé, pyramidal ou non) dans un nouveau
+    // TIFF tuilé `destinationPath`, bloc par bloc : la mémoire utilisée est celle d'un bloc, quelle que soit la
+    // taille de la région. Les canaux sont recopiés tels quels, et le type de la source est conservé.
+    // `region` doit être non vide et entièrement contenue dans le niveau 0. La destination est publiée par
+    // renommage : elle n'est remplacée que par un fichier complet. Renvoie false avec la cause dans errorMessage.
+    bool copyRegionToTiledTiff(const std::filesystem::path& sourcePath, cv::Rect region,
+                               const std::filesystem::path& destinationPath, std::string& errorMessage);
 
 }

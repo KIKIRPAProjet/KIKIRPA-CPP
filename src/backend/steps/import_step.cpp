@@ -169,7 +169,6 @@ namespace StepsNs {
         // erreur si le dossier existe déjà ; une erreur est signalée par errorCode).
         fs::path prepareOutputDirectory(const fs::path& directory) {
             const fs::path outputDirectory = IONs::pyramidCacheDirectory(directory);
-            fs::create_directories(outputDirectory);
             std::error_code errorCode;
             if (!fs::create_directories(outputDirectory, errorCode) && errorCode)
                 throw std::runtime_error("cannot create output directory " + IONs::pathToUtf8(outputDirectory) + ": " + errorCode.message());
@@ -218,28 +217,40 @@ namespace StepsNs {
         ConfigNs::StepConfig stepConfig;
         stepConfig.name = "import";
         stepConfig.parameters = {{"string", "path", initialInput.path}, {"string", "format", initialInput.format},
-                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles}};
+                                 {"int", "columns", initialInput.columns}, {"json", "tiles", initialInput.tiles},
+                                 {"int", "cacheMaxAgeDays", initialInput.cacheMaxAgeDays}};
         stepConfig.outputs = {{"Tiles", "tiles"}};
         configJson = stepConfig;
     }
 
     // Les images lues sont des données extérieures au pipeline : si l'une change, le checkpoint de ce step n'est plus
-    // valable. L'empreinte liste, pour chaque fichier retenu, son nom (son chemin complet en mode liste), sa taille et sa
-    // date de modification. Elle est triée par nom, car l'ordre de parcours d'un dossier n'est pas garanti. Paramètres
-    // invalides ou aucune image : JSON nul (execute() échouera de toute façon).
+    // valable. L'empreinte liste, pour chaque fichier retenu, son nom (son chemin complet en mode liste), sa taille, sa
+    // date de modification et la présence de sa pyramide. Elle est triée par nom, car l'ordre de parcours d'un dossier
+    // n'est pas garanti. Paramètres invalides ou aucune image : JSON nul (execute() échouera de toute façon).
+    //
+    // Seule la PRÉSENCE de la pyramide entre dans l'empreinte, jamais sa taille ni sa date : la tâche de fond de
+    // l'interface réécrit les pyramides à l'identique avec une date neuve, et le checkpoint serait périmé à chaque
+    // passage. Avec la présence seule, un cache supprimé fait rejouer l'import — qui le reconstruit — et un cache
+    // réécrit ne change rien.
     Json ImportStepClass::externalInputsFingerprint() const {
         try {
             const ImportParameters parameters{IONs::pathFromUtf8(getParameter("path").get<std::string>()), getParameter("format").get<std::string>(),
                                               getParameter("columns").get<int>(), getParameter("tiles")};
+            const fs::path cacheDirectory = IONs::pyramidCacheDirectory(parameters.directory);
             std::map<std::string, Json> filesByName;
             for (const ImageFile& imageFile : listImageFiles(parameters)) {
                 const bool listed = imageFile.cellSource == CellSource::List;
                 const std::string fileName = IONs::pathToUtf8(listed ? imageFile.filePath : imageFile.filePath.filename());
+                std::error_code errorCode;
+                const bool hasPyramid =
+                    fs::exists(IONs::pyramidCachePath(cacheDirectory, imageFile.filePath), errorCode);
                 filesByName[fileName] = {static_cast<long long>(fs::file_size(imageFile.filePath)),
-                                         static_cast<long long>(fs::last_write_time(imageFile.filePath).time_since_epoch().count())};
+                                         static_cast<long long>(fs::last_write_time(imageFile.filePath).time_since_epoch().count()),
+                                         hasPyramid};
             }
             Json fingerprint = Json::array();
-            for (const auto& [fileName, sizeAndDate] : filesByName) fingerprint.push_back({fileName, sizeAndDate[0], sizeAndDate[1]});
+            for (const auto& [fileName, fileState] : filesByName)
+                fingerprint.push_back({fileName, fileState[0], fileState[1], fileState[2]});
             return fingerprint;
         } catch (const std::exception&) {
             return Json();
@@ -264,6 +275,13 @@ namespace StepsNs {
             for (const ImageFile& imageFile : imageFiles) tiles.push_back(createTile(imageFile, static_cast<int>(tiles.size()), outputDirectory));
             linkNeighbours(tiles);
             output.tiles = std::move(tiles);
+            // Ménage à la fin, et pas au début : les pyramides de ce run viennent d'avoir un dernier emploi neuf,
+            // donc aucune n'est périmée et il n'y a aucune liste d'exclusion à passer. Au début, une pyramide de
+            // plus de cacheMaxAgeDays jours aurait été supprimée puis reconstruite aussitôt. Les deux fonctions ne
+            // lèvent pas : un cache qu'on n'arrive pas à nettoyer ne doit pas faire échouer un import.
+            result["removedCachedFiles"] =
+                IONs::removeOrphanPyramids(outputDirectory) +
+                IONs::removeStalePyramids(outputDirectory, getParameter("cacheMaxAgeDays").get<int>());
         } catch (const std::exception& exception) {
             result["error"] = exception.what();
             return false;

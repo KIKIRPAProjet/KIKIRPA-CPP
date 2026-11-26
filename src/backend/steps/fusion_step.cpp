@@ -7,7 +7,7 @@
 #include "core/data/mosaic_corners.h"
 #include "core/data/tile.h"
 #include "core/io/file_fingerprint.h"
-#include "core/io/pyramidal_tiff_reader.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/tiled_tiff_writer.h"
 #include "core/step/data_store.h"
 
@@ -142,7 +142,11 @@ namespace StepsNs {
             const DataNs::Level& fullResolution = tile.getLevel(0);
             PlacedTile placedTile;
             placedTile.tileId = tile.getId();
+            placedTile.sourcePath = tile.getSource();
             placedTile.tiffPath = tile.getTiff();
+            // Décidé une fois par tuile : readCorrectedRgb est appelé à chaque bloc de la mosaïque.
+            placedTile.levelZeroInSource =
+                IONs::TilePixelReaderClass(placedTile.sourcePath, placedTile.tiffPath).readsLevelZeroFromSource();
             placedTile.mosaicRect = cv::Rect(corner, cv::Size(fullResolution.width, fullResolution.height));
             return placedTile;
         }
@@ -192,12 +196,14 @@ namespace StepsNs {
         }
 
         // OpenCV range les canaux en BGR (et le TIFF pyramidal les a gardés ainsi) ; la mosaïque est en RGB.
+        // Le TIFF pyramidal contient ce qu'il déclare : du RGB à 3 canaux, du RGBA à 4 (core/io/pyramid_cache.h).
+        // Il n'y a donc plus d'échange à faire ici, seulement le gris à étaler et l'alpha à laisser tomber.
         cv::Mat convertToRgb(const cv::Mat& image) {
             cv::Mat rgb;
             switch (image.channels()) {
                 case CHANNEL_COUNT_GRAY: cv::cvtColor(image, rgb, cv::COLOR_GRAY2RGB); break;
-                case CHANNEL_COUNT_COLOR: cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB); break;
-                case CHANNEL_COUNT_COLOR_ALPHA: cv::cvtColor(image, rgb, cv::COLOR_BGRA2RGB); break;
+                case CHANNEL_COUNT_COLOR: return image;
+                case CHANNEL_COUNT_COLOR_ALPHA: cv::cvtColor(image, rgb, cv::COLOR_RGBA2RGB); break;
                 default: throw std::runtime_error("fusion: unsupported tile channel count");
             }
             return rgb;
@@ -209,7 +215,8 @@ namespace StepsNs {
             const cv::Rect regionInTile(overlap.tl() - tile.mosaicRect.tl(), overlap.size());
             cv::Mat region;
             std::string errorMessage;
-            if (!IONs::PyramidalTiffReaderClass(tile.tiffPath).readRegion(0, regionInTile, region, errorMessage))
+            const IONs::TilePixelReaderClass reader(tile.sourcePath, tile.tiffPath, tile.levelZeroInSource);
+            if (!reader.readRegion(0, regionInTile, region, errorMessage))
                 throw std::runtime_error("fusion: cannot read tile " + std::to_string(tile.tileId) + ": " + errorMessage);
             if (region.depth() != CV_8U && region.depth() != CV_16U)
                 throw std::runtime_error("fusion: tile " + std::to_string(tile.tileId) + " is not an 8 or 16-bit image");

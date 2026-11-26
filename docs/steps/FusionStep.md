@@ -42,7 +42,7 @@ Code : [fusion_step.h](../../include/backend/steps/fusion_step.h) / [fusion_step
 2. **Grille** : des blocs de `DataNs::BLOCK_SIZE` (512) depuis (0, 0), ligne par ligne ; ceux des bords droit et bas sont plus petits.
 3. **Un bloc** (`renderBlock`, fonction pure) : pour chaque tuile qui chevauche le bloc,
    - le territoire est dessiné sur l'intersection, polygone par polygone (`cv::drawContours`, avec la règle de `GraphCutSeamFinderClass::verifyTiling` : un trou est vidé mais son contour appartient au territoire) ;
-   - s'il touche l'intersection, la région est lue dans le TIFF, divisée par `tileGains[i] · exp(fieldStrength · r²)` avec `OutputClass::correctRegion` (r² calculé dans le repère de la tuile entière ; tuile isolée : non corrigée), convertie de BGR en RGB, puis copiée sous le masque ;
+   - s'il touche l'intersection, la région est lue par `IONs::TilePixelReaderClass` — dans l'image de l'œuvre si elle sait servir une région de sa pleine résolution, sinon dans le TIFF du cache ([TilePixelReader.md](../core/TilePixelReader.md)) —, divisée par `tileGains[i] · exp(fieldStrength · r²)` avec `OutputClass::correctRegion` (r² calculé dans le repère de la tuile entière ; tuile isolée : non corrigée), puis copiée sous le masque. Depuis le 24/11/2026 il n'y a plus d'échange de canaux ici : le TIFF pyramidal contient déjà du RGB (un niveau de gris est étalé sur trois canaux, un canal alpha est laissé de côté) ;
    - provenance et masque sont remplis au même endroit.
 4. **Écriture** : le bloc est écrit aussitôt dans les trois fichiers, puis oublié. Les fichiers sont sous un nom temporaire jusqu'à la fin ; en cas d'échec, les temporaires sont supprimés.
 

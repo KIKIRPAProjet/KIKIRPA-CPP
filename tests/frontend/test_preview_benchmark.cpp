@@ -78,7 +78,9 @@ TEST(PreviewBenchmark, CompareRawTiffVsPyramidalTiff) {
     for (int i = 0; i < ITERATIONS; ++i) {
         QElapsedTimer timer;
         timer.start();
-        pyramidPreview = FrontendUtils::readPyramidalPreview(pyramidPathQt, PREVIEW_SIZE);
+        // Le chemin de la source est passé aussi : le lecteur de tuile y cherche le niveau 0 quand le cache ne
+        // le contient pas. Ici la pyramide est écrite en entier, donc tout vient d'elle.
+        pyramidPreview = FrontendUtils::readPyramidalPreview(rawPathQt, pyramidPathQt, PREVIEW_SIZE);
         totalPyramidTimeMs += timer.elapsed();
     }
     const double avgPyramidMs = static_cast<double>(totalPyramidTimeMs) / ITERATIONS;

@@ -462,7 +462,7 @@ La CI tourne sur chaque push et chaque PR (`.github/workflows/ci.yml`) :
 | Build and test (Windows) | compilation et tests sous Windows avec MSVC (preset `windows-aqt`) |
 | clang-tidy | règles de style et de qualité, **seulement sur les fichiers C++ modifiés** par une PR. Sur un push vers `main`, il n'y a rien à comparer : le job passe sans rien analyser |
 
-Les tests sont lancés avec `-L "unit|integration"` : les 8 tests de `tests/frontend/`, qui n'ont pas de label, ne tournent donc pas en CI. `release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
+Les tests sont lancés avec `-L "unit|integration"` : dans `tests/frontend/`, trois cibles portent `unit` et tournent en CI (`project_serializer`, `pipeline_results`, `image_conversion`) ; les trois autres n'ont pas de label et restent hors CI (`project_setup`, `pipeline_worker`, `preview_benchmark`), soit 28 tests à lancer en local. `release.yml` produit les archives Linux et Windows quand on pousse un tag `v*`. Il n'y a pas encore de devcontainer (GitHub Codespaces).
 
 ---
 
@@ -484,7 +484,7 @@ Limites connues :
 
 ### Ce qui est en cours
 
-- Plusieurs PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
+- Plusieurs PR complètent l'interface : état sauvegardé (#124), zoom (#125), contours des tuiles (#107), superposition (#128, fusionnée par erreur puis annulée par #253), ouverture d'un projet et reprise (#105), rapport d'exécution (#115).
 
 ### Comment le brancher au backend
 

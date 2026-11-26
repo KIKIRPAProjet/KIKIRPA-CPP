@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <string>
 #include <system_error>
+#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -31,22 +32,32 @@ namespace IONs {
         return temporaryPath;
     }
 
+    // L'autre moitié de la course décrite dans openTiff : ici c'est la publication qui perd, parce qu'un lecteur
+    // tient la destination ouverte à cet instant. Les deux côtés doivent réessayer, sinon le perdant change mais
+    // il y a toujours un perdant. Mêmes durées : le conflit se compte en millisecondes.
+    namespace {
+        constexpr int REPLACE_ATTEMPT_COUNT = 3;
+        constexpr std::chrono::milliseconds REPLACE_RETRY_DELAY{4};
+    }
+
     bool replaceFile(const fs::path& temporaryPath, const fs::path& destinationPath, std::string& errorMessage) {
+        for (int attempt = 1;; ++attempt) {
 #ifdef _WIN32
-        // fs::rename ne remplace pas toujours un fichier existant sous Windows ; MoveFileExW le fait.
-        if (MoveFileExW(temporaryPath.c_str(), destinationPath.c_str(),
-                        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            return true;
-        errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " +
-                       std::system_category().message(static_cast<int>(GetLastError()));
-        return false;
+            // fs::rename ne remplace pas toujours un fichier existant sous Windows ; MoveFileExW le fait.
+            if (MoveFileExW(temporaryPath.c_str(), destinationPath.c_str(),
+                            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+                return true;
+            errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " +
+                           std::system_category().message(static_cast<int>(GetLastError()));
 #else
-        std::error_code errorCode;
-        fs::rename(temporaryPath, destinationPath, errorCode);
-        if (!errorCode) return true;
-        errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " + errorCode.message();
-        return false;
+            std::error_code errorCode;
+            fs::rename(temporaryPath, destinationPath, errorCode);
+            if (!errorCode) return true;
+            errorMessage = "cannot replace '" + IONs::pathToUtf8(destinationPath) + "': " + errorCode.message();
 #endif
+            if (attempt >= REPLACE_ATTEMPT_COUNT) return false;
+            std::this_thread::sleep_for(REPLACE_RETRY_DELAY);
+        }
     }
 
     bool copyFileReplacing(const fs::path& sourcePath, const fs::path& destinationPath, std::string& errorMessage) {

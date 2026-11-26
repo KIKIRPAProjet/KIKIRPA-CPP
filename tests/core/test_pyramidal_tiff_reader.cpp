@@ -1,12 +1,17 @@
 // tests/core/test_pyramidal_tiff_reader.cpp
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/pyramidal_tiff_writer.h"
+#include "core/io/unicode_path.h"
 
 #include <gtest/gtest.h>
+#include <opencv2/core.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
+
+#include <tiff.h>
+#include <tiffio.h>
 
 #include <vector>
 #include <cstdint>
@@ -224,6 +229,100 @@ namespace {
         EXPECT_FALSE(std::filesystem::exists(impossibleDest));
 
         std::filesystem::remove(blockingFile);
+    }
+
+
+    // ---------------------------------------------------------------------------------------------------------------
+    // Sources à BANDES : l'organisation des TIFF d'acquisition. Le cache, lui, est toujours tuilé. Le lecteur doit
+    // savoir lire une région des deux, pour que le niveau 0 puisse venir de l'image de l'œuvre au lieu du cache.
+
+    constexpr int STRIP_SOURCE_WIDTH = 300;
+    constexpr int STRIP_SOURCE_HEIGHT = 200;
+    constexpr int STRIP_REGION_X = 37;
+    constexpr int STRIP_REGION_Y = 11;
+    constexpr int STRIP_REGION_WIDTH = 150;
+    constexpr int STRIP_REGION_HEIGHT = 93;
+    constexpr uint32_t SHORT_STRIP_ROWS = 7;
+
+    cv::Mat makeCoordinateImage(int width, int height) {
+        cv::Mat image(height, width, CV_16UC3);
+        for (int y = 0; y < height; ++y)
+            for (int x = 0; x < width; ++x)
+                image.at<cv::Vec<uint16_t, 3>>(y, x) = {static_cast<uint16_t>(x), static_cast<uint16_t>(y),
+                                                        static_cast<uint16_t>(x + y)};
+        return image;
+    }
+
+    // Écrit une image à bandes, avec la compression et la hauteur de bande demandées.
+    void writeStripTiff(const std::filesystem::path& path, const cv::Mat& image, uint16_t compression,
+                        uint32_t rowsPerStrip) {
+        TIFF* file = IONs::openTiff(path, "w");
+        ASSERT_NE(file, nullptr);
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_IMAGEWIDTH, static_cast<uint32_t>(image.cols)));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_IMAGELENGTH, static_cast<uint32_t>(image.rows)));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_SAMPLESPERPIXEL, static_cast<uint16_t>(image.channels())));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_BITSPERSAMPLE, static_cast<uint16_t>(16)));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_SAMPLEFORMAT, SAMPLEFORMAT_UINT));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_PHOTOMETRIC, PHOTOMETRIC_RGB));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_COMPRESSION, compression));
+        ASSERT_TRUE(TIFFSetField(file, TIFFTAG_ROWSPERSTRIP, rowsPerStrip));
+        for (int row = 0; row < image.rows; ++row) {
+            void* rowData = const_cast<void*>(static_cast<const void*>(image.ptr(row)));
+            ASSERT_NE(TIFFWriteScanline(file, rowData, static_cast<uint32_t>(row), 0), -1);
+        }
+        TIFFClose(file);
+    }
+
+    void expectReadsTheSameRegion(const std::filesystem::path& path, const cv::Mat& source) {
+        const cv::Rect region(STRIP_REGION_X, STRIP_REGION_Y, STRIP_REGION_WIDTH, STRIP_REGION_HEIGHT);
+        const IONs::PyramidalTiffReaderClass reader(path);
+        cv::Mat read;
+        std::string error;
+        ASSERT_TRUE(reader.readRegion(0, region, read, error)) << error;
+        ASSERT_EQ(read.size(), region.size());
+        ASSERT_EQ(read.type(), source.type());
+        EXPECT_EQ(cv::norm(read, source(region), cv::NORM_INF), 0.0);
+    }
+
+    // Non compressée, une seule bande de 200 lignes : c'est 02-Philadelphia (une bande de 8 700 lignes). La lecture
+    // passe par les décalages, sans décoder l'image entière.
+    TEST(PyramidalTiffReaderClass, ReadsARegionOfAnUncompressedSingleStripSource) {
+        const auto path = std::filesystem::temp_directory_path() / "kikirpa_reader_uncompressed_strip.tif";
+        const cv::Mat source = makeCoordinateImage(STRIP_SOURCE_WIDTH, STRIP_SOURCE_HEIGHT);
+        writeStripTiff(path, source, COMPRESSION_NONE, static_cast<uint32_t>(STRIP_SOURCE_HEIGHT));
+        expectReadsTheSameRegion(path, source);
+        std::filesystem::remove(path);
+    }
+
+    // Compressée en bandes courtes : c'est 01-Nominal (LZW, 25 lignes par bande). libtiff décode les bandes
+    // recoupées, et la région commence volontairement au milieu de l'une d'elles.
+    TEST(PyramidalTiffReaderClass, ReadsARegionOfACompressedShortStripSource) {
+        const auto path = std::filesystem::temp_directory_path() / "kikirpa_reader_compressed_strips.tif";
+        const cv::Mat source = makeCoordinateImage(STRIP_SOURCE_WIDTH, STRIP_SOURCE_HEIGHT);
+        writeStripTiff(path, source, COMPRESSION_ADOBE_DEFLATE, SHORT_STRIP_ROWS);
+        expectReadsTheSameRegion(path, source);
+        std::filesystem::remove(path);
+    }
+
+    // Une image à bandes n'a qu'un niveau : le lecteur ne doit pas prétendre le contraire.
+    TEST(PyramidalTiffReaderClass, AStripSourceHasASingleLevel) {
+        const auto path = std::filesystem::temp_directory_path() / "kikirpa_reader_strip_levels.tif";
+        const cv::Mat source = makeCoordinateImage(STRIP_SOURCE_WIDTH, STRIP_SOURCE_HEIGHT);
+        writeStripTiff(path, source, COMPRESSION_NONE, SHORT_STRIP_ROWS);
+
+        const IONs::PyramidalTiffReaderClass reader(path);
+        EXPECT_EQ(reader.getLevelCount(), 1);
+        int width = 0;
+        int height = 0;
+        std::string error;
+        ASSERT_TRUE(reader.getLevelDimensions(0, width, height, error)) << error;
+        EXPECT_EQ(width, STRIP_SOURCE_WIDTH);
+        EXPECT_EQ(height, STRIP_SOURCE_HEIGHT);
+        cv::Mat unused;
+        EXPECT_FALSE(reader.readRegion(1, cv::Rect(0, 0, 1, 1), unused, error));
+        std::filesystem::remove(path);
     }
 
 }

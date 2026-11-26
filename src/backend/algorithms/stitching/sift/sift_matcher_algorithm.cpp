@@ -33,10 +33,10 @@ namespace SiftNs {
                     grey = image16Bit;
                     break;
                 case 3:
-                    cv::cvtColor(image16Bit, grey, cv::COLOR_BGR2GRAY);
+                    cv::cvtColor(image16Bit, grey, cv::COLOR_RGB2GRAY);
                     break;
                 case 4:
-                    cv::cvtColor(image16Bit, grey, cv::COLOR_BGRA2GRAY);
+                    cv::cvtColor(image16Bit, grey, cv::COLOR_RGBA2GRAY);
                     break;
                 default:
                     throw std::invalid_argument("SIFT expects 1-, 3-, or 4-channel images");

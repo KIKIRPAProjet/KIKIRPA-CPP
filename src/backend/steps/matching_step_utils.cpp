@@ -2,6 +2,7 @@
 #include "steps/matching_step_utils.h"
 #include "core/data/tile.h"
 #include "core/data/algorithm_types.h"
+#include "core/io/tile_pixel_reader.h"
 #include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
@@ -56,7 +57,9 @@ namespace StepsNs {
     }
 
     cv::Mat readImage(const DataNs::TileClass& tile) {
-        auto image = IONs::readImage(tile.getSource(), cv::IMREAD_UNCHANGED);
+        // Par le cache quand celui-ci contient le niveau demandé, sinon par l'image de l'œuvre (c'est le cas du
+        // niveau 0 dès que le cache est réduit), et toujours en RGB : voir core/io/tile_pixel_reader.h.
+        auto image = IONs::readTileLevel(tile.getSource(), tile.getTiff(), 0);
         if (image.empty()) throw std::runtime_error("cannot read " + IONs::pathToUtf8(tile.getSource()));
         if (image.dims != 2 || (image.depth() != CV_8U && image.depth() != CV_16U) ||
             (image.channels() != 1 && image.channels() != 3 && image.channels() != 4))

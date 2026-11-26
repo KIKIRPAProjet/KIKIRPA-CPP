@@ -41,7 +41,9 @@ namespace IONs {
             }
 
             // Dimensions, canaux, bits par canal, origine en haut à gauche, canaux entrelacés (RGBRGB et non RRRGGGBBB),
-            // modèle colorimétrique, compression LZW et taille des blocs.
+            // modèle colorimétrique, compression Deflate avec prédicteur horizontal et taille des blocs.
+            // Le prédicteur est un champ du codec : libtiff le refuse s'il arrive avant TIFFTAG_COMPRESSION.
+            // Sans lui, sur du 16 bits bruité, la compression fait grossir le fichier (mesuré : +19 % en LZW seul).
             const uint16_t photometric =
                 channels == 1 ? PHOTOMETRIC_MINISBLACK : PHOTOMETRIC_RGB;
             if (!TIFFSetField(tiffFile, TIFFTAG_IMAGEWIDTH, static_cast<uint32_t>(levelImage.cols)) ||
@@ -51,7 +53,8 @@ namespace IONs {
                 !TIFFSetField(tiffFile, TIFFTAG_ORIENTATION, ORIENTATION_TOPLEFT) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG) ||
                 !TIFFSetField(tiffFile, TIFFTAG_PHOTOMETRIC, photometric) ||
-                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_LZW) ||
+                !TIFFSetField(tiffFile, TIFFTAG_COMPRESSION, COMPRESSION_ADOBE_DEFLATE) ||
+                !TIFFSetField(tiffFile, TIFFTAG_PREDICTOR, PREDICTOR_HORIZONTAL) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILEWIDTH, TILE_SIZE) ||
                 !TIFFSetField(tiffFile, TIFFTAG_TILELENGTH, TILE_SIZE)) {
                 errorMessage = "cannot configure TIFF directory";
@@ -117,7 +120,8 @@ namespace IONs {
     bool createPyramidalTiledTiff(
         const cv::Mat& image,
         const std::filesystem::path& outputPath,
-        std::string& errorMessage
+        std::string& errorMessage,
+        int levelCount
     ) {
         // 1. Contrôle de l'image ; 2. création du dossier et ouverture du TIFF ; 3. écriture des niveaux ; 4. fermeture,
         // et suppression du fichier si une étape a échoué.
@@ -128,6 +132,11 @@ namespace IONs {
         }
         if (image.dims != 2 || image.cols <= 0 || image.rows <= 0) {
             errorMessage = "input image must be a non-empty two-dimensional matrix";
+            return false;
+        }
+        const int levels = levelCount > 0 ? levelCount : PYRAMID_LEVELS;
+        if (levels > PYRAMID_LEVELS) {
+            errorMessage = "level count must not exceed DataNs::LEVEL_COUNT";
             return false;
         }
 
@@ -152,9 +161,10 @@ namespace IONs {
         // do/while(false) : un seul point de sortie, pour fermer et nettoyer le temporaire en cas d'erreur.
         bool success = false;
         do {
-            // Réserve les sous-répertoires (SubIFD) qui contiendront les niveaux réduits.
+            // Réserve les sous-répertoires (SubIFD) qui contiendront les niveaux réduits. Avec un seul niveau,
+            // il n'y a pas de sous-répertoire et le tag n'est pas posé.
             toff_t subIfdOffsets[PYRAMID_LEVELS - 1] = {};
-            if (!TIFFSetField(tiffFile, TIFFTAG_SUBIFD, PYRAMID_LEVELS - 1, subIfdOffsets)) {
+            if (levels > 1 && !TIFFSetField(tiffFile, TIFFTAG_SUBIFD, levels - 1, subIfdOffsets)) {
                 errorMessage = "cannot configure TIFF pyramid directories";
                 break;
             }
@@ -164,9 +174,9 @@ namespace IONs {
                 break;
             }
 
-            // Niveaux 1 à PYRAMID_LEVELS-1 : chacun est le précédent réduit de moitié.
+            // Niveaux suivants : chacun est le précédent réduit de moitié.
             cv::Mat previousLevel = image;
-            for (int levelIndex = 1; levelIndex < PYRAMID_LEVELS; ++levelIndex) {
+            for (int levelIndex = 1; levelIndex < levels; ++levelIndex) {
                 cv::Mat reducedLevel;
                 // INTER_AREA moyenne les pixels : la meilleure interpolation pour réduire une image.
                 cv::resize(previousLevel, reducedLevel, cv::Size(), 0.5, 0.5, cv::INTER_AREA);

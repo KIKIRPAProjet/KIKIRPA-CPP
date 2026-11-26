@@ -93,6 +93,6 @@ Une paire non mesurable, ou rejetée par un contrôle de confiance, est ignorée
 
 ## Lecture des pixels
 
-Seul accès aux pixels : `readPixels(tile, level)`. Elle lit **l'image source entière** (`cv::imread`), puis la réduit comme le TIFF pyramidal (`createPyramidalTiledTiff`).
+Seul accès aux pixels : `readPixels(tile, level)`, qui délègue à `IONs::readTileLevel` : le niveau demandé est lu **dans le cache** quand celui-ci le contient — au niveau 0, un cache réduit n'a rien à servir et les pixels viennent de l'image de l'œuvre — et ils arrivent **en RGB** ([TilePixelReader.md](../core/TilePixelReader.md)). Au niveau 1, c'est 145 Mio lus au lieu des 578 de la source, sans la seconde image qu'une réduction en mémoire alloue. Sans cache (tuile fabriquée à la main), l'image source est lue puis réduite, comme avant.
 
-La lecture directe d'un niveau dans le TIFF pyramidal existe maintenant : `IONs::PyramidalTiffReaderClass::readRegion(level, rectangle, output, error)` ([PyramidalTiff.md](../core/PyramidalTiff.md)). Le step ne l'utilise pas encore. Remplacer `readPixels` par `readRegion` sur `tile.getTiff()` est une tâche à faire : le step ne chargerait plus que le niveau et la bande nécessaires.
+Ce qui reste à faire : ne lire que la **bande** de recouvrement au lieu du niveau entier. Ce n'est pas qu'une question de lecture : l'estimateur de recouvrement découpe la bande nominale lui-même et `computeCommonAreas` travaille dans le repère de la tuile entière. Il faudrait donc que les algorithmes reçoivent une région **et son origine**, c'est-à-dire changer leur contrat — un chantier à part, au cœur de l'appariement.

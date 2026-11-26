@@ -50,7 +50,7 @@ Les tuiles isolées gardent un gain de 1. Le consommateur doit les laisser non c
 
 ## Lecture et mémoire
 
-Chaque tuile est lue par `PhaseCorrelationStepClass::readPixels(tile, 3)`. Cette fonction relit **l'image source entière** (`cv::imread`), puis la réduit au niveau 3 comme le TIFF pyramidal. `BrightnessEqualizerClass::reduceTile()` en tire la luminance réduite. Une seule image pleine résolution est en mémoire à la fois ; seules les luminances réduites de toutes les tuiles sont gardées.
+Chaque tuile est lue par `PhaseCorrelationStepClass::readPixels(tile, 3)`. Depuis le 24/11/2026, cette fonction lit le **niveau 3 du cache** quand la tuile en a un : environ 10 Mio au lieu des 578 de la source et de trois réductions en mémoire, soit le gain le plus net de tout le pipeline (sur une grille 10 × 10 : 1 Gio lu au lieu de 56). Sans cache, l'image source est lue puis réduite, comme avant. `BrightnessEqualizerClass::reduceTile()` en tire la luminance réduite. Une seule image pleine résolution est en mémoire à la fois ; seules les luminances réduites de toutes les tuiles sont gardées.
 
 Le step dépend donc de `PhaseCorrelationStepClass` pour la lecture. Lire directement le niveau 3 du TIFF pyramidal avec `IONs::PyramidalTiffReaderClass::readRegion` ([PyramidalTiff.md](../core/PyramidalTiff.md)) éviterait de charger l'image pleine résolution. C'est une tâche à faire.
 

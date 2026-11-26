@@ -112,6 +112,17 @@ namespace {
         return names;
     }
 
+    void configureCacheRemoval(StepsNs::ExportStepClass& step, const fs::path& directory, bool remove) {
+        const Json config = {{"name", "export"},
+                             {"parameters", Json::array({Json{{"valueType", "string"},
+                                                               {"name", "outputDirectory"},
+                                                               {"value", directory.u8string()}},
+                                                          Json{{"valueType", "bool"},
+                                                               {"name", "removeMosaicCache"},
+                                                               {"value", remove}}})}};
+        step.importConfig(config);
+    }
+
     struct ExportFixture {
         TemporaryDirectoryClass temporaryDirectory;
         fs::path fusionDirectory = temporaryDirectory.path / "fusion";
@@ -266,4 +277,46 @@ TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     const auto fingerprint = fixture.step.externalInputsFingerprint();
     ASSERT_TRUE(fingerprint.is_object());
     EXPECT_TRUE(fingerprint.at("exists").get<bool>());
+}
+
+// Avec removeMosaicCache, le cache de la mosaïque part après la copie : l'image publiée en est une copie exacte, et
+// `fusion` sait la refaire. Le dossier suit s'il ne reste rien dedans.
+TEST(ExportStepTest, RemovesTheMosaicCacheWhenAsked) {
+    ExportFixture fixture(CV_16UC3);
+    configureCacheRemoval(fixture.step, fixture.outputDirectory, true);
+    const fs::path mosaicImage = fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath;
+    ASSERT_TRUE(fs::exists(mosaicImage));
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+
+    EXPECT_EQ(fixture.step.getResult().value("removedMosaicCacheFiles", -1), 1);
+    EXPECT_FALSE(fs::exists(mosaicImage));
+    EXPECT_FALSE(fs::exists(fixture.fusionDirectory));   // il ne restait que ce fichier
+    // L'export, lui, est bien là : c'est tout l'intérêt.
+    EXPECT_TRUE(fs::exists(fixture.step.getOutput().imagePath));
+    EXPECT_EQ(fileNames(fixture.outputDirectory), std::vector<std::string>{"mosaic.tif"});
+}
+
+// Par défaut, rien n'est supprimé et le résultat ne parle pas de suppression.
+TEST(ExportStepTest, KeepsTheMosaicCacheByDefault) {
+    ExportFixture fixture(CV_16UC3);
+    const fs::path mosaicImage = fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath;
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+
+    EXPECT_TRUE(fs::exists(mosaicImage));
+    EXPECT_FALSE(fixture.step.getResult().contains("removedMosaicCacheFiles"));
+}
+
+// Le paramètre posé à faux explicitement se comporte comme le défaut.
+TEST(ExportStepTest, KeepsTheMosaicCacheWhenTheParameterIsFalse) {
+    ExportFixture fixture(CV_16UC3);
+    configureCacheRemoval(fixture.step, fixture.outputDirectory, false);
+    const fs::path mosaicImage = fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath;
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+
+    // Le résultat ne porte la clé que lorsqu'une suppression a été demandée.
+    EXPECT_FALSE(fixture.step.getResult().contains("removedMosaicCacheFiles"));
+    EXPECT_TRUE(fs::exists(mosaicImage));
 }

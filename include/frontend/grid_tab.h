@@ -28,7 +28,13 @@ private:
     QWidget *createGridCaptureGroup(QWidget *parent);
     void createTileActions(QVBoxLayout *layout);
     void createReferenceActions(QVBoxLayout *layout);
+    void createCacheActions(QVBoxLayout *layout);
     void setupConnections();
+    // Demande confirmation, en annonçant la place récupérée, puis vide le cache des pyramides du projet.
+    void freePyramidCache();
+    // Vrai, et le dit à l'utilisateur, si un calcul tourne : il lit les fichiers qu'on allait supprimer.
+    bool warnIfPipelineRunning();
+    void updateCacheButtonState();
 
     // Les sous-fonctions de mise à jour
     void updateParameters(const ProjectGrid::State &gridState);
@@ -58,4 +64,5 @@ private:
     QPushButton *m_importReferenceButton = nullptr;
     QPushButton *m_compareReferenceButton = nullptr;
     QPushButton *m_validateGridButton = nullptr;
+    QPushButton *m_freeCacheButton = nullptr;
 };

@@ -21,10 +21,24 @@ Un TIFF pyramidal contient plusieurs versions de la même image :
 | `2`    | quart de la largeur et de la hauteur    |
 | `3`    | huitième de la largeur et de la hauteur |
 
-Le nombre de niveaux est défini par `DataNs::LEVEL_COUNT`. Chaque niveau est stocké en tuiles
+Le nombre de niveaux à écrire est donné par `levelCount` (0 = `DataNs::LEVEL_COUNT`) : le cache d'import en demande
+un de moins quand le niveau 0 reste dans l'image de l'œuvre, et lui passe alors la demi-résolution
+([TilePixelReader.md](TilePixelReader.md)). Le nombre de niveaux d'une pyramide complète est défini par
+`DataNs::LEVEL_COUNT`. Chaque niveau est stocké en tuiles
 de `DataNs::BLOCK_SIZE` pixels de côté. Le writer utilise actuellement une taille de 512 × 512
-pixels et une compression LZW. Les dimensions des niveaux réduits sont calculées par division
+pixels et une compression **Deflate avec prédicteur horizontal** (`COMPRESSION_ADOBE_DEFLATE` et
+`PREDICTOR_HORIZONTAL`). Les dimensions des niveaux réduits sont calculées par division
 entière : elles peuvent donc être arrondies vers le bas.
+
+Le prédicteur remplace chaque échantillon par sa différence avec le précédent de la même ligne et
+du même canal. Sur une image 16 bits, c'est lui qui fait tout le travail : sans prédicteur, le LZW
+produit un fichier **19 % plus gros que les pixels bruts** (mesuré le 24/11/2026 sur une tuile de
+`data/02-Philadelphia`), parce qu'il ne trouve aucune répétition d'octets à compresser. L'ordre des
+`TIFFSetField` compte : `TIFFTAG_PREDICTOR` est un champ du codec, libtiff le refuse s'il arrive
+avant `TIFFTAG_COMPRESSION`. À la lecture, il n'y a rien à faire : `TIFFReadEncodedTile` défait le
+prédicteur et la compression. Les pyramides écrites en LZW avant ce changement restent donc
+lisibles, mais elles ne sont réécrites que si leur source change : pour en profiter, supprimer
+`<dossier des images>/.cache`.
 
 Les niveaux réduits sont créés successivement avec `cv::INTER_AREA`. Les dimensions sont donc
 arrondies vers le bas, comme dans `TileClass`.
@@ -39,6 +53,14 @@ Le writer accepte une matrice OpenCV 2D non vide :
 
 Le format est conservé dans le TIFF. Une image 16 bits reste donc 16 bits à la lecture.
 Les niveaux réduits gardent également le nombre de canaux de l'image d'origine.
+
+**Ordre des canaux.** Le writer écrit les canaux dans l'ordre reçu, et le TIFF déclare `PHOTOMETRIC_RGB` dès
+qu'il y en a plusieurs : l'appelant doit donc fournir du **RGB** (RGBA à 4 canaux), et non l'ordre BGR de
+`cv::imread`. C'est le cache d'import qui convertit, une fois, à l'écriture
+([pyramid_cache.h](../../include/backend/core/io/pyramid_cache.h)). Avant le 24/11/2026 le fichier déclarait du
+RGB en stockant du BGR, et chaque lecteur défaisait l'erreur de son côté : `fusion` par un `BGR2RGB`, l'aperçu
+de l'interface par une `QImage` en `Format_BGR888` (dette T6). Les caches écrits avant cette date sont
+invalidés par leur version de format et réécrits au prochain import.
 
 ## Créer un TIFF pyramidal
 
@@ -112,6 +134,25 @@ La région doit avoir des coordonnées non négatives et une largeur et une haut
 positives. Elle doit être entièrement contenue dans le niveau demandé : le reader ne la
 tronque pas automatiquement. En cas de succès, `output` a exactement la taille de `region`
 et le type du niveau lu.
+
+## Lire une région d'une image à bandes
+
+Le reader ne sert pas qu'à relire le cache : depuis le 24/11/2026, il lit aussi une région d'un TIFF **à bandes**,
+l'organisation habituelle des images d'acquisition. Il choisit tout seul, d'après les tags du fichier :
+
+| Organisation | Comment la région est lue | Coût |
+|---|---|---|
+| tuilée | `TIFFReadEncodedTile` sur les tuiles recoupées | une tuile de 512 × 512 |
+| à bandes, **non compressée**, canaux entrelacés, ordre des octets de la machine | lecture **par décalage** : l'octet d'une ligne se calcule depuis `StripOffsets` | les lignes de la région, rien de plus |
+| à bandes, compressée | `TIFFReadEncodedStrip` sur les bandes recoupées | une bande entière par bande recoupée |
+
+La lecture par décalage existe pour un cas précis : `data/02-Philadelphia` est non compressé et n'a **qu'une
+seule bande de 8 700 lignes**. Par `TIFFReadEncodedStrip`, chaque région aurait coûté le décodage des 578 Mio de
+l'image entière. Si le fichier ne peut pas être ouvert une seconde fois pour cette lecture, le reader retombe sur
+les bandes au lieu d'échouer.
+
+Reste un cas sans solution : une image compressée **à une seule bande**. Il n'y a rien à en tirer région par
+région, et c'est à l'appelant de ne pas le tenter.
 
 ## Lecture par tuiles
 

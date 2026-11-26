@@ -219,3 +219,54 @@ TEST(TiledTiffWriterTest, ChoosesBigTiffForLargeImages) {
     }
     EXPECT_TRUE(fileNames(temporaryDirectory.path).empty());
 }
+
+// Recopie d'une région, bloc par bloc (IONs::copyRegionToTiledTiff) : l'export recadré de l'interface passe par là.
+// La région commence volontairement hors d'une frontière de bloc et ne mesure pas un multiple de BLOCK_SIZE : c'est
+// le cas qui attrape une erreur d'un bloc dans le calcul des décalages.
+TEST(CopyRegionToTiledTiffTest, CopiesAnUnalignedRegionAndKeepsItsPixels) {
+    const TemporaryDirectoryClass temporaryDirectory;
+    const fs::path sourcePath = temporaryDirectory.path / "source.tif";
+    const fs::path destinationPath = temporaryDirectory.path / "crop.tif";
+    const cv::Mat reference = makeReferenceImage(testCanvasSize(), CV_16UC3);
+
+    std::string errorMessage;
+    {
+        IONs::TiledTiffWriterClass writer;
+        ASSERT_TRUE(writer.open(sourcePath, testCanvasSize(), CV_16UC3, errorMessage)) << errorMessage;
+        ASSERT_TRUE(writeBlocks(writer, reference, blockRectangles(testCanvasSize()), errorMessage)) << errorMessage;
+        ASSERT_TRUE(writer.close(errorMessage)) << errorMessage;
+    }
+
+    const cv::Rect region(137, 59, 700, 400);   // 2 colonnes de blocs, 1 ligne, bords incomplets des deux côtés
+    ASSERT_LE(region.br().x, testCanvasSize().width);
+    ASSERT_LE(region.br().y, testCanvasSize().height);
+    ASSERT_TRUE(IONs::copyRegionToTiledTiff(sourcePath, region, destinationPath, errorMessage)) << errorMessage;
+
+    EXPECT_TRUE(areEqual(readWholeImage(destinationPath, region.size()), reference(region)));
+}
+
+// Une région vide ou qui dépasse l'image est refusée, et rien n'est laissé derrière : ni destination, ni temporaire.
+TEST(CopyRegionToTiledTiffTest, RejectsAnEmptyOrOutsideRegionAndLeavesNoFile) {
+    const TemporaryDirectoryClass temporaryDirectory;
+    const fs::path sourcePath = temporaryDirectory.path / "source.tif";
+    const fs::path destinationPath = temporaryDirectory.path / "crop.tif";
+
+    std::string errorMessage;
+    {
+        IONs::TiledTiffWriterClass writer;
+        ASSERT_TRUE(writer.open(sourcePath, testCanvasSize(), CV_16UC3, errorMessage)) << errorMessage;
+        ASSERT_TRUE(writeBlocks(writer, makeReferenceImage(testCanvasSize(), CV_16UC3),
+                                blockRectangles(testCanvasSize()), errorMessage)) << errorMessage;
+        ASSERT_TRUE(writer.close(errorMessage)) << errorMessage;
+    }
+
+    EXPECT_FALSE(IONs::copyRegionToTiledTiff(sourcePath, cv::Rect(0, 0, 0, 10), destinationPath, errorMessage));
+    EXPECT_FALSE(errorMessage.empty());
+    EXPECT_FALSE(IONs::copyRegionToTiledTiff(sourcePath, cv::Rect(-1, 0, 10, 10), destinationPath, errorMessage));
+    EXPECT_FALSE(errorMessage.empty());
+    const cv::Rect beyond(testCanvasSize().width - 10, 0, 20, 20);
+    EXPECT_FALSE(IONs::copyRegionToTiledTiff(sourcePath, beyond, destinationPath, errorMessage));
+    EXPECT_FALSE(errorMessage.empty());
+
+    EXPECT_EQ(fileNames(temporaryDirectory.path), std::vector<std::string>{"source.tif"});
+}
