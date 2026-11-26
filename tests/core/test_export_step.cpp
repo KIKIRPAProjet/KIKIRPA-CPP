@@ -5,6 +5,7 @@
 #include "core/data/tile.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "core/io/tiled_tiff_writer.h"
+#include "core/io/unicode_path.h"
 #include "core/step/data_store.h"
 
 #include <gtest/gtest.h>
@@ -13,10 +14,13 @@
 #include <opencv2/core/base.hpp>
 #include <opencv2/core/hal/interface.h>
 #include <opencv2/core/mat.hpp>
+#include <opencv2/core/matx.hpp>
 #include <opencv2/core/types.hpp>
+#include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -31,6 +35,14 @@ namespace {
     // Deux blocs : un complet et un bloc de bord.
     constexpr int CANVAS_WIDTH = DataNs::BLOCK_SIZE + 88;
     constexpr int CANVAS_HEIGHT = 300;
+    constexpr int PIXEL_TOLERANCE = 5;
+    constexpr int SAMPLE_OFFSET = 10;
+    constexpr int RIGHT_BLOCK_OFFSET = 20;
+    constexpr int CROP_X = 100;
+    constexpr int CROP_Y = 30;
+    constexpr int CROP_WIDTH = 450;
+    constexpr int CROP_HEIGHT = 200;
+    constexpr double SIXTEEN_TO_EIGHT_BIT_DIVISOR = 257.0;
     constexpr double LEFT_VALUE = 100.0;
     constexpr double RIGHT_VALUE = 3000.0;
 
@@ -125,6 +137,16 @@ namespace {
             step.setDataStore(dataStore);
         }
     };
+
+    void expectNearRgbFrom16Bit(const cv::Vec3b& bgrPixel, double baseValue16) {
+        // Le TIFF est en RGB et IONs::readImage (OpenCV) décode le JPEG en BGR.
+        EXPECT_NEAR(bgrPixel[0], static_cast<int>(std::round((3 * baseValue16) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+        EXPECT_NEAR(bgrPixel[1], static_cast<int>(std::round((2 * baseValue16) / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+        EXPECT_NEAR(bgrPixel[2], static_cast<int>(std::round(baseValue16 / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                    PIXEL_TOLERANCE);
+    }
 
 }
 
@@ -266,4 +288,48 @@ TEST(ExportStepTest, FingerprintFollowsThePublishedFile) {
     const auto fingerprint = fixture.step.externalInputsFingerprint();
     ASSERT_TRUE(fingerprint.is_object());
     EXPECT_TRUE(fingerprint.at("exists").get<bool>());
+}
+
+TEST(ExportStepTest, PublishesBaselineJpegWhenFilenameIsJpg) {
+    ExportFixture fixture(CV_16UC3);
+    configureOutput(fixture.step, fixture.outputDirectory, "mosaic.jpg");
+
+    ASSERT_TRUE(fixture.step.execute()) << fixture.step.getResult().dump();
+    const StepsNs::ExportOutput& output = fixture.step.getOutput();
+    EXPECT_EQ(output.imagePath, fixture.outputDirectory / "mosaic.jpg");
+    EXPECT_EQ(output.canvasSize, testCanvasSize());
+    EXPECT_FALSE(output.isBigTiff);
+
+    const cv::Mat published = IONs::readImage(output.imagePath, cv::IMREAD_COLOR);
+    ASSERT_FALSE(published.empty());
+    EXPECT_EQ(published.type(), CV_8UC3);
+    EXPECT_EQ(published.size(), testCanvasSize());
+
+    expectNearRgbFrom16Bit(published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET), LEFT_VALUE);
+    expectNearRgbFrom16Bit(published.at<cv::Vec3b>(SAMPLE_OFFSET, DataNs::BLOCK_SIZE + RIGHT_BLOCK_OFFSET),
+                           RIGHT_VALUE);
+}
+
+TEST(ExportStepTest, ExportsCroppedRegionToBaselineJpeg) {
+    ExportFixture fixture(CV_16UC3);
+    const fs::path sourceTiff = fixture.dataStore.get<DataNs::Mosaic>("mosaic").imagePath;
+    const fs::path jpegPath = fixture.outputDirectory / "cropped_region.jpg";
+    const cv::Rect cropRegion(CROP_X, CROP_Y, CROP_WIDTH, CROP_HEIGHT);
+    std::string errorMessage;
+
+    ASSERT_TRUE(StepsNs::exportTiffRegionToBaselineJpeg(sourceTiff, cropRegion, jpegPath, errorMessage))
+        << errorMessage;
+
+    const cv::Mat published = IONs::readImage(jpegPath, cv::IMREAD_COLOR);
+    ASSERT_FALSE(published.empty());
+    EXPECT_EQ(published.type(), CV_8UC3);
+    EXPECT_EQ(published.size(), cropRegion.size());
+
+    const cv::Vec3b& leftCropPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, SAMPLE_OFFSET);
+    EXPECT_NEAR(leftCropPixel[2], static_cast<int>(std::round(LEFT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                PIXEL_TOLERANCE);
+
+    const cv::Vec3b& rightCropPixel = published.at<cv::Vec3b>(SAMPLE_OFFSET, cropRegion.width - SAMPLE_OFFSET);
+    EXPECT_NEAR(rightCropPixel[2], static_cast<int>(std::round(RIGHT_VALUE / SIXTEEN_TO_EIGHT_BIT_DIVISOR)),
+                PIXEL_TOLERANCE);
 }

@@ -40,6 +40,7 @@ target_link_libraries(kikirpa_backend PUBLIC
     ${OpenCV_LIBS}
     nlohmann_json::nlohmann_json
     TIFF::TIFF
+    JPEG::JPEG
 )
 
 if(WIN32)

@@ -31,6 +31,7 @@ endif()
 # Cette bibliothèque est notamment utilisée pour la lecture et l'écriture
 # de fichiers TIFF tuilés et pyramidaux.
 find_package(TIFF REQUIRED)
+find_package(JPEG REQUIRED)
 
 # Recherche Qt 6 et ses modules nécessaires à l'interface graphique.
 #
