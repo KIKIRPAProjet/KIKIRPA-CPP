@@ -10,7 +10,6 @@
 #include "core/io/unicode_path.h"
 #include "core/io/pyramidal_tiff_reader.h"
 #include "frontendutils.h"
-#include "image_layer_loader.h"
 
 #include <filesystem>
 #include <fstream>
@@ -306,14 +305,6 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
     }
 
     if (success) {
-        const QImage preview = generatePreviewImage();
-        QRectF layerBounds;
-        const auto layers = collectImageLayers(layerBounds);
-        if (cancelRequested.load()) {
-            emit pipelineCancelled();
-            return;
-        }
-
         const auto& dataStore = pipeline->getDataStore();
 
         if (dataStore.has("mosaic")) {
@@ -325,8 +316,8 @@ void PipelineWorkerClass::processExecutionResult(bool success, const std::string
             }
         }
         emit progressChanged(100);
+        const QImage preview = generatePreviewImage();
         emit resultsReady(collectResults(preview.size()));
-        emit imageLayersReady(layers, layerBounds);
         emit pipelineFinished(true, QString(), preview);
         return;
     }
@@ -364,27 +355,6 @@ void PipelineWorkerClass::runPipeline(const QString& scriptJsonText, const QStri
     }
 
     processExecutionResult(success, executionError);
-}
-
-QVector<ImageLayer> PipelineWorkerClass::collectImageLayers(QRectF& bounds)
-{
-    const auto& dataStore = pipeline->getDataStore();
-    if (!dataStore.has("positions") || !dataStore.has("tiles")) return {};
-    try {
-        const auto& tiles = dataStore.get<DataNs::TileList>("tiles");
-        const auto& positions = dataStore.get<std::vector<DataNs::TilePositionData>>("positions");
-        if (positions.empty()) return {};
-        auto layers = buildImageLayers(tiles, positions, 3, &bounds);
-        if (layers.size() != static_cast<qsizetype>(tiles.size())) {
-            emit logMessageReceived(tr("Les tuiles en rotation sont omises de la superposition TIFF."),
-                                    QStringLiteral("warning"));
-        }
-        return layers;
-    } catch (const std::exception& exception) {
-        emit logMessageReceived(tr("Impossible de charger les calques TIFF : %1").arg(exception.what()),
-                                QStringLiteral("warning"));
-    }
-    return {};
 }
 
 QImage PipelineWorkerClass::generatePreviewImage() {
