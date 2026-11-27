@@ -55,6 +55,8 @@ private:
     void setupPipelineConnections();
     void setupHomePageConnections();
     void setupMenuConnections();
+    // Masque ou affiche le journal et garde son action de menu cohérente.
+    void setLogVisible(bool visible);
     void setupPageConnections();
     void setupPairAlignmentConnections();
 
@@ -117,7 +119,6 @@ private:
     int currentMode = 4;
     int zoomPercent = 100;
     bool sideBarVisible = true;
-    bool logVisible = false;
     bool maskVisible = true;
     QVector<FrontendUtils::PairAlignmentInfo> m_pairs;
     int m_currentPairIndex = 0;

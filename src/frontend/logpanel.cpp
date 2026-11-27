@@ -1,3 +1,4 @@
+// src/frontend/logpanel.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : filtrer les niveaux dans l'interface évite de modifier les messages reçus ;
@@ -23,6 +24,7 @@
 #include <QHBoxLayout>
 #include <QSizePolicy>
 #include <QTextBrowser>
+#include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -50,6 +52,14 @@ LogPanel::LogPanel(MainWindow *mainWindow, QWidget *parent)
     textBrowser->setReadOnly(true);
     layout->addWidget(textBrowser);
     addTab(content, tr("Journal"));
+    auto *minimizeButton = new QToolButton(this);
+    minimizeButton->setObjectName(QStringLiteral("minimizeLogButton"));
+    minimizeButton->setText(QStringLiteral("−"));
+    minimizeButton->setAccessibleName(tr("Réduire le journal"));
+    minimizeButton->setToolTip(tr("Masquer le journal sans interrompre le calcul"));
+    minimizeButton->setAutoRaise(true);
+    setCornerWidget(minimizeButton, Qt::TopRightCorner);
+    connect(minimizeButton, &QToolButton::clicked, this, &LogPanel::minimizeRequested);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
 
     connect(infoCheckBox, &QCheckBox::toggled, this, &LogPanel::refreshLog);

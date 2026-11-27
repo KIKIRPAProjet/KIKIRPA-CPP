@@ -5,6 +5,8 @@
 #include "pipeline_worker.h"
 #include "pipeline_runner.h"
 #include "project_serializer.h"
+#include "logpanel.h"
+#include "mainwindow.h"
 
 #include "core/io/pyramid_cache.h"
 #include "core/io/unicode_path.h"
@@ -24,8 +26,12 @@
 #include <QtCore/QString>
 #include <QtCore/QTimer>
 #include <QtCore/qglobal.h>
+#include <QtGui/QAction>
 #include <QtGui/QImage>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QTextBrowser>
+#include <QtWidgets/QToolButton>
 
 #include <atomic>
 #include <chrono>
@@ -383,6 +389,74 @@ TEST_F(PipelineWorkerTestClass, ReportsErrorWhenScriptIsInvalid) {
     EXPECT_TRUE(finishedEmitted);
     EXPECT_FALSE(finishedSuccess);
     EXPECT_FALSE(errorMessage.isEmpty());
+}
+
+TEST(LogPanelNavigationTest, MinimizeKeepsMessagesAndMenuCanReopenTheJournal) {
+    MainWindow window;
+    auto *mode = window.findChild<QPushButton *>(QStringLiteral("mode0"));
+    ASSERT_NE(mode, nullptr);
+    mode->click();
+    auto *journal = window.findChild<LogPanel *>();
+    auto *action = window.findChild<QAction *>(QStringLiteral("toggleLogAction"));
+    auto *button = window.findChild<QToolButton *>(QStringLiteral("minimizeLogButton"));
+    ASSERT_NE(journal, nullptr);
+    ASSERT_NE(action, nullptr);
+    ASSERT_NE(button, nullptr);
+    action->trigger();
+    EXPECT_FALSE(journal->isHidden());
+    journal->appendLog(QStringLiteral("avant réduction"), QStringLiteral("info"));
+    button->click();
+    EXPECT_TRUE(journal->isHidden());
+    EXPECT_FALSE(action->isChecked());
+    journal->appendLog(QStringLiteral("pendant réduction"), QStringLiteral("info"));
+    action->trigger();
+    EXPECT_FALSE(journal->isHidden());
+    EXPECT_TRUE(action->isChecked());
+    auto *text = journal->findChild<QTextBrowser *>();
+    ASSERT_NE(text, nullptr);
+    EXPECT_TRUE(text->toPlainText().contains(QStringLiteral("avant réduction")));
+    EXPECT_TRUE(text->toPlainText().contains(QStringLiteral("pendant réduction")));
+}
+
+TEST_F(PipelineWorkerTestClass, MinimizingJournalDoesNotInterruptPipeline) {
+    MainWindow window;
+    auto *runner = window.findChild<PipelineRunnerClass *>();
+    auto *journal = window.findChild<LogPanel *>();
+    auto *button = window.findChild<QToolButton *>(QStringLiteral("minimizeLogButton"));
+    auto *action = window.findChild<QAction *>(QStringLiteral("toggleLogAction"));
+    ASSERT_NE(runner, nullptr);
+    ASSERT_NE(journal, nullptr);
+    ASSERT_NE(button, nullptr);
+    ASSERT_NE(action, nullptr);
+    runner->setScriptJson(QString::fromStdString(makeScript(tilesDirectory, outputDirectory, checkpointDirectory).dump()));
+    bool finished = false;
+    QEventLoop loop;
+    QObject::connect(runner, &PipelineRunnerClass::runStarted, &window, [&]() {
+        EXPECT_FALSE(journal->isHidden());
+        EXPECT_TRUE(action->isChecked());
+        button->click();
+        EXPECT_TRUE(journal->isHidden());
+        EXPECT_FALSE(action->isChecked());
+    });
+    QObject::connect(runner, &PipelineRunnerClass::runFinished, &loop, [&]() {
+        finished = true;
+        loop.quit();
+    });
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    timer.start(ASYNC_WAIT_TIMEOUT_MS);
+    runner->startRun();
+    loop.exec();
+    EXPECT_TRUE(finished);
+    EXPECT_FALSE(runner->isPaused());
+    EXPECT_TRUE(fs::is_regular_file(outputDirectory / "mosaic.tif"));
+    EXPECT_TRUE(journal->isHidden());
+    action->trigger();
+    EXPECT_FALSE(journal->isHidden());
+    auto *text = journal->findChild<QTextBrowser *>();
+    ASSERT_NE(text, nullptr);
+    EXPECT_FALSE(text->toPlainText().isEmpty());
 }
 
 // 5. Test asynchrone multi-thread via PipelineRunnerClass

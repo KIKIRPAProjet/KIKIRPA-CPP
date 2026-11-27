@@ -237,8 +237,7 @@ void MainWindow::setupPipelineConnections()
             });
     connect(pipelineRunner, &PipelineRunnerClass::runStarted, this, [this]() {
         workspaceUI->progressBar()->setValue(0);
-        if (workspaceUI->logPanel())
-            workspaceUI->logPanel()->setVisible(true);
+        setLogVisible(true);
         sideBarVisible = true;
     });
     connect(pipelineRunner, &PipelineRunnerClass::progressAdvanced,
@@ -328,10 +327,9 @@ void MainWindow::setupMenuConnections()
             this, &MainWindow::requestRun);
     connect(menuBarManager, &MenuBarManager::comparisonRequested,
             pipelineRunner, &PipelineRunnerClass::showComparison);
-    connect(menuBarManager, &MenuBarManager::toggleLog, this, [this]() {
-        logVisible = !logVisible;
-        workspaceUI->logPanel()->setVisible(logVisible);
-    });
+    connect(menuBarManager, &MenuBarManager::toggleLog, this, &MainWindow::setLogVisible);
+    connect(workspaceUI->logPanel(), &LogPanel::minimizeRequested, this,
+            [this]() { setLogVisible(false); });
     connect(menuBarManager, &MenuBarManager::aboutRequested, this, [this]() {
         QMessageBox::about(this, tr("À propos"),
             tr("KIK-IRPA Assemblage, version 1.0.0\n\n"
@@ -1163,6 +1161,12 @@ void MainWindow::removeCancelRunButton()
     workspaceUI->setCancelRunButton(nullptr);
 }
 
+void MainWindow::setLogVisible(bool visible)
+{
+    workspaceUI->logPanel()->setVisible(visible);
+    menuBarManager->setLogVisible(visible);
+}
+
 void MainWindow::updateStatus(const QString &message)
 {
     if (workspaceUI->statusLabel())
@@ -1182,7 +1186,7 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Tab) {
         sideBarVisible = !sideBarVisible;
         workspaceUI->rightTabs()->setVisible(sideBarVisible);
-        workspaceUI->logPanel()->setVisible(sideBarVisible);
+        setLogVisible(sideBarVisible);
         event->accept();
         return;
     }
