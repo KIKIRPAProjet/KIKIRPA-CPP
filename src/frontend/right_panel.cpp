@@ -1,3 +1,4 @@
+// src/frontend/right_panel.cpp
 #include "right_panel.h"
 #include "mainwindow.h"
 #include "workspace_center.h"
@@ -9,6 +10,7 @@
 
 #include <QFrame>
 #include <QScrollArea>
+#include <QTabBar>
 
 namespace {
 
@@ -33,6 +35,13 @@ RightPanel::RightPanel(MainWindow *mainWindow, ProjectGrid *projectGrid,
       m_projectGrid(projectGrid),
       m_centerArea(centerArea)
 {
+    // Une page désactivée reste visible pour être découvrable, mais ne doit pas sembler cliquable.
+    // Le style global fixe la couleur de tous les onglets : il faut cibler explicitement :disabled.
+    tabBar()->setStyleSheet(QStringLiteral(
+        "QTabBar::tab:disabled { background:#242424; color:#777777;"
+        " border-bottom:2px solid transparent; }"
+        "QTabBar::tab:enabled:!selected:hover { background:#414141; color:#dedede; }"));
+
     // Pas de largeur minimale imposée, comme le panneau du bas : le panneau peut être réduit jusqu'à sa barre
     // d'onglets (qui affiche alors des flèches), sans disparaître ; ses onglets défilent si la place manque.
 
