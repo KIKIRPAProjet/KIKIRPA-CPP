@@ -1,3 +1,4 @@
+// src/frontend/menubar_manager.cpp
 /*
  * .cpp : le POURQUOI
  * - choix de conception : isoler la barre de menus réduit le couplage avec la fenêtre principale ;
@@ -19,10 +20,19 @@
 #include <QKeySequence>
 #include <QMenu>
 #include <QMenuBar>
+#include <QSignalBlocker>
 
 MenuBarManager::MenuBarManager(QObject *parent)
     : QObject(parent)
 {
+}
+
+void MenuBarManager::setLogVisible(bool visible)
+{
+    if (!logAction) return;
+    // Une mise à jour de l'affichage ne doit pas émettre une seconde demande de visibilité.
+    const QSignalBlocker blocker(logAction);
+    logAction->setChecked(visible);
 }
 
 void MenuBarManager::setupMenus(QMenuBar *menuBar)
@@ -57,10 +67,11 @@ void MenuBarManager::setupMenus(QMenuBar *menuBar)
 	toggleSideBar->setCheckable(true);
 	toggleSideBar->setChecked(true);
     connect(toggleSideBar, &QAction::toggled, this, &MenuBarManager::toggleSideBar);
-    auto *toggleLog = pannelMenu->addAction(tr("Journal"));
-	toggleLog->setCheckable(true);
-	toggleLog->setChecked(false);
-    connect(toggleLog, &QAction::toggled, this, &MenuBarManager::toggleLog);
+    logAction = pannelMenu->addAction(tr("Journal"));
+    logAction->setObjectName(QStringLiteral("toggleLogAction"));
+    logAction->setCheckable(true);
+    logAction->setChecked(false);
+    connect(logAction, &QAction::toggled, this, &MenuBarManager::toggleLog);
 	viewMenu->addSeparator();
     auto *zoomIn = viewMenu->addAction(tr("Zoom avant"));
     zoomIn->setShortcut(QKeySequence::ZoomIn);

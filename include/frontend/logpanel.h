@@ -1,3 +1,4 @@
+// include/frontend/logpanel.h
 /**
  * @class LogPanel
  * @brief Panneau de journalisation pour afficher les messages du backend
@@ -27,6 +28,10 @@ public slots:
  * @param message le message à afficher
  * @param level le niveau du message (info, warning, error)
  */
+
+signals:
+    // Demande uniquement de masquer le panneau ; les messages et le calcul sont conservés.
+    void minimizeRequested();
 
 private:
     struct LogEntry
