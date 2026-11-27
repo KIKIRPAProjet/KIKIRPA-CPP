@@ -34,7 +34,7 @@
 
 namespace {
 
-// Image dont la pyramide est à préparer : la source et le dossier du cache, à côté d'elle (là où l'aperçu la cherche).
+// Image dont la pyramide est à préparer : la source et le dossier du cache du projet.
 struct PyramidTask
 {
     std::filesystem::path source;
@@ -78,6 +78,12 @@ ProjectGrid::~ProjectGrid()
 const ProjectGrid::State &ProjectGrid::state() const
 {
     return gridState;
+}
+
+void ProjectGrid::setPyramidCacheDirectory(const QString &directory)
+{
+    pyramidCacheDirectory = directory;
+    FrontendUtils::setPyramidCacheDirectory(directory);
 }
 
 void ProjectGrid::setState(const State &state)
@@ -458,7 +464,9 @@ void ProjectGrid::startBackgroundPyramidGeneration()
         if (tile.path.isEmpty() || tile.empty)
             continue;
         const std::filesystem::path source = IONs::pathFromUtf8(tile.path.toStdString());
-        const std::filesystem::path cacheDirectory = IONs::pyramidCacheDirectory(source.parent_path());
+        const std::filesystem::path cacheDirectory = pyramidCacheDirectory.isEmpty()
+            ? IONs::pyramidCacheDirectory(source.parent_path())
+            : IONs::pathFromUtf8(pyramidCacheDirectory.toStdString()) / ".cache" / "pyramids";
         if (IONs::isPyramidCacheValid(source, IONs::pyramidCachePath(cacheDirectory, source)))
             ++reusedCount;
         else

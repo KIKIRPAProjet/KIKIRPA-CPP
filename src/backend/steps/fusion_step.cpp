@@ -71,7 +71,7 @@ namespace StepsNs {
         // le dossier temporaire du système. `tiles` ne doit pas être vide.
         fs::path resolveOutputDirectory(const Json& configJson, const DataNs::TileList& tiles) {
             fs::path configuredDirectory = configuredOutputDirectory(configJson);
-            if (!configuredDirectory.empty()) return configuredDirectory;
+            if (!configuredDirectory.empty()) return configuredDirectory / ".cache" / "mosaic";
             return tiles.front()->getSource().parent_path() / ".cache" / "mosaic";
         }
 
@@ -303,8 +303,9 @@ namespace StepsNs {
     // processus) n'a pas d'empreinte : son checkpoint est périmé et fusion est refait.
     Json FusionStepClass::externalInputsFingerprint() const {
         const fs::path configuredDirectory = configuredOutputDirectory(configJson);
-        const DataNs::Mosaic mosaic = configuredDirectory.empty() ? output.value
-                                                                  : makeMosaicPaths(configuredDirectory, {});
+        const DataNs::Mosaic mosaic = configuredDirectory.empty()
+            ? output.value
+            : makeMosaicPaths(configuredDirectory / ".cache" / "mosaic", {});
         if (mosaic.imagePath.empty()) return Json();
         return Json::array({IONs::computeFileFingerprint(mosaic.imagePath),
                             IONs::computeFileFingerprint(mosaic.provenancePath),

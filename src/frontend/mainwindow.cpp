@@ -56,6 +56,7 @@
 #include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QInputDialog>
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QStatusBar>
@@ -600,6 +601,9 @@ void MainWindow::initializeNewProject(const QString &name, const QString &select
     }
     projectName = name;
     outputDirectory = selectedOutputDirectory;
+    if (outputDirectory.isEmpty())
+        outputDirectory = QDir(selectedTileDirectory).filePath(QStringLiteral("output"));
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
     projectPath.clear();
     projectCreated = true;
     projectGrid->createNewProject(selectedTileDirectory, newTilePaths);
@@ -720,6 +724,9 @@ void MainWindow::applyLoadedProject(const QString &path)
     }
     projectName = projectData.projectName;
     outputDirectory = projectData.outputDirectory;
+    if (outputDirectory.isEmpty())
+        outputDirectory = QDir(projectGrid->state().tileDirectory).filePath(QStringLiteral("output"));
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
     const bool hasSavedGrid = !projectData.gridState.gridTiles.isEmpty();
     projectGrid->setState(projectData.gridState);
     if (!hasSavedGrid)
@@ -932,6 +939,7 @@ void MainWindow::handleGridValidation(bool valid, int activeTileCount,
     if (outputDirectory.isEmpty()) {
         outputDirectory = QDir(gridState.tileDirectory).filePath(QStringLiteral("output"));
     }
+    projectGrid->setPyramidCacheDirectory(outputDirectory);
 
     FrontendNs::ProjectSetup setup = buildCurrentProjectSetup();
 
@@ -1110,8 +1118,35 @@ void MainWindow::requestRun(int firstStep)
             tr("Veuillez importer des tuiles avant de lancer le pipeline de calcul."));
         return;
     }
+
+    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
+    if (firstStep == 0) {
+        QStringList stepNames;
+        stepNames.reserve(static_cast<int>(steps.size()));
+        for (const auto &step : steps)
+            stepNames.append(step.displayName);
+        if (stepNames.isEmpty())
+            return;
+
+        bool selected = false;
+        const QString chosen = QInputDialog::getItem(
+            this, tr("Relancer à partir de…"),
+            tr("Étape de départ :"), stepNames, 0, false, &selected);
+        if (!selected)
+            return;
+
+        const int stepIndex = stepNames.indexOf(chosen);
+        if (stepIndex < 0)
+            return;
+        firstStep = stepIndex + 1;
+    }
+
+    if (firstStep < 1 || firstStep > static_cast<int>(steps.size())) {
+        updateStatus(tr("Étape de relance invalide."));
+        return;
+    }
     // Demande confirmation si l'opérateur relance le calcul à partir d'une étape ultérieure.
-    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep)) {
+    if (firstStep > 1 && !DialogHelpers::confirmRunRestart(this, firstStep, static_cast<int>(steps.size()))) {
         return;
     }
 
@@ -1125,7 +1160,6 @@ void MainWindow::requestRun(int firstStep)
     }
     if (scriptJson.isEmpty()) return;
 
-    const auto steps = FrontendUtils::pipelineSteps(projectGrid->state().pipelineChoices);
     const QString startStep = (firstStep > 1 && firstStep <= static_cast<int>(steps.size()))
         ? QString::fromStdString(steps[static_cast<std::size_t>(firstStep - 1)].technicalName)
         : QString();
