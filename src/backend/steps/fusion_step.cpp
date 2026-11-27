@@ -160,6 +160,21 @@ namespace StepsNs {
                 context.canvasSize.height = std::max(context.canvasSize.height, placedTile.mosaicRect.br().y);
                 context.tiles.push_back(std::move(placedTile));
             }
+
+            // Récupère le profil ICC de la première tuile pour le transmettre à la mosaïque finale
+            if (!inputs.tiles.empty()) {
+                const auto& firstTile = *inputs.tiles.front();
+                double scaleX = 1.0;
+                double scaleY = 1.0;
+                std::string metaErr;
+                if (!firstTile.getSource().empty()) {
+                    IONs::PyramidalTiffReaderClass(firstTile.getSource()).readMetadata(context.iccProfile, scaleX, scaleY, metaErr);
+                }
+                if (context.iccProfile.empty() && !firstTile.getTiff().empty()) {
+                    IONs::PyramidalTiffReaderClass(firstTile.getTiff()).readMetadata(context.iccProfile, scaleX, scaleY, metaErr);
+                }
+            }
+
             return context;
         }
 
@@ -239,7 +254,9 @@ namespace StepsNs {
             return rectangles;
         }
 
-        bool openWriters(MosaicWriters& writers, const DataNs::Mosaic& mosaic, std::string& errorMessage) {
+        bool openWriters(MosaicWriters& writers, const DataNs::Mosaic& mosaic, std::string& errorMessage,
+                         const std::vector<std::uint8_t>& iccProfile = {}) {
+            writers.image.setIccProfile(iccProfile);
             return writers.image.open(mosaic.imagePath, mosaic.canvasSize, CV_16UC3, errorMessage) &&
                    writers.provenance.open(mosaic.provenancePath, mosaic.canvasSize, CV_16UC1, errorMessage) &&
                    writers.mask.open(mosaic.maskPath, mosaic.canvasSize, CV_8UC1, errorMessage);
@@ -262,7 +279,7 @@ namespace StepsNs {
         void writeMosaic(const FusionContext& context, const DataNs::Mosaic& mosaic) {
             MosaicWriters writers;
             std::string errorMessage;
-            bool isWritten = openWriters(writers, mosaic, errorMessage);
+            bool isWritten = openWriters(writers, mosaic, errorMessage, context.iccProfile);
             for (const cv::Rect& blockRect : blockRectangles(context.canvasSize)) {
                 if (!isWritten) break;
                 isWritten = writeBlock(writers, renderBlock(blockRect, context), errorMessage);

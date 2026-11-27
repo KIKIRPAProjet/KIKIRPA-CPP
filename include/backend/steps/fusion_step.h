@@ -6,6 +6,7 @@
 
 #include <opencv2/core/types.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -48,6 +49,7 @@ namespace StepsNs {
     struct FusionContext {
         std::vector<PlacedTile> tiles;
         cv::Size canvasSize;
+        std::vector<std::uint8_t> iccProfile;
     };
 
     // Calcule le bloc `blockRect` de la mosaïque : chaque pixel prend la valeur de la tuile dont le territoire le

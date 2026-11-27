@@ -345,6 +345,7 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
 
     QImageReader reader(path);
     reader.setAutoTransform(true);
+    reader.setAllocationLimit(0);
     const QSize sourceSize = reader.size();
     if (sourceSize.isValid()) {
         const double scale = qMin(static_cast<double>(maximumSize.width()) / sourceSize.width(),
@@ -354,7 +355,13 @@ QImage readPreviewImage(const QString &path, const QSize &maximumSize)
                                        qMax(1, qRound(sourceSize.height() * scale))));
     }
     QImage image = reader.read();
-    if (!image.isNull())
+    if (image.isNull()) {
+        const cv::Mat mat = IONs::readImage(IONs::pathFromUtf8(path.toStdString()), 1 /* IMREAD_COLOR */);
+        if (!mat.empty()) {
+            image = FrontendUtils::matToQImage(mat);
+        }
+    }
+    if (!image.isNull() && (image.width() > maximumSize.width() || image.height() > maximumSize.height()))
         image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     return image;
 }

@@ -3,8 +3,10 @@
 
 #include <opencv2/core/mat.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace IONs {
 
@@ -15,7 +17,8 @@ namespace IONs {
     bool createPyramidalTiledTiff(
         const cv::Mat& image,
         const std::filesystem::path& outputPath,
-        std::string& errorMessage
+        std::string& errorMessage,
+        const std::vector<std::uint8_t>& iccProfile = {}
     );
 
 }

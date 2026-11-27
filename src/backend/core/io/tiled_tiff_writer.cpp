@@ -19,6 +19,7 @@
 #include <limits>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace IONs {
 
@@ -77,6 +78,17 @@ namespace IONs {
             return true;
         }
 
+        // Embarque le profil ICC, s'il y en a un.
+        bool embedIccProfile(TIFF* tiffFile, const std::vector<std::uint8_t>& iccProfile, std::string& errorMessage) {
+            if (iccProfile.empty()) return true;
+            if (!TIFFSetField(tiffFile, TIFFTAG_ICCPROFILE, static_cast<std::uint32_t>(iccProfile.size()),
+                              iccProfile.data())) {
+                errorMessage = "cannot configure TIFF ICC profile";
+                return false;
+            }
+            return true;
+        }
+
         bool validateImageFormat(cv::Size imageSize, int imageType, std::string& errorMessage) {
             if (imageSize.width <= 0 || imageSize.height <= 0) {
                 errorMessage = "TIFF image size must be positive";
@@ -121,7 +133,8 @@ namespace IONs {
             abandon();
             return false;
         }
-        if (!configureTiff(tiffFile.get(), imageSize, imageType, errorMessage)) {
+        if (!configureTiff(tiffFile.get(), imageSize, imageType, errorMessage) ||
+            !embedIccProfile(tiffFile.get(), iccProfile, errorMessage)) {
             abandon();
             return false;
         }

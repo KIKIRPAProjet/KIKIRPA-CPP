@@ -23,6 +23,7 @@
 #include <ios>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace IONs {
 
@@ -108,9 +109,15 @@ namespace IONs {
                 errorMessage = "cannot read " + pathToUtf8(sourcePath);
                 return false;
             }
+            std::vector<std::uint8_t> iccProfile;
+            double scaleX = 1.0;
+            double scaleY = 1.0;
+            std::string metaError;
+            PyramidalTiffReaderClass(sourcePath).readMetadata(iccProfile, scaleX, scaleY, metaError);
+
             std::error_code removeError;
             fs::remove(provenancePath(entry.pyramidPath), removeError);   // cache invalide pendant l'écriture
-            if (!createPyramidalTiledTiff(image, entry.pyramidPath, errorMessage)) return false;
+            if (!createPyramidalTiledTiff(image, entry.pyramidPath, errorMessage, iccProfile)) return false;
             if (!writeProvenance(entry.pyramidPath, fingerprint, errorMessage)) return false;
             entry.width = image.cols;
             entry.height = image.rows;

@@ -8,6 +8,7 @@
 #include <QtCore/QString>
 #include <QtCore/qtimer.h>
 #include <QtGui/QIcon>
+#include <QtGui/QImageReader>
 #include <QtWidgets/QApplication>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
@@ -22,6 +23,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <QImageReader>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -269,6 +271,8 @@ namespace {
 
     int runFrontend(int argumentCount, char** arguments) {
         QApplication application(argumentCount, arguments); // NOLINT(misc-include-cleaner)
+        // Les images haute résolution (TIFF d'art KIK-IRPA) dépassent facilement la limite par défaut de 256 Mo.
+        QImageReader::setAllocationLimit(0); // NOLINT(misc-include-cleaner)
         QApplication::setApplicationName(QStringLiteral("KIK-IRPA Assemblage")); // NOLINT(misc-include-cleaner)
         QApplication::setOrganizationName(QStringLiteral("KIK-IRPA")); // NOLINT(misc-include-cleaner)
         // Icône de toutes les fenêtres (barre de titre, barre des tâches, Alt+Tab) ; resources/resources.qrc.
